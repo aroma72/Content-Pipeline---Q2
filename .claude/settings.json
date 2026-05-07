@@ -1,0 +1,60 @@
+{
+  "hooks": {
+    "context_window_threshold_percent": 95,
+    "on_context_95_percent": {
+      "actions": [
+        "update_memory_files",
+        "flush_session_logs",
+        "checkpoint_planning_state"
+      ],
+      "notification": "show",
+      "message": "⚠️  Context window at 95%. Memory, logs, and plan state have been persisted. Consider ending session soon or starting a fresh context."
+    },
+    "before_tool_call": {
+      "log_tool_name": true,
+      "save_input_to_log": true
+    },
+    "after_tool_call": {
+      "save_result_summary": true,
+      "check_for_errors": true
+    },
+    "on_session_start": {
+      "load_memory": true,
+      "load_project_context": true
+    },
+    "on_session_end": {
+      "archive_session_log": true,
+      "update_memory_index": true
+    }
+  },
+  "memory": {
+    "auto_save_interval_seconds": 300,
+    "checkpoint_on_tool_completion": true,
+    "retention_days": 90
+  },
+  "logging": {
+    "level": "info",
+    "session_log": ".claude/logs/session.log",
+    "decision_log": ".claude/logs/decisions.log",
+    "error_log": ".claude/logs/errors.log"
+  },
+  "project_context": {
+    "name": "Drawing Room",
+    "description": "Agentic L&D content factory",
+    "main_artifacts": [
+      "planning/planning.md",
+      "memory/MEMORY.md",
+      ".claude/logs/"
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Read:**",
+      "Edit:**",
+      "Write:**",
+      "Bash:python",
+      "Bash:ffmpeg",
+      "Bash:git"
+    ]
+  }
+}
