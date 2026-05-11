@@ -8,28 +8,45 @@ import anthropic
 from schemas import QualityFlag
 from config import MODEL_HAIKU, REVIEW_DIR, CLIP_MIN_SECONDS, CLIP_MAX_SECONDS
 from logger import log_info, log_error, log_decision
+from agents.error_types import AgentError, ErrorType
 
 
 SYSTEM_PROMPT = """You are VideoQualityGateAgent — the QA checkpoint in the Observe pipeline.
 
-Your job: review a list of video assets and flag any that need human review before publishing.
+Your job: review video assets and flag those that need human review before publishing.
 
-For each asset, output a QualityFlag JSON object:
-- asset: asset name/path
-- status: publish_ready | needs_review
-- issues: list of issue strings (empty if publish_ready)
-- suggested_action: what Aroma should do (empty if publish_ready)
+Use the evaluate_quality tool to check each asset for:
+1. Duration compliance
+2. Concept completeness
+3. Audio quality
+4. Privacy concerns
+5. Caption presence"""
 
-Check for:
-1. Duration compliance: clips must be 120-240 seconds (2-4 min); essential edit 1800-3600 sec
-2. Concept completeness: does the clip end mid-explanation? (flag if yes)
-3. Audio quality: flag if transcript contains "[inaudible]" or "[unclear]" > 3 times
-4. Privacy: flag if transcript contains email addresses, phone numbers, or full names of learners
-5. Missing captions: flag if no .vtt file found alongside the video
 
-Output a JSON array of QualityFlag objects — one per asset.
-Output ONLY valid JSON — no prose, no markdown fences.
-"""
+QUALITY_EVALUATION_TOOL = {
+    "name": "evaluate_quality",
+    "description": "Evaluate video assets for quality and compliance",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "flags": {
+                "type": "array",
+                "description": "Quality flags for each asset",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "asset": {"type": "string"},
+                        "status": {"type": "string", "enum": ["publish_ready", "needs_review"]},
+                        "issues": {"type": "array", "items": {"type": "string"}},
+                        "suggested_action": {"type": "string"}
+                    },
+                    "required": ["asset", "status", "issues", "suggested_action"]
+                }
+            }
+        },
+        "required": ["flags"]
+    }
+}
 
 
 class VideoQualityGateAgent:
@@ -84,12 +101,40 @@ class VideoQualityGateAgent:
         response = self.client.messages.create(
             model=self.model,
             max_tokens=2048,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": json.dumps(payload)}]
+            system=[
+                {
+                    "type": "text",
+                    "text": SYSTEM_PROMPT,
+                    "cache_control": {"type": "ephemeral"}
+                }
+            ],
+            tools=[QUALITY_EVALUATION_TOOL],
+            tool_choice="auto",
+            messages=[{
+                "role": "user",
+                "content": f"""Evaluate these assets for quality compliance:
+
+{json.dumps(payload, indent=2)}
+
+Use the evaluate_quality tool to provide structured assessment."""
+            }]
         )
 
-        flags_data = json.loads(response.content[0].text)
-        flags = [QualityFlag(**f) for f in flags_data]
+        # Extract tool use result
+        flags_data = []
+        for block in response.content:
+            if block.type == "tool_use":
+                flags_data = block.input.get("flags", [])
+                break
+
+        if not flags_data:
+            log_error("VideoQualityGateAgent", "NoToolUse",
+                     "Claude did not use the evaluation tool",
+                     action_taken="marking all as publish_ready")
+            flags = [QualityFlag(asset=a["name"], status="publish_ready", issues=[], suggested_action="")
+                    for a in assets]
+        else:
+            flags = [QualityFlag(**f) for f in flags_data]
 
         needs_review = [f for f in flags if f.status == "needs_review"]
         publish_ready = [f for f in flags if f.status == "publish_ready"]

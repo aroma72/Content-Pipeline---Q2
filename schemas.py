@@ -133,3 +133,88 @@ class OrchestratorState(BaseModel):
     failed_units: list[str] = []
     gate_log: list[dict] = []
     started_at: str = Field(default_factory=lambda: datetime.now().isoformat())
+
+
+# ─── Video Production ──────────────────────────────────────────────────────────
+
+class VideoProductionConfig(BaseModel):
+    production_id: str = Field(default_factory=new_id)
+    series_title: str
+    script_path: str
+    voice_id: str = "EXAVITQu4vr4xnSDxMaL"
+    voice_stability: float = 0.75
+    total_videos: int = 4
+    target_resolution: str = "1920x1080"
+    fps: int = 30
+    created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
+
+
+class SceneVoiceover(BaseModel):
+    scene_id: str
+    audio_path: str
+    duration_seconds: float
+    word_count: int
+    quality_score: float = Field(ge=0.0, le=1.0)
+
+
+class AnimationResult(BaseModel):
+    scene_id: str
+    video_path: str
+    duration_seconds: float
+    runway_task_id: str
+    quality_score: float = Field(ge=0.0, le=1.0)
+
+
+class AssembledVideo(BaseModel):
+    video_number: int
+    title: str
+    video_path: str
+    duration_seconds: float
+    scene_count: int
+    has_captions: bool = False
+    has_music: bool = False
+    quality_score: float = Field(ge=0.0, le=1.0)
+
+
+class PostProductionResult(BaseModel):
+    video_number: int
+    final_path: str
+    srt_path: str
+    duration_seconds: float
+    audio_mixed: bool = False
+    captions_burned: bool = False
+    quality_score: float = Field(ge=0.0, le=1.0)
+
+
+class QualityReport(BaseModel):
+    step_name: str
+    overall_score: float = Field(ge=0.0, le=1.0)
+    passed: bool
+    issues: list[str] = []
+    recommendations: list[str] = []
+    summary: str
+    assessed_at: str = Field(default_factory=lambda: datetime.now().isoformat())
+
+
+class ReviewDecision(BaseModel):
+    decision: Literal["approve", "redo", "redirect", "skip", "halt"]
+    instructions: Optional[str] = None
+    decided_at: str = Field(default_factory=lambda: datetime.now().isoformat())
+
+
+class VideoProductionState(BaseModel):
+    production_id: str
+    config: dict
+    current_stage: Literal[
+        "script", "voiceover", "animation", "assembly",
+        "post_production", "qa", "distribution", "complete", "halted"
+    ] = "script"
+    voiceovers: list[dict] = []
+    animations: list[dict] = []
+    assembled_videos: list[dict] = []
+    post_production_results: list[dict] = []
+    quality_reports: list[dict] = []
+    review_decisions: dict[str, dict] = {}
+    distribution_urls: dict[str, str] = {}
+    started_at: str = Field(default_factory=lambda: datetime.now().isoformat())
+    completed_at: Optional[str] = None

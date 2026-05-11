@@ -39,3 +39,29 @@ CLIP_MAX_SECONDS       = 240    # 4 min
 # ─── Human Review ──────────────────────────────────────────────────────────────
 AROMA_EMAIL = "aroma.tahir@taleemabad.com"
 REVIEW_SLA_HOURS = 24
+
+# Video Production API Keys
+ELEVENLABS_API_KEY  = os.getenv("ELEVENLABS_API_KEY", "")
+RUNWAY_API_KEY      = os.getenv("RUNWAY_API_KEY", "")
+ASSEMBLYAI_API_KEY  = os.getenv("ASSEMBLYAI_API_KEY", "")
+ROEX_API_KEY        = os.getenv("ROEX_API_KEY", "")
+JSON2VIDEO_API_KEY  = os.getenv("JSON2VIDEO_API_KEY", "")
+VIZARD_API_KEY      = os.getenv("VIZARD_API_KEY", "")
+YOUTUBE_API_KEY     = os.getenv("YOUTUBE_API_KEY", "")
+
+# Video Production Paths
+VIDEO_PRODUCTION_DIR = BASE_DIR / "video_production"
+VIDEO_PRODUCTION_DIR.mkdir(parents=True, exist_ok=True)
+
+# Video Production Thresholds
+MIN_VOICEOVER_QUALITY  = 0.80
+MIN_ANIMATION_QUALITY  = 0.75
+MIN_ASSEMBLY_QUALITY   = 0.80
+MIN_POST_PROD_QUALITY  = 0.85
+REVIEW_TIMEOUT_SECONDS = 300
+REMOTION_PROJECT_DIR = "C:\\Users\\Aroma Tahir\\Downloads\\drawing-room-remotion"
+
+# ─── Rate Limiting Configuration ───────────────────────────────────────────────
+# Initialize rate limiters on module load
+from agents.rate_limiting import configure_rate_limits, DEFAULT_RATE_LIMITS
+configure_rate_limits(DEFAULT_RATE_LIMITS)

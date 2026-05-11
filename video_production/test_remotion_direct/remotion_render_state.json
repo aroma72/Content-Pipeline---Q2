@@ -1,0 +1,11 @@
+{
+  "production_id": "test_remotion_direct",
+  "total_videos": 1,
+  "completed": 0,
+  "failed": 1,
+  "assembled": [],
+  "failed_videos": [
+    1
+  ],
+  "method": "Remotion (open source, free)"
+}

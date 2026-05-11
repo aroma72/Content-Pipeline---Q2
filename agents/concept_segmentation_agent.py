@@ -8,28 +8,68 @@ import anthropic
 from schemas import Segment
 from config import MODEL_OPUS, DRAFTS_DIR
 from logger import log_info, log_error, log_decision
+from agents.error_types import AgentError, ErrorType
 
 
 SYSTEM_PROMPT = """You are ConceptSegmentationAgent — the second step of the Observe pipeline.
 
-Given a session transcript with speaker segments, identify and label every segment.
+Given a session transcript with speaker segments, identify and label every segment using the segment_transcript tool.
 
-Output a JSON array of Segment objects. Each must include:
-- start_time: HH:MM:SS string
-- end_time: HH:MM:SS string
-- label: must_keep | optional | remove
-- concept: short concept name this segment covers (e.g. "gradient_descent")
-- speaker: speaker label (e.g. "Instructor", "Learner")
-- rationale: one sentence explaining why this label was assigned
-
-Label logic:
+Labeling rules:
 - must_keep: core concept explanation, key misconception correction, worked example walkthrough
 - optional: useful elaboration, Q&A that adds context but is not essential
-- remove: admin announcements, dead time, off-topic discussion, repetition of already-labelled content
+- remove: admin announcements, dead time, off-topic discussion, repetition
 
-Ensure must_keep segments collectively cover all key concepts.
-Output ONLY valid JSON — no prose, no markdown fences.
-"""
+Ensure must_keep segments collectively cover all key concepts."""
+
+
+SEGMENTATION_TOOL = {
+    "name": "segment_transcript",
+    "description": "Segment and label transcript segments",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "segments": {
+                "type": "array",
+                "description": "List of labeled segments",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "start_time": {
+                            "type": "string",
+                            "pattern": "^\\d{1,2}:\\d{2}:\\d{2}$",
+                            "description": "Start time HH:MM:SS"
+                        },
+                        "end_time": {
+                            "type": "string",
+                            "pattern": "^\\d{1,2}:\\d{2}:\\d{2}$",
+                            "description": "End time HH:MM:SS"
+                        },
+                        "label": {
+                            "type": "string",
+                            "enum": ["must_keep", "optional", "remove"],
+                            "description": "Segment importance label"
+                        },
+                        "concept": {
+                            "type": "string",
+                            "description": "Key concept covered in segment"
+                        },
+                        "speaker": {
+                            "type": "string",
+                            "description": "Speaker label"
+                        },
+                        "rationale": {
+                            "type": "string",
+                            "description": "One sentence explaining the label"
+                        }
+                    },
+                    "required": ["start_time", "end_time", "label", "concept", "speaker", "rationale"]
+                }
+            }
+        },
+        "required": ["segments"]
+    }
+}
 
 
 class ConceptSegmentationAgent:
@@ -67,16 +107,43 @@ class ConceptSegmentationAgent:
         response = self.client.messages.create(
             model=self.model,
             max_tokens=8096,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": json.dumps({
-                "session_id": session_id,
-                "transcript": transcript[:8000],
-                "speaker_segments": speaker_segments[:100]
-            })}]
+            system=[
+                {
+                    "type": "text",
+                    "text": SYSTEM_PROMPT,
+                    "cache_control": {"type": "ephemeral"}
+                }
+            ],
+            tools=[SEGMENTATION_TOOL],
+            tool_choice="auto",
+            messages=[{
+                "role": "user",
+                "content": f"""Segment and label this transcript:
+
+Transcript:
+{transcript[:8000]}
+
+Speaker segments:
+{json.dumps(speaker_segments[:100], indent=2)}
+
+Use the segment_transcript tool to provide structured segmentation."""
+            }]
         )
 
-        data = json.loads(response.content[0].text)
-        segments = [Segment(**item) for item in data]
+        # Extract tool use result
+        segments_data = []
+        for block in response.content:
+            if block.type == "tool_use":
+                segments_data = block.input.get("segments", [])
+                break
+
+        if not segments_data:
+            log_error("ConceptSegmentationAgent", "NoToolUse",
+                     "Claude did not use the segmentation tool",
+                     action_taken="returning empty segments")
+            segments = []
+        else:
+            segments = [Segment(**item) for item in segments_data]
 
         must_keep = [s for s in segments if s.label == "must_keep"]
         optional  = [s for s in segments if s.label == "optional"]

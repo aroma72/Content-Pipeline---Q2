@@ -8,26 +8,72 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import anthropic
 from config import MODEL_OPUS, DRAFTS_DIR
 from logger import log_info, log_error, log_decision
+from agents.error_types import AgentError, ErrorType
 
 
 SYSTEM_PROMPT = """You are EssentialEditAgent — the third step of the Observe pipeline.
 
 Given must_keep and optional segments, create an edit timeline for the essential session video.
 
-Output a JSON object with:
-- edit_timeline: list of {start_time, end_time, chapter_title, transition: fade|cut} dicts
-  (ordered chronologically; all must_keep segments included)
-- chapter_markers: list of {time, title} dicts (one per conceptual section)
-- estimated_duration_minutes: integer
-- editorial_notes: list of notes about tricky edits (e.g. mid-sentence cut, repeat explanation removed)
+Use the generate_edit_timeline tool to provide structured output with:
+- edit segments (all must_keep segments included)
+- chapter markers at conceptual boundaries
+- estimated duration
+- editorial notes about tricky edits
 
 Rules:
-- Include ALL must_keep segments; include optional only if they add essential context
-- Chapter markers must be at clean conceptual boundaries (not mid-explanation)
-- Use fade transitions between major chapters; cut within continuous explanations
+- Include ALL must_keep segments
+- Include optional only if they add essential context
 - Target duration: 30-60 minutes for a 2-hour session
-- Output ONLY valid JSON — no prose, no markdown fences
-"""
+- Use fade transitions between major chapters; cut within continuous explanations"""
+
+
+EDIT_TIMELINE_TOOL = {
+    "name": "generate_edit_timeline",
+    "description": "Generate edit timeline for essential edit video",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "edit_timeline": {
+                "type": "array",
+                "description": "List of segments to include",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "start_time": {"type": "string", "pattern": "^\\d{1,2}:\\d{2}:\\d{2}(\\.\\d+)?$"},
+                        "end_time": {"type": "string", "pattern": "^\\d{1,2}:\\d{2}:\\d{2}(\\.\\d+)?$"},
+                        "chapter_title": {"type": "string"},
+                        "transition": {"type": "string", "enum": ["fade", "cut"]}
+                    },
+                    "required": ["start_time", "end_time", "chapter_title", "transition"]
+                }
+            },
+            "chapter_markers": {
+                "type": "array",
+                "description": "Chapter markers at conceptual boundaries",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "time": {"type": "string"},
+                        "title": {"type": "string"}
+                    }
+                }
+            },
+            "estimated_duration_minutes": {
+                "type": "integer",
+                "minimum": 15,
+                "maximum": 120,
+                "description": "Estimated duration of final edit in minutes"
+            },
+            "editorial_notes": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Notes about tricky edits or decisions"
+            }
+        },
+        "required": ["edit_timeline", "chapter_markers", "estimated_duration_minutes", "editorial_notes"]
+    }
+}
 
 
 class EssentialEditAgent:
@@ -62,19 +108,40 @@ class EssentialEditAgent:
             return {"status": "error", "session_id": session_id, "error": str(e)}
 
     async def _execute(self, session_id: str, must_keep: list[dict], optional: list[dict], recording_path: str) -> dict:
-        # Step 1: Claude decides the edit timeline
+        # Step 1: Claude decides the edit timeline using tool
         response = self.client.messages.create(
             model=self.model,
             max_tokens=4096,
             system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": json.dumps({
-                "session_id": session_id,
-                "must_keep_segments": must_keep,
-                "optional_segments": optional
-            })}]
+            tools=[EDIT_TIMELINE_TOOL],
+            tool_choice="auto",
+            messages=[{
+                "role": "user",
+                "content": f"""Edit planning for session {session_id}:
+
+Must-keep segments:
+{json.dumps(must_keep, indent=2)}
+
+Optional segments:
+{json.dumps(optional, indent=2)}
+
+Use the generate_edit_timeline tool to create the edit plan."""
+            }]
         )
 
-        plan = json.loads(response.content[0].text)
+        # Extract tool use result
+        plan = None
+        for block in response.content:
+            if block.type == "tool_use":
+                plan = block.input
+                break
+
+        if not plan:
+            log_error("EssentialEditAgent", "NoToolUse",
+                     "Claude did not use the timeline tool",
+                     action_taken="skipping essential edit")
+            return {"status": "error", "session_id": session_id, "error": "No edit timeline generated"}
+
         session_dir = DRAFTS_DIR / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
 

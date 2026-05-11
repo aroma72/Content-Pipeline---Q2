@@ -1,0 +1,11 @@
+{
+  "step_name": "voiceover",
+  "overall_score": 0.5,
+  "passed": false,
+  "issues": [
+    "Quality review encountered an error"
+  ],
+  "recommendations": [],
+  "summary": "Manual review recommended",
+  "assessed_at": "2026-05-07T16:24:51.156634"
+}

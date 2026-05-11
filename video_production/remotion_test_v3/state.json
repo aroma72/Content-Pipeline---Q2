@@ -1,0 +1,30 @@
+{
+  "production_id": "remotion_test_v3",
+  "config": {
+    "production_id": "remotion_test_v3",
+    "series_title": "Systems Evaluations",
+    "script_path": "video_scripts/systems_evaluations_video_1.md",
+    "voice_id": "EXAVITQu4vr4xnSDxMaL",
+    "voice_stability": 0.75,
+    "total_videos": 4,
+    "target_resolution": "1920x1080",
+    "fps": 30,
+    "created_at": "2026-05-07T16:24:48.483441"
+  },
+  "current_stage": "voiceover",
+  "voiceovers": [],
+  "animations": [],
+  "assembled_videos": [],
+  "post_production_results": [],
+  "quality_reports": [],
+  "review_decisions": {
+    "voiceover": {
+      "decision": "approve",
+      "instructions": null,
+      "decided_at": "2026-05-07T16:24:56.078516"
+    }
+  },
+  "distribution_urls": {},
+  "started_at": "2026-05-07T16:24:49.030222",
+  "completed_at": null
+}

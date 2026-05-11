@@ -6,27 +6,43 @@
 
 ## Teaching Brief
 
-### What Learners Already Know
-- How agents work (perceive → act → observe loop)
-- How to build MCP servers and connect Claude
-- Basic metrics (accuracy, precision, recall from ML intro)
-- What "good output" means for their domain
-- Python and testing frameworks basics
-- Drawing Room pipeline (signal → content → publish)
+### What Learners Already Know (Evidence-Based)
+
+**Agent fundamentals**: All active learners have built multi-agent systems. Hasnat's WhatsApp monitor (54 groups, 9 AM auto-reporting), Moiz's 7-agent pipeline, Muzzammil's 3+ iterations on agent design, Muhammad Zain's 8 data connectors (CSV, Odoo, SAP, Oracle, QuickBooks, Meezan, PDF). They understand perceive → act → observe, tool calling, JSON passing between stages.
+
+**Claude API & Tool Use**: Across 11+ sessions, all learners use `messages.create()` competently. Moiz enforces: *"An agent receives JSON from prior agent. Outputs JSON via structured tool call only."* Muzzammil pre-computes numbers in Python then passes as context. Hira runs FastAPI + Streamlit backends. They distinguish between in-code functions and tool calls.
+
+**MCP (some depth)**: Muhammad Zain deliberately built an MCP server (deployed on Railway) to expose reconciliation tools. He documented intent: *"MCP is Anthropic's open standard for agentic tool use."* Muaiz configured MCP on Claude client side (waiting on API key). Most others use inline tool definitions. One learner (Bushra) chose NOT to use LLMs for core features: *"rules are auditable; LLM calls are black boxes"* — she values auditability.
+
+**Python & Testing**: Muhammad Zain's 8 connectors, Hira's Railway deployments with Procfiles, Muzzammil's pipeline automation — all write and debug Python independently. No re-teaching needed on basics.
+
+**Production mindedness**: Bushra's ADR-3 on auditability, Hasnat's live scheduler for WhatsApp reports, Muhammad Zain's production bank-recon agent — learners think about real systems, not just demos.
+
+**Drawing Room context**: They've seen the orchestrator loop (record → extract → content → publish). They know what "good output" looks like: learner pack with glossary, watch order, assignments.
 
 ### Likely Weak Spots (Watch These During the Session)
-- **Confusing evaluation with testing** — they'll think "testing = unit tests". Evaluation is broader: does the agent achieve its goal? Is output quality acceptable? Does it handle edge cases?
-- **Metric overload** — they'll want to measure everything. Be clear: pick 3-5 metrics that matter for *this* system, not 30.
-- **Not knowing where to start** — they'll ask "how do I measure if Claude is good?" Answer: start with human evaluation, then derive metrics from that.
-- **Treating evaluation as one-time** — they'll build once and move on. Emphasize: evaluation is continuous. You measure, tweak, measure again.
-- **Assuming all agents are the same** — they'll try to apply generic metrics. Remind: Drawing Room's orchestrator needs different metrics than a chatbot.
+
+**Confusing evaluation with testing**: They know unit tests and integration tests. They don't yet think about agent-level evaluation (end-to-end outcomes). They'll default to: "Write tests. Done." Push back: Testing checks if code executes. Evaluation checks if the agent *solves the problem it's supposed to solve*.
+
+**Metric overload**: Strong learners (especially those with data background) will want to measure everything: accuracy, latency, cost, tokens, hallucination rate, etc. Redirect: Start with 3 metrics aligned to your goal. Moiz's rule is about clarity — apply it here: *"What one thing would make this agent 'good'? Measure that first."*
+
+**Not knowing where to start**: They've never designed evaluation from scratch. They'll ask: "How do I measure if Drawing Room is good?" Answer: Start with human judgment. Have someone (Aroma, QA, domain expert) review outputs. Ask: "Is this good?" Extract patterns. Turn patterns into metrics. Human eval is your north star.
+
+**Treating evaluation as one-time**: They schedule and forget. Emphasize: Muhammad Zain's production agent requires continuous monitoring. If he ships and never evaluates again, he won't know when it breaks. Evaluation is a loop: measure → improve → measure → improve. This is how agents stay good in production.
+
+**MCP confusion may leak here**: Some learners conflate "tool calling" with "evaluation." They might say: "I'll just have Claude call a tool to evaluate itself." Gently redirect: Claude calling a tool is *action*. Evaluation is *judgment*. They're different. Evaluation requires external signals (human review, ground truth, metrics) to be meaningful. Claude alone can't evaluate itself without those signals.
+
+**Bushra's auditability principle**: This learner explicitly rejects LLM-based decisions for critical logic (*"black box"*). She may push back on using Claude for evaluation. Validate her concern: *"You're right — if evaluation is critical, rules-based checks are more auditable. Use Claude for content generation; use explicit rules for evaluation gates."* Frame evaluation as a mix: automated checks (auditable) + metrics (trackable) + human review (nuanced).
 
 ### Do NOT Reteach (They Have This)
-- What an agent is or how the loop works
-- Basic Python testing (unittest, pytest)
-- What accuracy/precision mean
-- How to read CSV or JSON files
-- Basic SQL queries
+
+- **What an agent is**: Hasnat, Muzzammil, Moiz, Muhammad Zain all have production agents running. Hasnat's WhatsApp monitor auto-reports, Muhammad Zain's bank-recon agent is deployed. They understand perception → decision → action deeply.
+- **Tool calling & tool use**: Moiz's 7-tool agent pipeline, Muzzammil's tool orchestration, Hira's REST integration. They know the difference between in-code functions and tool definitions. Muzzammil explicitly documents: *"Tools expose actions to Claude. Functions stay in Python."*
+- **Claude API (`messages.create`) and how Claude works**: 11+ sessions of API work. Bushra debugged her own API key error. They don't need explanation of `max_tokens`, `system` prompts, or response format.
+- **JSON and REST APIs**: WhatsApp webhook handling (Hira, Hasnat, Muzzammil), Railway deployments with JSON configs. They read/write JSON competently.
+- **Python scripting and debugging**: All learners write Python independently. Muhammad Zain built 8 data connectors requiring debugging. No pip/import/pytest basics needed.
+- **The concept of "structured data"**: Moiz enforces JSON-only agent communication. They understand schemas, data contracts, and structured output requirements.
+- **Why automation matters**: All learners have built pipelines and schedulers. They've felt the pain of manual vs automated workflows. You don't need to motivate them on this.
 
 ---
 
@@ -43,18 +59,43 @@
 
 ---
 
+## What Makes This Cohort Special (And How to Teach Them)
+
+**They're strong practitioners, not novices.**
+- Avoid "here's the basics" framing. They know the basics. They want to know how to apply it to their systems.
+- Avoid theory without grounding. Every concept should connect to a system they've built or know about.
+- Challenge them. They appreciate rigor. Push them toward sophisticated evaluation design, not just "measure accuracy."
+
+**They're pipeline thinkers.**
+- They understand loops, scheduling, orchestration. They'll naturally grasp "evaluation is a loop" because they live it.
+- Use their pipeline language: "measure → analyze → improve → measure" maps directly to Moiz's agent chain, Hasnat's schedule, Muhammad Zain's monitoring.
+
+**They distinguish code from outcomes.**
+- They know tool calling is code-level (Claude executes a function). But they understand outcome-level thinking too (does the function help users?).
+- They won't be confused if you say "testing is code-level, evaluation is outcome-level." They'll nod and ask "how do I measure outcomes?"
+
+**They value auditability and clarity (especially Bushra).**
+- They appreciate explicit rules over magic. If you propose a metric, justify it. "Why this metric and not that one?"
+- They like decision frameworks. The MEASURE loop works because it's explicit: M-E-A-S-U-R-E. Each step is clear.
+
+**They've shipped code. They know production hurts.**
+- They've felt the pain of a deployment breaking something. Don't motivate them on "why evaluation matters." They know.
+- Instead, focus on "how to design evaluation so you catch breaks faster" and "how to improve faster with good feedback signals."
+
+---
+
 ## Explanation Variants
 
 ### Concept 1: What is Systems Evaluation?
 
-**Variant A — Quality Control Analogy (start here)**
-> "Systems evaluation is to agents what quality control is to factories. You build a product (an agent), then you ask: Does it work? Does it meet standards? What breaks? Where does it fail? Evaluation is how you answer those questions. Without it, you ship broken agents."
+**Variant A — Production Reality (start here — most relevant to this cohort)**
+> "You built an agent and deployed it. Muhammad Zain has his reconciliation agent live on Railway. Hasnat's WhatsApp monitor runs at 9 AM every day. Moiz's 7-agent pipeline processes data hourly. Now the question isn't 'does it compile?' It's 'is it actually working?' Did it produce good output today? Did something break? Is it drifting (performance slowly getting worse)? That's evaluation. It's how you stay confident in production."
 
-**Variant B — Problem-first (use if A doesn't land)**
-> "You've built an agent. Claude can reason, call MCP servers, generate content. But how do you know it's *good*? Good is subjective. Does it generate learning materials that learners actually learn from? Does it publish without errors? Does it handle edge cases? Evaluation answers these. It's the difference between 'it works on my test case' and 'it works in production.'"
+**Variant B — Outcome-first (use if A doesn't land)**
+> "You've built an agent. Claude can reason, call MCP tools, generate content. But here's the hard part: how do you know if it's *good*? Good is subjective. For Drawing Room: does the glossary actually help learners? Can they understand the watch order? Are assignments fair? You can't just run tests and ship. You need evaluation — judgment about whether the system actually solves the problem."
 
-**Variant C — Code-first (use for technical learners)**
-> "Evaluation is a layer on top of your agent. You capture inputs, run the agent, capture outputs, measure quality against criteria (human review, metrics, automated checks). You do this repeatedly: measure → find problems → improve → measure again. It's continuous validation, not one-time testing."
+**Variant C — Comparing to what they know (use for technical/experienced learners)**
+> "You know tool calling — Claude decides what to do based on context. Evaluation is the inverse. *You* decide if Claude's decision was right. Testing checks the code path (did the function run?). Evaluation checks the outcome (did the function solve the problem?). This is how Moiz catches hand-off failures in his 7-agent pipeline. This is how Muhammad Zain knows his reconciliation is correct."
 
 ---
 
@@ -88,6 +129,39 @@
 
 **Variant B — Production Perspective**
 > "Your agent is live. Users interact with it. You log everything: input, output, user feedback. You calculate metrics daily. If metrics drop (e.g., 'pass rate fell from 90% to 85%'), you investigate. Was it a bad deployment? A prompt change? New data type? Evaluation is your early warning system."
+
+---
+
+## Using Peer Projects as Teaching Examples
+
+This cohort has built real agents. Use their work as case studies:
+
+### Muhammad Zain's Bank Reconciliation Agent (Production MCP Server)
+- **What it does**: Deployed agent on Railway that reconciles bank statements against internal records.
+- **Evaluation angle**: "Muhammad Zain's agent processes reconciliations. It's live, handling real financial data. How does he know if it's working correctly? What breaks? He can't just ship and hope. He needs evaluation."
+  - *Metric example*: "Reconciliation match rate — % of transactions correctly matched. Target: 99%+ (financial accuracy)."
+  - *Check example*: "If a transaction matches, verify the amounts are equal. If not, flag for review."
+  - *Human eval example*: "Once a week, Muhammad Zain reviews 10 reconciliations. Are they correct? Is the reasoning sound?"
+
+### Hasnat's WhatsApp Monitor (54 Groups, 9 AM Auto-Report)
+- **What it does**: Scheduled agent that monitors 54 WhatsApp groups and auto-generates reports.
+- **Evaluation angle**: "Hasnat scheduled this to run at 9 AM every day. But how does he know the report is good? What if data is wrong? What if it misses a key thread?"
+  - *Metric example*: "Report completeness — % of relevant threads included in the report."
+  - *Check example*: "Report must include at least one data point from each group. If a group has zero messages, flag it."
+  - *Human eval example*: "Hasnat spot-checks reports weekly. Does it capture what actually happened?"
+
+### Moiz's 7-Agent Pipeline (JSON Chain of Custody)
+- **What it does**: Seven agents in sequence, each receives JSON from the prior agent, outputs JSON to the next.
+- **Evaluation angle**: "Moiz enforces strict JSON communication. But how does he know an upstream agent didn't corrupt data? How does he catch hand-off failures?"
+  - *Metric example*: "Data integrity — JSON schemas validate at each stage. % of outputs that pass schema validation."
+  - *Check example*: "If Agent 3's output doesn't match Agent 4's expected input schema, fail the batch."
+  - *Human eval example*: "Moiz reviews error logs weekly. When validation fails, what went wrong? Prompt issue? Hallucination? Tool misconfiguration?"
+
+### Bushra's Audit-First Design (Rules Over LLMs)
+- **What it does**: Built a system where core logic is rules-based, not LLM-based (ADR-3: "Rules are auditable; LLM calls are black boxes").
+- **Evaluation angle**: "Bushra deliberately rejected using Claude for critical decisions. She values auditability. How would *she* design evaluation?"
+  - *Lesson*: Evaluation and auditability go together. If it's critical, use explicit rules. If you use Claude, have evaluation prove it's trustworthy.
+  - *Apply to Drawing Room*: Should glossary generation be a rule (fixed set of terms) or LLM-driven (Claude extracts concepts)? Both. Rules for structure, Claude for content. Evaluate both layers.
 
 ---
 
@@ -487,28 +561,34 @@ evaluator.print_report(record)
 
 ---
 
-## Common Learner Questions (With Answers)
+## Common Learner Questions (Cohort-Specific Answers)
 
-**Q: Isn't evaluation the same as testing?**
-> A: Not quite. Testing checks if code works (unit tests, integration tests). Evaluation checks if an agent achieves its goal and meets quality standards. A test might pass but evaluation might fail if the output is bad.
+**Q: Should I measure everything (latency, cost, accuracy, hallucination rate, etc.)?**
+> A: No. Moiz's principle: clarity over comprehensiveness. Start with one metric that directly answers "is it working?" For Muhammad Zain's reconciliation agent: "% of transactions correctly matched" (target: 99%+). Everything else is secondary. Add metrics only if you discover gaps in your primary metric.
 
-**Q: How do I evaluate if I don't have ground truth?**
-> A: Use human evaluation. Have someone (you, a teacher, a domain expert) rate outputs. Extract patterns from human ratings and turn them into metrics. Human eval is your ground truth.
+**Q: Can I use Claude to evaluate Claude output?**
+> A: You can, but be careful. Claude can help *gather* evaluation data (extract key points, categorize errors). But the *judgment* should come from external signals: human review, rules-based checks, metrics. Why? Because Claude has no ground truth. It can't audit itself. Bushra's rule applies: if it's critical, don't use LLMs for the judgment.
 
-**Q: What if my metrics are wrong?**
-> A: Start simple. Pick 2-3 metrics that matter. Measure them. Compare against human judgment. If your metrics agree with humans, keep them. If not, adjust. Metrics should *reflect* quality, not define it.
+**Q: I have 7 agents in a pipeline like Moiz. How do I evaluate the whole thing vs individual agents?**
+> A: Two layers. (1) Agent-level: Each agent produces output. Evaluate it before passing to the next agent. (2) End-to-end: Final output from Agent 7. When end-to-end fails, evaluation at each layer tells you where the break is. Set validation gates between stages — if Agent 3's output doesn't match Agent 4's schema, fail loud.
 
-**Q: Should I evaluate on live data or test data?**
-> A: Both. Test data (controlled scenarios) tells you if your agent works. Live data (real users) tells you if it actually helps. Use test data for fast feedback; use live data for validation.
+**Q: Should I evaluate on synthetic test data or real data?**
+> A: Start with synthetic (controlled). Draw up test cases that cover edge cases. Measure on those. Once you're confident, measure on live data. Live data will surprise you (data drift, edge cases you didn't think of). Hasnat's WhatsApp monitor should evaluate on live data (real messages) not synthetic. Live is his ground truth.
 
-**Q: How often should I evaluate?**
-> A: Continuously. Daily is ideal. Weekly minimum. If you only evaluate once, you'll miss regressions. Evaluation is how you catch problems early.
+**Q: How do I know when my agent is good enough to deploy?**
+> A: Define acceptance criteria in writing, upfront. E.g., "glossary must have 5+ terms AND be 80%+ accurate (per human review) AND have zero publishing errors." Measure against these. When you consistently meet them over 2-3 runs, deploy. Muhammad Zain probably has similar criteria for his reconciliation agent.
 
-**Q: What if evaluation shows my agent is bad?**
-> A: That's good news — you found the problem. Now you improve. Maybe it's a prompt issue, a missing context, a tool problem, or a data problem. Use evaluation to diagnose.
+**Q: We're evaluating daily. Metrics fluctuate. How do I know if a change actually improved things?**
+> A: Use a baseline. "Average pass rate last week: 92%. After my prompt change: 94%. That's progress, not noise." Track metrics over time. One good day doesn't mean you're better. One bad day doesn't mean you broke things. Trends matter. Hasnat's 9 AM report runs daily — he should track report quality over time, not judge each day in isolation.
 
-**Q: How do I know when my agent is "good enough"?**
-> A: Define acceptance criteria upfront. E.g., "pass rate >= 85%, no publishing errors, learner satisfaction >= 4/5." Then evaluate against those criteria. When you meet them consistently, you're good enough.
+**Q: Evaluation says my agent is bad. How do I know what to fix?**
+> A: Evaluation should surface *why* it failed, not just that it failed. "Glossary too short (3 terms vs 5 needed)" is diagnosis. "Glossary quality is bad" is just a grade. Categorize failures: prompt issue? Tool issue? Data issue? Each diagnosis suggests a different fix. Moiz's pipeline would tag failures per agent.
+
+**Q: What if evaluation is working but I don't know what to improve?**
+> A: That means either (a) your evaluation isn't detailed enough, or (b) your system is actually good. If (a), add more granular checks: instead of "glossary bad," measure "term count," "definition length," "technical accuracy," "clarity." Break it down. If (b), congratulations — now focus on performance (latency, cost) or adding features.
+
+**Q: How does evaluation change when I update my prompt?**
+> A: Run evaluation before the change (baseline). Apply prompt. Run evaluation after. Compare. Did metrics improve? By how much? Is the improvement real (not just noise) or did you trade one problem for another? Moiz probably does this between agent iterations. Good practice: version your prompts and evaluation results together.
 
 ---
 
@@ -575,13 +655,25 @@ python drawing_room_evaluator.py
 
 ---
 
-## Instructor Notes
+## Instructor Notes (Cohort-Specific)
 
-- **Start with pain.** Show an agent output and ask "Is this good?" Let them struggle to answer. That's the motivation for evaluation.
-- **Human first, metrics second.** Don't jump to numbers. Start with: "What does good look like?" Once you agree, write metrics to capture it.
-- **Use Drawing Room as north star.** Every concept should tie back: "This is how we evaluate the orchestrator." Make it concrete.
-- **The learner task is crucial.** Don't skip it. Designing evaluation is hard. Let them practice in a low-stakes setting.
-- **Emphasize continuous improvement.** Evaluation isn't a one-time gate. It's a loop: measure → improve → measure → improve. This is how production systems get better.
+- **Start with production pain, not theory.** These learners have deployed agents (Muhammad Zain's bank-recon, Hasnat's WhatsApp monitor). Ask: "Muhammad Zain's agent processes reconciliations. How does he know if it's working correctly? What breaks? How does he catch it?" They immediately understand the need for evaluation because they live it.
+
+- **Use peer projects as teaching examples.** 
+  - **Muhammad Zain's MCP server** (deployed on Railway, runs reconciliation logic): "This agent is live. How does Muhammad Zain know it's doing the right thing? What if an edge case breaks it?" This is real evaluation.
+  - **Hasnat's WhatsApp monitor** (auto-reports to 54 groups): "Hasnat scheduled this to run at 9 AM. But how does he know the report is good? What if data is wrong?" Evaluation drives his confidence.
+  - **Moiz's 7-agent pipeline** (each agent passes JSON to the next): "Moiz enforces tool-based communication. But how does he know an upstream agent didn't break downstream logic?" This is where evaluation catches hand-off failures.
+  - **Bushra's audit-first design** (no LLM for core logic): "Bushra chose rules over LLMs because rules are auditable. She'd design evaluation to verify those rules hold. Learn from her discipline."
+
+- **Human first, metrics second.** These learners design systems, so they'll think about logic upfront. Redirect: "What does 'good output' look like? Not code-level. System-level. Does the glossary help learners? Can they understand the watch order? Are assignments graded fairly?" Once they agree on human judgment, then write metrics to capture it.
+
+- **Evaluation is not testing — frame it against their tool-use knowledge.** They know tool calling is how Claude decides what to do. Evaluation is how *you* decide if Claude's decisions were right. Testing checks the code path. Evaluation checks the outcome. They understand this distinction from their agents.
+
+- **Emphasize continuous loops.** Moiz's pipeline is a loop. Hasnat schedules recurring runs. Muhammad Zain monitors production. Frame evaluation as the same: measure → analyze → improve → measure. This isn't new conceptually; they live it. Just apply it to quality, not just scheduling.
+
+- **The learner task is crucial.** They're strong, so don't hold back. Push them to design evaluation for a realistic scenario (e.g., "Your agent generates lesson plans. How do you know if they're good?"). Their answers will be sophisticated. Use their ideas to deepen the conversation.
+
+- **Address the MCP question if it comes up.** Some may ask: "Can I use MCP to expose evaluation tools? Can Claude call an evaluation tool?" Answer: "You *can*, but you shouldn't — at least not for the final judgment. Claude can call a tool to gather data or run checks. But evaluation should use external signals (human review, metrics, rules) that Claude doesn't control. Keep evaluation outside the agent loop for clarity."
 
 ---
 
@@ -751,13 +843,3 @@ python drawing_room_evaluator.py
 ```
 
 **Verify it works before learners arrive**: Run the evaluator on sample data, confirm metrics are calculated and report is printed correctly.
-
----
-
-## Instructor Notes
-
-- **Start with pain.** Show an agent output and ask "Is this good?" Let them struggle to answer. That's the motivation for evaluation.
-- **Human first, metrics second.** Don't jump to numbers. Start with: "What does good look like?" Once you agree, write metrics to capture it.
-- **Use Drawing Room as north star.** Every concept should tie back: "This is how we evaluate the orchestrator." Make it concrete.
-- **The learner task is crucial.** Don't skip it. Designing evaluation is hard. Let them practice in a low-stakes setting.
-- **Emphasize continuous improvement.** Evaluation isn't a one-time gate. It's a loop: measure → improve → measure → improve. This is how production systems get better.

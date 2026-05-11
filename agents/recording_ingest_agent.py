@@ -74,7 +74,13 @@ class RecordingIngestAgent:
         response = self.client.messages.create(
             model=self.model,
             max_tokens=8096,
-            system=SYSTEM_PROMPT,
+            system=[
+                {
+                    "type": "text",
+                    "text": SYSTEM_PROMPT,
+                    "cache_control": {"type": "ephemeral"}
+                }
+            ],
             messages=[{"role": "user", "content": json.dumps({
                 "session_id": session_id,
                 "raw_transcript": raw_transcript
