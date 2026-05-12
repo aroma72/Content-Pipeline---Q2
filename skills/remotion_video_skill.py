@@ -10,7 +10,16 @@ from agents.error_types import AgentError, ErrorType
 
 
 class RemotionVideoSkill:
-    """Generate videos programmatically using Remotion (React video framework)."""
+    """
+    Generate videos programmatically using Remotion (React video framework).
+
+    TYPOGRAPHY STANDARDS (ENFORCED):
+    - Regular body text: 16px, bold (weight 700)
+    - Captions: 40px, bold
+    - Diagram labels: 32px, bold
+    - NO transform: scale() on text elements (causes distortion)
+    - See: skills/TYPOGRAPHY_STANDARDS.md
+    """
 
     def __init__(self, remotion_project_dir: str | None = None):
         """
