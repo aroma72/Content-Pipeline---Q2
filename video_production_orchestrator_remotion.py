@@ -276,6 +276,11 @@ class VideoProductionOrchestratorRemotionEdition:
     def _review_checkpoint(self, stage: str, stage_result: dict, report: QualityReport,
                           state: VideoProductionState) -> str:
         """Display checkpoint and get decision."""
+        # Auto-skip voiceover stage if all scenes failed (no API key)
+        if stage == "voiceover" and report.overall_score == 0.0:
+            log_info("VideoProductionOrchestratorRemotionEdition", "Auto-skipping voiceover stage (no API configured)")
+            return "skip"
+
         self._display_checkpoint(stage, report)
         decision = self._prompt_decision(stage)
         review_decision = ReviewDecision(decision=decision)

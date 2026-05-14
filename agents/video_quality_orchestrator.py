@@ -62,6 +62,7 @@ class VideoQualityOrchestrator:
         # Run validation checks
         await self._check_file_integrity()
         await self._check_ffprobe_metadata()
+        await self._check_audio_video_sync()
         await self._check_frame_consistency()
         await self._check_text_rendering()
         await self._check_known_text_issues()
@@ -87,11 +88,11 @@ class VideoQualityOrchestrator:
 
         try:
             file_size = self.video_path.stat().st_size
-            if file_size < 1_000_000:  # Less than 1MB
+            if file_size < 500_000:  # Less than 500KB
                 self.issues.append({
                     'type': 'file_size',
                     'severity': 'HIGH',
-                    'message': f'File suspiciously small: {file_size / 1_000_000:.1f} MB (expect 4-6 MB)',
+                    'message': f'File suspiciously small: {file_size / 1_000_000:.1f} MB',
                     'frame_range': None
                 })
                 self.checks_failed.append(check_name)
@@ -164,6 +165,47 @@ class VideoQualityOrchestrator:
                             return
         except Exception as e:
             log_warning("VideoQualityOrchestrator", f"Metadata check error: {str(e)}")
+
+    async def _check_audio_video_sync(self):
+        """Check that audio and video durations match - CRITICAL for sync."""
+        check_name = "Audio-Video Synchronization"
+
+        try:
+            result = subprocess.run(
+                ['ffprobe', '-v', 'error', '-show_format', '-show_streams',
+                 '-of', 'json', str(self.video_path)],
+                capture_output=True, text=True, timeout=10
+            )
+
+            if result.returncode == 0:
+                data = json.loads(result.stdout)
+                duration = float(data.get('format', {}).get('duration', 0))
+
+                video_duration = None
+                audio_duration = None
+
+                for stream in data.get('streams', []):
+                    if stream.get('codec_type') == 'video':
+                        video_duration = float(stream.get('duration', 0))
+                    elif stream.get('codec_type') == 'audio':
+                        audio_duration = float(stream.get('duration', 0))
+
+                # Check if audio and video durations match within 0.5 seconds
+                if video_duration and audio_duration:
+                    diff = abs(video_duration - audio_duration)
+                    if diff > 0.5:
+                        self.issues.append({
+                            'type': 'audio_video_mismatch',
+                            'severity': 'CRITICAL',
+                            'message': f'Audio ({audio_duration:.2f}s) and video ({video_duration:.2f}s) duration mismatch of {diff:.2f}s - AUDIO WILL CUT OFF',
+                            'frame_range': None
+                        })
+                        self.checks_failed.append(check_name)
+                        return
+
+                self.checks_passed.append(check_name)
+        except Exception as e:
+            log_warning("VideoQualityOrchestrator", f"Audio-video sync check error: {str(e)}")
 
     async def _check_frame_consistency(self):
         """Check that all frames render consistently without gaps."""

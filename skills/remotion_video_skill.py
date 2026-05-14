@@ -174,13 +174,17 @@ class RemotionVideoSkill:
         Returns:
             Dict with composition_code and composition_id for registration
         """
+        import os
         import anthropic
+        from dotenv import load_dotenv
         from config import MODEL_HAIKU
 
+        load_dotenv()
         log_info("RemotionVideoSkill", f"Generating composition code for {scene_id}")
 
         try:
-            client = anthropic.Anthropic()
+            api_key = os.getenv("ANTHROPIC_API_KEY")
+            client = anthropic.Anthropic(api_key=api_key)
 
             system_prompt = """You are a Remotion video code generator. Write React/TypeScript code for a Remotion composition.
 

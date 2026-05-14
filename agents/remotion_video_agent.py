@@ -180,13 +180,17 @@ class RemotionVideoAgent:
     def _build_multi_scene_composition(self, video_number: int, scenes: list[dict],
                                        config: VideoProductionConfig) -> str | None:
         """Build Remotion composition code for all scenes."""
+        import os
         import anthropic
+        from dotenv import load_dotenv
         from config import MODEL_SONNET
 
+        load_dotenv()
         log_info("RemotionVideoAgent", f"Generating Remotion composition for video {video_number}")
 
         try:
-            client = anthropic.Anthropic()
+            api_key = os.getenv("ANTHROPIC_API_KEY")
+            client = anthropic.Anthropic(api_key=api_key)
 
             scenes_json = json.dumps(scenes, indent=2)
 
