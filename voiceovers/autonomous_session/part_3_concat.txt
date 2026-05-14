@@ -1,0 +1,6 @@
+file 'C:\Users\Aroma Tahir\Downloads\Content Queen\voiceovers\autonomous_session\part_3_1_challenge.mp3'
+file 'C:\Users\Aroma Tahir\Downloads\Content Queen\voiceovers\autonomous_session\part_3_2_three_tools.mp3'
+file 'C:\Users\Aroma Tahir\Downloads\Content Queen\voiceovers\autonomous_session\part_3_3_workflow.mp3'
+file 'C:\Users\Aroma Tahir\Downloads\Content Queen\voiceovers\autonomous_session\part_3_4_why_works.mp3'
+file 'C:\Users\Aroma Tahir\Downloads\Content Queen\voiceovers\autonomous_session\part_3_5_real_example.mp3'
+file 'C:\Users\Aroma Tahir\Downloads\Content Queen\voiceovers\autonomous_session\part_3_6_next_step.mp3'

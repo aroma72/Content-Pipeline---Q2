@@ -1,0 +1,6 @@
+file 'C:\Users\Aroma Tahir\Downloads\Content Queen\voiceovers\autonomous_session\part_2_1_what_is.mp3'
+file 'C:\Users\Aroma Tahir\Downloads\Content Queen\voiceovers\autonomous_session\part_2_2_seven_pillars.mp3'
+file 'C:\Users\Aroma Tahir\Downloads\Content Queen\voiceovers\autonomous_session\part_2_3_why_measure.mp3'
+file 'C:\Users\Aroma Tahir\Downloads\Content Queen\voiceovers\autonomous_session\part_2_4_testing_vs.mp3'
+file 'C:\Users\Aroma Tahir\Downloads\Content Queen\voiceovers\autonomous_session\part_2_5_three_levels.mp3'
+file 'C:\Users\Aroma Tahir\Downloads\Content Queen\voiceovers\autonomous_session\part_2_6_gap.mp3'

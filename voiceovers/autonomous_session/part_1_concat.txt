@@ -1,0 +1,6 @@
+file 'C:\Users\Aroma Tahir\Downloads\Content Queen\voiceovers\autonomous_session\part_1_1_opening.mp3'
+file 'C:\Users\Aroma Tahir\Downloads\Content Queen\voiceovers\autonomous_session\part_1_2_consumer.mp3'
+file 'C:\Users\Aroma Tahir\Downloads\Content Queen\voiceovers\autonomous_session\part_1_3_problem.mp3'
+file 'C:\Users\Aroma Tahir\Downloads\Content Queen\voiceovers\autonomous_session\part_1_4_producer.mp3'
+file 'C:\Users\Aroma Tahir\Downloads\Content Queen\voiceovers\autonomous_session\part_1_5_why_matters.mp3'
+file 'C:\Users\Aroma Tahir\Downloads\Content Queen\voiceovers\autonomous_session\part_1_6_shift.mp3'
