@@ -124,16 +124,19 @@ def render_silent_video(part_num, composition_id, frames):
     return None
 
 def mux_video_audio(part_num, video_path, audio_path):
-    """Mux video + audio"""
+    """Mux video + audio, replacing any existing audio track"""
     output = OUTPUT_DIR / f"autonomous_session_part_{part_num}_final.mp4"
 
+    # Use -map to explicitly select video from video file and audio from audio file
+    # This ensures we're using our VO audio, not the silent track from Remotion
     cmd = [
         FFMPEG_PATH,
         "-i", str(video_path),
         "-i", str(audio_path),
+        "-map", "0:v:0",  # Take video stream from first input
+        "-map", "1:a:0",  # Take audio stream from second input
         "-c:v", "copy",
         "-c:a", "aac",
-        "-shortest",
         "-y",
         str(output)
     ]
