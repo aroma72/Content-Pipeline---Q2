@@ -1,0 +1,32 @@
+[
+  {
+    "start": 240,
+    "end": 629,
+    "reason": "technical_setup",
+    "summary": "Pre-session silence, audio checks, and setup before the actual content begins"
+  },
+  {
+    "start": 1985,
+    "end": 2399,
+    "reason": "technical_setup",
+    "summary": "Long stretch of garbled/repeated transcript fragments ('\u0645\u0632\u06cc\u062f', 'complaints', 'department') indicating audio issues or silence"
+  },
+  {
+    "start": 3045,
+    "end": 3399,
+    "reason": "repeated_content",
+    "summary": "Repetitive fragmented content about autonomy scale and production systems, largely incomprehensible repetition"
+  },
+  {
+    "start": 4216,
+    "end": 4350,
+    "reason": "off_topic",
+    "summary": "Off-topic tangent about a swing/jhoola behind participant and oil spray - unrelated to course"
+  },
+  {
+    "start": 4560,
+    "end": 4607.869,
+    "reason": "housekeeping",
+    "summary": "Closing remarks about office iftaar and final goodbyes"
+  }
+]

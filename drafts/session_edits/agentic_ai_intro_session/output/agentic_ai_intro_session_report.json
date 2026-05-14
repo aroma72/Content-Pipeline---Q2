@@ -1,0 +1,25 @@
+{
+  "session_name": "agentic_ai_intro_session",
+  "generated_at": "2026-05-14T11:56:26.600621",
+  "original_duration_seconds": 4607.869,
+  "edited_duration_seconds": 2615.0,
+  "reduction_percent": 43.24925469886405,
+  "silence_cuts_count": 67,
+  "silence_time_removed_seconds": 705.752392,
+  "ai_cuts_count": 5,
+  "ai_time_removed_seconds": 1338.8689999999997,
+  "keep_segments_count": 21,
+  "cuts_breakdown": [
+    {
+      "type": "silence",
+      "count": 67,
+      "total_time": 705.752392
+    },
+    {
+      "type": "ai_identified",
+      "count": 5,
+      "total_time": 1338.8689999999997
+    }
+  ],
+  "output_video": "C:\\Users\\Aroma Tahir\\Downloads\\Content Queen\\drafts\\session_edits\\agentic_ai_intro_session\\output\\agentic_ai_intro_session_edited.mp4"
+}

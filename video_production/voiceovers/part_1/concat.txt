@@ -1,0 +1,5 @@
+file 'C:\Users\Aroma Tahir\Downloads\Content Queen\video_production\voiceovers\part_1\s1.mp3'
+file 'C:\Users\Aroma Tahir\Downloads\Content Queen\video_production\voiceovers\part_1\s2.mp3'
+file 'C:\Users\Aroma Tahir\Downloads\Content Queen\video_production\voiceovers\part_1\s3.mp3'
+file 'C:\Users\Aroma Tahir\Downloads\Content Queen\video_production\voiceovers\part_1\s4.mp3'
+file 'C:\Users\Aroma Tahir\Downloads\Content Queen\video_production\voiceovers\part_1\s5.mp3'
