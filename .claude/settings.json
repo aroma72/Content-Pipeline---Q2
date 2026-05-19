@@ -34,5 +34,47 @@
       "memory/MEMORY.md",
       ".claude/logs/"
     ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "name": "block-bad-commands",
+        "script": ".claude/hooks/block-bad-commands.sh",
+        "description": "Block force-push to main, .env commits, ElevenLabs without permission"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "name": "guard-file-writes",
+        "script": ".claude/hooks/guard-file-writes.sh",
+        "description": "Block CLAUDE.md > 150 lines"
+      },
+      {
+        "name": "validate-after-write",
+        "script": ".claude/hooks/validate-after-write.sh",
+        "description": "Validate Python syntax, enforce frontmatter"
+      }
+    ],
+    "SessionStart": [
+      {
+        "name": "session-start",
+        "script": ".claude/hooks/session-start.sh",
+        "description": "Inject open beads from .beads/status.jsonl"
+      }
+    ],
+    "SessionEnd": [
+      {
+        "name": "session-end",
+        "script": ".claude/hooks/session-end.sh",
+        "description": "Warn about open beads and unstaged changes"
+      }
+    ]
+  },
+  "harness_config": {
+    "standards_dir": ".claude/standards/",
+    "beads_dir": ".beads/",
+    "agents_dir": ".claude/agents/",
+    "skills_dir": ".claude/skills/",
+    "scripts_dir": ".claude/scripts/"
   }
 }
