@@ -1,0 +1,12 @@
+[
+  {
+    "unit_id": "unit-001",
+    "assignment_title": "Group Decision Simulation",
+    "instructions": "Facilitate a group decision on a complex scenario with competing interests.",
+    "rubric": [
+      {"criterion": "Process quality", "weight": 0.4},
+      {"criterion": "Outcome fairness", "weight": 0.3},
+      {"criterion": "Communication", "weight": 0.3}
+    ]
+  }
+]

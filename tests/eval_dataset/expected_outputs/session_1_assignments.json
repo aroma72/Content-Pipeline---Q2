@@ -1,0 +1,21 @@
+[
+  {
+    "unit_id": "unit-001",
+    "assignment_title": "Gradient Direction Task",
+    "instructions": "Implement a simple gradient descent step and explain why we subtract.",
+    "rubric": [
+      {"criterion": "Code correctness", "weight": 0.4},
+      {"criterion": "Explanation clarity", "weight": 0.4},
+      {"criterion": "Insight quality", "weight": 0.2}
+    ]
+  },
+  {
+    "unit_id": "unit-002",
+    "assignment_title": "Backprop Trace",
+    "instructions": "Trace gradients backwards through a 3-layer network.",
+    "rubric": [
+      {"criterion": "Trace accuracy", "weight": 0.6},
+      {"criterion": "Notation clarity", "weight": 0.4}
+    ]
+  }
+]

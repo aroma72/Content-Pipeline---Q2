@@ -5,28 +5,15 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import anthropic
 from schemas import ContentUnit, LearnerPack
-from config import MODEL_SONNET
+from config import MODEL_SONNET, PROMPTS_DIR
 from logger import log_info, log_error, log_decision
 
 
-SYSTEM_PROMPT = """You are ContentProductionSkill — the Act stage of an L&D content orchestrator.
-
-Your job: generate a complete learner-facing pack for a content unit.
-
-Output a JSON object with these fields:
-- unit_id: same as input
-- session_summary: markdown string (heading + Learning Outcomes + Key Concepts + Common Misconceptions + Next Steps)
-- glossary: markdown table (Term | Definition | Example) — min 5 terms
-- watch_order: markdown ordered list (essential edit first, then concept clips, then optional quiz)
-- key_concepts: list of concept strings (3-7 concepts)
-- common_misconceptions: list of {misconception, clarification} dicts
-
-Rules:
-- Plain language: 12-14 year reading level unless course specifies otherwise
-- Outcomes must be observable behaviours, not vague feelings
-- Glossary definitions must be one sentence maximum
-- Output ONLY valid JSON — no prose, no markdown fences
-"""
+def _load_prompt(name: str) -> str:
+    prompt_file = PROMPTS_DIR / f"{name}.txt"
+    if not prompt_file.exists():
+        raise FileNotFoundError(f"Prompt not found: {prompt_file}")
+    return prompt_file.read_text(encoding="utf-8")
 
 
 class ContentProductionSkill:
@@ -38,10 +25,11 @@ class ContentProductionSkill:
         log_info("ContentProductionSkill", f"Generating learner pack for unit {unit.id}")
 
         try:
+            system_prompt = _load_prompt("content_producer")
             response = self.client.messages.create(
                 model=self.model,
                 max_tokens=4096,
-                system=SYSTEM_PROMPT,
+                system=system_prompt,
                 messages=[{"role": "user", "content": json.dumps(unit.model_dump())}]
             )
 

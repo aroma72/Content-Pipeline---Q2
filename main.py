@@ -76,7 +76,7 @@ def main():
     args = parser.parse_args()
 
     if args.dry_run:
-        print("\n🔍 DRY RUN MODE — no API calls will be made\n")
+        print("\nDRY RUN MODE — no API calls will be made\n")
         _dry_run_report(args.week)
         return
 
@@ -91,7 +91,7 @@ def _run_weekly_cycle(week: int | None):
     orchestrator = ContentOrchestrator(cycle_week=week)
 
     log_info("main", f"Starting weekly cycle {orchestrator.cycle_week}")
-    print(f"\n🚀 Drawing Room — Weekly Cycle {orchestrator.cycle_week} ({date.today()})\n")
+    print(f"\nDrawing Room — Weekly Cycle {orchestrator.cycle_week} ({date.today()})\n")
 
     result = orchestrator.run_weekly_cycle(
         raw_signals=SAMPLE_RAW_SIGNALS,
@@ -100,7 +100,7 @@ def _run_weekly_cycle(week: int | None):
         instructor_feedback=SAMPLE_FEEDBACK
     )
 
-    print(f"\n✅ Cycle {orchestrator.cycle_week} status: {result['status']}")
+    print(f"\nCycle {orchestrator.cycle_week} status: {result['status']}")
     if result["status"] == "complete":
         health = result.get("health_records", [])
         keep    = sum(1 for h in health if h["decision"] == "keep")
@@ -124,14 +124,14 @@ def _run_single_session(recording_path: str):
     from pathlib import Path
 
     session_id = f"manual_{date.today().isoformat()}"
-    print(f"\n🎬 Processing single session: {recording_path}")
+    print(f"\nProcessing single session: {recording_path}")
     print(f"   Session ID: {session_id}\n")
 
     async def _pipeline():
         ingest = RecordingIngestAgent()
         r = await ingest.run_async(session_id, recording_path)
         if r.get("status") != "success":
-            print(f"❌ Ingest failed: {r.get('error', 'unknown')}")
+            print(f"ERROR: Ingest failed: {r.get('error', 'unknown')}")
             return
 
         transcript = Path(r["transcript_path"]).read_text(encoding="utf-8")

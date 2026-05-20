@@ -1,0 +1,11 @@
+{
+  "signals": [
+    {
+      "source": "group_discussion",
+      "concept": "social_dynamics",
+      "text": "Learners struggling with group decision-making",
+      "date": "2026-05-20",
+      "recurrence": 5
+    }
+  ]
+}

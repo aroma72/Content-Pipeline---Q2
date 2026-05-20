@@ -1,0 +1,11 @@
+[
+  {
+    "id": "unit-001",
+    "outcome": "Identify your own emotional states using self-reflection",
+    "signal_ids": ["sig-001"],
+    "format": "video",
+    "assigned_agent": "ContentProductionSkill",
+    "target_publish_date": "2026-05-25",
+    "evidence_method": "assignment"
+  }
+]

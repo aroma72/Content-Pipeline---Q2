@@ -1,0 +1,25 @@
+{
+  "signals": [
+    {
+      "source": "learner_question",
+      "concept": "gradient_descent",
+      "text": "I don't understand why we subtract the gradient. Shouldn't adding make it go up?",
+      "date": "2026-05-20",
+      "recurrence": 4
+    },
+    {
+      "source": "repeated_confusion",
+      "concept": "backpropagation",
+      "text": "Multiple learners confused about how gradients flow backwards through layers",
+      "date": "2026-05-20",
+      "recurrence": 6
+    },
+    {
+      "source": "assignment_pattern",
+      "concept": "learning_rate",
+      "text": "75% of learners set learning_rate=0.001 without justification; missed the tuning step",
+      "date": "2026-05-20",
+      "recurrence": 8
+    }
+  ]
+}

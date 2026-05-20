@@ -1,0 +1,11 @@
+{
+  "signals": [
+    {
+      "source": "learner_question",
+      "concept": "emotional_intelligence",
+      "text": "How do I recognize my own emotions?",
+      "date": "2026-05-20",
+      "recurrence": 3
+    }
+  ]
+}

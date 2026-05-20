@@ -1,0 +1,29 @@
+[
+  {
+    "id": "unit-001",
+    "outcome": "Explain why gradient descent subtracts (rather than adds) the gradient",
+    "signal_ids": ["sig-001"],
+    "format": "video",
+    "assigned_agent": "ContentProductionSkill",
+    "target_publish_date": "2026-05-25",
+    "evidence_method": "assignment"
+  },
+  {
+    "id": "unit-002",
+    "outcome": "Trace how gradients flow backwards through a simple neural network layer",
+    "signal_ids": ["sig-002"],
+    "format": "video",
+    "assigned_agent": "ContentProductionSkill",
+    "target_publish_date": "2026-05-25",
+    "evidence_method": "quiz"
+  },
+  {
+    "id": "unit-003",
+    "outcome": "Tune learning rate for a given dataset using validation loss",
+    "signal_ids": ["sig-003"],
+    "format": "assignment",
+    "assigned_agent": "AssignmentAuthoringSkill",
+    "target_publish_date": "2026-05-25",
+    "evidence_method": "assignment"
+  }
+]

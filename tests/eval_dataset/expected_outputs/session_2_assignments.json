@@ -1,0 +1,11 @@
+[
+  {
+    "unit_id": "unit-001",
+    "assignment_title": "Emotion Journal",
+    "instructions": "Keep a journal for 3 days tracking your emotional states.",
+    "rubric": [
+      {"criterion": "Completeness", "weight": 0.5},
+      {"criterion": "Reflection depth", "weight": 0.5}
+    ]
+  }
+]

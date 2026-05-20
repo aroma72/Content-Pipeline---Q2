@@ -1,0 +1,14 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:05.000
+Welcome to gradient descent fundamentals.
+
+00:00:05.000 --> 00:00:15.000
+Today we're going to explore why we subtract the gradient instead of adding it.
+
+00:00:15.000 --> 00:00:25.000
+This is a common point of confusion, but the answer lies in the direction of steepest descent.
+
+00:00:25.000 --> 00:00:35.000
+The gradient vector points in the direction of steepest ascent,
+so subtracting it moves us towards the minimum.
