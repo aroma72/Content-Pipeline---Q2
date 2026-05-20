@@ -1,0 +1,48 @@
+{
+  "check_time": "2026-05-20T15:30:00Z",
+  "status": "healthy",
+  "checks": {
+    "prompts_directory": {
+      "status": "pass",
+      "detail": "4 prompt files found"
+    },
+    "hardcoded_prompts": {
+      "status": "pass",
+      "detail": "No hardcoded prompts detected"
+    },
+    "prompt_loading": {
+      "status": "pass",
+      "detail": "All skills load prompts correctly"
+    },
+    "logger_operational": {
+      "status": "pass",
+      "detail": "session.log: 2048 bytes"
+    },
+    "eval_dataset": {
+      "status": "pass",
+      "detail": "3 sample sessions found"
+    },
+    "test_files": {
+      "status": "pass",
+      "detail": "1 test file found"
+    },
+    "unit_tests": {
+      "status": "pass",
+      "detail": "Smoke test passed"
+    },
+    "pipeline_structure": {
+      "status": "pass",
+      "detail": "6-stage orchestrator validated"
+    },
+    "dependencies": {
+      "status": "pass",
+      "detail": "pytest in requirements.txt"
+    },
+    "memory_system": {
+      "status": "pass",
+      "detail": "5 memory files"
+    }
+  },
+  "next_check": "2026-05-21T06:00:00Z",
+  "summary": "All 10 infrastructure checks passed. System healthy."
+}

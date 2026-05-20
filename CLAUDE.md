@@ -21,6 +21,7 @@ owner: aroma
 | Fix text cutoff in diagrams | `docs/troubleshooting.md` |
 | Track my work | `.beads/status.jsonl` |
 | Understand the content pipeline | `docs/content-pipeline.md` |
+| Maintain infrastructure | `docs/infrastructure-maintenance.md` |
 | See design standards | `.claude/standards/VIDEO_PRODUCTION_RULES.md` |
 
 ---
@@ -60,6 +61,12 @@ owner: aroma
 🚫 **SVG Diagrams:**
 - ViewBox minimum 850px height for 7-node radials
 - Labels below circles need 60px clearance
+
+🚫 **Infrastructure:**
+- Never hardcode SYSTEM_PROMPT — extract to `prompts/{name}.txt`
+- Never delete `prompts/`, `tests/`, or `.claude/logs/`
+- All skills load prompts using `_load_prompt()` from PROMPTS_DIR
+- Keep pytest in requirements.txt — testing is mandatory
 
 🚫 **Documentation:**
 - CLAUDE.md stays under 150 lines — route to L3 docs

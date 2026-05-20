@@ -1,0 +1,76 @@
+#!/bin/bash
+# Pre-commit hook: Prevent common mistakes
+# Install: cp .github/hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+
+set -e
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+NC='\033[0m' # No Color
+
+echo "Running pre-commit checks..."
+
+# 1. Block hardcoded SYSTEM_PROMPT in skills/agents
+echo -n "Checking for hardcoded prompts... "
+if git diff --cached --name-only | grep -E "(skills|agents)/.*\.py" | xargs -I {} grep -l "^SYSTEM_PROMPT = " {} 2>/dev/null || true | grep -q .; then
+  echo -e "${RED}FAIL${NC}"
+  echo "ERROR: Hardcoded SYSTEM_PROMPT found. Extract to prompts/ directory instead."
+  echo "HINT: Use _load_prompt() function to load from PROMPTS_DIR"
+  exit 1
+fi
+echo -e "${GREEN}OK${NC}"
+
+# 2. Ensure prompts/ directory is not being deleted
+echo -n "Checking prompts/ directory integrity... "
+if git diff --cached --name-only | grep -q "prompts/" && git diff --cached --name-only | grep "prompts/" | xargs ls 2>/dev/null | grep -q "\.txt$"; then
+  echo -e "${GREEN}OK${NC}"
+else
+  if git diff --cached --name-status | grep "^D" | grep -q "prompts/"; then
+    echo -e "${RED}FAIL${NC}"
+    echo "ERROR: Cannot delete prompts. Restore or discuss with team."
+    exit 1
+  fi
+  echo -e "${GREEN}OK${NC}"
+fi
+
+# 3. Ensure requirements.txt includes pytest
+echo -n "Checking test dependencies... "
+if grep -q "^pytest" requirements.txt; then
+  echo -e "${GREEN}OK${NC}"
+else
+  echo -e "${RED}FAIL${NC}"
+  echo "ERROR: pytest must remain in requirements.txt"
+  exit 1
+fi
+
+# 4. Check for common secrets patterns
+echo -n "Scanning for secrets... "
+if git diff --cached | grep -E "(password|secret|api[_-]?key|token)" --ignore-case | grep -v "^[+-].*#" | grep -q .; then
+  echo -e "${RED}WARNING${NC} (continuing)"
+  echo "WARNING: Possible secrets found in diff. Review before pushing."
+else
+  echo -e "${GREEN}OK${NC}"
+fi
+
+# 5. Verify test files aren't deleted
+echo -n "Checking test files... "
+DELETED_TESTS=$(git diff --cached --name-status | grep "^D" | grep "^tests/test_" | wc -l)
+if [ "$DELETED_TESTS" -gt 0 ]; then
+  echo -e "${RED}FAIL${NC}"
+  echo "ERROR: Cannot delete test files. Use git reset to restore."
+  exit 1
+fi
+echo -e "${GREEN}OK${NC}"
+
+# 6. Ensure .claude/logs directory not deleted
+echo -n "Checking logger directory... "
+if git diff --cached --name-status | grep "^D" | grep -q "\.claude/logs"; then
+  echo -e "${RED}FAIL${NC}"
+  echo "ERROR: Cannot delete .claude/logs directory"
+  exit 1
+fi
+echo -e "${GREEN}OK${NC}"
+
+echo ""
+echo -e "${GREEN}✅ All pre-commit checks passed${NC}"
+exit 0
