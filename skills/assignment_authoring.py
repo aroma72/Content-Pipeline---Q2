@@ -5,11 +5,18 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import anthropic
 from schemas import ContentUnit, Assignment
-from config import MODEL_SONNET
+from config import MODEL_SONNET, PROMPTS_DIR
 from logger import log_info, log_error, log_decision
 
 
-SYSTEM_PROMPT = """You are AssignmentAuthoringSkill — the Act stage of an L&D content orchestrator.
+def _load_prompt(name: str) -> str:
+    prompt_file = PROMPTS_DIR / f"{name}.txt"
+    if not prompt_file.exists():
+        raise FileNotFoundError(f"Prompt not found: {prompt_file}")
+    return prompt_file.read_text(encoding="utf-8")
+
+
+_SYSTEM_PROMPT_TEXT = """You are AssignmentAuthoringSkill — the Act stage of an L&D content orchestrator.
 
 Your job: design a learner assignment that proves the unit's outcome was achieved.
 
@@ -39,10 +46,11 @@ class AssignmentAuthoringSkill:
         log_info("AssignmentAuthoringSkill", f"Authoring assignment for unit {unit.id}")
 
         try:
+            system_prompt = _load_prompt("assignment_authoring")
             response = self.client.messages.create(
                 model=self.model,
                 max_tokens=2048,
-                system=SYSTEM_PROMPT,
+                system=system_prompt,
                 messages=[{"role": "user", "content": json.dumps(unit.model_dump())}]
             )
 

@@ -4,12 +4,19 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import anthropic
-from config import MODEL_SONNET
+from config import MODEL_SONNET, PROMPTS_DIR
 from logger import log_info, log_error, log_decision
 from agents.error_types import AgentError, ErrorType
 
 
-SYSTEM_PROMPT = """You are AnimationPromptSkill — convert storyboard descriptions into precise animation prompts.
+def _load_prompt(name: str) -> str:
+    prompt_file = PROMPTS_DIR / f"{name}.txt"
+    if not prompt_file.exists():
+        raise FileNotFoundError(f"Prompt not found: {prompt_file}")
+    return prompt_file.read_text(encoding="utf-8")
+
+
+_SYSTEM_PROMPT_TEXT = """You are AnimationPromptSkill — convert storyboard descriptions into precise animation prompts.
 
 Given a scene's visual description and animation specification, generate structured output using the generate_animation_prompt tool.
 
@@ -58,10 +65,11 @@ class AnimationPromptSkill:
         log_info("AnimationPromptSkill", f"Building prompt for scene {scene_id}")
 
         try:
+            system_prompt = _load_prompt("animation_prompt")
             response = self.client.messages.create(
                 model=self.model,
                 max_tokens=1024,
-                system=SYSTEM_PROMPT,
+                system=system_prompt,
                 tools=[ANIMATION_PROMPT_TOOL],
                 tool_choice="auto",
                 messages=[{

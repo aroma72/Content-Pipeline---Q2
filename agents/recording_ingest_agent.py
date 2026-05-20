@@ -6,11 +6,18 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import anthropic
-from config import MODEL_OPUS, DRAFTS_DIR, OPENAI_API_KEY
+from config import MODEL_OPUS, DRAFTS_DIR, OPENAI_API_KEY, PROMPTS_DIR
 from logger import log_info, log_error, log_decision
 
 
-SYSTEM_PROMPT = """You are RecordingIngestAgent — the first step of the Observe pipeline.
+def _load_prompt(name: str) -> str:
+    prompt_file = PROMPTS_DIR / f"{name}.txt"
+    if not prompt_file.exists():
+        raise FileNotFoundError(f"Prompt not found: {prompt_file}")
+    return prompt_file.read_text(encoding="utf-8")
+
+
+_SYSTEM_PROMPT_TEXT = """You are RecordingIngestAgent — the first step of the Observe pipeline.
 
 Given a raw transcript text and speaker segments, your job is to:
 1. Clean and structure the transcript (fix obvious transcription errors, normalise speaker labels)
@@ -71,13 +78,14 @@ class RecordingIngestAgent:
 
         # Step 2: structure and clean with Claude
         log_info("RecordingIngestAgent", "Cleaning and structuring transcript with Claude")
+        system_prompt = _load_prompt("recording_ingest")
         response = self.client.messages.create(
             model=self.model,
             max_tokens=8096,
             system=[
                 {
                     "type": "text",
-                    "text": SYSTEM_PROMPT,
+                    "text": system_prompt,
                     "cache_control": {"type": "ephemeral"}
                 }
             ],

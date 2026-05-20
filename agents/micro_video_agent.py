@@ -5,11 +5,18 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import anthropic
-from config import MODEL_OPUS, DRAFTS_DIR, CLIP_MIN_SECONDS, CLIP_MAX_SECONDS
+from config import MODEL_OPUS, DRAFTS_DIR, CLIP_MIN_SECONDS, CLIP_MAX_SECONDS, PROMPTS_DIR
 from logger import log_info, log_error, log_decision
 
 
-SYSTEM_PROMPT = """You are MicroVideoAgent — the fourth step of the Observe pipeline.
+def _load_prompt(name: str) -> str:
+    prompt_file = PROMPTS_DIR / f"{name}.txt"
+    if not prompt_file.exists():
+        raise FileNotFoundError(f"Prompt not found: {prompt_file}")
+    return prompt_file.read_text(encoding="utf-8")
+
+
+_SYSTEM_PROMPT_TEXT = """You are MicroVideoAgent — the fourth step of the Observe pipeline.
 
 Given a list of must_keep segments, plan a set of 2-4 minute concept clips.
 
@@ -64,10 +71,11 @@ class MicroVideoAgent:
 
     async def _execute(self, session_id: str, must_keep: list[dict], recording_path: str) -> dict:
         # Step 1: Claude plans the clips
+        system_prompt = _load_prompt("micro_video")
         response = self.client.messages.create(
             model=self.model,
             max_tokens=4096,
-            system=SYSTEM_PROMPT,
+            system=system_prompt,
             messages=[{"role": "user", "content": json.dumps({
                 "session_id": session_id,
                 "must_keep_segments": must_keep,

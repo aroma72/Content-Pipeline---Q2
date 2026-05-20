@@ -5,11 +5,18 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import anthropic
 from schemas import ContentUnit, AssignmentEvaluation, ContentHealthRecord
-from config import MODEL_OPUS, MIN_PASS_RATE
+from config import MODEL_OPUS, MIN_PASS_RATE, PROMPTS_DIR
 from logger import log_info, log_error, log_decision
 
 
-SYSTEM_PROMPT = """You are ContentReflectSkill — the Reflect stage of an L&D content orchestrator.
+def _load_prompt(name: str) -> str:
+    prompt_file = PROMPTS_DIR / f"{name}.txt"
+    if not prompt_file.exists():
+        raise FileNotFoundError(f"Prompt not found: {prompt_file}")
+    return prompt_file.read_text(encoding="utf-8")
+
+
+_SYSTEM_PROMPT_TEXT = """You are ContentReflectSkill — the Reflect stage of an L&D content orchestrator.
 
 Your job: compare expected outcomes against observed metrics and decide what to do with each content unit.
 
@@ -62,10 +69,11 @@ class ContentReflectSkill:
         }
 
         try:
+            system_prompt = _load_prompt("content_reflect")
             response = self.client.messages.create(
                 model=self.model,
                 max_tokens=1024,
-                system=SYSTEM_PROMPT,
+                system=system_prompt,
                 messages=[{"role": "user", "content": json.dumps(payload)}]
             )
 

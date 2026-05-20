@@ -5,12 +5,19 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import anthropic
 from schemas import SessionAssetBundle, LearnerPack
-from config import MODEL_SONNET, PUBLISHED_DIR
+from config import MODEL_SONNET, PUBLISHED_DIR, PROMPTS_DIR
 from logger import log_info, log_error, log_decision
 from datetime import date
 
 
-SYSTEM_PROMPT = """You are SessionCloseSkill — the Observe stage of an L&D content orchestrator.
+def _load_prompt(name: str) -> str:
+    prompt_file = PROMPTS_DIR / f"{name}.txt"
+    if not prompt_file.exists():
+        raise FileNotFoundError(f"Prompt not found: {prompt_file}")
+    return prompt_file.read_text(encoding="utf-8")
+
+
+_SYSTEM_PROMPT_TEXT = """You are SessionCloseSkill — the Observe stage of an L&D content orchestrator.
 
 Your job: generate the final session summary, glossary, and watch order for a session asset bundle.
 
@@ -49,10 +56,11 @@ class SessionCloseSkill:
         }
 
         try:
+            system_prompt = _load_prompt("session_close")
             response = self.client.messages.create(
                 model=self.model,
                 max_tokens=4096,
-                system=SYSTEM_PROMPT,
+                system=system_prompt,
                 messages=[{"role": "user", "content": json.dumps(payload)}]
             )
 

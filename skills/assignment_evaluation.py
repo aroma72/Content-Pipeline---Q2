@@ -5,11 +5,18 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import anthropic
 from schemas import Assignment, AssignmentEvaluation
-from config import MODEL_HAIKU
+from config import MODEL_HAIKU, PROMPTS_DIR
 from logger import log_info, log_error, log_decision
 
 
-SYSTEM_PROMPT = """You are AssignmentEvaluationSkill — the Observe stage of an L&D content orchestrator.
+def _load_prompt(name: str) -> str:
+    prompt_file = PROMPTS_DIR / f"{name}.txt"
+    if not prompt_file.exists():
+        raise FileNotFoundError(f"Prompt not found: {prompt_file}")
+    return prompt_file.read_text(encoding="utf-8")
+
+
+_SYSTEM_PROMPT_TEXT = """You are AssignmentEvaluationSkill — the Observe stage of an L&D content orchestrator.
 
 Your job: evaluate a batch of learner submissions against the assignment rubric.
 
@@ -49,10 +56,11 @@ class AssignmentEvaluationSkill:
         }
 
         try:
+            system_prompt = _load_prompt("assignment_evaluation")
             response = self.client.messages.create(
                 model=self.model,
                 max_tokens=4096,
-                system=SYSTEM_PROMPT,
+                system=system_prompt,
                 messages=[{"role": "user", "content": json.dumps(payload)}]
             )
 

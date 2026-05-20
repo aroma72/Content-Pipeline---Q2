@@ -6,12 +6,19 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import anthropic
 from schemas import QualityFlag
-from config import MODEL_HAIKU, REVIEW_DIR, CLIP_MIN_SECONDS, CLIP_MAX_SECONDS
+from config import MODEL_HAIKU, REVIEW_DIR, CLIP_MIN_SECONDS, CLIP_MAX_SECONDS, PROMPTS_DIR
 from logger import log_info, log_error, log_decision
 from agents.error_types import AgentError, ErrorType
 
 
-SYSTEM_PROMPT = """You are VideoQualityGateAgent — the QA checkpoint in the Observe pipeline.
+def _load_prompt(name: str) -> str:
+    prompt_file = PROMPTS_DIR / f"{name}.txt"
+    if not prompt_file.exists():
+        raise FileNotFoundError(f"Prompt not found: {prompt_file}")
+    return prompt_file.read_text(encoding="utf-8")
+
+
+_SYSTEM_PROMPT_TEXT = """You are VideoQualityGateAgent — the QA checkpoint in the Observe pipeline.
 
 Your job: review video assets and flag those that need human review before publishing.
 
@@ -98,13 +105,14 @@ class VideoQualityGateAgent:
             "clip_max_seconds": CLIP_MAX_SECONDS
         }
 
+        system_prompt = _load_prompt("video_quality_gate")
         response = self.client.messages.create(
             model=self.model,
             max_tokens=2048,
             system=[
                 {
                     "type": "text",
-                    "text": SYSTEM_PROMPT,
+                    "text": system_prompt,
                     "cache_control": {"type": "ephemeral"}
                 }
             ],

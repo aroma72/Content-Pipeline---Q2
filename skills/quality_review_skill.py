@@ -5,11 +5,18 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import anthropic
 from schemas import QualityReport
-from config import MODEL_OPUS
+from config import MODEL_OPUS, PROMPTS_DIR
 from logger import log_info, log_error, log_decision
 
 
-SYSTEM_PROMPT = """You are QualityReviewSkill — assess quality of video production artifacts.
+def _load_prompt(name: str) -> str:
+    prompt_file = PROMPTS_DIR / f"{name}.txt"
+    if not prompt_file.exists():
+        raise FileNotFoundError(f"Prompt not found: {prompt_file}")
+    return prompt_file.read_text(encoding="utf-8")
+
+
+_SYSTEM_PROMPT_TEXT = """You are QualityReviewSkill — assess quality of video production artifacts.
 
 Given production artifacts and quality criteria, provide:
 - overall_score: float 0-1 (how well does output meet spec?)
@@ -40,10 +47,11 @@ class QualityReviewSkill:
 
         try:
             # Ask Claude to assess quality
+            system_prompt = _load_prompt("quality_review")
             response = self.client.messages.create(
                 model=self.model,
                 max_tokens=1024,
-                system=SYSTEM_PROMPT,
+                system=system_prompt,
                 messages=[{
                     "role": "user",
                     "content": json.dumps({

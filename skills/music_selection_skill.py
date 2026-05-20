@@ -4,12 +4,19 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import anthropic
-from config import MODEL_HAIKU
+from config import MODEL_HAIKU, PROMPTS_DIR
 from logger import log_info, log_error, log_decision
 from agents.error_types import AgentError, ErrorType
 
 
-SYSTEM_PROMPT = """You are MusicSelectionSkill — select music that fits educational video scenes.
+def _load_prompt(name: str) -> str:
+    prompt_file = PROMPTS_DIR / f"{name}.txt"
+    if not prompt_file.exists():
+        raise FileNotFoundError(f"Prompt not found: {prompt_file}")
+    return prompt_file.read_text(encoding="utf-8")
+
+
+_SYSTEM_PROMPT_TEXT = """You are MusicSelectionSkill — select music that fits educational video scenes.
 
 Given scene descriptions and mood specification, use the select_music tool to recommend music.
 
@@ -72,10 +79,11 @@ class MusicSelectionSkill:
 
         try:
             # Claude selects music based on scene and mood using tool
+            system_prompt = _load_prompt("music_selection")
             response = self.client.messages.create(
                 model=self.model,
                 max_tokens=512,
-                system=SYSTEM_PROMPT,
+                system=system_prompt,
                 tools=[MUSIC_SELECTION_TOOL],
                 tool_choice="auto",
                 messages=[{

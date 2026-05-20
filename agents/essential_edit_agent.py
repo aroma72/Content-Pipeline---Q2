@@ -6,12 +6,19 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import anthropic
-from config import MODEL_OPUS, DRAFTS_DIR
+from config import MODEL_OPUS, DRAFTS_DIR, PROMPTS_DIR
 from logger import log_info, log_error, log_decision
 from agents.error_types import AgentError, ErrorType
 
 
-SYSTEM_PROMPT = """You are EssentialEditAgent — the third step of the Observe pipeline.
+def _load_prompt(name: str) -> str:
+    prompt_file = PROMPTS_DIR / f"{name}.txt"
+    if not prompt_file.exists():
+        raise FileNotFoundError(f"Prompt not found: {prompt_file}")
+    return prompt_file.read_text(encoding="utf-8")
+
+
+_SYSTEM_PROMPT_TEXT = """You are EssentialEditAgent — the third step of the Observe pipeline.
 
 Given must_keep and optional segments, create an edit timeline for the essential session video.
 
@@ -109,10 +116,11 @@ class EssentialEditAgent:
 
     async def _execute(self, session_id: str, must_keep: list[dict], optional: list[dict], recording_path: str) -> dict:
         # Step 1: Claude decides the edit timeline using tool
+        system_prompt = _load_prompt("essential_edit")
         response = self.client.messages.create(
             model=self.model,
             max_tokens=4096,
-            system=SYSTEM_PROMPT,
+            system=system_prompt,
             tools=[EDIT_TIMELINE_TOOL],
             tool_choice="auto",
             messages=[{

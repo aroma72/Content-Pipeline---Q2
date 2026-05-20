@@ -6,12 +6,19 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import anthropic
 from schemas import Segment
-from config import MODEL_OPUS, DRAFTS_DIR
+from config import MODEL_OPUS, DRAFTS_DIR, PROMPTS_DIR
 from logger import log_info, log_error, log_decision
 from agents.error_types import AgentError, ErrorType
 
 
-SYSTEM_PROMPT = """You are ConceptSegmentationAgent — the second step of the Observe pipeline.
+def _load_prompt(name: str) -> str:
+    prompt_file = PROMPTS_DIR / f"{name}.txt"
+    if not prompt_file.exists():
+        raise FileNotFoundError(f"Prompt not found: {prompt_file}")
+    return prompt_file.read_text(encoding="utf-8")
+
+
+_SYSTEM_PROMPT_TEXT = """You are ConceptSegmentationAgent — the second step of the Observe pipeline.
 
 Given a session transcript with speaker segments, identify and label every segment using the segment_transcript tool.
 
@@ -104,13 +111,14 @@ class ConceptSegmentationAgent:
             return {"status": "error", "session_id": session_id, "error": str(e)}
 
     async def _execute(self, session_id: str, transcript: str, speaker_segments: list[dict]) -> dict:
+        system_prompt = _load_prompt("concept_segmentation")
         response = self.client.messages.create(
             model=self.model,
             max_tokens=8096,
             system=[
                 {
                     "type": "text",
-                    "text": SYSTEM_PROMPT,
+                    "text": system_prompt,
                     "cache_control": {"type": "ephemeral"}
                 }
             ],
