@@ -1,0 +1,253 @@
+{
+  "version": "1.0",
+  "last_updated": "2026-05-21",
+  "global_rules": [
+    {
+      "rule_id": "VOICEOVER_EXTRACTION_ONLY",
+      "rule": "NEVER generate new voiceover. Extract from existing videos and adjust visuals to match. This saves 44% of credits.",
+      "severity": "CRITICAL",
+      "applies_to": ["RemotionVideoAgent", "PostProductionAgent", "DistributionAgent"],
+      "violated_by": "Attempting to generate voiceover with ElevenLabs without explicit user request",
+      "how_to_follow": "Always check for existing audio files first. If regeneration is required, ask user permission explicitly."
+    },
+    {
+      "rule_id": "NO_HARDCODED_PROMPTS",
+      "rule": "LOCKED: Never hardcode SYSTEM_PROMPT, animation prompts, or instructions inside code. Extract to versioned prompt files in prompts/{name}.txt",
+      "severity": "CRITICAL",
+      "applies_to": ["RemotionVideoAgent", "PostProductionAgent", "DistributionAgent"],
+      "violated_by": "System prompts or instructions embedded in Python code instead of external files",
+      "how_to_follow": "All prompts must live in prompts/ directory. Code must load via _load_prompt(PROMPTS_DIR / 'name.txt')"
+    },
+    {
+      "rule_id": "PRESERVE_INFRASTRUCTURE",
+      "rule": "LOCKED: Never delete prompts/, tests/, or .claude/ directories. Infrastructure deletion = data loss.",
+      "severity": "CRITICAL",
+      "applies_to": ["RemotionVideoAgent", "PostProductionAgent", "DistributionAgent"],
+      "violated_by": "Attempted deletion or cleanup of infrastructure directories",
+      "how_to_follow": "These directories are inviolable. Mark items xfail/skip if needed, but never delete the structure."
+    },
+    {
+      "rule_id": "FRAME_COUNT_MATH",
+      "rule": "Frame count formula: frames = VO_seconds × 30fps (max +30 buffer). Verify before render.",
+      "severity": "CRITICAL",
+      "applies_to": ["RemotionVideoAgent"],
+      "violated_by": "Rendering without verifying Root.tsx durationInFrames matches calculated frame count",
+      "how_to_follow": "For 120s VO: 120 × 30 = 3600 frames. Check Remotion composition before rendering."
+    },
+    {
+      "rule_id": "SVG_VIEWBOX_SAFETY",
+      "rule": "SVG diagrams: ViewBox minimum 850px height for 7-node radials. Labels below circles need 60px clearance.",
+      "severity": "HIGH",
+      "applies_to": ["RemotionVideoAgent"],
+      "violated_by": "Text cutoff in rendered diagrams due to insufficient viewBox height",
+      "how_to_follow": "All SVG components must include viewBox='0 0 1920 850' minimum for complex layouts."
+    },
+    {
+      "rule_id": "SYNC_VERIFICATION_REQUIRED",
+      "rule": "LOCKED: Always verify VO-to-visual sync BEFORE final mux. Run spot-checks on 3+ frame offsets.",
+      "severity": "CRITICAL",
+      "applies_to": ["PostProductionAgent", "DistributionAgent"],
+      "violated_by": "Skipping caption/timing verification before publishing",
+      "how_to_follow": "Test captions display at correct frames. Verify voiceover aligns with visual moments."
+    },
+    {
+      "rule_id": "SUBMODULE_COMMIT_ORDER",
+      "rule": "LOCKED: Commit submodule FIRST, then main repo pointer. Opposite order = lost work.",
+      "severity": "CRITICAL",
+      "applies_to": ["DistributionAgent"],
+      "violated_by": "Committing main repo before submodule changes are pushed",
+      "how_to_follow": "1. Commit drawing-room-video/ submodule changes. 2. Then commit main repo with updated submodule pointer."
+    },
+    {
+      "rule_id": "NO_FORCE_PUSH",
+      "rule": "LOCKED: Never force-push to main. Ever. This destroys history.",
+      "severity": "CRITICAL",
+      "applies_to": ["DistributionAgent"],
+      "violated_by": "Using git push --force or git reset --hard on main branch",
+      "how_to_follow": "Always merge or rebase cleanly. If conflicts occur, resolve manually."
+    },
+    {
+      "rule_id": "TESTING_MANDATORY",
+      "rule": "LOCKED: pytest is mandatory. Never remove from requirements.txt. Run before every commit.",
+      "severity": "HIGH",
+      "applies_to": ["RemotionVideoAgent", "PostProductionAgent"],
+      "violated_by": "Removing pytest or skipping test execution",
+      "how_to_follow": "Run `pytest` locally. All tests must pass before marking task complete."
+    },
+    {
+      "rule_id": "OUTPUT_LOCATION",
+      "rule": "Final videos go in updated/ folder. Intermediate renders in video_production/{production_id}/",
+      "severity": "HIGH",
+      "applies_to": ["RemotionVideoAgent", "PostProductionAgent"],
+      "violated_by": "Saving final videos to incorrect directories",
+      "how_to_follow": "Intermediate: video_production/ → Final: updated/ (with VO muxed)"
+    }
+  ],
+  "agent_specific_rules": {
+    "RemotionVideoAgent": [
+      {
+        "rule_id": "REMOTION_COMPOSITION_TIMING",
+        "rule": "LOCKED: durationInFrames must match VO duration exactly. 1 second late = quality issue.",
+        "severity": "CRITICAL",
+        "violated_by": "Composition duration doesn't match voiceover length",
+        "how_to_follow": "Calculate: frames = VO_seconds × 30fps. Set durationInFrames in composition."
+      },
+      {
+        "rule_id": "COMPOSITION_ID_FORMAT",
+        "rule": "Composition IDs can only contain a-z, A-Z, 0-9, CJK, and hyphens. NO underscores.",
+        "severity": "HIGH",
+        "violated_by": "Composition IDs with underscores cause Remotion validation errors",
+        "how_to_follow": "Use CourseOverview-1A-EntryDiscovery not CourseOverview_1A_EntryDiscovery"
+      },
+      {
+        "rule_id": "ANIMATION_QUALITY_GATES",
+        "rule": "All animated segments must have smooth transitions (no jarring cuts unless explicitly requested).",
+        "severity": "MEDIUM",
+        "violated_by": "Animation glitches or rough transitions in preview",
+        "how_to_follow": "Test in Remotion Studio. Verify opacity/scale animations are smooth."
+      }
+    ],
+    "PostProductionAgent": [
+      {
+        "rule_id": "CAPTION_SYNC_ABSOLUTE",
+        "rule": "LOCKED: Captions must display at EXACT frame offsets matching voiceover script timing.",
+        "severity": "CRITICAL",
+        "violated_by": "Captions appear early/late relative to spoken words",
+        "how_to_follow": "Map each caption to exact frame from VO script. Test before muxing."
+      },
+      {
+        "rule_id": "AUDIO_CODEC_COMPATIBILITY",
+        "rule": "Final audio must be AAC (not mp3, not pcm_s16le). H.264 + AAC is the only compatible combo.",
+        "severity": "HIGH",
+        "violated_by": "Audio codec mismatch causing sync issues or unplayable files",
+        "how_to_follow": "ffmpeg: -c:a aac (not -acodec mp3)"
+      },
+      {
+        "rule_id": "NO_SILENT_GAPS",
+        "rule": "LOCKED: Never render videos with blank frames after audio ends. Trim to match VO duration exactly.",
+        "severity": "HIGH",
+        "violated_by": "Final video has black silence after voiceover ends",
+        "how_to_follow": "Use -shortest flag in ffmpeg: `ffmpeg ... -shortest -y output.mp4`"
+      }
+    ],
+    "DistributionAgent": [
+      {
+        "rule_id": "YOUTUBE_METADATA_ACCURACY",
+        "rule": "All YouTube titles and descriptions must match course schema exactly (no improvisation).",
+        "severity": "HIGH",
+        "violated_by": "Uploaded videos with incorrect metadata",
+        "how_to_follow": "Use title, description from VideoProductionConfig schema. No custom variations."
+      },
+      {
+        "rule_id": "LMS_PAYLOAD_VALIDATION",
+        "rule": "LOCKED: Always validate LMS payload against schema BEFORE pushing. Invalid JSON = silently dropped.",
+        "severity": "CRITICAL",
+        "violated_by": "LMS upload succeeds but video doesn't appear (silent failure)",
+        "how_to_follow": "Validate payload structure matches SessionAssetBundle schema exactly."
+      },
+      {
+        "rule_id": "DISTRIBUTION_AUDIT_TRAIL",
+        "rule": "Log every upload with timestamp, destination, video_id, and status. Audit trail is immutable.",
+        "severity": "HIGH",
+        "violated_by": "Unable to trace which videos were uploaded where",
+        "how_to_follow": "Write to distribution_audit.jsonl: {timestamp, agent, video_id, destination, status}"
+      }
+    ]
+  },
+  "past_mistakes": {
+    "RemotionVideoAgent": [
+      {
+        "mistake_id": "ERROR_UNDERSCORES_IN_COMPOSITION_ID",
+        "timestamp": "2026-05-15",
+        "error": "Composition id can only contain a-z, A-Z, 0-9, CJK characters and -",
+        "root_cause": "Used CourseOverview_1A instead of CourseOverview-1A",
+        "fix_applied": "Renamed all composition IDs to use hyphens instead of underscores",
+        "prevent_next_time": "Check Root.tsx composition IDs match regex: ^[a-zA-Z0-9-]*$"
+      },
+      {
+        "mistake_id": "ERROR_AUDIO_EMBEDDING_PATH_RESOLUTION",
+        "timestamp": "2026-05-17",
+        "error": "404 - Audio files not found during render. Webpack bundle couldn't locate /voiceover/ paths.",
+        "root_cause": "Audio files needed to be in public/ directory for webpack bundler access",
+        "fix_applied": "Abandoned Remotion Audio embedding; switched to external ffmpeg mux instead",
+        "prevent_next_time": "Don't embed audio in Remotion. Use post-production ffmpeg mux with proven pipeline."
+      },
+      {
+        "mistake_id": "WARNING_SVG_TEXT_CUTOFF",
+        "timestamp": "2026-05-12",
+        "error": "Text labels cut off at edges of SVG diagrams",
+        "root_cause": "SVG viewBox too small (600px height instead of 850px for 7-node radials)",
+        "fix_applied": "Updated all SVG components to use viewBox='0 0 1920 850' minimum",
+        "prevent_next_time": "All diagrams with 7+ nodes need minimum 850px viewBox height."
+      },
+      {
+        "mistake_id": "WARNING_FFMPEG_NOT_IN_PATH",
+        "timestamp": "2026-05-18",
+        "error": "'ffmpeg' is not recognized as an internal or external command",
+        "root_cause": "ffmpeg binary not in PATH; script tried direct 'ffmpeg' call",
+        "fix_applied": "Use require('@ffmpeg-installer/ffmpeg').path to locate binary; npm install @ffmpeg-installer/ffmpeg",
+        "prevent_next_time": "Always use npm package for ffmpeg; never assume system PATH has it."
+      },
+      {
+        "mistake_id": "ERROR_AUDIO_CODEC_MISMATCH",
+        "timestamp": "2026-05-19",
+        "error": "Muxed video doesn't play in all browsers; audio sync is off",
+        "root_cause": "Used pcm_s16le audio codec with H.264 video; incompatible combo",
+        "fix_applied": "Changed to AAC codec for final mux: `ffmpeg ... -c:a aac ...`",
+        "prevent_next_time": "Only use H.264 + AAC combination for final output files."
+      }
+    ],
+    "PostProductionAgent": [
+      {
+        "mistake_id": "WARNING_CAPTION_TIMING_MISMATCH",
+        "timestamp": "2026-05-16",
+        "error": "Captions displayed 2-3 seconds early/late relative to voiceover",
+        "root_cause": "Caption frame offsets calculated without accounting for Sequence timing",
+        "fix_applied": "Synchronized all captions using exact frame offsets from voiceover script",
+        "prevent_next_time": "Always map captions to exact VO script frame positions. Test 3+ spot-checks before final mux."
+      },
+      {
+        "mistake_id": "ERROR_BLANK_VIDEO_AFTER_AUDIO",
+        "timestamp": "2026-05-14",
+        "error": "Final video has 5 seconds of black silence after voiceover ends",
+        "root_cause": "Remotion composition duration (3600 frames) was longer than VO (3450 frames)",
+        "fix_applied": "Verified frame count formula and adjusted composition to match VO duration exactly",
+        "prevent_next_time": "Use -shortest flag in ffmpeg; always verify composition durationInFrames = VO_seconds × 30"
+      },
+      {
+        "mistake_id": "WARNING_MISSING_SRT_GENERATION",
+        "timestamp": "2026-05-13",
+        "error": "Caption skill failed silently; no SRT file generated but process continued",
+        "root_cause": "Missing error handling for caption generation failures",
+        "fix_applied": "Added explicit checks: if srt_path is None, log warning and use fallback captions",
+        "prevent_next_time": "Always validate intermediate outputs before proceeding to next stage."
+      }
+    ],
+    "DistributionAgent": [
+      {
+        "mistake_id": "ERROR_YOUTUBE_UPLOAD_WITHOUT_AUTH",
+        "timestamp": "2026-05-18",
+        "error": "YouTube upload silently skipped; YOUTUBE_API_KEY was None",
+        "root_cause": "No check for API key availability before attempting upload",
+        "fix_applied": "Added explicit log and skip when YOUTUBE_API_KEY is missing",
+        "prevent_next_time": "Always validate API keys before uploading. Log success/skip status explicitly."
+      },
+      {
+        "mistake_id": "ERROR_LMS_PAYLOAD_VALIDATION_MISSING",
+        "timestamp": "2026-05-17",
+        "error": "LMS API returned 200 but video never appeared on platform (silent failure)",
+        "root_cause": "Payload validation was skipped; malformed JSON accepted by API without error",
+        "fix_applied": "Added strict schema validation before LMS API call",
+        "prevent_next_time": "Validate SessionAssetBundle payload against schema. Log validation errors explicitly."
+      },
+      {
+        "mistake_id": "WARNING_NO_AUDIT_TRAIL",
+        "timestamp": "2026-05-19",
+        "error": "Unable to trace which videos were uploaded to which platforms",
+        "root_cause": "No audit logging for distribution actions",
+        "fix_applied": "Implemented distribution_audit.jsonl with every upload event",
+        "prevent_next_time": "Always log to audit trail with timestamp, destination, video_id, status."
+      }
+    ]
+  }
+}

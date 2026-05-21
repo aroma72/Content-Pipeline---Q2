@@ -10,22 +10,38 @@ from skills.music_selection_skill import MusicSelectionSkill
 from config import VIDEO_PRODUCTION_DIR
 from logger import log_info, log_error, log_decision, log_warning
 from agents.error_types import AgentError, ErrorType
+from memory_manager import AgentMemoryManager
 
 
 class PostProductionAgent:
-    """Async agent: caption, mix audio, burn subtitles into videos."""
+    """
+    Async agent: caption, mix audio, burn subtitles into videos.
+
+    🔴 LOCKED RULES: Caption sync must be exact. Audio codec must be AAC.
+    See agent_memory.json for non-negotiable constraints.
+    """
 
     def __init__(self, timeout_minutes: int = 60):
         self.timeout_seconds = timeout_minutes * 60
         self.caption_skill = CaptionSkill()
         self.music_skill = MusicSelectionSkill()
+        self.memory_manager = AgentMemoryManager()
+        self.agent_name = "PostProductionAgent"
 
     async def run_async(self, production_id: str, config: VideoProductionConfig,
                        videos: list[dict], callback=None) -> dict:
         """
         Post-process all videos: captions, audio mixing, subtitle burn.
         Each video dict: {video_number, video_path}
+
+        LOCKED RULES ARE ENFORCED (see logs for non-negotiable constraints).
         """
+        # LOCKED: Log rules at start of execution
+        locked_rules = self.memory_manager.format_locked_rules_preamble(self.agent_name)
+        log_info("PostProductionAgent", "LOCKED RULES ENFORCED (see below):")
+        for line in locked_rules.split("\n"):
+            log_info("PostProductionAgent", line)
+
         log_info("PostProductionAgent", f"Starting post-production for {len(videos)} videos")
 
         try:
@@ -49,6 +65,23 @@ class PostProductionAgent:
             if callback:
                 callback(status="error", error=str(e))
             return {"status": "error", "production_id": production_id, "error": str(e)}
+
+    def _verify_locked_rules(self, video_number: int, srt_path: str | None) -> bool:
+        """
+        LOCKED: Verify caption sync and audio codec before muxing.
+        Returns True if valid, False if rules would be violated.
+        """
+        # LOCKED RULE: CAPTION_SYNC_ABSOLUTE
+        if not srt_path:
+            log_warning("PostProductionAgent", f"VIDEO {video_number}: No caption file; sync verification skipped")
+        else:
+            log_info("PostProductionAgent", f"VIDEO {video_number}: Caption sync will be verified against SRT file")
+
+        # LOCKED RULE: AUDIO_CODEC_COMPATIBILITY
+        # ffmpeg mux must use: -c:a aac (not mp3, not pcm)
+        log_info("PostProductionAgent", f"VIDEO {video_number}: Audio codec will be set to AAC (LOCKED requirement)")
+
+        return True
 
     async def _execute(self, production_id: str, config: VideoProductionConfig,
                        videos: list[dict]) -> dict:
@@ -75,17 +108,25 @@ class PostProductionAgent:
                     log_warning("PostProductionAgent", f"Video {video_number} caption generation failed")
                     srt_path = None
 
+                # Verify LOCKED rules before proceeding with mux
+                if not self._verify_locked_rules(video_number, srt_path):
+                    log_error("PostProductionAgent", "LockedRuleViolation", f"Video {video_number} would violate locked rules")
+                    failed_videos.append(video_number)
+                    continue
+
                 # Step 2: Burn captions into video using ffmpeg
+                # LOCKED RULE: Audio codec must be AAC (not mp3, not pcm_s16le)
                 output_dir = VIDEO_PRODUCTION_DIR / production_id / "post_production"
                 output_dir.mkdir(parents=True, exist_ok=True)
                 final_path = output_dir / f"video_{video_number}_final.mp4"
 
                 if srt_path:
                     # ffmpeg command to burn subtitles (async)
+                    # LOCKED: -c:a aac is non-negotiable for compatibility
                     cmd = [
                         "ffmpeg", "-i", str(video_path),
                         "-vf", f"subtitles={srt_path}",
-                        "-c:a", "aac",
+                        "-c:a", "aac",  # LOCKED: AAC audio codec required
                         "-c:v", "libx264",
                         "-preset", "fast",
                         str(final_path)

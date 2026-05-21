@@ -1,0 +1,6 @@
+file 'course-overview-assets/01_opening.mp3'
+file 'course-overview-assets/02_problem.mp3'
+file 'course-overview-assets/03_foundations.mp3'
+file 'course-overview-assets/04_journey.mp3'
+file 'course-overview-assets/05_why_matters.mp3'
+file 'course-overview-assets/06_closing.mp3'

@@ -1,0 +1,6 @@
+file 'voiceover-windows-formal\\01_opening.wav'
+file 'voiceover-windows-formal\\02_problem.wav'
+file 'voiceover-windows-formal\\03_foundations.wav'
+file 'voiceover-windows-formal\\04_journey.wav'
+file 'voiceover-windows-formal\\05_why_matters.wav'
+file 'voiceover-windows-formal\\06_closing.wav'

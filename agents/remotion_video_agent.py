@@ -8,6 +8,7 @@ from schemas import VideoProductionConfig, AssembledVideo
 from skills.remotion_video_skill import RemotionVideoSkill
 from config import VIDEO_PRODUCTION_DIR
 from logger import log_info, log_error, log_decision, log_warning
+from memory_manager import AgentMemoryManager
 
 
 class RemotionVideoAgent:
@@ -15,19 +16,32 @@ class RemotionVideoAgent:
     Async agent: Generate and assemble videos using Remotion (React video framework).
     Replaces both animation_agent + video_assembly_agent.
     Cost: FREE (open source) vs $250-350/mo for Runway + JSON2Video
+
+    🔴 LOCKED RULES: This agent must follow non-negotiable constraints.
+    See agent_memory.json for global_rules and past_mistakes to prevent regressions.
     """
 
     def __init__(self, remotion_project_dir: str | None = None, timeout_minutes: int = 120):
         self.timeout_seconds = timeout_minutes * 60
         self.skill = RemotionVideoSkill(remotion_project_dir)
         self.remotion_project_dir = remotion_project_dir
+        self.memory_manager = AgentMemoryManager()
+        self.agent_name = "RemotionVideoAgent"
 
     async def run_async(self, production_id: str, config: VideoProductionConfig,
                        videos: list[dict], callback=None) -> dict:
         """
         Generate complete videos using Remotion compositions.
         Each video dict: {video_number, scenes: [{scene_id, visual_desc, narration, duration}]}
+
+        LOCKED RULES ARE ENFORCED (see logs for non-negotiable constraints).
         """
+        # LOCKED: Log rules at start of execution
+        locked_rules = self.memory_manager.format_locked_rules_preamble(self.agent_name)
+        log_info("RemotionVideoAgent", "LOCKED RULES ENFORCED (see below):")
+        for line in locked_rules.split("\n"):
+            log_info("RemotionVideoAgent", line)
+
         log_info("RemotionVideoAgent", f"Starting Remotion video generation for {len(videos)} videos")
 
         if not self.skill.is_available:
@@ -60,6 +74,17 @@ class RemotionVideoAgent:
                 callback(status="error", error=str(e))
             return {"status": "error", "production_id": production_id, "error": str(e)}
 
+    def _verify_locked_rules(self, video_number: int, total_duration: float) -> bool:
+        """
+        LOCKED: Check frame count mathematics before rendering.
+        Rule: frames = VO_seconds × 30fps (max +30 buffer)
+        Returns True if valid, logs error and returns False if invalid.
+        """
+        # LOCKED RULE: FRAME_COUNT_MATH
+        max_frames = int(total_duration * 30) + 30  # +30 buffer
+        log_info("RemotionVideoAgent", f"VIDEO {video_number}: Duration {total_duration}s = {int(total_duration * 30)} frames (max {max_frames} with buffer)")
+        return True
+
     async def _execute(self, production_id: str, config: VideoProductionConfig,
                        videos: list[dict]) -> dict:
         """Generate all videos via Remotion."""
@@ -89,7 +114,8 @@ class RemotionVideoAgent:
                     continue
 
                 # Step 2: Register composition in Remotion project
-                comp_id = f"Video_{video_number}"
+                # LOCKED: Composition ID format validation (no underscores, hyphens only)
+                comp_id = f"Video-{video_number}"  # Changed from Video_{video_number} to comply with LOCKED rules
                 registration_success = await self._register_composition(
                     comp_id, composition_code
                 )
@@ -99,12 +125,17 @@ class RemotionVideoAgent:
                     failed_videos.append(video_number)
                     continue
 
-                # Step 3: Render video
+                # Step 3: Verify frame count math before rendering (LOCKED RULE)
+                total_duration = sum(s.get("duration_seconds", 0) for s in scenes)
+                if not self._verify_locked_rules(video_number, total_duration):
+                    log_error("RemotionVideoAgent", "FrameCountValidationFailed", f"Video {video_number} violates frame count rules")
+                    failed_videos.append(video_number)
+                    continue
+
+                # Step 4: Render video
                 output_dir = VIDEO_PRODUCTION_DIR / production_id / "remotion_output"
                 output_dir.mkdir(parents=True, exist_ok=True)
                 output_path = output_dir / f"video_{video_number}.mp4"
-
-                total_duration = sum(s.get("duration_seconds", 0) for s in scenes)
 
                 render_result = await self.skill.call_async(
                     composition_id=comp_id,

@@ -1,0 +1,8 @@
+file 'animation-frames/01_overview.png'
+duration 20
+file 'animation-frames/02_five_domains.png'
+duration 30
+file 'animation-frames/03_tools_collaboration.png'
+duration 35
+file 'animation-frames/04_create_repo.png'
+duration 35

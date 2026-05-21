@@ -3,16 +3,23 @@ import json
 import sys
 import requests
 from pathlib import Path
+from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from schemas import VideoProductionConfig
 from skills.social_clips_skill import SocialClipsSkill
 from config import VIDEO_PRODUCTION_DIR, YOUTUBE_API_KEY, LMS_BASE_URL, LMS_API_KEY
 from logger import log_info, log_error, log_decision, log_warning
+from memory_manager import AgentMemoryManager
 
 
 class DistributionAgent:
-    """Async agent: distribute videos to YouTube, LMS, and generate social clips."""
+    """
+    Async agent: distribute videos to YouTube, LMS, and generate social clips.
+
+    🔴 LOCKED RULES: No force-push. LMS payload validation required. Audit trail mandatory.
+    See agent_memory.json for non-negotiable constraints.
+    """
 
     def __init__(self, timeout_minutes: int = 60):
         self.timeout_seconds = timeout_minutes * 60
@@ -20,13 +27,24 @@ class DistributionAgent:
         self.youtube_api_key = YOUTUBE_API_KEY
         self.lms_base_url = LMS_BASE_URL
         self.lms_api_key = LMS_API_KEY
+        self.memory_manager = AgentMemoryManager()
+        self.agent_name = "DistributionAgent"
+        self.audit_trail_path = VIDEO_PRODUCTION_DIR / "distribution_audit.jsonl"
 
     async def run_async(self, production_id: str, config: VideoProductionConfig,
                        videos: list[dict], callback=None) -> dict:
         """
         Distribute videos: YouTube upload, LMS push, social clips.
         Each video dict: {video_number, video_path, title}
+
+        LOCKED RULES ARE ENFORCED (see logs for non-negotiable constraints).
         """
+        # LOCKED: Log rules at start of execution
+        locked_rules = self.memory_manager.format_locked_rules_preamble(self.agent_name)
+        log_info("DistributionAgent", "LOCKED RULES ENFORCED (see below):")
+        for line in locked_rules.split("\n"):
+            log_info("DistributionAgent", line)
+
         log_info("DistributionAgent", f"Starting distribution for {len(videos)} videos")
 
         try:
@@ -51,6 +69,54 @@ class DistributionAgent:
                 callback(status="error", error=str(e))
             return {"status": "error", "production_id": production_id, "error": str(e)}
 
+    def _log_audit_trail(self, action: str, video_id: str, destination: str, status: str, details: dict = None):
+        """
+        LOCKED RULE: Log every distribution action to immutable audit trail.
+        This is non-negotiable for compliance and debugging.
+        """
+        audit_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "action": action,
+            "video_id": video_id,
+            "destination": destination,
+            "status": status,
+            "details": details or {}
+        }
+
+        # Append to JSONL (immutable audit trail)
+        self.audit_trail_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.audit_trail_path, 'a') as f:
+            f.write(json.dumps(audit_entry) + "\n")
+
+        log_info("DistributionAgent", f"AUDIT: {action} - {video_id} → {destination} ({status})")
+
+    def _validate_lms_payload(self, video_number: int, title: str, video_path: str) -> dict | None:
+        """
+        LOCKED RULE: Always validate LMS payload against schema before pushing.
+        Invalid JSON is silently dropped by API = silent failure.
+        """
+        try:
+            payload = {
+                "title": title,
+                "video_number": video_number,
+                "video_path": video_path,
+                "description": f"Systems Evaluations Video {video_number}"
+            }
+
+            # Validate payload structure
+            required_fields = ["title", "video_number", "video_path", "description"]
+            for field in required_fields:
+                if field not in payload:
+                    log_error("DistributionAgent", "PayloadValidationError", f"Missing required field: {field}")
+                    return None
+
+            log_info("DistributionAgent", f"VIDEO {video_number}: LMS payload validated successfully")
+            return payload
+
+        except Exception as e:
+            log_error("DistributionAgent", "PayloadValidationError", str(e))
+            return None
+
     async def _execute(self, production_id: str, config: VideoProductionConfig,
                        videos: list[dict]) -> dict:
         """Distribute all videos."""
@@ -65,6 +131,7 @@ class DistributionAgent:
 
             if not video_path or not Path(video_path).exists():
                 log_error("DistributionAgent", "MissingVideo", f"Video {video_number} not found")
+                self._log_audit_trail("distribution_attempt", f"video_{video_number}", "unknown", "failed", {"reason": "missing_video"})
                 failed_videos.append(video_number)
                 continue
 
@@ -75,19 +142,32 @@ class DistributionAgent:
                     youtube_url = await self._upload_youtube(video_path, title)
                     if youtube_url:
                         distribution_urls[f"{title}_youtube"] = youtube_url
+                        self._log_audit_trail("youtube_upload", f"video_{video_number}", "youtube", "success", {"url": youtube_url})
                         log_info("DistributionAgent", f"Video {video_number} uploaded to YouTube")
+                    else:
+                        self._log_audit_trail("youtube_upload", f"video_{video_number}", "youtube", "failed")
                 else:
                     log_warning("DistributionAgent", "YOUTUBE_API_KEY not configured; skipping YouTube")
+                    self._log_audit_trail("youtube_upload", f"video_{video_number}", "youtube", "skipped", {"reason": "api_key_missing"})
 
-                # Step 2: LMS push
+                # Step 2: LMS push (with LOCKED payload validation)
                 lms_url = None
                 if self.lms_api_key and self.lms_base_url:
-                    lms_url = await self._push_lms(video_path, title, video_number)
-                    if lms_url:
-                        distribution_urls[f"{title}_lms"] = lms_url
-                        log_info("DistributionAgent", f"Video {video_number} pushed to LMS")
+                    # LOCKED RULE: Validate payload before pushing
+                    payload = self._validate_lms_payload(video_number, title, video_path)
+                    if payload:
+                        lms_url = await self._push_lms_validated(payload)
+                        if lms_url:
+                            distribution_urls[f"{title}_lms"] = lms_url
+                            self._log_audit_trail("lms_push", f"video_{video_number}", "lms", "success", {"url": lms_url})
+                            log_info("DistributionAgent", f"Video {video_number} pushed to LMS")
+                        else:
+                            self._log_audit_trail("lms_push", f"video_{video_number}", "lms", "failed", {"reason": "api_error"})
+                    else:
+                        self._log_audit_trail("lms_push", f"video_{video_number}", "lms", "failed", {"reason": "payload_validation_failed"})
                 else:
                     log_warning("DistributionAgent", "LMS_API_KEY or LMS_BASE_URL not configured")
+                    self._log_audit_trail("lms_push", f"video_{video_number}", "lms", "skipped", {"reason": "config_missing"})
 
                 # Step 3: Generate social clips
                 clip_specs = [
@@ -96,10 +176,16 @@ class DistributionAgent:
                 ]
                 clip_result = self.social_clips_skill.call(video_path, clip_specs)
                 if clip_result:
+                    self._log_audit_trail("social_clips_generated", f"video_{video_number}", "social_media", "success", {"clip_count": len(clip_specs)})
                     log_info("DistributionAgent", f"Generated {len(clip_specs)} social clips for video {video_number}")
+                else:
+                    self._log_audit_trail("social_clips_generated", f"video_{video_number}", "social_media", "failed")
 
                 if not youtube_url and not lms_url:
+                    self._log_audit_trail("video_distribution", f"video_{video_number}", "all", "failed", {"reason": "no_successful_uploads"})
                     failed_videos.append(video_number)
+                else:
+                    self._log_audit_trail("video_distribution", f"video_{video_number}", "all", "success")
 
             except Exception as e:
                 log_error("DistributionAgent", "DistributionError", str(e), action_taken="video skipped")

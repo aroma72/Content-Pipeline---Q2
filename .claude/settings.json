@@ -76,5 +76,8 @@
     "agents_dir": ".claude/agents/",
     "skills_dir": ".claude/skills/",
     "scripts_dir": ".claude/scripts/"
+  },
+  "enabledPlugins": {
+    "superpowers@claude-plugins-official": true
   }
 }
