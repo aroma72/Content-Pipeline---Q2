@@ -153,6 +153,7 @@ class SceneVoiceover(BaseModel):
     scene_id: str
     audio_path: str
     duration_seconds: float
+    measured_duration_seconds: float = 0.0  # from ffprobe; 0.0 means not yet measured
     word_count: int
     quality_score: float = Field(ge=0.0, le=1.0)
 
@@ -161,7 +162,8 @@ class AnimationResult(BaseModel):
     scene_id: str
     video_path: str
     duration_seconds: float
-    runway_task_id: str
+    remotion_composition_id: str = ""
+    render_output_path: str = ""
     quality_score: float = Field(ge=0.0, le=1.0)
 
 
@@ -216,5 +218,6 @@ class VideoProductionState(BaseModel):
     quality_reports: list[dict] = []
     review_decisions: dict[str, dict] = {}
     distribution_urls: dict[str, str] = {}
+    output_contract_failures: dict[str, dict] = {}  # Track output contract violations per stage
     started_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     completed_at: Optional[str] = None

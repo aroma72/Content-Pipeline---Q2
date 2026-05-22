@@ -132,8 +132,26 @@ class VoiceoverSkill:
 
             # Calculate metrics
             word_count = len(narration_text.split())
-            # Rough estimate: 140 words per minute = 0.43 seconds per word
             estimated_duration = word_count / 140 * 60
+
+            # Measure actual duration with ffprobe — replaces word-count estimate
+            measured_duration = estimated_duration
+            try:
+                import subprocess
+                ffmpeg_static = Path(__file__).parent.parent / "node_modules" / "ffmpeg-static" / "ffmpeg.exe"
+                ffprobe_bin = str(ffmpeg_static).replace("ffmpeg.exe", "ffprobe.exe")
+                if not Path(ffprobe_bin).exists():
+                    # Fallback: try system ffprobe
+                    ffprobe_bin = "ffprobe"
+                probe = subprocess.run(
+                    [ffprobe_bin, "-v", "error", "-show_entries", "format=duration",
+                     "-of", "default=noprint_wrappers=1:nokey=1", str(audio_path)],
+                    capture_output=True, text=True, timeout=30
+                )
+                if probe.returncode == 0 and probe.stdout.strip():
+                    measured_duration = float(probe.stdout.strip())
+            except Exception:
+                pass  # fall back to estimate silently
 
             # Quality score: higher confidence with longer text (0.7-0.95 range)
             quality_score = min(0.95, 0.7 + (word_count / 1000))
@@ -141,7 +159,8 @@ class VoiceoverSkill:
             result = SceneVoiceover(
                 scene_id=scene_id,
                 audio_path=str(audio_path),
-                duration_seconds=estimated_duration,
+                duration_seconds=measured_duration,
+                measured_duration_seconds=measured_duration,
                 word_count=word_count,
                 quality_score=quality_score
             )

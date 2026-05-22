@@ -19,6 +19,17 @@ class PostProductionAgent:
 
     🔴 LOCKED RULES: Caption sync must be exact. Audio codec must be AAC.
     See agent_memory.json for non-negotiable constraints.
+
+    ═══════════════════════════════════════════════════════════════════════════
+    INSTRUCTION PRIORITY (highest to lowest):
+    1. LOCKED RULES in this prompt — never override
+    2. Explicit commands given by the user during this run
+    3. Agent defaults and inference
+
+    If any instruction conflicts with a higher-priority instruction,
+    the higher-priority one always wins. Never silently ignore a user
+    command — if you cannot follow it, say so explicitly before proceeding.
+    ═══════════════════════════════════════════════════════════════════════════
     """
 
     def __init__(self, timeout_minutes: int = 60):

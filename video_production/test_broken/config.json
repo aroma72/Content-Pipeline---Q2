@@ -1,0 +1,10 @@
+{
+  "production_id": "test_broken",
+  "series_title": "Test Broken Script",
+  "script_path": "video_production/test_broken/script.md",
+  "voice_id": "EXAVITQu4vr4xnSDxMaL",
+  "voice_stability": 0.75,
+  "total_videos": 1,
+  "target_resolution": "1920x1080",
+  "fps": 30
+}

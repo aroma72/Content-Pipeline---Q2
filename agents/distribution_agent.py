@@ -19,6 +19,17 @@ class DistributionAgent:
 
     🔴 LOCKED RULES: No force-push. LMS payload validation required. Audit trail mandatory.
     See agent_memory.json for non-negotiable constraints.
+
+    ═══════════════════════════════════════════════════════════════════════════
+    INSTRUCTION PRIORITY (highest to lowest):
+    1. LOCKED RULES in this prompt — never override
+    2. Explicit commands given by the user during this run
+    3. Agent defaults and inference
+
+    If any instruction conflicts with a higher-priority instruction,
+    the higher-priority one always wins. Never silently ignore a user
+    command — if you cannot follow it, say so explicitly before proceeding.
+    ═══════════════════════════════════════════════════════════════════════════
     """
 
     def __init__(self, timeout_minutes: int = 60):
@@ -236,16 +247,13 @@ class DistributionAgent:
             log_error("DistributionAgent", "YouTubeError", str(e))
             return None
 
-    async def _push_lms(self, video_path: str, title: str, video_number: int) -> str | None:
-        """Push video to LMS platform."""
+    async def _push_lms_validated(self, payload: dict) -> str | None:
+        """
+        LOCKED: Push pre-validated payload to LMS platform.
+        Payload must be validated before calling this method.
+        """
         try:
             headers = {"Authorization": f"Bearer {self.lms_api_key}"}
-            payload = {
-                "title": title,
-                "video_number": video_number,
-                "video_path": video_path,
-                "description": f"Systems Evaluations Video {video_number}"
-            }
 
             response = requests.post(
                 f"{self.lms_base_url}/api/videos",
@@ -256,7 +264,12 @@ class DistributionAgent:
 
             if response.status_code in [200, 201]:
                 data = response.json()
-                return data.get("url") or data.get("video_url")
+                url = data.get("url") or data.get("video_url")
+                if url:
+                    return url
+                else:
+                    log_warning("DistributionAgent", "LMS response missing URL field")
+                    return None
             else:
                 log_warning("DistributionAgent", f"LMS API error {response.status_code}")
                 return None
@@ -264,3 +277,10 @@ class DistributionAgent:
         except requests.exceptions.RequestException as e:
             log_error("DistributionAgent", "LMSError", str(e))
             return None
+
+    async def _push_lms(self, video_path: str, title: str, video_number: int) -> str | None:
+        """Push video to LMS platform (legacy method; use _push_lms_validated for LOCKED compliance)."""
+        payload = self._validate_lms_payload(video_number, title, video_path)
+        if payload:
+            return await self._push_lms_validated(payload)
+        return None

@@ -186,21 +186,12 @@ class RemotionVideoSkill:
             api_key = os.getenv("ANTHROPIC_API_KEY")
             client = anthropic.Anthropic(api_key=api_key)
 
-            system_prompt = """You are a Remotion video code generator. Write React/TypeScript code for a Remotion composition.
-
-Generate ONLY the composition function (no imports, no registration). The function receives props with:
-- narrationDuration: number (seconds of voiceover)
-- visuals: array of visual elements to animate
-- text: string (any text to display)
-
-Use Remotion hooks: useVideoConfig(), interpolate(), spring(), etc.
-Use standard HTML5 and CSS for styling.
-
-Return ONLY valid TypeScript/JSX code with no markdown backticks or explanations."""
+            from config import PROMPTS_DIR, MODEL_SONNET
+            system_prompt = (PROMPTS_DIR / "remotion_video_agent.txt").read_text(encoding="utf-8")
 
             response = client.messages.create(
-                model=MODEL_HAIKU,
-                max_tokens=1024,
+                model=MODEL_SONNET,
+                max_tokens=4096,
                 system=system_prompt,
                 messages=[{
                     "role": "user",

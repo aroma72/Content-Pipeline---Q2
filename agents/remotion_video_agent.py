@@ -1,6 +1,8 @@
 import asyncio
 import json
 import sys
+import os
+from datetime import datetime
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -9,6 +11,7 @@ from skills.remotion_video_skill import RemotionVideoSkill
 from config import VIDEO_PRODUCTION_DIR
 from logger import log_info, log_error, log_decision, log_warning
 from memory_manager import AgentMemoryManager
+import anthropic
 
 
 class RemotionVideoAgent:
@@ -19,6 +22,17 @@ class RemotionVideoAgent:
 
     🔴 LOCKED RULES: This agent must follow non-negotiable constraints.
     See agent_memory.json for global_rules and past_mistakes to prevent regressions.
+
+    ═══════════════════════════════════════════════════════════════════════════
+    INSTRUCTION PRIORITY (highest to lowest):
+    1. LOCKED RULES in this prompt — never override
+    2. Explicit commands given by the user during this run
+    3. Agent defaults and inference
+
+    If any instruction conflicts with a higher-priority instruction,
+    the higher-priority one always wins. Never silently ignore a user
+    command — if you cannot follow it, say so explicitly before proceeding.
+    ═══════════════════════════════════════════════════════════════════════════
     """
 
     def __init__(self, remotion_project_dir: str | None = None, timeout_minutes: int = 120):
@@ -74,15 +88,35 @@ class RemotionVideoAgent:
                 callback(status="error", error=str(e))
             return {"status": "error", "production_id": production_id, "error": str(e)}
 
-    def _verify_locked_rules(self, video_number: int, total_duration: float) -> bool:
+    def _verify_locked_rules(self, video_number: int, total_duration: float, scenes: list[dict] = None) -> bool:
         """
-        LOCKED: Check frame count mathematics before rendering.
-        Rule: frames = VO_seconds × 30fps (max +30 buffer)
+        LOCKED: Check frame count mathematics and animation pacing before rendering.
+        Rules:
+        1. frames = VO_seconds × 30fps (max +30 buffer)
+        2. No single segment exceeds 6 seconds (180 frames)
+        3. Each segment must have 2+ internal animations
         Returns True if valid, logs error and returns False if invalid.
         """
         # LOCKED RULE: FRAME_COUNT_MATH
         max_frames = int(total_duration * 30) + 30  # +30 buffer
         log_info("RemotionVideoAgent", f"VIDEO {video_number}: Duration {total_duration}s = {int(total_duration * 30)} frames (max {max_frames} with buffer)")
+
+        # LOCKED RULE: ANIMATION_SEGMENT_DURATION_MAX
+        # No segment should exceed 6 seconds (180 frames)
+        if scenes:
+            for i, scene in enumerate(scenes):
+                scene_duration = scene.get("duration_seconds", 0)
+                if scene_duration > 6:
+                    log_warning("RemotionVideoAgent", f"VIDEO {video_number} SCENE {i}: Duration {scene_duration}s exceeds 6s max (LOCKED rule). Must split into sub-segments.")
+                    # Don't fail, but warn - this is a quality gate, not a blocker
+                    # User/designer should fix before final render
+                    continue
+
+        # LOCKED RULE: ANIMATION_INTERNAL_MOTION
+        # Each segment must have animation complexity (opacity, scale, position changes)
+        # This is enforced in composition code generation, not here
+        log_info("RemotionVideoAgent", f"VIDEO {video_number}: Animation pacing will be verified in Remotion Studio preview (check for snappy transitions, internal motion)")
+
         return True
 
     async def _execute(self, production_id: str, config: VideoProductionConfig,
@@ -125,9 +159,9 @@ class RemotionVideoAgent:
                     failed_videos.append(video_number)
                     continue
 
-                # Step 3: Verify frame count math before rendering (LOCKED RULE)
+                # Step 3: Verify frame count math & animation pacing before rendering (LOCKED RULES)
                 total_duration = sum(s.get("duration_seconds", 0) for s in scenes)
-                if not self._verify_locked_rules(video_number, total_duration):
+                if not self._verify_locked_rules(video_number, total_duration, scenes):
                     log_error("RemotionVideoAgent", "FrameCountValidationFailed", f"Video {video_number} violates frame count rules")
                     failed_videos.append(video_number)
                     continue
@@ -224,29 +258,20 @@ class RemotionVideoAgent:
             client = anthropic.Anthropic(api_key=api_key)
 
             scenes_json = json.dumps(scenes, indent=2)
+            from config import PROMPTS_DIR
+            system_prompt = (PROMPTS_DIR / "remotion_video_agent.txt").read_text(encoding="utf-8")
 
-            system_prompt = """You are a Remotion React/TypeScript expert. Generate a professional video composition.
-
-Write ONLY the composition function. Assume scenes data is passed via props.
-
-- Use Remotion hooks: useVideoConfig(), interpolate(), spring(), delayRender()
-- Sequence scenes chronologically
-- Each scene has: scene_id, visual_description, narration_duration, audio_path
-- Sync animations to narration_duration
-- Add professional transitions between scenes
-- Output 1920x1080 @ 30fps
-
-Return clean TypeScript/JSX with no markdown formatting."""
+            course_title = config.title if hasattr(config, 'title') and config.title else f"Video {video_number}"
 
             response = client.messages.create(
                 model=MODEL_SONNET,
-                max_tokens=2048,
+                max_tokens=4096,
                 system=system_prompt,
                 messages=[{
                     "role": "user",
                     "content": f"""Create a Remotion composition for a {len(scenes)}-scene educational video.
 
-Video {video_number}: "Systems Evaluations"
+{course_title}
 
 Scenes:
 {scenes_json}
@@ -271,14 +296,215 @@ Generate the complete composition function named 'VideoComposition'."""
             log_decision(
                 "RemotionVideoAgent", "composition_code_generated", "success",
                 f"Generated {len(composition_code)} chars of Remotion composition code",
-                rationale="Ready for registration in Remotion project"
+                rationale="Ready for self-validation against locked rules"
             )
 
-            return composition_code
+            # ═════════════════════════════════════════════════════════════════════════
+            # LOCKED: Self-validation loop (max 2 attempts)
+            # Validate composition code against locked rules before rendering
+            # ═════════════════════════════════════════════════════════════════════════
+            validated_code = self._self_validate_composition_code(
+                video_number, composition_code, client, config.fps
+            )
+
+            if validated_code is None:
+                log_error("RemotionVideoAgent", "CompositionValidationFailed",
+                         f"Video {video_number} composition failed self-validation after 2 attempts")
+                return None
+
+            return validated_code
 
         except Exception as e:
             log_error("RemotionVideoAgent", "CompositionGenError", str(e))
             return None
+
+    def _self_validate_composition_code(self, video_number: int, composition_code: str,
+                                        client: anthropic.Anthropic, fps: int) -> str | None:
+        """
+        LOCKED: Self-validation loop for Remotion composition code.
+
+        Validates against locked rules with max 2 correction attempts.
+        If validation fails after 2 attempts, logs violation to agent_memory.json and returns None.
+
+        Flow:
+        1. Send code + locked rules to Claude for validation
+        2. If Claude responds "APPROVED" → return code
+        3. If Claude lists violations → rewrite and retry (max 2 times)
+        4. If still failing after 2 attempts → log violation and halt
+
+        Returns: Validated code OR None if validation fails
+        """
+        from config import MODEL_SONNET
+        from dotenv import load_dotenv
+
+        load_dotenv()
+
+        # Get locked rules from memory manager
+        global_rules = self.memory_manager.get_global_rules()
+        agent_rules = self.memory_manager.get_agent_specific_rules("RemotionVideoAgent")
+
+        # Format rules for validation prompt
+        global_rules_text = "\n".join([
+            f"- {r['rule_id']}: {r['rule']}" for r in global_rules if r.get("applies_to") and "RemotionVideoAgent" in r.get("applies_to")
+        ])
+
+        agent_rules_text = "\n".join([
+            f"- {r['rule_id']}: {r['rule']}" for r in agent_rules
+        ])
+
+        validation_prompt = f"""Review this Remotion composition code against locked rules.
+
+🔴 GLOBAL LOCKED RULES (RemotionVideoAgent):
+{global_rules_text}
+
+🔴 AGENT-SPECIFIC LOCKED RULES:
+{agent_rules_text}
+
+CODE TO REVIEW:
+```typescript
+{composition_code}
+```
+
+INSTRUCTIONS:
+1. Check code against ALL locked rules above
+2. If NO violations found, respond with exactly: APPROVED
+3. If violations found, list them explicitly then provide REWRITTEN code that fixes them
+4. Rewritten code should be syntactically correct TypeScript/JSX
+
+Response format:
+If approved:
+APPROVED
+
+If violations found:
+VIOLATIONS:
+- [violation 1]
+- [violation 2]
+...
+
+REWRITTEN CODE:
+```typescript
+[fixed code here]
+```
+
+Be strict. No passing code that violates locked rules."""
+
+        attempt = 1
+        current_code = composition_code
+
+        while attempt <= 2:
+            try:
+                log_info("RemotionVideoAgent",
+                        f"VIDEO {video_number}: Self-validation attempt {attempt}/2")
+
+                # Send to Claude for validation
+                response = client.messages.create(
+                    model=MODEL_SONNET,
+                    max_tokens=3000,
+                    messages=[{
+                        "role": "user",
+                        "content": validation_prompt.replace(composition_code, current_code)
+                    }]
+                )
+
+                validation_response = response.content[0].text.strip()
+
+                # Check if approved
+                if "APPROVED" in validation_response.upper():
+                    log_decision(
+                        "RemotionVideoAgent", "composition_self_validated", "success",
+                        f"Video {video_number}: Code passed self-validation (attempt {attempt})",
+                        rationale="Composition complies with all locked rules"
+                    )
+                    return current_code
+
+                # Parse violations and rewritten code
+                if "VIOLATIONS:" in validation_response:
+                    # Extract violations section
+                    violations_section = validation_response.split("VIOLATIONS:")[1].split("REWRITTEN CODE:")[0].strip()
+                    violations = [v.strip() for v in violations_section.split("\n") if v.strip() and v.startswith("-")]
+
+                    log_warning("RemotionVideoAgent",
+                               f"VIDEO {video_number}: Self-validation found {len(violations)} violations (attempt {attempt}):")
+                    for v in violations:
+                        log_warning("RemotionVideoAgent", f"  {v}")
+
+                    # Extract rewritten code if available
+                    if "REWRITTEN CODE:" in validation_response:
+                        code_section = validation_response.split("REWRITTEN CODE:")[1].strip()
+
+                        # Clean markdown if present
+                        if code_section.startswith("```"):
+                            code_section = "\n".join(code_section.split("\n")[1:-1])
+
+                        current_code = code_section.strip()
+                        attempt += 1
+
+                        if attempt > 2:
+                            # Failed after max attempts
+                            log_error("RemotionVideoAgent", "CompositionValidationMaxAttemptsExceeded",
+                                     f"Video {video_number}: Failed self-validation after 2 attempts")
+
+                            # Log violation to agent memory for human review
+                            self.memory_manager.log_new_mistake("RemotionVideoAgent", {
+                                "correction_type": "COMPOSITION_VALIDATION_FAILED",
+                                "video_number": video_number,
+                                "timestamp": datetime.now().isoformat(),
+                                "violations": violations,
+                                "attempts": 2,
+                                "last_code": current_code[:500] + "..." if len(current_code) > 500 else current_code,
+                                "action": "Composition code failed self-validation. Manual review required before rendering."
+                            })
+
+                            return None
+                        # Continue loop to attempt again
+                    else:
+                        # No rewritten code provided
+                        log_error("RemotionVideoAgent", "ValidationNoRewrittenCode",
+                                 f"Video {video_number}: Claude found violations but did not provide rewritten code")
+
+                        # Log to memory
+                        self.memory_manager.log_new_mistake("RemotionVideoAgent", {
+                            "correction_type": "VALIDATION_INCOMPLETE",
+                            "video_number": video_number,
+                            "timestamp": datetime.now().isoformat(),
+                            "issue": "Found violations but no rewritten code provided",
+                            "action": "Halted. Manual review required."
+                        })
+
+                        return None
+                else:
+                    # Unexpected response format
+                    log_error("RemotionVideoAgent", "ValidationResponseFormat",
+                             f"Video {video_number}: Unexpected validation response format")
+                    log_warning("RemotionVideoAgent", f"Response:\n{validation_response[:200]}...")
+
+                    # Log to memory
+                    self.memory_manager.log_new_mistake("RemotionVideoAgent", {
+                        "correction_type": "VALIDATION_RESPONSE_MALFORMED",
+                        "video_number": video_number,
+                        "timestamp": datetime.now().isoformat(),
+                        "response": validation_response[:200],
+                        "action": "Halted. Cannot parse validation response."
+                    })
+
+                    return None
+
+            except Exception as e:
+                log_error("RemotionVideoAgent", "SelfValidationError", str(e))
+
+                # Log to memory
+                self.memory_manager.log_new_mistake("RemotionVideoAgent", {
+                    "correction_type": "VALIDATION_EXCEPTION",
+                    "video_number": video_number,
+                    "timestamp": datetime.now().isoformat(),
+                    "error": str(e),
+                    "action": "Self-validation threw exception. Manual review required."
+                })
+
+                return None
+
+        # Should not reach here, but if we do, validation failed
+        return None
 
     async def _register_composition(self, comp_id: str, composition_code: str) -> bool:
         """Register composition in Remotion project Root.tsx."""

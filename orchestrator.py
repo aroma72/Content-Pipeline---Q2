@@ -75,6 +75,18 @@ class ContentOrchestrator:
         Run the full Perceive→Plan→Act→Observe→Reflect loop.
         Call this every Monday morning.
         """
+        # Log authority hierarchy at startup (non-negotiable instruction priority)
+        log_info("Orchestrator", "═" * 79)
+        log_info("Orchestrator", "INSTRUCTION PRIORITY (highest to lowest):")
+        log_info("Orchestrator", "1. LOCKED RULES in system prompt — never override")
+        log_info("Orchestrator", "2. Explicit commands given by user during this run")
+        log_info("Orchestrator", "3. Orchestrator defaults and inference")
+        log_info("Orchestrator", "")
+        log_info("Orchestrator", "If any instruction conflicts with a higher-priority instruction,")
+        log_info("Orchestrator", "the higher-priority one always wins. Never silently ignore a user")
+        log_info("Orchestrator", "command — if you cannot follow it, say so explicitly before proceeding.")
+        log_info("Orchestrator", "═" * 79)
+
         log_info("Orchestrator", f"=== Weekly cycle {self.cycle_week} started ===")
 
         try:

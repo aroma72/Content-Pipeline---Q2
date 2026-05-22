@@ -105,6 +105,135 @@ Standards for rendering, timing, and visual correctness in Remotion compositions
 
 ---
 
+## Animation Correctness Rules (CRITICAL)
+
+### The #1 Animation Bug: useVideoConfig() instead of useCurrentFrame()
+
+**NEVER** compute animation progress from `useVideoConfig()` alone. `durationInFrames` and `fps` from `useVideoConfig()` are static constants — they do not change per frame. Using them to compute `progress` produces a frozen image.
+
+**❌ Wrong (produces static/frozen output):**
+```tsx
+const { fps, durationInFrames } = useVideoConfig();
+const progress = Math.min(durationInFrames / (8 * fps), 1); // Always 1.0!
+```
+
+**✅ Correct (animates over time):**
+```tsx
+import { useCurrentFrame, useVideoConfig } from 'remotion';
+const frame = useCurrentFrame();
+const { fps } = useVideoConfig();
+const progress = Math.min(frame / (8 * fps), 1); // 0→1 over 8 seconds
+```
+
+### Minimum Animation Requirements Per Segment
+
+- Every Sequence segment must have at least 2 distinct motion events
+- No element may be static (same value) for more than 60 consecutive frames (2 seconds)
+- Use `spring()` for entrance animations, `interpolate()` for continuous motion
+- CSS `transition` properties have NO effect in Remotion — Remotion renders each frame independently
+
+### Pre-Render Animation Check
+
+```bash
+# Verify no segment uses the broken useVideoConfig pattern
+grep -rn "durationInFrames / (" drawing-room-remotion/src/
+# Any results = animation bug — replace with useCurrentFrame() pattern
+```
+
+---
+
+## Design System Standards
+
+### Approved Background Palette — School of Life Theme
+
+| Token | Hex | Description |
+|---|---|---|
+| Background (all segments) | `#F5F1E8` | Warm cream — inviting, timeless |
+| Closing phase tint | `#EDE8DC` | Slightly deeper cream for resolution |
+| Heading text | `#6B5344` | Dark brown — warm, authoritative |
+| Body text | `#9B7A6B` | Medium brown — readable, warm |
+| Primary accent | `#C67C5F` | Terracotta |
+| Secondary accent | `#8B9F7E` | Sage green |
+| Tertiary accent | `#A8C9D1` | Soft blue |
+| Warm highlight | `#E8A87C` | Warm orange |
+
+**NEVER use:** `#FFFFFF`, `#FAFAFA`, near-white, dark navy, or cold blue backgrounds.
+Reference: `drawing-room-remotion/src/segments/SchoolOfLifeTheme.ts`
+
+### Typography Scale
+
+| Element | Size | Weight | Font |
+|---|---|---|---|
+| Hero title | 56px | 700 | Georgia, serif |
+| Section eyebrow | 14px | 700 | Georgia, serif — uppercase, letter-spacing 3px |
+| Bullet / body emphasis | 24–26px | 700 | Georgia, serif |
+| Body copy | 22–24px | 400 | Georgia, serif |
+
+### Color Semantics
+
+- **Red** (#DC2626, #EF4444, #F87171) = **error/danger state only** — never for comparisons
+- **Amber** (#D97706, bg #FFFBEB) = starting state, current state, "consumer" role
+- **Green** (#16A34A, bg #F0FDF4) = goal state, achieved state, "producer" role
+- **Brand blue** (#4A7BA7) = labels, accents, CTA backgrounds
+
+### Phase Transition Pattern (Opacity-Only Mounting)
+
+All content phases must be mounted from frame 0. Opacity controls visibility.
+
+```tsx
+// ✅ Correct — phases replace each other cleanly
+const phaseOp = interpolate(frame,
+  [startF, startF + 20, endF, endF + 20],
+  [0, 1, 1, 0],
+  { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+
+// Apply to container:
+<div style={{ position: 'absolute', inset: 0, opacity: phaseOp }}>
+  {/* phase content */}
+</div>
+```
+
+```tsx
+// ❌ Wrong — stacks all phases on screen simultaneously
+{frame > P2_IN && <div>Phase 2 content</div>}
+```
+
+### Bullet/Pointer Standards
+
+Replace small dots or emoji with a coloured left-border bar:
+
+```tsx
+<div style={{ display: 'flex', alignItems: 'stretch', gap: 0 }}>
+  <div style={{ width: 5, alignSelf: 'stretch', backgroundColor: TEAL,
+    borderRadius: 3, marginRight: 20, flexShrink: 0 }} />
+  <div style={{ fontSize: 24, fontWeight: 700, color: HEADING }}>
+    Bullet text here
+  </div>
+</div>
+```
+
+### Float Animation Minimum
+
+```tsx
+// amplitude MUST be >= 14px — anything below 10px is invisible at video scale
+const floatY = (frame: number, period = 150, amplitude = 14) =>
+  Math.sin((frame / period) * Math.PI * 2) * amplitude;
+```
+
+### Pre-Render Design Check
+
+```bash
+# Verify font is Georgia (not system UI)
+grep -rn "apple-system\|Segoe UI\|Roboto\|Arial" drawing-room-remotion/src/
+# Any results = fix required
+
+# Verify no conditional phase rendering (stacking bug)
+grep -rn "frame > P[0-9]\|showPhase\|frame >= " drawing-room-remotion/src/
+# Results using show/hide logic = rewrite to opacity pattern
+```
+
+---
+
 ## Pre-Render Validation
 
 Before running `npx remotion render`, verify:

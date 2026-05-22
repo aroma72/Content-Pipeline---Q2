@@ -35,6 +35,22 @@
       "how_to_follow": "For 120s VO: 120 × 30 = 3600 frames. Check Remotion composition before rendering."
     },
     {
+      "rule_id": "FRAME_PACING_QUICK_CHANGES",
+      "rule": "LOCKED: Visual pacing must be quick with frequent frame/scene changes (3-second rule with justified overrides). Applies to BOTH approaches: (A) Google Studio images, (B) Pure Remotion animations. NO visual should hold static for >3s unless justified by complexity.",
+      "severity": "CRITICAL",
+      "applies_to": ["RemotionVideoAgent"],
+      "violated_by": "Static visual holds >3s without justification. Google Studio: image on screen >3s. Remotion: animated scene unchanged for >3s (or animation that appears static despite motion).",
+      "how_to_follow": "BOTH APPROACHES: (1) Phase 0: Map VO-to-visual moments with 3s default duration. (2) Override only when visual complexity requires (document reason). (3) Google Studio: each image 3s max. Remotion: each animated segment max 6s total with 2+ internal animations (no static holds >3s). (4) Test: does it feel dynamic and engaging?"
+    },
+    {
+      "rule_id": "ANIMATION_ENGAGEMENT_GATES",
+      "rule": "LOCKED: Remotion animations must maintain visual momentum through staggered reveals, quick transitions, opacity fades, or motion paths. No static holds.",
+      "severity": "CRITICAL",
+      "applies_to": ["RemotionVideoAgent"],
+      "violated_by": "Static SVG segments that sit unchanged for 5+ seconds; smooth fade-in/fade-out without motion",
+      "how_to_follow": "Every scene must have: (1) entry animation, (2) micro-animations or progressive reveals while visible, (3) exit animation. Use opacity, scale, translateX/Y, staggered delays."
+    },
+    {
       "rule_id": "SVG_VIEWBOX_SAFETY",
       "rule": "SVG diagrams: ViewBox minimum 850px height for 7-node radials. Labels below circles need 60px clearance.",
       "severity": "HIGH",
@@ -100,11 +116,25 @@
         "how_to_follow": "Use CourseOverview-1A-EntryDiscovery not CourseOverview_1A_EntryDiscovery"
       },
       {
+        "rule_id": "ANIMATION_SEGMENT_DURATION_MAX",
+        "rule": "LOCKED: 3-SECOND RULE FOR REMOTION: No animated visual should hold unchanged for >3 seconds. Single Sequence segment max 6 seconds (but only if 2+ internal animations fill that time). APPLIES TO BOTH: (A) Remotion-only videos AND (B) Google Studio + Remotion hybrid videos.",
+        "severity": "CRITICAL",
+        "violated_by": "Animation segment that appears static/unchanging for 3+ consecutive seconds. User feedback: 'not animated its just pictures' = violation of this rule.",
+        "how_to_follow": "For any scene/concept: (1) If simple, use 3s with 2 animations (enter/exit). (2) If complex, use 4-6s BUT ONLY with 3+ internal animations (micro-motions, opacity changes, position shifts). (3) If no animation possible, use Google Studio images instead. Never have an animated segment that feels static."
+      },
+      {
+        "rule_id": "ANIMATION_INTERNAL_MOTION",
+        "rule": "LOCKED: MINIMUM 2 internal state changes per animated segment. Examples: (1) fade-in + scale pulse + fade-out, (2) translate-in + rotate + translate-out, (3) opacity grow + position shift + opacity fade. NO exceptions for >3s segments.",
+        "severity": "CRITICAL",
+        "violated_by": "SVG element appears on screen and never moves/changes opacity/changes color for the entire segment duration = looks like a 'picture' not 'animation'",
+        "how_to_follow": "Every segment must have: Entry (0.2-0.5s) + Middle Motion (1-4s) + Exit (0.2-0.5s). Use spring() easing for natural feel. Example timing: fade-in (30 frames), scale+rotate (90 frames), fade-out (30 frames) = 150 frames total (5s)."
+      },
+      {
         "rule_id": "ANIMATION_QUALITY_GATES",
-        "rule": "All animated segments must have smooth transitions (no jarring cuts unless explicitly requested).",
+        "rule": "All animated segments must have snappy transitions (0.2-0.5s fade/scale, no dragging). Preview in Studio and ask: does this feel engaging?",
         "severity": "MEDIUM",
-        "violated_by": "Animation glitches or rough transitions in preview",
-        "how_to_follow": "Test in Remotion Studio. Verify opacity/scale animations are smooth."
+        "violated_by": "Animation glitches, slow transitions (>0.5s), or boring linear easing",
+        "how_to_follow": "Test in Remotion Studio. Use spring() easing for natural feel. Verify segment feels dynamic, not dragged."
       }
     ],
     "PostProductionAgent": [

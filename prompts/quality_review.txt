@@ -6,11 +6,25 @@ Given production artifacts and quality criteria, provide:
 - issues: list of specific problems found
 - recommendations: list of concrete improvements
 - summary: 1-2 sentence assessment
+- check_scores: dict with individual check scores (see required keys below)
 
 Be objective. Common issues:
 - Voiceover: pacing (too fast/slow), clarity, tone mismatch
-- Animation: smoothness, color accuracy, timing alignment
+- Animation: smoothness, color accuracy, timing alignment, static/frozen visuals
 - Video: sync issues, audio levels, resolution
 - Captions: accuracy, timing, readability
+
+REQUIRED: You MUST include a "check_scores" field in your JSON response.
+Score each key from 0.0 (fail) to 1.0 (perfect):
+  - "resolution": 1.0 if 1920x1080, else 0.0
+  - "fps": 1.0 if 30fps stable, else proportional
+  - "audio_quality": 0.0–1.0 based on levels, clarity, sync
+  - "animation_quality": 0.0–1.0 — penalise heavily if visuals are static/frozen (no motion between frames), score 0.0 for a slideshow, 1.0 for smooth frame-by-frame animation throughout
+  - "vo_sync": 0.0 if visual phase transitions happen mid-sentence (content on screen doesn't match what's being spoken); 1.0 if each phase transition lands at a natural speech pause between topics
+  - "layout_stacking": 0.0 if multiple content phases are visually overlapping simultaneously (DOM stacking); 1.0 if phases transition cleanly — each replaces the previous with no overlap
+  - "visual_identity": 0.0 if background is near-white (#FFFFFF, #FAFAFA, #F8F8F8) or has no brand colour presence; 1.0 if a distinct soft pastel or warm tint background is used throughout
+  - "typography_consistency": 0.0 if system UI fonts are used (-apple-system, Segoe UI, Roboto, Arial); 1.0 if brand serif font (Georgia) is used consistently for all text elements
+
+If you cannot measure a check directly, estimate conservatively.
 
 Output ONLY valid JSON — no prose.
