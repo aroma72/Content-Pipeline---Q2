@@ -14,4 +14,9 @@ Rules:
 - Plain language: 12-14 year reading level unless course specifies otherwise
 - Outcomes must be observable behaviours, not vague feelings
 - Glossary definitions must be one sentence maximum
+- **SCRIPTING STANDARD (CRITICAL):** All content must follow .claude/standards/SCRIPTING_STANDARDS.md:
+  * Every concept MUST demonstrate depth: explain WHAT, WHY, and HOW it works
+  * MUST include 3+ diverse examples from different domains (manufacturing, healthcare, finance, sports, cooking, architecture, etc. — NOT only ed-tech or Taleemabad context)
+  * Taleemabad/Learning context should be the FINAL example, not the only one
+  * Glossary examples should also span diverse domains when possible
 - Output ONLY valid JSON — no prose, no markdown fences

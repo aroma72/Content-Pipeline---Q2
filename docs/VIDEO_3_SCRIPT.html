@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consumer vs Producer - Video 3 Script</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f5f5f5;
+            padding: 40px 20px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            padding: 60px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            border-bottom: 3px solid #2196F3;
+            padding-bottom: 20px;
+        }
+        h1 {
+            font-size: 36px;
+            color: #1565C0;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            font-size: 18px;
+            color: #666;
+            font-style: italic;
+        }
+        .video-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 30px 0;
+            background: #f9f9f9;
+            padding: 20px;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        .info-item {
+            padding: 10px;
+        }
+        .info-label {
+            font-weight: bold;
+            color: #1565C0;
+        }
+        .section {
+            margin: 40px 0;
+        }
+        .section-header {
+            font-size: 20px;
+            font-weight: bold;
+            color: #1565C0;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-left: 4px solid #4CAF50;
+            padding-left: 15px;
+        }
+        .timecode {
+            display: inline-block;
+            background: #2196F3;
+            color: white;
+            padding: 3px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-right: 10px;
+            font-weight: bold;
+        }
+        .visual-cue {
+            background: #FFF3E0;
+            border-left: 4px solid #FF9800;
+            padding: 12px 15px;
+            margin: 20px 0;
+            font-size: 13px;
+            font-style: italic;
+            color: #E65100;
+        }
+        .script-text {
+            background: #F3F3F3;
+            padding: 20px;
+            border-radius: 6px;
+            margin: 15px 0;
+            line-height: 1.8;
+            font-size: 15px;
+            color: #222;
+        }
+        .script-text p {
+            margin-bottom: 12px;
+        }
+        .emphasis {
+            font-weight: bold;
+            color: #1565C0;
+        }
+        .code-block {
+            background: #2D2D2D;
+            color: #f8f8f2;
+            padding: 20px;
+            border-radius: 6px;
+            margin: 15px 0;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+        .code-block .keyword { color: #66d9ef; }
+        .code-block .string { color: #e6db74; }
+        .code-block .comment { color: #75715e; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 13px;
+        }
+        th {
+            background: #1565C0;
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-weight: bold;
+        }
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        tr:nth-child(even) {
+            background: #f9f9f9;
+        }
+        .timeline {
+            margin: 20px 0;
+        }
+        .timeline-item {
+            display: flex;
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #f5f5f5;
+            border-radius: 6px;
+        }
+        .timeline-time {
+            font-weight: bold;
+            color: #1565C0;
+            min-width: 100px;
+            font-size: 14px;
+        }
+        .timeline-content {
+            flex: 1;
+            font-size: 13px;
+        }
+        .footer {
+            margin-top: 50px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+            text-align: center;
+            font-size: 12px;
+            color: #666;
+        }
+        @media print {
+            body {
+                background: white;
+                padding: 0;
+            }
+            .container {
+                max-width: 100%;
+                box-shadow: none;
+                padding: 40px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>CONSUMER VS PRODUCER</h1>
+            <div class="subtitle">Building Agents in Practice</div>
+            <div class="subtitle">Video 3 of 3</div>
+        </div>
+
+        <div class="video-info">
+            <div class="info-item">
+                <div class="info-label">Duration:</div>
+                <div>3 minutes maximum</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Voiceover:</div>
+                <div>~810 words</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Learning Goal:</div>
+                <div>Design and implement producer-consumer agents</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Complexity:</div>
+                <div>Code heavy</div>
+            </div>
+        </div>
+
+        <!-- OPENING -->
+        <div class="section">
+            <div class="section-header">
+                <span class="timecode">0:00–0:20</span>OPENING
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Code editor with blank file, title appearing]
+            </div>
+            <div class="script-text">
+                <p>Theory is done. Let's build.</p>
+                <p>We're going to create a real producer-consumer agent system. Simple code. Real principles.</p>
+                <p>By the end, you'll know how to design and build your own agent pair.</p>
+                <p>Let's go.</p>
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Transition to code blocks]
+            </div>
+        </div>
+
+        <!-- PRODUCER AGENT -->
+        <div class="section">
+            <div class="section-header">
+                <span class="timecode">0:20–1:00</span>PRODUCER AGENT CODE
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Code block with syntax highlighting, key sections highlighted]
+            </div>
+            <div class="code-block">
+<span class="keyword">class</span> <span class="string">FeedbackProducerAgent</span>:
+    <span class="keyword">def</span> <span class="string">produce</span>(<span class="keyword">self</span>):
+        <span class="comment"># Step 1: Fetch raw feedback</span>
+        feedback = <span class="keyword">self</span>.fetch_from_sources()
+
+        <span class="comment"># Step 2: Clean and validate</span>
+        structured = []
+        <span class="keyword">for</span> item <span class="keyword">in</span> feedback:
+            cleaned = <span class="keyword">self</span>.clean_text(item)
+            <span class="keyword">if</span> <span class="keyword">self</span>.is_quality(cleaned):
+                structured.append({
+                    <span class="string">'text'</span>: cleaned,
+                    <span class="string">'sentiment'</span>: <span class="keyword">self</span>.analyze_sentiment(cleaned),
+                    <span class="string">'source'</span>: item.source
+                })
+
+        <span class="comment"># Step 3: Output to queue</span>
+        <span class="keyword">self</span>.queue.put(structured)
+        <span class="keyword">return</span> <span class="keyword">len</span>(structured)
+            </div>
+            <div class="script-text">
+                <p><span class="emphasis">What's happening?</span></p>
+                <p><span class="emphasis">Step 1: Fetch</span> from emails, surveys, social media. Get raw feedback.</p>
+                <p><span class="emphasis">Step 2: Clean</span> messy text. Analyze sentiment. Check quality. If it's bad, drop it. Only good data passes through.</p>
+                <p><span class="emphasis">Step 3: Put clean data into a queue.</span> Don't wait. Move on.</p>
+                <p><span class="emphasis">THIS IS KEY:</span></p>
+                <p>Producer does <span class="emphasis">ONE job.</span> Produce clean data. That's it.</p>
+                <p>It doesn't analyze. Doesn't generate reports. Just produces.</p>
+                <p>And it <span class="emphasis">doesn't wait for the consumer.</span> Queue handles the handoff.</p>
+                <p>This separation is everything. This is what lets systems scale.</p>
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Highlight fetch section in green, clean section in blue, queue output in orange]
+            </div>
+        </div>
+
+        <!-- CONSUMER AGENT -->
+        <div class="section">
+            <div class="section-header">
+                <span class="timecode">1:00–1:45</span>CONSUMER AGENT CODE
+            </div>
+            <div class="visual-cue">
+                [VISUAL: New code block, consumer agent, error handling highlighted]
+            </div>
+            <div class="code-block">
+<span class="keyword">class</span> <span class="string">FeedbackAnalysisConsumerAgent</span>:
+    <span class="keyword">def</span> <span class="string">consume</span>(<span class="keyword">self</span>):
+        <span class="comment"># Step 1: Get batch from queue</span>
+        batch = <span class="keyword">self</span>.queue.get_batch(size=<span class="string">10</span>)
+
+        <span class="keyword">if</span> <span class="keyword">not</span> batch:
+            <span class="keyword">return</span> <span class="keyword">None</span>  <span class="comment"># Queue empty</span>
+
+        <span class="comment"># Step 2: Analyze</span>
+        insights = []
+        <span class="keyword">for</span> feedback <span class="keyword">in</span> batch:
+            <span class="keyword">try</span>:
+                topics = <span class="keyword">self</span>.extract_topics(feedback[<span class="string">'text'</span>])
+                urgency = <span class="keyword">self</span>.assess_urgency(feedback[<span class="string">'sentiment'</span>])
+
+                insight = {
+                    <span class="string">'topics'</span>: topics,
+                    <span class="string">'urgency'</span>: urgency,
+                    <span class="string">'source'</span>: feedback[<span class="string">'source'</span>]
+                }
+                insights.append(insight)
+
+            <span class="keyword">except</span> <span class="keyword">Exception</span> <span class="keyword">as</span> e:
+                <span class="keyword">self</span>.log_error(<span class="string">f'Failed: {e}'</span>)
+                <span class="keyword">continue</span>  <span class="comment"># Keep going, don't crash</span>
+
+        <span class="comment"># Step 3: Output insights</span>
+        <span class="keyword">self</span>.output(insights)
+        <span class="keyword">return</span> insights
+            </div>
+            <div class="script-text">
+                <p><span class="emphasis">What's happening?</span></p>
+                <p><span class="emphasis">Step 1: Pull batch</span> of 10 items from queue. Efficient.</p>
+                <p><span class="emphasis">Step 2: Analyze each one.</span> Extract topics. Assess urgency.</p>
+                <p>See the <span class="emphasis">try-except?</span> <span class="emphasis">If one feedback item breaks, we log the error and keep going.</span> We don't crash. The system keeps running.</p>
+                <p><span class="emphasis">Step 3: Output</span> insights for the next stage.</p>
+                <p><span class="emphasis">Notice something important:</span></p>
+                <p>Consumer is <span class="emphasis">ALSO a producer.</span> It produces insights.</p>
+                <p>This is how chains work. Agent A produces for Agent B. Agent B produces for Agent C.</p>
+                <p>And the queue in between means <span class="emphasis">nobody is waiting.</span> Nobody is blocked. Everyone works at their own pace.</p>
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Highlight get_batch in green, analysis loop in blue, error handling in red, output in orange]
+            </div>
+        </div>
+
+        <!-- REAL SCENARIO -->
+        <div class="section">
+            <div class="section-header">
+                <span class="timecode">1:45–2:45</span>REAL SCENARIO
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Complex pipeline diagram - multiple agents with queues between them]
+            </div>
+            <div class="script-text">
+                <p><span class="emphasis">Real-world scenario:</span> Content processing pipeline.</p>
+                <p>You have session recordings coming in. You need to extract clips, generate scripts, build videos.</p>
+                <p><span class="emphasis">Four agents working together:</span></p>
+            </div>
+            <div class="code-block">
+Agent 1 (PRODUCER): Session Ingestion
+  ├─ Takes raw video recordings
+  ├─ Extracts key moments
+  └─ Produces: structured segments with timestamps
+
+          ↓ Queue 1
+
+Agent 2 (CONSUMER/PRODUCER): Script Generation
+  ├─ Takes segments
+  ├─ Generates narration script
+  └─ Produces: script with metadata
+
+          ↓ Queue 2
+
+Agent 3 (CONSUMER/PRODUCER): Video Assembly
+  ├─ Takes script
+  ├─ Builds Remotion composition
+  └─ Produces: silent video file
+
+          ↓ Queue 3
+
+Agent 4 (CONSUMER): Publishing
+  ├─ Takes video
+  └─ Publishes to platform
+            </div>
+            <div class="script-text">
+                <p><span class="emphasis">Why does this work?</span></p>
+                <p><span class="emphasis">Each agent does ONE job.</span> Each is independent.</p>
+                <ul style="margin: 15px 0 15px 30px;">
+                    <li><span class="emphasis">Agent 1 is fast?</span> Segments pile up in Queue 1. That's visible.</li>
+                    <li><span class="emphasis">Agent 2 is slow?</span> Queue 1 fills up. You see the bottleneck. You optimize Agent 2 or add more instances.</li>
+                    <li><span class="emphasis">Agent 3 crashes?</span> Queues 1 and 2 still have data. Restart Agent 3, it continues.</li>
+                </ul>
+                <p><span class="emphasis">This is scalability. This is resilience. This is how real systems work.</span></p>
+                <p>You're not building one monolithic agent doing everything. You're building <span class="emphasis">independent agents that work together through clear interfaces.</span></p>
+                <p>Producer-consumer pattern. Queue-based. Resilient. Scalable.</p>
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Show all four agents with arrows between queues, highlight queue buildup if one is slow, show recovery when one restarts]
+            </div>
+        </div>
+
+        <!-- CLOSING -->
+        <div class="section">
+            <div class="section-header">
+                <span class="timecode">2:45–3:00</span>CLOSING
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Recap of all three videos - concepts flash on screen]
+            </div>
+            <div class="script-text">
+                <p>Producer-consumer is about <span class="emphasis">separation of concerns.</span></p>
+                <p><span class="emphasis">Each agent does one job.</span> One job done well.</p>
+                <p><span class="emphasis">Producer outputs to queue.</span> Consumer pulls when ready.</p>
+                <p><span class="emphasis">Independent. Decoupled. Scalable.</span></p>
+                <p>You now know how to design agent systems that work.</p>
+                <p>That's the pattern. That's how real systems scale.</p>
+                <p>Go build something.</p>
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Final frame with course completion message]
+            </div>
+        </div>
+
+        <!-- TIMELINE -->
+        <div class="section">
+            <div class="section-header">TIMELINE</div>
+            <div class="timeline">
+                <div class="timeline-item">
+                    <div class="timeline-time">0:00–0:20</div>
+                    <div class="timeline-content"><strong>Opening</strong> — Hook, setup (20 seconds)</div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-time">0:20–1:00</div>
+                    <div class="timeline-content"><strong>Producer Code</strong> — Code + explanation (40 seconds)</div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-time">1:00–1:45</div>
+                    <div class="timeline-content"><strong>Consumer Code</strong> — Code + error handling (45 seconds)</div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-time">1:45–2:45</div>
+                    <div class="timeline-content"><strong>Real Scenario</strong> — 4-agent pipeline (60 seconds)</div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-time">2:45–3:00</div>
+                    <div class="timeline-content"><strong>Closing</strong> — Summary & completion (15 seconds)</div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-time">TOTAL</div>
+                    <div class="timeline-content"><strong>3:00</strong> — Exact timing</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>Script prepared for voiceover recording and video production</p>
+            <p>Ready for rendering in Remotion or equivalent video framework</p>
+            <p>All three videos total 9 minutes | Global audience (no regional context)</p>
+        </div>
+    </div>
+</body>
+</html>

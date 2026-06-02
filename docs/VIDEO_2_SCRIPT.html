@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consumer vs Producer - Video 2 Script</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f5f5f5;
+            padding: 40px 20px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            padding: 60px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            border-bottom: 3px solid #2196F3;
+            padding-bottom: 20px;
+        }
+        h1 {
+            font-size: 36px;
+            color: #1565C0;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            font-size: 18px;
+            color: #666;
+            font-style: italic;
+        }
+        .video-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 30px 0;
+            background: #f9f9f9;
+            padding: 20px;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        .info-item {
+            padding: 10px;
+        }
+        .info-label {
+            font-weight: bold;
+            color: #1565C0;
+        }
+        .section {
+            margin: 40px 0;
+        }
+        .section-header {
+            font-size: 20px;
+            font-weight: bold;
+            color: #1565C0;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-left: 4px solid #4CAF50;
+            padding-left: 15px;
+        }
+        .timecode {
+            display: inline-block;
+            background: #2196F3;
+            color: white;
+            padding: 3px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-right: 10px;
+            font-weight: bold;
+        }
+        .visual-cue {
+            background: #FFF3E0;
+            border-left: 4px solid #FF9800;
+            padding: 12px 15px;
+            margin: 20px 0;
+            font-size: 13px;
+            font-style: italic;
+            color: #E65100;
+        }
+        .script-text {
+            background: #F3F3F3;
+            padding: 20px;
+            border-radius: 6px;
+            margin: 15px 0;
+            line-height: 1.8;
+            font-size: 15px;
+            color: #222;
+        }
+        .script-text p {
+            margin-bottom: 12px;
+        }
+        .emphasis {
+            font-weight: bold;
+            color: #1565C0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 13px;
+        }
+        th {
+            background: #1565C0;
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-weight: bold;
+        }
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        tr:nth-child(even) {
+            background: #f9f9f9;
+        }
+        .timeline {
+            margin: 20px 0;
+        }
+        .timeline-item {
+            display: flex;
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #f5f5f5;
+            border-radius: 6px;
+        }
+        .timeline-time {
+            font-weight: bold;
+            color: #1565C0;
+            min-width: 100px;
+            font-size: 14px;
+        }
+        .timeline-content {
+            flex: 1;
+            font-size: 13px;
+        }
+        .footer {
+            margin-top: 50px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+            text-align: center;
+            font-size: 12px;
+            color: #666;
+        }
+        @media print {
+            body {
+                background: white;
+                padding: 0;
+            }
+            .container {
+                max-width: 100%;
+                box-shadow: none;
+                padding: 40px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>CONSUMER VS PRODUCER</h1>
+            <div class="subtitle">How Do They Connect?</div>
+            <div class="subtitle">Video 2 of 3</div>
+        </div>
+
+        <div class="video-info">
+            <div class="info-item">
+                <div class="info-label">Duration:</div>
+                <div>3 minutes maximum</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Voiceover:</div>
+                <div>~810 words</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Learning Goal:</div>
+                <div>Understand three patterns and tradeoffs</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Pacing:</div>
+                <div>270 words/minute</div>
+            </div>
+        </div>
+
+        <!-- OPENING -->
+        <div class="section">
+            <div class="section-header">
+                <span class="timecode">0:00–0:25</span>OPENING & RECAP
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Quick recap animation - producer/consumer from Video 1]
+            </div>
+            <div class="script-text">
+                <p>Producer creates. Consumer uses. We get that.</p>
+                <p>But here's what we glossed over: <span class="emphasis">HOW do they actually connect?</span></p>
+                <p>That connection point—that's where everything changes. Simple choices you make there ripple through your entire system.</p>
+                <p>Today: the three ways producers and consumers can connect. And why each one matters.</p>
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Transition to three pattern diagrams]
+            </div>
+        </div>
+
+        <!-- PATTERN 1 -->
+        <div class="section">
+            <div class="section-header">
+                <span class="timecode">0:25–0:50</span>PATTERN 1: DIRECT CONNECTION
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Diagram - Arrow from producer directly to consumer, labeled "DIRECT CONNECTION"]
+            </div>
+            <div class="script-text">
+                <p><span class="emphasis">PATTERN 1: Direct connection.</span> Producer hands output directly to consumer.</p>
+                <p><span class="emphasis">How it works:</span> Producer creates something. Immediately hands it to consumer. Producer <span class="emphasis">WAITS</span> while consumer takes it. Then producer can move on.</p>
+                <p>It's synchronous. Blocking. Immediate.</p>
+                <p><span class="emphasis">Example:</span> Doctor goes to lab window. Hands sample directly to lab tech. Waits for tech to acknowledge. Then doctor can leave.</p>
+                <p><span class="emphasis">WHY use this?</span> It's fast. Simple. Immediate feedback.</p>
+                <p><span class="emphasis">THE PROBLEM:</span> If consumer is busy, producer is stuck waiting. If you have 20 doctors and one lab tech, chaos. Bottleneck.</p>
+                <p>In agent systems: If Agent B is processing slowly, Agent A just waits. Agent A is idle. Wasting resources.</p>
+                <p><span class="emphasis">VERDICT: Good for simple systems. Bad for scale.</span></p>
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Show doctor waiting at lab window, then scale up to many doctors waiting]
+            </div>
+        </div>
+
+        <!-- PATTERN 2 -->
+        <div class="section">
+            <div class="section-header">
+                <span class="timecode">0:50–1:35</span>PATTERN 2: QUEUE-BASED
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Diagram - Producer → QUEUE → Consumer, labeled "DECOUPLED"]
+            </div>
+            <div class="script-text">
+                <p><span class="emphasis">PATTERN 2: Queue-based connection.</span> Producer puts output in a buffer. A queue. Then moves on.</p>
+                <p><span class="emphasis">How it works:</span> Producer finishes. Puts output in queue: "Here's your data, take it whenever you're ready." Producer doesn't wait. Producer moves to next task.</p>
+                <p>Consumer comes along at its own pace. Takes from queue. Processes. No rush.</p>
+                <p><span class="emphasis">Example:</span> Restaurant pass. Chef cooks. Puts plate on the pass. Moves on to next meal. Chef doesn't wait.</p>
+                <p>Server is busy with a table. But in two minutes, server comes to the pass, grabs the plate, delivers it.</p>
+                <p>Chef and server work independently. Each at their own pace. Neither one blocking the other.</p>
+                <p><span class="emphasis">WHY use this?</span> The chef can keep cooking. Even if the server is slow, the chef is producing. Plates sit on the pass briefly, but the chef is already working on the next one. <span class="emphasis">Resilient.</span></p>
+                <p><span class="emphasis">THE TRADEOFF:</span> If queue grows too big, you have old data. Plates getting cold. In an agent system, old data might be outdated.</p>
+                <p>But this is the workhorse pattern. <span class="emphasis">Most production systems use this.</span></p>
+                <p>In agent systems: Agent A produces, puts in queue. Agent B consumes whenever ready. Agent A doesn't wait. Agent B doesn't interrupt. Beautiful separation.</p>
+                <p>If Agent B crashes? Queue still has data. Restart it, it picks up where it left off.</p>
+                <p><span class="emphasis">VERDICT: Use this. It's how real systems work.</span></p>
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Show chef cooking, plates accumulating on pass, server picking them up independently]
+            </div>
+        </div>
+
+        <!-- PATTERN 3 -->
+        <div class="section">
+            <div class="section-header">
+                <span class="timecode">1:35–2:20</span>PATTERN 3: EVENT-DRIVEN
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Diagram - Producer emitting to multiple consumers, arrows spreading outward, labeled "PUBLISH-SUBSCRIBE"]
+            </div>
+            <div class="script-text">
+                <p><span class="emphasis">PATTERN 3: Event-driven.</span> Producer emits an event. Multiple consumers listen and react.</p>
+                <p><span class="emphasis">How it works:</span> Producer creates something. Broadcasts it as an event. All consumers listening for that event hear about it. All react simultaneously.</p>
+                <p>Producer doesn't know or care who's listening. Producer just broadcasts.</p>
+                <p><span class="emphasis">Example:</span> Restaurant bell. Chef finishes a dish. Rings the bell. That's an event: "Dish ready."</p>
+                <p>Who hears it?</p>
+                <ul style="margin: 12px 0 12px 30px;">
+                    <li><strong>Server:</strong> "I need to pick up that dish"</li>
+                    <li><strong>Manager:</strong> "Log that one dish is done"</li>
+                    <li><strong>Another chef:</strong> "One more plate cleared, I can use that space"</li>
+                    <li><strong>Customer in dining room:</strong> "My food might be coming"</li>
+                </ul>
+                <p>One event. Multiple consumers. All react independently.</p>
+                <p><span class="emphasis">WHY use this?</span> One producer, infinite consumers. You add a new consumer without touching the producer.</p>
+                <p>Example: You add a new system that tracks kitchen speed metrics. Chef doesn't need to know it exists. The event is still broadcast. New consumer hears it. <span class="emphasis">Extends the system without changing it.</span></p>
+                <p><span class="emphasis">THE TRADEOFF:</span> More complex. You need an event system. Harder to debug ordering. If multiple things react to one event, what happens if one is slow?</p>
+                <p>Real systems use all three patterns depending on the situation.</p>
+                <p><span class="emphasis">VERDICT: Use for complex systems where you need many independent consumers.</span></p>
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Bell ringing, arrows shooting to multiple consumers (server, manager, chef, customer), each reacting]
+            </div>
+        </div>
+
+        <!-- COMPARISON -->
+        <div class="section">
+            <div class="section-header">
+                <span class="timecode">2:20–3:00</span>COMPARISON & CLOSING
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Comparison table appears on screen]
+            </div>
+            <div class="script-text">
+                <p>Let's compare:</p>
+            </div>
+            <table>
+                <tr>
+                    <th>Pattern</th>
+                    <th>Speed</th>
+                    <th>Simple</th>
+                    <th>Scalable</th>
+                    <th>Resilient</th>
+                </tr>
+                <tr>
+                    <td><strong>Direct</strong></td>
+                    <td>Fast ✓</td>
+                    <td>Simple ✓</td>
+                    <td>Poor ✗</td>
+                    <td>No ✗</td>
+                </tr>
+                <tr>
+                    <td><strong>Queue</strong></td>
+                    <td>Good</td>
+                    <td>Medium</td>
+                    <td>Good ✓</td>
+                    <td>Yes ✓</td>
+                </tr>
+                <tr>
+                    <td><strong>Event</strong></td>
+                    <td>Medium</td>
+                    <td>Complex ✗</td>
+                    <td>Excellent ✓</td>
+                    <td>Excellent ✓</td>
+                </tr>
+            </table>
+            <div class="script-text">
+                <p><span class="emphasis">Direct connection</span> is fast but fragile. If something fails, it crashes.</p>
+                <p><span class="emphasis">Queue-based</span> is the workhorse. Handles different speeds. If something fails, the queue keeps the data safe. You can restart and recover.</p>
+                <p><span class="emphasis">Event-driven</span> is powerful for complexity. Multiple things can happen without interfering. But harder to debug.</p>
+                <p><strong>In real multi-agent systems?</strong></p>
+                <p><span class="emphasis">You usually use queues or events.</span></p>
+                <p>Agent A produces data. Goes into a queue. Agent B and Agent C both consume from that queue independently. If one is slow, the other keeps going. No bottleneck. No blocking.</p>
+                <p><span class="emphasis">This is how you build systems that scale.</span></p>
+                <p><span class="emphasis">Next video:</span> We're building this. Real code. Real implementation. See exactly how it works.</p>
+            </div>
+            <div class="visual-cue">
+                [VISUAL: All three patterns flash on screen, then fade to next video title]
+            </div>
+        </div>
+
+        <!-- TIMELINE -->
+        <div class="section">
+            <div class="section-header">TIMELINE</div>
+            <div class="timeline">
+                <div class="timeline-item">
+                    <div class="timeline-time">0:00–0:25</div>
+                    <div class="timeline-content"><strong>Opening/Recap</strong> — Why connections matter (25 seconds)</div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-time">0:25–0:50</div>
+                    <div class="timeline-content"><strong>Pattern 1</strong> — Direct: fast but fragile (25 seconds)</div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-time">0:50–1:35</div>
+                    <div class="timeline-content"><strong>Pattern 2</strong> — Queue: resilient workhorse (45 seconds)</div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-time">1:35–2:20</div>
+                    <div class="timeline-content"><strong>Pattern 3</strong> — Events: complex and scalable (45 seconds)</div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-time">2:20–3:00</div>
+                    <div class="timeline-content"><strong>Comparison/Closing</strong> — Table & multi-agent context (40 seconds)</div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-time">TOTAL</div>
+                    <div class="timeline-content"><strong>3:00</strong> — Exact timing</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>Script prepared for voiceover recording and video production</p>
+            <p>Ready for rendering in Remotion or equivalent video framework</p>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Build Your First System - Video 3</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f5f5f5;
+            padding: 40px 20px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            padding: 60px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            border-bottom: 3px solid #2196F3;
+            padding-bottom: 20px;
+        }
+        h1 {
+            font-size: 36px;
+            color: #1565C0;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            font-size: 18px;
+            color: #666;
+            font-style: italic;
+            margin-bottom: 5px;
+        }
+        .video-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 30px 0;
+            background: #f9f9f9;
+            padding: 20px;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        .info-item {
+            padding: 10px;
+        }
+        .info-label {
+            font-weight: bold;
+            color: #1565C0;
+        }
+        .section {
+            margin: 40px 0;
+        }
+        .section-header {
+            font-size: 20px;
+            font-weight: bold;
+            color: #1565C0;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-left: 4px solid #4CAF50;
+            padding-left: 15px;
+        }
+        .timecode {
+            display: inline-block;
+            background: #2196F3;
+            color: white;
+            padding: 3px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-right: 10px;
+            font-weight: bold;
+        }
+        .visual-cue {
+            background: #FFF3E0;
+            border-left: 4px solid #FF9800;
+            padding: 12px 15px;
+            margin: 20px 0;
+            font-size: 13px;
+            font-style: italic;
+            color: #E65100;
+        }
+        .script-text {
+            background: #F3F3F3;
+            padding: 20px;
+            border-radius: 6px;
+            margin: 15px 0;
+            line-height: 1.8;
+            font-size: 15px;
+            color: #222;
+        }
+        .script-text p {
+            margin-bottom: 12px;
+        }
+        .emphasis {
+            font-weight: bold;
+            color: #1565C0;
+        }
+        .highlight-box {
+            background: #E3F2FD;
+            border-left: 4px solid #1565C0;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .step-box {
+            background: #F0F7FF;
+            border-left: 4px solid #4CAF50;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 4px;
+        }
+        .step-box h4 {
+            color: #1565C0;
+            margin-bottom: 8px;
+            font-size: 15px;
+        }
+        .example-box {
+            background: #FFFACD;
+            border-left: 4px solid #FF9800;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        .footer {
+            margin-top: 50px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+            text-align: center;
+            font-size: 12px;
+            color: #666;
+        }
+        @media print {
+            body {
+                background: white;
+                padding: 0;
+            }
+            .container {
+                max-width: 100%;
+                box-shadow: none;
+                padding: 40px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>BUILD YOUR FIRST SYSTEM</h1>
+            <div class="subtitle">From Producer Mindset to Real Action</div>
+            <div class="subtitle">Video 3 of 3</div>
+        </div>
+
+        <div class="video-info">
+            <div class="info-item">
+                <div class="info-label">Duration:</div>
+                <div>3 minutes</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Voiceover:</div>
+                <div>~810 words</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Learning Goal:</div>
+                <div>Know how to build your first producer system</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Focus:</div>
+                <div>Practical, actionable, starting today</div>
+            </div>
+        </div>
+
+        <!-- OPENING -->
+        <div class="section">
+            <div class="section-header">
+                <span class="timecode">0:00–0:20</span>OPENING
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Person at computer with blank screen, thinking about first system]
+            </div>
+            <div class="script-text">
+                <p>Okay. You understand the mindset. You know what a producer is.</p>
+                <p>But how do you actually start? Where do you build your first system?</p>
+                <p>That's what today is about. Not theory. Action.</p>
+            </div>
+        </div>
+
+        <!-- THE PATTERN -->
+        <div class="section">
+            <div class="section-header">
+                <span class="timecode">0:20–1:20</span>THE PATTERN (4 SIMPLE STEPS)
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Four steps appearing on screen, each with an icon]
+            </div>
+            <div class="script-text">
+                <p><span class="emphasis">Step 1: Find something you're doing repeatedly.</span></p>
+                <p>Look at your week. What are you doing more than once?</p>
+                <p>Writing similar emails? Summarizing documents? Extracting data? Generating ideas? Organizing information?</p>
+                <p>That repetition is your opportunity.</p>
+            </div>
+            <div class="step-box">
+                <h4>Step 1: Identify the Repeating Task</h4>
+                <p>Think: "What do I do every week that takes time and I hate doing manually?"</p>
+            </div>
+            <div class="script-text">
+                <p><span class="emphasis">Step 2: Define what the system receives and what it outputs.</span></p>
+                <p>If you're summarizing documents: System receives documents. System outputs summaries.</p>
+                <p>If you're generating content: System receives a topic. System outputs content.</p>
+                <p>Be specific. Input → Output. That's your interface.</p>
+            </div>
+            <div class="step-box">
+                <h4>Step 2: Define Input and Output</h4>
+                <p>Input: [What does the system receive?] → Output: [What should it produce?]</p>
+            </div>
+            <div class="script-text">
+                <p><span class="emphasis">Step 3: Build the agent.</span></p>
+                <p>Use Claude. Use agentic frameworks. Chain prompts together. Get the agent to do what you did manually.</p>
+                <p>It won't be perfect the first time. That's okay. Iterate.</p>
+            </div>
+            <div class="step-box">
+                <h4>Step 3: Build the Agent</h4>
+                <p>Write prompts. Test outputs. Refine. Make it work.</p>
+            </div>
+            <div class="script-text">
+                <p><span class="emphasis">Step 4: Put it somewhere it runs automatically.</span></p>
+                <p>Scheduled? Triggered by an event? In a pipeline with other agents?</p>
+                <p>The key is: You don't run it manually. It runs without you.</p>
+            </div>
+            <div class="step-box">
+                <h4>Step 4: Automate It</h4>
+                <p>Schedule it. Trigger it. Hook it into a pipeline. Make it work without you.</p>
+            </div>
+        </div>
+
+        <!-- REAL EXAMPLE -->
+        <div class="section">
+            <div class="section-header">
+                <span class="timecode">1:20–2:20</span>A REAL EXAMPLE
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Show the example workflow visually - emails coming in, agent processing, summaries coming out]
+            </div>
+            <div class="script-text">
+                <p>Let me make this concrete.</p>
+                <p><span class="emphasis">You get 20 customer support emails every day. You read them. You write summaries for your team. Every day. Repetitive.</span></p>
+                <p><span class="emphasis">Step 1:</span> You identified the repeat task. Email summarization. ✓</p>
+                <p><span class="emphasis">Step 2:</span> Input = emails. Output = summaries. ✓</p>
+                <p><span class="emphasis">Step 3:</span> You write an agent that reads emails and generates summaries. You test it. Refine the prompt until the summaries are good. ✓</p>
+                <p><span class="emphasis">Step 4:</span> You schedule it to run every morning at 9am. Or you trigger it whenever new emails arrive. Either way, summaries appear automatically. ✓</p>
+            </div>
+            <div class="example-box">
+                <p><strong>Result:</strong> What used to take 1 hour every day now takes 0 hours. The agent does it. You woke up. Summaries were waiting.</p>
+                <p><strong>That's producing.</strong> You invested upfront. Now the system pays dividends.</p>
+            </div>
+            <div class="script-text">
+                <p><span class="emphasis">And here's the real power:</span></p>
+                <p>Once you have that system, what's next? You build another. A system that takes those summaries and creates action items. Or escalates urgent emails.</p>
+                <p>Now the systems talk to each other. They compound. Your email processing is fully automated.</p>
+                <p>That's the producer path. One system feeds another. Everything compounds.</p>
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Show system expansion - original system plus new systems connecting and compounding]
+            </div>
+        </div>
+
+        <!-- CLOSING & CHALLENGE -->
+        <div class="section">
+            <div class="section-header">
+                <span class="timecode">2:20–3:00</span>YOUR CHALLENGE
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Call to action - person building their first system]
+            </div>
+            <div class="script-text">
+                <p>So here's what you do this week:</p>
+                <p><span class="emphasis">Step 1:</span> Identify one thing you do repeatedly. Something that annoys you.</p>
+                <p><span class="emphasis">Step 2:</span> Define input and output.</p>
+                <p><span class="emphasis">Step 3:</span> Build the agent.</p>
+                <p><span class="emphasis">Step 4:</span> Automate it.</p>
+                <p>That's it. You just shipped your first producer system.</p>
+                <p>It might be small. It might be rough. But it works. And you'll feel the difference immediately.</p>
+                <p><span class="emphasis">You just became a producer.</span></p>
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Final frame - producer at work with multiple systems running]
+            </div>
+        </div>
+
+        <div class="highlight-box">
+            <p><strong>THE SHIFT IS REAL:</strong> From "I'll do it manually" to "I built a system that does it for me." That's when everything changes.</p>
+        </div>
+
+        <div class="footer">
+            <p>Script prepared for voiceover recording and video production</p>
+            <p>Core concept: From mindset to action - building your first producer system</p>
+        </div>
+    </div>
+</body>
+</html>

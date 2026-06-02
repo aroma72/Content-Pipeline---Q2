@@ -44,9 +44,11 @@ Technical Requirements:
 - Add micro-animations WITHIN each segment (fade-in, micro-motion, fade-out pattern)
 - Professional transitions between scenes (0.3s fade recommended)
 - Output 1920x1080 @ 30fps
-- Typography: title 48px/700, body 24px/400, use Georgia serif font family
-- Container padding minimum 32px on all sides
+- Typography: title 62–72px/700, section heading 48–56px/700, bullets 28–32px/700, body 24–26px/400 — Georgia serif always
+- SAFE ZONE: All text inside padding '80px 120px' — NEVER padding '32px' on full-screen containers
+- maxWidth on all text blocks: titles/bullets max 1400px, body copy max 1200px
 - Text must use flexbox layout — never absolute positioning for text blocks
+- lineHeight: titles 1.15–1.2, bullets 1.45, body 1.6
 
 Return clean TypeScript/JSX with no markdown formatting.
 
@@ -66,8 +68,15 @@ DESIGN SYSTEM RULES — NEVER BREAK
    NEVER use near-black (#1A1A2E) or dark slate on cream — too cold for School of Life.
    NEVER use grey-on-grey. NEVER use light grey text on light backgrounds.
 
-3. FONT: 'Georgia, serif' always. Title: 56px/700. Body: 24px/400. Bullets: 24px/700.
-   NEVER use system UI fonts (-apple-system, Segoe UI, Roboto, Arial).
+3. FONT & SAFE ZONE — COURSERA/UDEMY STANDARD:
+   Font: 'Georgia, serif' always. NEVER system UI fonts (-apple-system, Segoe UI, Roboto, Arial).
+   Safe zone padding: '80px 120px' on all full-screen containers. NEVER '32px' on AbsoluteFill.
+   Sizes: hero title 62–72px/700, section heading 48–56px/700, eyebrow 16px/700/UPPERCASE,
+          bullets 28–32px/700, body 24–26px/400, card title 26px/700, card body 20–22px/400.
+   Line heights: titles 1.15–1.2, bullets 1.45, body 1.6.
+   Max widths: titles/bullets maxWidth 1400px, body copy maxWidth 1200px.
+   Text alignment: left-align multi-line content; centre only single-line titles and CTAs.
+   NEVER stretch text to fill the full container width without a maxWidth constraint.
 
 4. PHASE TRANSITIONS — OPACITY MOUNTING ONLY:
    Mount ALL phase containers from frame 0 with opacity: 0.
@@ -80,9 +89,12 @@ DESIGN SYSTEM RULES — NEVER BREAK
        [0, 1, 1, 0],
        { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
 
-5. BULLETS/POINTERS: font-weight 700, fontSize 24px minimum.
-   Use a solid coloured left-border bar (4–5px wide, full row height) — NOT small circles or dots.
-   Example: <div style={{ width: 5, alignSelf: 'stretch', backgroundColor: TEAL, borderRadius: 3, flexShrink: 0 }} />
+5. BULLETS/POINTERS: font-weight 700, fontSize 28px MINIMUM (never 24px at 1080p — too small).
+   Use a solid coloured left-border bar (5px wide, full row height, borderRadius 3) — NOT dots or emoji.
+   Wrap all bullet lists in maxWidth: 1400 container. Gap between bullets: 24–32px.
+   Example: <div style={{ width: 5, alignSelf: 'stretch', backgroundColor: BRAND, borderRadius: 3,
+     marginRight: 24, flexShrink: 0 }} />
+   <div style={{ fontSize: 28, fontWeight: 700, color: HEADING, lineHeight: 1.45 }}>Bullet text</div>
 
 6. SCALE ON TEXT: NEVER apply scale() to text containers. Scale() must only go on
    decorative elements, icons, or button elements. Pulsing scale on a paragraph is jarring.

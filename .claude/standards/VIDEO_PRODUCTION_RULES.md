@@ -69,37 +69,96 @@ Standards for rendering, timing, and visual correctness in Remotion compositions
 
 ---
 
-## Text Overflow Prevention
+## Text Layout & Typography (CRITICAL — fixes indentation/overflow issues)
 
-### Typography Standards
+### Safe Zone Rule (Coursera/Udemy Standard)
 
-| Type | Font Size | Weight | Line Height | Max Width |
-|---|---|---|---|---|
-| Title | 56px | 700 | 1.2 | 90% |
-| Heading | 40px | 600 | 1.2 | 90% |
-| Body | 24px | 400 | 1.35 | 85% |
-| Caption | 18px | 500 | 1.25 | 80% |
+**All text content must live inside the safe zone:**
+- **Horizontal padding:** minimum `120px` each side (not 32px — that is for SVG only)
+- **Vertical padding:** minimum `80px` top and bottom
+- **Effective text area:** 1680px wide × 920px tall (inside 1920×1080 canvas)
+- **Never** use `padding: "32px"` on a full-screen text container — that places text 32px from the raw edge, which reads as jammed against the border at video scale
+
+```tsx
+// ✅ Correct — safe zone padding
+<AbsoluteFill style={{ padding: '80px 120px' }}>
+  {/* all text content here */}
+</AbsoluteFill>
+
+// ❌ Wrong — text too close to edge
+<AbsoluteFill style={{ padding: '32px' }}>
+```
+
+### Typography Scale (1920×1080 @ 30fps — Coursera/Udemy Grade)
+
+| Element | Font Size | Weight | Line Height | Max Width | Notes |
+|---|---|---|---|---|---|
+| Hero title / hook | 62–72px | 700 | 1.15 | 1400px | One strong statement per screen |
+| Section heading | 48–56px | 700 | 1.2 | 1400px | Topic or phase label |
+| Eyebrow label | 16px | 700 | 1.0 | — | UPPERCASE, letter-spacing 4px |
+| Bullet / key point | 28–32px | 700 | 1.45 | 1400px | Never below 28px at 1080p |
+| Body / supporting | 24–26px | 400 | 1.6 | 1200px | Readable at arm's length |
+| Card title | 26px | 700 | 1.3 | — | Inside card containers |
+| Card body | 20–22px | 400 | 1.5 | — | Inside card containers |
+| Closing CTA | 28–32px | 700 | 1.3 | 960px | Centred, large enough to scan |
+
+**Why these sizes:** Coursera and Udemy target 1080p playback at ~60–80cm viewing distance. At that distance, anything below 24px body text or 28px bullets appears small. The previous 24px bullets were borderline; 28px is the safe floor.
+
+### Max Width Constraints (prevents edge-to-edge text)
+
+Text must never stretch across the full 1680px text area. Apply `maxWidth` to all paragraph-style content:
+
+```tsx
+// ✅ Bullets and body — constrained width for readability
+<div style={{ maxWidth: 1400, width: '100%' }}>
+  {bullets.map(b => <BulletRow key={b} text={b} />)}
+</div>
+
+// ✅ Body copy — tighter constraint for comfort
+<p style={{ maxWidth: 1200, fontSize: 26, lineHeight: 1.6 }}>
+  Supporting explanation text
+</p>
+
+// ❌ Wrong — fills full width, hard to read
+<p style={{ width: '100%', fontSize: 26 }}>
+```
 
 ### Container Rules
 
-- **Padding:** Minimum 32px horizontal, 24px vertical (for body text)
-- **Box sizing:** Use flexbox or grid, never absolute positioning for text content
-- **Text wrapping:** Always enable `word-wrap: "break-word"` or `white-space: "normal"`
-- **Overflow:** Never use `overflow: hidden` on text containers; expand container instead
+- **Layout:** Always `display: flex, flexDirection: column` — never absolute positioning for text blocks
+- **Text wrapping:** Always `wordWrap: "break-word"`, `whiteSpace: "normal"` — never `nowrap`
+- **Overflow:** Never `overflow: hidden` on text containers — expand container instead
+- **Alignment:** Left-align multi-line body text; centre only single-line titles and CTAs
 
-### Positioning Guidelines
+### Positioning Reference
 
-**✅ Correct:**
-```jsx
-<div style={{display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", padding: "32px"}}>
-  <h2 style={{fontSize: 40, wordWrap: "break-word"}}>Title</h2>
-</div>
+**✅ Correct — full slide text layout:**
+```tsx
+<AbsoluteFill style={{
+  backgroundColor: BG,
+  padding: '80px 120px',
+  display: 'flex',
+  flexDirection: 'column',
+  justifyContent: 'center',
+}}>
+  <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: 4,
+    textTransform: 'uppercase', color: BRAND, marginBottom: 16 }}>
+    Eyebrow label
+  </div>
+  <div style={{ fontSize: 56, fontWeight: 700, color: HEADING,
+    lineHeight: 1.2, maxWidth: 1400, marginBottom: 32 }}>
+    Hero title text
+  </div>
+  <div style={{ display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 1400 }}>
+    {/* bullet rows */}
+  </div>
+</AbsoluteFill>
 ```
 
 **❌ Wrong:**
-```jsx
-<div style={{position: "absolute", bottom: 0, padding: "32px"}}>
-  <h2>Title</h2>  {/* Overflows when padded */}
+```tsx
+<div style={{ position: 'absolute', left: 32, right: 32, padding: 32 }}>
+  <h2>Title</h2>
 </div>
 ```
 
@@ -160,14 +219,20 @@ grep -rn "durationInFrames / (" drawing-room-remotion/src/
 **NEVER use:** `#FFFFFF`, `#FAFAFA`, near-white, dark navy, or cold blue backgrounds.
 Reference: `drawing-room-remotion/src/segments/SchoolOfLifeTheme.ts`
 
-### Typography Scale
+### Typography Scale (Coursera/Udemy Grade — 1920×1080)
 
-| Element | Size | Weight | Font |
-|---|---|---|---|
-| Hero title | 56px | 700 | Georgia, serif |
-| Section eyebrow | 14px | 700 | Georgia, serif — uppercase, letter-spacing 3px |
-| Bullet / body emphasis | 24–26px | 700 | Georgia, serif |
-| Body copy | 22–24px | 400 | Georgia, serif |
+| Element | Size | Weight | Font | Notes |
+|---|---|---|---|---|
+| Hero title | 62–72px | 700 | Georgia, serif | Max 1400px wide |
+| Section heading | 48–56px | 700 | Georgia, serif | Max 1400px wide |
+| Section eyebrow | 16px | 700 | Georgia, serif | UPPERCASE, letter-spacing 4px |
+| Bullet / key point | 28–32px | 700 | Georgia, serif | Never below 28px |
+| Body copy | 24–26px | 400 | Georgia, serif | Max 1200px wide, lineHeight 1.6 |
+| Card title | 26px | 700 | Georgia, serif | Inside cards |
+| Card body | 20–22px | 400 | Georgia, serif | Inside cards |
+| Closing CTA | 28–32px | 700 | Georgia, serif | Centred |
+
+**Safe zone:** All text inside `padding: '80px 120px'` — never `padding: '32px'` on full-screen containers.
 
 ### Color Semantics
 
@@ -200,14 +265,14 @@ const phaseOp = interpolate(frame,
 
 ### Bullet/Pointer Standards
 
-Replace small dots or emoji with a coloured left-border bar:
+Replace small dots or emoji with a coloured left-border bar. **Minimum font size: 28px.**
 
 ```tsx
-<div style={{ display: 'flex', alignItems: 'stretch', gap: 0 }}>
-  <div style={{ width: 5, alignSelf: 'stretch', backgroundColor: TEAL,
-    borderRadius: 3, marginRight: 20, flexShrink: 0 }} />
-  <div style={{ fontSize: 24, fontWeight: 700, color: HEADING }}>
-    Bullet text here
+<div style={{ display: 'flex', alignItems: 'stretch', gap: 0, maxWidth: 1400 }}>
+  <div style={{ width: 5, alignSelf: 'stretch', backgroundColor: BRAND,
+    borderRadius: 3, marginRight: 24, flexShrink: 0 }} />
+  <div style={{ fontSize: 28, fontWeight: 700, color: HEADING, lineHeight: 1.45 }}>
+    Bullet text here — min 28px, never 24px
   </div>
 </div>
 ```
@@ -265,6 +330,24 @@ Before running `npx remotion render`, verify:
    # No results = safe; any results = needs fixing
    ```
 
+5. **Safe zone padding in use (not raw 32px)**
+   ```bash
+   grep -n "padding.*32px\|padding: .32." drawing-room-remotion/src/*.tsx
+   # Any results on full-screen containers = replace with '80px 120px'
+   ```
+
+6. **Bullet font size is 28px minimum**
+   ```bash
+   grep -n "fontSize.*2[0-7]\b" drawing-room-remotion/src/*.tsx
+   # Results in bullet rows = bump to 28px minimum
+   ```
+
+7. **No scale() on text containers**
+   ```bash
+   grep -n "scale(" drawing-room-remotion/src/*.tsx
+   # Results inside text/paragraph divs = remove; scale() only on decorative elements
+   ```
+
 ---
 
 ## Known Issues & Fixes
@@ -295,4 +378,4 @@ ls -lh ../../../video_production/
 
 ---
 
-*Last verified: 2026-05-19*
+*Last verified: 2026-05-25*

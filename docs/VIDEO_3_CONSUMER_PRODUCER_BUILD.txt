@@ -1,0 +1,271 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║              CONSUMER VS PRODUCER: BUILDING AGENTS                          ║
+║                            Video 3 of 3                                     ║
+║                                                                              ║
+║  Duration: 3 minutes (approx 810 words)                                     ║
+║  Learning Goal: Design and implement basic producer-consumer agent systems   ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+
+OPENING (0:00–0:20) — 54 words
+────────────────────────────────────────────────────────────────────────────────
+
+[VISUAL: Code editor with blank file, title appearing]
+
+"Theory is done. Let's build.
+
+We're going to create a real producer-consumer agent system. Simple code. Real
+principles.
+
+By the end, you'll know how to design and build your own agent pair.
+
+Let's go."
+
+[VISUAL: Transition to code blocks]
+
+
+PRODUCER AGENT CODE (0:20–1:00) — 216 words
+────────────────────────────────────────────────────────────────────────────────
+
+[VISUAL: Code block with syntax highlighting, key sections highlighted]
+
+"Here's our producer agent. Customer feedback processor.
+
+```python
+class FeedbackProducerAgent:
+    def produce(self):
+        # Step 1: Fetch raw feedback
+        feedback = self.fetch_from_sources()
+
+        # Step 2: Clean and validate
+        structured = []
+        for item in feedback:
+            cleaned = self.clean_text(item)
+            if self.is_quality(cleaned):
+                structured.append({
+                    'text': cleaned,
+                    'sentiment': self.analyze_sentiment(cleaned),
+                    'source': item.source
+                })
+
+        # Step 3: Output to queue
+        self.queue.put(structured)
+        return len(structured)
+```
+
+What's happening?
+
+Step 1: Fetch from emails, surveys, social media. Get raw feedback.
+
+Step 2: Clean messy text. Analyze sentiment. Check quality. If it's bad, drop it.
+Only good data passes through.
+
+Step 3: Put clean data into a queue. Don't wait. Move on.
+
+THIS IS KEY: Producer does ONE job. Produce clean data. That's it.
+
+It doesn't analyze. Doesn't generate reports. Just produces.
+
+And it doesn't wait for the consumer. Queue handles the handoff."
+
+[VISUAL: Highlight fetch section, then clean section, then queue output]
+
+
+CONSUMER AGENT CODE (1:00–1:45) — 243 words
+────────────────────────────────────────────────────────────────────────────────
+
+[VISUAL: New code block, consumer agent]
+
+"Now the consumer. Takes clean data. Analyzes it.
+
+```python
+class FeedbackAnalysisConsumerAgent:
+    def consume(self):
+        # Step 1: Get batch from queue
+        batch = self.queue.get_batch(size=10)
+
+        if not batch:
+            return None  # Queue empty, nothing to do
+
+        # Step 2: Analyze
+        insights = []
+        for feedback in batch:
+            try:
+                topics = self.extract_topics(feedback['text'])
+                urgency = self.assess_urgency(feedback['sentiment'])
+
+                insight = {
+                    'topics': topics,
+                    'urgency': urgency,
+                    'source': feedback['source']
+                }
+                insights.append(insight)
+
+            except Exception as e:
+                self.log_error(f'Failed: {e}')
+                continue  # Keep going, don't crash
+
+        # Step 3: Output insights
+        self.output(insights)
+        return insights
+```
+
+What's happening?
+
+Step 1: Pull batch of 10 items from queue. Efficient.
+
+Step 2: Analyze each one. Extract topics. Assess urgency.
+
+See the try-except? If one feedback item breaks, we log the error and keep going.
+We don't crash. The system keeps running.
+
+Step 3: Output insights for the next stage.
+
+Notice: Consumer is ALSO a producer. It produces insights.
+
+This is how chains work. Agent A produces for Agent B. Agent B produces for
+Agent C.
+
+And the queue in between means nobody is waiting. Nobody is blocked. Everyone
+works at their own pace."
+
+[VISUAL: Highlight get_batch, then analysis loop, then error handling, then
+output]
+
+
+REAL SCENARIO (1:45–2:45) — 270 words
+────────────────────────────────────────────────────────────────────────────────
+
+[VISUAL: Complex pipeline diagram - multiple agents with queues between them]
+
+"Real-world scenario: Content processing pipeline.
+
+You have session recordings coming in. You need to extract clips, generate
+scripts, build videos.
+
+Four agents working together:
+
+Agent 1 (PRODUCER): Session Ingestion
+- Takes raw video recordings
+- Extracts key moments
+- Produces: structured segments with timestamps
+
+                          ↓ Queue 1
+
+Agent 2 (CONSUMER/PRODUCER): Script Generation
+- Takes segments
+- Generates narration script (with 3+ diverse examples)
+- Produces: script with metadata
+
+                          ↓ Queue 2
+
+Agent 3 (CONSUMER/PRODUCER): Video Assembly
+- Takes script
+- Builds Remotion composition
+- Produces: silent video file
+
+                          ↓ Queue 3
+
+Agent 4 (CONSUMER): Publishing
+- Takes video
+- Publishes to platform
+
+Each agent does ONE job. Each is independent.
+
+Agent 1 is fast? Segments pile up in Queue 1. That's visible.
+
+Agent 2 is slow? Queue 1 fills up. You see the bottleneck. You optimize Agent 2
+or add more instances.
+
+Agent 3 crashes? Queues 1 and 2 still have data. Restart Agent 3, it continues.
+
+This is scalability. This is resilience. This is how real systems work.
+
+You're not building one monolithic agent doing everything. You're building
+independent agents that work together through clear interfaces.
+
+Producer-consumer pattern. Queue-based. Resilient. Scalable."
+
+[VISUAL: Show all four agents with arrows between queues, highlight queue
+buildup if one is slow]
+
+
+CLOSING (2:45–3:00) — 81 words
+────────────────────────────────────────────────────────────────────────────────
+
+[VISUAL: Recap of all three videos - concepts flash on screen]
+
+"Producer-consumer is about separation of concerns.
+
+Each agent does one job. One job done well.
+
+Producer outputs to queue. Consumer pulls when ready.
+
+Independent. Decoupled. Scalable.
+
+You now know how to design agent systems that work.
+
+That's the pattern. That's how real systems scale.
+
+Go build something."
+
+[VISUAL: Final frame with course completion message]
+
+
+═══════════════════════════════════════════════════════════════════════════════
+PRODUCTION NOTES
+═══════════════════════════════════════════════════════════════════════════════
+
+TIMING BREAKDOWN:
+  0:00–0:20  Opening (20 seconds)
+  0:20–1:00  Producer Agent (40 seconds)
+  1:00–1:45  Consumer Agent (45 seconds)
+  1:45–2:45  Real Scenario (60 seconds)
+  2:45–3:00  Closing (15 seconds)
+  Total: 3:00
+
+VOICEOVER: ~810 words | Pace: measured, clear, 270 words/minute
+
+VISUAL ELEMENTS REQUIRED:
+  ✓ Code editor with blank file
+  ✓ Producer code block (syntax highlighted)
+  ✓ Highlight sections (fetch, clean, queue)
+  ✓ Consumer code block (syntax highlighted)
+  ✓ Highlight sections (get_batch, analysis loop, error handling, output)
+  ✓ Complex pipeline diagram (4 agents, 3 queues)
+  ✓ Queue filling visualization (showing bottleneck)
+  ✓ Recap flash (all concepts)
+  ✓ Smooth transitions
+
+CODE DISPLAY TIPS:
+  - Use monospace font (Courier, Consolas, or similar)
+  - Syntax highlighting: keywords in blue, strings in green, comments in gray
+  - Keep code large enough to read (min 16pt)
+  - Highlight key sections with color borders or background
+  - Show comments inline (they're part of learning)
+
+COLOR SCHEME:
+  Producer: Green (#4CAF50)
+  Consumer: Blue (#2196F3)
+  Queue: Orange (#FF9800)
+  Error/Alert: Red (#F44336)
+  Code background: Dark gray (#2D2D2D)
+  Code text: Light gray (#F8F8F2)
+  Course background: Cream (#F5F1E8)
+
+VOICEOVER STYLE:
+  - Measured pace (more code to explain)
+  - Clear emphasis on code sections as you show them
+  - "Notice the try-except" — point out important details
+  - Build to multi-agent scenario for payoff
+  - End with confidence: "You now know..."
+
+SCRIPTING STANDARDS COMPLIANCE:
+  ✓ Concept Depth: Actual code showing HOW it works
+  ✓ Practical Focus: Error handling, batch processing, chaining
+  ✓ Real Scenario: Content pipeline (not just abstract example)
+  ✓ Key Concepts: Queue, independent operation, decoupling, scaling
+
+═══════════════════════════════════════════════════════════════════════════════

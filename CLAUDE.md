@@ -1,6 +1,6 @@
 ---
 type: router
-last_verified: 2026-05-19
+last_verified: 2026-06-02
 owner: aroma
 ---
 
@@ -15,6 +15,8 @@ owner: aroma
 
 | I want to... | Go to... |
 |--|--|
+| Evaluate video quality (QA rating system) | `docs/QA_QUICK_REFERENCE.md` → `.claude/standards/QA_RATING_SYSTEM.md` |
+| Write scripts (concept depth, diverse examples) | `.claude/standards/SCRIPTING_STANDARDS.md` |
 | Render videos (Remotion) | `docs/video-production.md` |
 | Extract & mux voiceover | `docs/audio-extraction.md` |
 | Understand frame count formula | `docs/design-standards.md` |
@@ -62,6 +64,18 @@ owner: aroma
 - ViewBox minimum 850px height for 7-node radials
 - Labels below circles need 60px clearance
 
+🚫 **Quality Assurance:**
+- Every video MUST pass QA_RATING_SYSTEM.md before publication
+- Minimum acceptable combined score: **4.9/7.0** (all 7 factors rated)
+- Scores <4.9: FAIL — video must be remade
+- Scores 4.9–5.4: PASS (with notes) — publish and monitor
+- All ratings logged to `.beads/qa_ratings.jsonl` for weekly reporting
+
+🚫 **Scripting:**
+- All scripts MUST follow SCRIPTING_STANDARDS.md — concept depth + 3+ diverse examples (not only Taleemabad)
+- Script examples from at least 3 domains (manufacturing, healthcare, finance, sports, cooking, etc.)
+- Taleemabad context is the FINAL example, never the only one
+
 🚫 **Infrastructure:**
 - Never hardcode SYSTEM_PROMPT — extract to `prompts/{name}.txt`
 - Never delete `prompts/`, `tests/`, or `.claude/logs/`
@@ -96,6 +110,8 @@ owner: aroma
 
 ## Standards Documents
 
+- **QA_RATING_SYSTEM.md** — 7-factor quality rubric, scoring 0–7, minimum thresholds, remediation workflow
+- **SCRIPTING_STANDARDS.md** — Concept depth, diverse examples, validation checklist (CRITICAL for all scripts)
 - **VIDEO_PRODUCTION_RULES.md** — Frame math, SVG safety, text prevention
 - **VOICEOVER_POLICY.md** — ElevenLabs policy, extraction workflow
 - **DOC_TYPE_SYSTEM.md** — Doc types and line limits
@@ -120,4 +136,4 @@ bash .claude/scripts/smoke-test.sh
 
 ---
 
-*Last updated: 2026-05-19*
+*Last updated: 2026-06-02*

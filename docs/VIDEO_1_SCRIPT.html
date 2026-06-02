@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consumer vs Producer - Video 1 Script</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f5f5f5;
+            padding: 40px 20px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            padding: 60px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            page-break-after: always;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            border-bottom: 3px solid #2196F3;
+            padding-bottom: 20px;
+        }
+        h1 {
+            font-size: 36px;
+            color: #1565C0;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            font-size: 18px;
+            color: #666;
+            font-style: italic;
+        }
+        .video-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 30px 0;
+            background: #f9f9f9;
+            padding: 20px;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        .info-item {
+            padding: 10px;
+        }
+        .info-label {
+            font-weight: bold;
+            color: #1565C0;
+        }
+        .section {
+            margin: 40px 0;
+        }
+        .section-header {
+            font-size: 20px;
+            font-weight: bold;
+            color: #1565C0;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-left: 4px solid #4CAF50;
+            padding-left: 15px;
+        }
+        .timecode {
+            display: inline-block;
+            background: #2196F3;
+            color: white;
+            padding: 3px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-right: 10px;
+            font-weight: bold;
+        }
+        .visual-cue {
+            background: #FFF3E0;
+            border-left: 4px solid #FF9800;
+            padding: 12px 15px;
+            margin: 20px 0;
+            font-size: 13px;
+            font-style: italic;
+            color: #E65100;
+        }
+        .script-text {
+            background: #F3F3F3;
+            padding: 20px;
+            border-radius: 6px;
+            margin: 15px 0;
+            line-height: 1.8;
+            font-size: 15px;
+            color: #222;
+        }
+        .script-text p {
+            margin-bottom: 12px;
+        }
+        .emphasis {
+            font-weight: bold;
+            color: #1565C0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 13px;
+        }
+        th {
+            background: #1565C0;
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-weight: bold;
+        }
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        tr:nth-child(even) {
+            background: #f9f9f9;
+        }
+        .timeline {
+            margin: 20px 0;
+        }
+        .timeline-item {
+            display: flex;
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #f5f5f5;
+            border-radius: 6px;
+        }
+        .timeline-time {
+            font-weight: bold;
+            color: #1565C0;
+            min-width: 100px;
+            font-size: 14px;
+        }
+        .timeline-content {
+            flex: 1;
+            font-size: 13px;
+        }
+        .footer {
+            margin-top: 50px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+            text-align: center;
+            font-size: 12px;
+            color: #666;
+        }
+        .page-number {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 12px;
+            color: #999;
+        }
+        @media print {
+            body {
+                background: white;
+                padding: 0;
+            }
+            .container {
+                max-width: 100%;
+                box-shadow: none;
+                padding: 40px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>CONSUMER VS PRODUCER</h1>
+            <div class="subtitle">What Are Producers and Consumers?</div>
+            <div class="subtitle">Video 1 of 3</div>
+        </div>
+
+        <div class="video-info">
+            <div class="info-item">
+                <div class="info-label">Duration:</div>
+                <div>3 minutes maximum</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Voiceover:</div>
+                <div>~810 words</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Learning Goal:</div>
+                <div>Understand concept through examples</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Pacing:</div>
+                <div>270 words/minute</div>
+            </div>
+        </div>
+
+        <!-- OPENING -->
+        <div class="section">
+            <div class="section-header">
+                <span class="timecode">0:00–0:20</span>OPENING
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Title card with animated producer/consumer icons]
+            </div>
+            <div class="script-text">
+                <p>Every system around you works on a simple principle: something produces, something else consumes. A producer. A consumer. Today we're going to understand this pattern. Not because it's theory, but because it's everywhere—and it's how AI agents actually scale.</p>
+            </div>
+        </div>
+
+        <!-- DEFINITION -->
+        <div class="section">
+            <div class="section-header">
+                <span class="timecode">0:20–0:50</span>DEFINITION
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Split screen - PRODUCER (green side), CONSUMER (blue side)]
+            </div>
+            <div class="script-text">
+                <p>Let's define this clearly.</p>
+                <p>A <span class="emphasis">PRODUCER</span> is something that creates or outputs something new. Could be a person, a machine, software, an agent.</p>
+                <p>A <span class="emphasis">CONSUMER</span> is something that takes what the producer made and uses it.</p>
+                <p>Here's why this matters: when you separate these roles, something magic happens. Each one does one job. Each one does it better. The system becomes faster, clearer, more reliable.</p>
+                <p>That's it. Producer creates. Consumer uses. Simple, right?</p>
+                <p>But this simple pattern is everywhere. Let's see it in action.</p>
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Transition to examples]
+            </div>
+        </div>
+
+        <!-- EXAMPLE 1 -->
+        <div class="section">
+            <div class="section-header">
+                <span class="timecode">0:50–1:15</span>EXAMPLE 1: RESTAURANT
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Kitchen animation - chef cooking, plates on pass, server picking up]
+            </div>
+            <div class="script-text">
+                <p>Restaurant kitchen. Clearest example.</p>
+                <p>The <span class="emphasis">PRODUCER</span> is the chef. One job: cook food, produce meals. That's it.</p>
+                <p>The <span class="emphasis">CONSUMER</span> is the server. One job: deliver those meals. That's it.</p>
+                <p>How do they connect? The <span class="emphasis">PASS</span>. That counter between kitchen and dining room.</p>
+                <p>Chef finishes a plate. Puts it on the pass. Moves on to the next meal. Chef doesn't wait. Chef doesn't care if the server is busy.</p>
+                <p>Server comes by, grabs the plate, delivers it.</p>
+                <p>Both work at their own pace. Both independent. Both focused on their one job.</p>
+                <p>What if there was no pass? Chef hands plate directly to server. "Here, take this." Chef waits. Chef can't cook the next meal until the server takes this one.</p>
+                <p>Bottleneck. Inefficiency.</p>
+                <p><span class="emphasis">The pass is decoupling. This is the power.</span></p>
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Show contrast - with pass vs without pass]
+            </div>
+        </div>
+
+        <!-- EXAMPLE 2 -->
+        <div class="section">
+            <div class="section-header">
+                <span class="timecode">1:15–1:40</span>EXAMPLE 2: MANUFACTURING
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Assembly line animation - robots in sequence, color-coded]
+            </div>
+            <div class="script-text">
+                <p>Manufacturing assembly line. Same pattern, bigger scale.</p>
+                <p>A robot <span class="emphasis">PRODUCES</span> welded car frames. That's its job.</p>
+                <p>Next station: robot <span class="emphasis">CONSUMES</span> that frame and <span class="emphasis">PRODUCES</span> a painted frame.</p>
+                <p>Next station: another robot <span class="emphasis">CONSUMES</span> the painted frame, installs the engine.</p>
+                <p>Each robot optimized for one job. Works at its own pace. Doesn't slow down the others.</p>
+                <p>If the welder is fast and the painter is slow, what happens? Painted frames build up at the painter's station. That's visible. You see the bottleneck. You can fix it.</p>
+                <p>But if everything was tangled together in one robot doing all three jobs? If it breaks, everything breaks. No visibility. No way to scale.</p>
+                <p><span class="emphasis">This is why assembly lines work. Producer-consumer pattern at scale.</span></p>
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Show color-coded stations, data flowing left to right]
+            </div>
+        </div>
+
+        <!-- EXAMPLE 3 -->
+        <div class="section">
+            <div class="section-header">
+                <span class="timecode">1:40–2:15</span>EXAMPLE 3: AI AGENTS
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Agent system diagram - boxes connected by arrows, data flowing]
+            </div>
+            <div class="script-text">
+                <p>Now, AI agents. This is why we're talking about this.</p>
+                <p>Imagine you're processing customer feedback.</p>
+                <p><span class="emphasis">Agent 1 (PRODUCER):</span> Data ingestion. Pulls feedback from emails, surveys, social media. Cleans it. Structures it. Produces clean data.</p>
+                <p><span class="emphasis">Agent 2 (CONSUMER):</span> Takes that clean data. Analyzes it. Extracts insights. What are customers saying? What are the complaints?</p>
+                <p>Now, here's the key:</p>
+                <p>Agent 1 doesn't know what Agent 2 will do with its output. Agent 1 just produces good data.</p>
+                <p>Agent 2 doesn't care how Agent 1 got that data. Agent 2 just consumes it and analyzes.</p>
+                <p><span class="emphasis">They're decoupled. Independent.</span></p>
+                <p>Agent 1 is slow? Agent 2 waits for data. Agent 2 is slow? Agent 1's output stacks up. But neither one crashes the other.</p>
+                <p>This is how you build multi-agent systems that scale. Producer. Consumer. Clear boundaries.</p>
+                <p>Each agent does one job. Each agent does it well.</p>
+                <p><span class="emphasis">That's the pattern.</span></p>
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Show agents in sequence with data flowing, highlight independence]
+            </div>
+        </div>
+
+        <!-- CLOSING -->
+        <div class="section">
+            <div class="section-header">
+                <span class="timecode">2:15–2:50</span>CLOSING
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Quick recap - all examples flash on screen]
+            </div>
+            <div class="script-text">
+                <p>So what have we seen?</p>
+                <p><span class="emphasis">Producers create. Consumers use.</span></p>
+                <ul style="margin: 15px 0 15px 30px;">
+                    <li>Restaurant: chef produces, server consumes.</li>
+                    <li>Factory: welder produces, painter consumes, assembler consumes.</li>
+                    <li>AI: ingestion agent produces, analysis agent consumes.</li>
+                </ul>
+                <p>One pattern. Three completely different systems.</p>
+                <p>When you separate producer and consumer, something happens:</p>
+                <ul style="margin: 15px 0 15px 30px;">
+                    <li>Each one gets faster at their job</li>
+                    <li>The system is clearer—you know who does what</li>
+                    <li>The system is more resilient—one part failing doesn't crash everything</li>
+                    <li>The system scales—you can add more producers or consumers without breaking what exists</li>
+                </ul>
+                <p>But here's what we haven't talked about yet:</p>
+                <p><span class="emphasis">HOW do they actually connect?</span> What's the connection between producer and consumer? Because that design choice changes everything.</p>
+                <p>Direct? Queue? Something else?</p>
+                <p>That's next video. And trust me, that choice will change how you think about building systems.</p>
+                <p><span class="emphasis">Next: The three ways producers and consumers can connect, and why each one matters.</span></p>
+            </div>
+            <div class="visual-cue">
+                [VISUAL: Fade to next video preview]
+            </div>
+        </div>
+
+        <!-- TIMELINE -->
+        <div class="section">
+            <div class="section-header">TIMELINE</div>
+            <div class="timeline">
+                <div class="timeline-item">
+                    <div class="timeline-time">0:00–0:20</div>
+                    <div class="timeline-content"><strong>Opening</strong> — Hook & intro (20 seconds)</div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-time">0:20–0:50</div>
+                    <div class="timeline-content"><strong>Definition</strong> — Producer/consumer + why it matters (30 seconds)</div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-time">0:50–1:15</div>
+                    <div class="timeline-content"><strong>Restaurant</strong> — Example 1 (25 seconds)</div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-time">1:15–1:40</div>
+                    <div class="timeline-content"><strong>Manufacturing</strong> — Example 2 (25 seconds)</div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-time">1:40–2:15</div>
+                    <div class="timeline-content"><strong>AI Agents</strong> — Example 3 (35 seconds)</div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-time">2:15–2:50</div>
+                    <div class="timeline-content"><strong>Closing</strong> — Summary & transition (35 seconds)</div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-time">TOTAL</div>
+                    <div class="timeline-content"><strong>2:50</strong> (10-second buffer for transitions)</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PRODUCTION NOTES -->
+        <div class="section">
+            <div class="section-header">PRODUCTION GUIDE</div>
+            <table>
+                <tr>
+                    <th>Color</th>
+                    <th>Usage</th>
+                    <th>Hex Code</th>
+                </tr>
+                <tr>
+                    <td>Producer (Green)</td>
+                    <td>All producer elements</td>
+                    <td>#4CAF50</td>
+                </tr>
+                <tr>
+                    <td>Consumer (Blue)</td>
+                    <td>All consumer elements</td>
+                    <td>#2196F3</td>
+                </tr>
+                <tr>
+                    <td>Data (Orange)</td>
+                    <td>Data flow, output</td>
+                    <td>#FF9800</td>
+                </tr>
+                <tr>
+                    <td>Background</td>
+                    <td>Video background</td>
+                    <td>#F5F1E8</td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="footer">
+            <p>Script prepared for voiceover recording and video production</p>
+            <p>Ready for rendering in Remotion or equivalent video framework</p>
+        </div>
+    </div>
+</body>
+</html>
