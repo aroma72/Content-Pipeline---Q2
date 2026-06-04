@@ -77,6 +77,50 @@ And in Taleemabad: [example]"
 
 ---
 
+## 4. Mentor Tone & Emotional Pacing
+
+Scripts for learners new to AI often hit moments of difficulty. Your tone should acknowledge this and keep them feeling supported, not overwhelmed.
+
+**Rule:** Every script must include at least 2 moments of emotional acknowledgment:
+- **One early** (normalize the unfamiliar before diving in)
+- **One at a technical peak** (reassure before or after complexity)
+
+### 5 Mentor Tone Techniques
+
+**1. Normalize confusion upfront**  
+Before introducing anything technical, acknowledge that the learner is stepping into unfamiliar territory. This is expected, not a failure.
+
+✓ "If you've never thought about this before, that's completely fine — most people haven't."  
+✓ "This might sound abstract at first. Stick with me."
+
+**2. Anchor to what they already know**  
+Connect new concepts to experiences the learner already has. Adult learners respond powerfully when their prior experience is validated.
+
+✓ "You already do a version of this every day when you..."  
+✓ "Think about the last time you decided whether to..."
+
+**3. Pace through complexity**  
+At technical peaks, slow down and signal it explicitly. Don't rush past hard parts.
+
+✓ "Let's slow down here — this is the part that trips people up."  
+✓ "This is where it gets a little more precise. Take a breath."
+
+**4. Celebrate small wins**  
+After a hard concept lands, acknowledge that the learner has just crossed a threshold.
+
+✓ "If that clicked, you've just understood something most people never think to ask."  
+✓ "That's actually the hardest part. Everything else builds on this."
+
+**5. Never shame the gap**  
+Avoid phrasing that implies the learner should already know this, or that the concept is "simple" or "obvious."
+
+✗ "Obviously, agents work by..."  
+✗ "As you probably know..."  
+✓ "Here's how it actually works..."  
+✓ "Let's look at what's really going on under the hood."
+
+---
+
 ## Validation Checklist
 
 Before finalizing any script, verify:
@@ -88,6 +132,8 @@ Before finalizing any script, verify:
 - [ ] **Taleemabad context last** — is the course example the final example, not the only one?
 - [ ] **No jargon without definition** — are technical terms explained when first introduced?
 - [ ] **Plain language** — can a 12-14 year old understand the core explanation?
+- [ ] **Emotional acknowledgment (2+ moments)** — does the script normalize confusion early and reassure at technical peaks?
+- [ ] **No shaming language** — are words like "obviously," "as you know," "simple," or "just" avoided?
 
 ---
 
@@ -100,6 +146,8 @@ Before finalizing any script, verify:
 | Examples all from tech/ed | Pick from manufacturing, healthcare, sports, cooking, etc. |
 | Learner can't see the mechanism | Add step-by-step breakdown or visual sequence |
 | Examples too similar | Vary domain AND context (factory ≠ hospital ≠ kitchen) |
+| Script goes technical without emotional buffer | Add normalizing phrase before complexity; add slow-down signal at peak |
+| Uses "obviously," "simply," "as you know," "just" | Replace with "here's how it works" or "let's look at this together" |
 
 ---
 
@@ -111,6 +159,66 @@ When reviewing scripts, ask:
 2. **Examples:** Are there 3+ examples from different industries?
 3. **Context:** Is Taleemabad one of many examples, not the primary one?
 4. **Clarity:** Could someone with no background understand this?
+5. **Tone:** Does the script acknowledge difficulty and reassure the learner at hard moments? Are there at least 2 emotional checkpoints?
+
+---
+
+## 5. Visual-Audio Sync & Pacing
+
+For video scripts, slides and voiceover must align. Learners with little AI background need visual anchors + audio explanation, not conflicting information.
+
+**📖 For comprehensive best practices:** See [VIDEO_SCRIPTING_BEST_PRACTICES.md](VIDEO_SCRIPTING_BEST_PRACTICES.md) — research-backed principles for cognitive load, multimedia learning, temporal sync, and pacing.
+
+### Rule: Same Content, VO Goes Deeper
+
+**Slides and VO must show the same content.** VO can explain in more detail, but NOT about a different topic.
+
+✅ **CORRECT — Same content, VO deeper:**
+- Slide: "Agents have 3 parts: input, reasoning, output"
+- VO: "Agents receive input from users. They reason through what to do — this is where they run your instructions or make decisions. Then they produce output."
+
+❌ **WRONG — Different topics:**
+- Slide: "Agents have 3 parts"
+- VO: "Now let's talk about deploying agents to production..." (completely different topic)
+
+### Pacing Guidelines
+
+**Minimum screen time per slide:** 3-5 seconds
+
+**VO word count rule:** ~130 words ≈ 60 seconds of speech
+- Count VO words for each slide
+- If VO is 200 words but slide only shows 3 seconds, VO is too fast
+- Solution: Add more slides OR slow down VO delivery
+
+**Pause signals:** Use moments of silence or signaling phrases to give learners time to absorb
+- "Let's slow down here..."
+- "Notice how..."
+- "Here's the key part..."
+- (Optional: 1-2 second pause in VO)
+
+### Script Structure for Video Content
+
+**Step 1: Write slide text first** (concise, visual)
+
+**Step 2: Write VO script second** (explains the slide, elaborates, but stays on topic)
+
+**Step 3: Validate sync**
+- Does VO answer/expand on what's on screen?
+- Does VO wander into a different topic?
+- If yes: either add it to the slide or remove it from VO
+
+**Step 4: Verify pacing**
+- Count VO words
+- Calculate if they fit in the planned slide duration
+- Adjust slide count or VO speed if needed
+
+### Validation Checklist for Video Scripts
+
+- [ ] Each visual slide/scene has 3-5 seconds minimum
+- [ ] VO explains the SAME topic as its corresponding slide
+- [ ] When VO goes deeper, it's still on-topic (not wandering)
+- [ ] No section feels rushed (learner can follow without rewinding)
+- [ ] Pacing has deliberate pauses between ideas, not constant speech
 
 ---
 
