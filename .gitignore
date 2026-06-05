@@ -35,3 +35,59 @@ Thumbs.db
 *.tmp
 *.temp
 *~
+
+# ============================================================
+# Media files — NEVER commit to git (too large; keep local)
+# ============================================================
+
+# Video
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+*.flv
+*.wmv
+*.m4v
+*.mpg
+*.mpeg
+
+# Audio
+*.mp3
+*.wav
+*.aac
+*.flac
+*.m4a
+*.ogg
+*.wma
+*.aiff
+
+# Large binaries / installers
+*.exe
+*.dmg
+*.iso
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.rar
+
+# Render / production output directories
+video_production/
+updated/
+published/
+recordings/
+review_queue/
+veo-videos/
+google-voiceover/
+voiceovers/
+overview-video-assets/
+course-overview-assets/
+course-overview-video-output/
+course-overview-test-output/
+*-video-output/
+blender/Blender/
+
+# Backups
+*.backup
