@@ -15,6 +15,7 @@ owner: aroma
 
 | I want to... | Go to... |
 |--|--|
+| Produce a video with reviewer gates (human-approved, step-by-step) | `/pipeline-review` → `.claude/standards/REVIEWER_GATED_PIPELINE.md` |
 | Evaluate video quality (QA rating system) | `docs/QA_QUICK_REFERENCE.md` → `.claude/standards/QA_RATING_SYSTEM.md` |
 | Write scripts (concept depth, diverse examples) | `.claude/standards/SCRIPTING_STANDARDS.md` |
 | Render videos (Remotion) | `docs/video-production.md` |
@@ -64,6 +65,12 @@ owner: aroma
 - ViewBox minimum 850px height for 7-node radials
 - Labels below circles need 60px clearance
 
+🚫 **Reviewer-Gated Pipeline:**
+- Every pipeline step is followed by a reviewer (as-specified + complete + high quality)
+- Share a SIMPLE report after each step; advance ONLY on Aroma's explicit approval
+- On dissatisfaction: save feedback to `.beads/content_feedback.jsonl`, redo, never re-ask a resolved preference
+- All reviewer comments/interventions logged to `video_production/<project>/REVIEW_LOG.md`
+
 🚫 **Quality Assurance:**
 - Every video MUST pass QA_RATING_SYSTEM.md before publication
 - Minimum acceptable combined score: **4.9/7.0** (all 7 factors rated)
@@ -102,6 +109,7 @@ owner: aroma
 
 | Skill | Command |
 |-------|---------|
+| pipeline-review | `/pipeline-review` |
 | video-render | `/video-render` |
 | audio-mux | `/audio-mux` |
 | git-workflow | `/git-workflow` |
@@ -110,6 +118,7 @@ owner: aroma
 
 ## Standards Documents
 
+- **REVIEWER_GATED_PIPELINE.md** — Per-step reviewers, human-approval gates, feedback persistence, Review Log artifact
 - **QA_RATING_SYSTEM.md** — 7-factor quality rubric, scoring 0–7, minimum thresholds, remediation workflow
 - **SCRIPTING_STANDARDS.md** — Concept depth, diverse examples, validation checklist (CRITICAL for all scripts)
 - **VIDEO_PRODUCTION_RULES.md** — Frame math, SVG safety, text prevention
