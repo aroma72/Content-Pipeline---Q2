@@ -1,0 +1,157 @@
+================================================================================
+
+                     CREATE A STEP-BY-STEP PLAN USING CLAUDE
+                                Session 1 • Practical Assignment
+
+================================================================================
+
+INSTRUCTIONS
+─────────────────────────────────────────────────────────────────────────────
+
+• Think of one idea, project, or problem you want to work on using Claude
+• Write a detailed paragraph-length prompt explaining your idea
+• Ask Claude to break it down into a step-by-step implementation plan
+• Request that Claude save the plan as planning.md
+• Submit your completed planning.md file by the deadline
+
+================================================================================
+
+ASSIGNMENT
+─────────────────────────────────────────────────────────────────────────────
+
+For this assignment, think of one idea, project, or problem that you want to
+work on using Claude. It can be related to your work, learning, team processes,
+content creation, automation, research, or any practical task you want to
+improve or develop.
+
+Write a detailed paragraph-length prompt for Claude in which you clearly explain
+your idea. Include enough context so Claude understands what you want to achieve,
+why it matters, who it is for, and what kind of outcome you are expecting.
+
+Then, ask Claude to break your idea down into a detailed step-by-step plan.
+The plan should include clear stages, specific actions, expected outputs, and
+any important considerations.
+
+Finally, ask Claude to save this plan in a file named planning.md.
+
+================================================================================
+
+YOUR PROMPT SHOULD INCLUDE:
+─────────────────────────────────────────────────────────────────────────────
+
+1. The idea or project you want to work on
+
+2. The purpose or goal behind the idea
+
+3. Any relevant context or background information
+
+4. The audience or users involved
+
+5. The kind of output you want Claude to create
+
+6. A clear instruction to create a step-by-step detailed plan
+
+7. A clear instruction to save the final plan as planning.md
+
+================================================================================
+
+EXAMPLE INSTRUCTION
+─────────────────────────────────────────────────────────────────────────────
+
+Include language like this in your prompt to Claude:
+
+    "Please break this idea into a detailed step-by-step implementation plan
+     and save the final output in a file named planning.md."
+
+================================================================================
+
+WHAT TO SUBMIT
+─────────────────────────────────────────────────────────────────────────────
+
+Your completed planning.md file containing:
+
+✓ Clear problem statement or idea definition
+✓ Defined goals and success criteria
+✓ Step-by-step implementation plan with stages
+✓ Specific actions for each stage
+✓ Expected outputs at each phase
+✓ Important considerations and risks
+✓ Timeline or sequencing information
+✓ Resource requirements (if applicable)
+
+================================================================================
+
+GRADING CRITERIA
+─────────────────────────────────────────────────────────────────────────────
+
+Your assignment will be evaluated on:
+
+    ✓ CLARITY OF IDEA
+      Is the problem/project clearly defined?
+
+    ✓ COMPLETENESS OF PLAN
+      Does it include all necessary stages and actions?
+
+    ✓ PRACTICALITY
+      Is the plan realistic and actionable?
+
+    ✓ DETAIL LEVEL
+      Are steps specific enough to follow?
+
+    ✓ OUTPUT QUALITY
+      Is the plan well-organized and easy to understand?
+
+    ✓ FILE FORMAT
+      Is the plan saved correctly as planning.md?
+
+================================================================================
+
+TIPS FOR SUCCESS
+─────────────────────────────────────────────────────────────────────────────
+
+BE SPECIFIC
+    The more detail you provide Claude about your idea, the better the plan
+    will be. Include specifics about challenges, constraints, and goals.
+
+INCLUDE CONTEXT
+    Help Claude understand why this matters and who benefits from the solution.
+    The more background you give, the more tailored the plan will be.
+
+DEFINE SUCCESS
+    Be clear about what "done" looks like. Include measurable outcomes if
+    possible.
+
+THINK PRACTICALLY
+    Consider resources, timeline, budget, and potential obstacles. A realistic
+    plan is more valuable than an idealistic one.
+
+ASK FOR CLARITY
+    If Claude's plan is unclear, ask follow-up questions and have them refine
+    specific sections.
+
+================================================================================
+
+SUBMISSION REQUIREMENTS
+─────────────────────────────────────────────────────────────────────────────
+
+File Naming:  planning.md
+Format:       Markdown (.md)
+Deadline:     [Insert deadline date here]
+Submission:   [Insert submission method here]
+
+================================================================================
+
+REFERENCE & INSPIRATION
+─────────────────────────────────────────────────────────────────────────────
+
+Reference the examples from Session 1 videos for inspiration on how to
+structure your planning prompt:
+
+    • Harim's curriculum mapping approach
+    • Haroon's process automation methodology
+    • Usman's research cycle structure
+
+Use these examples to inform how you frame your own idea and ask Claude to
+plan it out.
+
+================================================================================
