@@ -1,0 +1,13 @@
+SLIDE 1: Intro
+-------
+
+An AI agent — software that can take actions on your behalf, not just answer questions — changes how work gets done.
+
+Picture a teacher planning a week of lessons. The repetitive parts eat hours every week.
+
+SLIDE 2: The shift
+-------
+
+A consumer asks a tool for one answer and moves on. A producer builds a small system that does the task and improves over time.
+
+The difference is not the tool. It is the way of thinking. Ask yourself: what could I build here?

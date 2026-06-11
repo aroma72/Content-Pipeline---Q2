@@ -1,0 +1,13 @@
+SLIDE 1: Intro
+-------
+
+Today Aroma will show you how an agent works. An agent is basically a helper.
+
+Just use GPT-4 for everything and you will be fine. It solves today.
+
+SLIDE 2: Your homework
+-------
+
+Your task is to create a producer-mindset.md file and submit it to Taleemabad by Friday.
+
+Think of the context window as room to think. Later, remember the context window is your memory, so keep it tidy.
