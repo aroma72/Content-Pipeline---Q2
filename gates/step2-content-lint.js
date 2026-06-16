@@ -70,7 +70,14 @@ async function run({ script }) {
   // inside the violations array.
   const llmViolations = (parsed.violations || []).filter((v) => {
     const blob = `${v.problem || ""} ${v.fix || ""}`.toLowerCase();
-    return !/no (rule \d+ )?violation/.test(blob) && !/no fix needed/.test(blob);
+    // Drop "this isn't actually a violation" meta-notes the model sometimes emits.
+    return !/\bno (rule \d+ )?violation/.test(blob)
+      && !/not a (rule \d+ )?violation/.test(blob)
+      && !/no fix needed/.test(blob)
+      && !/no change needed/.test(blob)
+      && !/\bn\/a\b/.test(blob)
+      && !/(this is |it'?s )(actually )?(fine|ok|okay)\b/.test(blob)
+      && !/\bdisregard\b/.test(blob);
   });
   const violations = [...deterministic, ...llmViolations];
   const pass = violations.length === 0;

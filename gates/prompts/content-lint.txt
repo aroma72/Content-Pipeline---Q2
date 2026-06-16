@@ -42,6 +42,21 @@ sales") is NORMAL teaching, NOT a competing metaphor. A plain mechanical
 description PLUS one illustrative example is fine. Rule 6 fires ONLY when the SAME
 concept is given two or more DIFFERENT sustained METAPHORS (the context window is
 literally called both "a room" and "a memory"). When in doubt, do not flag.
+DISTINCT concepts may each carry their OWN metaphor — that is correct teaching,
+not a violation. A LIMIT and the separate PRACTICE/WORKSPACE used to manage it are
+TWO concepts: e.g. the context window described as a "speedometer", AND organizing
+your files described as a "house / drawing room", is two concepts with two
+metaphors — do NOT flag. Only flag when ONE specific concept simultaneously wears
+two metaphors (the context window itself called both "a room" and "a speedometer").
+Before flagging, name the single concept and quote BOTH metaphor phrases applied to
+THAT concept; if you can't, it isn't a violation.
+PLAIN TECHNICAL TERMS ARE NOT METAPHORS. "context window", "working memory",
+"feedback loop", "token", "prompt" are literal names for the thing — never count
+them as one of the two metaphors. A ONE-OFF comparison used once to give advice
+(e.g. "trim it like packing a small bag for a trip") is an analogy, NOT a sustained
+metaphor — do not flag it. Only flag when ONE concept is repeatedly named as two
+different FIGURATIVE things (e.g. the context window called both "a room" and "a
+speedometer" across the script).
 
 For each violation give: the rule number, the verbatim offending line (or term +
 line), and a one-line fix. ONLY put ACTUAL violations in the "violations" array —

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  * { box-sizing: border-box; }
+  body { font-family: Georgia, 'Times New Roman', serif; color: #2b2b2b; font-size: 11.5pt; line-height: 1.5; margin: 0; }
+  h1 { font-size: 22pt; color: #14304a; margin: 0 0 2px; }
+  .sub { font-size: 12pt; color: #c2622d; font-style: italic; margin: 0 0 14px; }
+  .rule { height: 3px; background: #14304a; border: none; margin: 0 0 18px; }
+  h2 { font-family: 'Segoe UI', Arial, sans-serif; font-size: 12.5pt; color: #14304a; border-bottom: 1.5px solid #d8cfb8; padding-bottom: 4px; margin: 20px 0 9px; text-transform: uppercase; letter-spacing: .6px; }
+  p { margin: 7px 0; }
+  ul, ol { margin: 7px 0; padding-left: 22px; }
+  li { margin: 4px 0; }
+  .ask { background: #f5f1e8; border-left: 6px solid #c2622d; border-radius: 4px; padding: 14px 18px; margin: 10px 0; font-size: 12.5pt; }
+  .ask b { color: #14304a; }
+  code, .mono { font-family: 'Consolas','Courier New',monospace; font-size: 10.5pt; }
+  .fname { background: #2b2b2b; color: #fff; font-family: 'Consolas',monospace; font-size: 11pt; padding: 3px 10px; border-radius: 5px; }
+  /* the loop strip */
+  .loop { display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap; margin: 12px 0 4px; }
+  .loop .step { background: #fff3e0; border: 2px solid #ff9800; color: #14304a; font-family: 'Segoe UI', sans-serif; font-weight: 800; font-size: 10.5pt; padding: 8px 14px; border-radius: 10px; }
+  .loop .step.fb { background: #ff9800; color: #fff; }
+  .loop .arr { color: #ff9800; font-weight: 800; font-size: 13pt; }
+  .scenario { background: #eef4fb; border: 1.5px solid #1565c0; border-radius: 8px; padding: 6px 20px 16px; margin: 14px 0; }
+  .scenario .tag { display: inline-block; background: #1565c0; color: #fff; font-family: 'Segoe UI', Arial, sans-serif; font-size: 9.5pt; font-weight: 700; letter-spacing: 1px; padding: 4px 12px; border-radius: 0 0 8px 8px; }
+  .scenario .quote { font-style: italic; color: #333; margin: 4px 0 4px 8px; padding-left: 10px; border-left: 3px solid #d8cfb8; }
+  .promptbox { background: #fbf7ec; border: 1px dashed #c2622d; border-radius: 8px; padding: 12px 16px; margin: 10px 0; }
+  .promptbox .lbl { font-family: 'Segoe UI', sans-serif; font-size: 9.5pt; font-weight: 700; color: #c2622d; letter-spacing: .6px; }
+  .promptbox .p { font-family: 'Consolas','Courier New',monospace; font-size: 10.3pt; line-height: 1.5; margin-top: 6px; color: #333; }
+  .foot { margin-top: 18px; font-size: 9.5pt; color: #888; font-style: italic; border-top: 1px solid #e3ddcc; padding-top: 8px; }
+  .small { font-size: 10pt; color: #666; }
+</style>
+</head>
+<body>
+
+  <h1>Agent Loop Feedback Task</h1>
+  <p class="sub">Week 3 · The Mindset Shift — Practical Assignment (SLO 1.7: the Agent Loop)</p>
+  <hr class="rule" />
+
+  <h2>Goal</h2>
+  <p>Show that you understand how an autonomous agent improves through a <b>feedback loop</b> — not by
+  answering once, but by acting, seeing what happened, and adjusting.</p>
+
+  <h2>Task</h2>
+  <p>Use <b>Claude Code</b> to create a file named <span class="fname">agent_loop.md</span>.</p>
+  <p>In the file, explain this simple agent loop:</p>
+  <div class="loop">
+    <span class="step">Observe</span><span class="arr">→</span>
+    <span class="step">Decide</span><span class="arr">→</span>
+    <span class="step">Act</span><span class="arr">→</span>
+    <span class="step fb">Get Feedback</span><span class="arr">→</span>
+    <span class="step">Improve</span><span class="arr">↻</span>
+  </div>
+
+  <div class="scenario">
+    <span class="tag">EXAMPLE SCENARIO</span>
+    <p>A learner named <b>Ayesha</b> has not logged in for <b>9 days</b> and has completed only
+    <b>1 out of 4</b> assignments.</p>
+    <p style="margin-bottom:2px">The agent first recommends:</p>
+    <p class="quote">“Send Ayesha a reminder email.”</p>
+    <p style="margin-bottom:2px">Then feedback comes in:</p>
+    <p class="quote">“Ayesha did not respond to the email.”</p>
+    <p>Now the agent must <b>improve</b> its next action.</p>
+  </div>
+
+  <h2>What to include in your file</h2>
+  <ol>
+    <li>What did the agent <b>observe</b>?</li>
+    <li>What action did the agent <b>recommend first</b>?</li>
+    <li>What <b>feedback</b> did the agent receive?</li>
+    <li>How did the agent <b>improve</b> the next recommendation?</li>
+    <li>In 2–3 lines, explain how this is <b>different from a normal chatbot</b>.</li>
+  </ol>
+
+  <h2>Claude Code prompt</h2>
+  <p class="small">Copy this into Claude Code to get started:</p>
+  <div class="promptbox">
+    <span class="lbl">PROMPT</span>
+    <div class="p">“Create a file named agent_loop.md. Explain the agent loop using Observe, Decide, Act,
+    Get Feedback, and Improve. Use this example: Ayesha has not logged in for 9 days and completed
+    only 1 out of 4 assignments. The agent first recommends sending a reminder email. Then feedback
+    shows that Ayesha did not respond. Show how the agent improves its next recommendation. Keep it
+    simple and beginner-friendly.”</div>
+  </div>
+
+  <h2>Submission</h2>
+  <p>Submit the file by <b>pushing the project commit to GitHub</b>.</p>
+
+  <p class="foot">Remember: the power of an agent isn't the first answer — it's what it does with the
+  feedback. A chatbot stops at “Act.” An agent keeps looping: Observe → Decide → Act → Get Feedback → Improve.</p>
+
+</body>
+</html>

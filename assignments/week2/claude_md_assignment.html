@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: Georgia, 'Times New Roman', serif;
+    color: #2b2b2b; font-size: 11.5pt; line-height: 1.5; margin: 0;
+  }
+  h1 { font-size: 22pt; color: #14304a; margin: 0 0 2px; letter-spacing: .2px; }
+  .sub { font-size: 12pt; color: #c2622d; font-style: italic; margin: 0 0 14px; }
+  .rule { height: 3px; background: #14304a; border: none; margin: 0 0 18px; }
+  h2 {
+    font-family: 'Segoe UI', Arial, sans-serif; font-size: 12.5pt; color: #14304a;
+    border-bottom: 1.5px solid #d8cfb8; padding-bottom: 4px; margin: 20px 0 9px;
+    text-transform: uppercase; letter-spacing: .6px;
+  }
+  p { margin: 7px 0; }
+  ul, ol { margin: 7px 0 7px 0; padding-left: 22px; }
+  li { margin: 4px 0; }
+  .lead { font-weight: bold; }
+  .ask {
+    background: #f5f1e8; border-left: 6px solid #c2622d; border-radius: 4px;
+    padding: 14px 18px; margin: 10px 0 4px; font-size: 13pt;
+  }
+  .ask b { color: #14304a; }
+  .hint {
+    background: #eef4fb; border: 1.5px solid #1565c0; border-radius: 8px;
+    padding: 6px 20px 16px; margin: 14px 0;
+  }
+  .hint .tag {
+    display: inline-block; background: #1565c0; color: #fff; font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 9.5pt; font-weight: 700; letter-spacing: 1px; padding: 4px 12px;
+    border-radius: 0 0 8px 8px; margin: 0 0 8px 0;
+  }
+  .hint h3 { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11.5pt; color: #14304a; margin: 12px 0 4px; }
+  .parts { margin: 6px 0; }
+  .part { margin: 7px 0; padding-left: 4px; }
+  .part .n {
+    display: inline-block; width: 20px; height: 20px; line-height: 20px; text-align: center;
+    background: #ff9800; color: #fff; border-radius: 50%; font-family: 'Segoe UI', sans-serif;
+    font-size: 10pt; font-weight: 800; margin-right: 7px;
+  }
+  code, .mono { font-family: 'Consolas','Courier New',monospace; font-size: 10.5pt; }
+  .filebox {
+    background: #ffffff; border: 1px solid #d8cfb8; border-radius: 8px; margin: 10px 0; overflow: hidden;
+  }
+  .filebar { background: #2b2b2b; color: #fff; font-family: 'Consolas',monospace; font-size: 10pt; padding: 7px 14px; }
+  .filebody { padding: 12px 16px; font-family: 'Consolas','Courier New',monospace; font-size: 9.8pt; line-height: 1.45; white-space: pre-wrap; color: #333; }
+  .filebody .c { color: #1565c0; font-weight: bold; }
+  .small { font-size: 10pt; color: #666; }
+  table.grade { width: 100%; border-collapse: collapse; font-family: 'Segoe UI', Arial, sans-serif; font-size: 10pt; margin-top: 6px; }
+  table.grade th, table.grade td { border: 1px solid #d8cfb8; padding: 7px 9px; text-align: left; vertical-align: top; }
+  table.grade th { background: #f5f1e8; color: #14304a; }
+  .foot { margin-top: 18px; font-size: 9.5pt; color: #888; font-style: italic; border-top: 1px solid #e3ddcc; padding-top: 8px; }
+  .traps b { color: #c0392b; }
+</style>
+</head>
+<body>
+
+  <h1>Build a CLAUDE.md for Your Own Project</h1>
+  <p class="sub">Week 3 · The Mindset Shift — Practical Assignment (SLO 2.9: Memory Engineering)</p>
+  <hr class="rule" />
+
+  <h2>Instructions</h2>
+  <ul>
+    <li>Watch the videos <b>“Creating Your CLAUDE.md”</b> and <b>“The Context Window + The Drawing Room.”</b></li>
+    <li>Pick one <b>real</b> project you use an AI agent for (work, learning, content, automation — anything).</li>
+    <li>Write a <b>CLAUDE.md</b> for it, under 50 lines, using the four parts in the hint below.</li>
+    <li>Submit your <code>CLAUDE.md</code> file by the deadline.</li>
+  </ul>
+
+  <h2>Assignment</h2>
+  <div class="ask">
+    <b>Create a <code>CLAUDE.md</code> for one of your own projects.</b><br/>
+    It is the file your agent reads <i>first, every time</i> — the “drawing room” it walks into.
+    Keep it tidy and under 50 lines, and make it specific enough that a stranger could read it cold
+    and work the way you would in thirty seconds.
+  </div>
+  <p class="small">Don't describe a project in the abstract — write the actual file, as if you were
+  handing it to an agent tomorrow morning.</p>
+
+  <!-- HINT -->
+  <div class="hint">
+    <span class="tag">HINT · REFRESHER</span>
+    <h3>What a CLAUDE.md is</h3>
+    <p style="margin-top:2px">A short plain-text file your agent reads before it does anything — your standing
+    orientation: who you are, how you work, and what not to do. It loads into the agent's limited
+    working memory <i>every task</i>, so <b>keep it under ~50 lines</b>. Short isn't lazy — it's respect for a real limit.</p>
+
+    <h3>The four parts of a great one</h3>
+    <div class="parts">
+      <div class="part"><span class="n">1</span><b>Purpose</b> — what this project is, in a sentence or two.
+        <span class="small">e.g. “We turn class recordings into short lessons for teachers.”</span></div>
+      <div class="part"><span class="n">2</span><b>Hard rules</b> — your non-negotiables. Be specific.
+        <span class="small">e.g. “Never share learner data.” “Always ask before deleting a file.”</span></div>
+      <div class="part"><span class="n">3</span><b>Pointers</b> — where things live. Don't paste everything in;
+        point to it. <span class="small">e.g. “Formatting rules are in the docs folder.”</span></div>
+      <div class="part"><span class="n">4</span><b>How you like work done</b> — tone, formats, what “good” looks like.
+        <span class="small">e.g. “Write in simple English. Short paragraphs. Define every new term.”</span></div>
+    </div>
+
+    <h3>How to write it</h3>
+    <ul style="margin-top:2px">
+      <li><b>Start small</b> — five lines is fine on day one.</li>
+      <li><b>Grow from mistakes</b> — each time the agent misreads something, add the one line that would have prevented it.</li>
+    </ul>
+
+    <h3 class="traps">Avoid the three traps</h3>
+    <ul class="traps" style="margin-top:2px">
+      <li><b>Length</b> — pasting in everything and drowning the file.</li>
+      <li><b>Vagueness</b> — “write well” tells the agent nothing.</li>
+      <li><b>Staleness</b> — rules that describe last month's project, not this one.</li>
+    </ul>
+
+    <h3>The test for a great one</h3>
+    <p style="margin-top:2px">Read cold by a stranger, it should let them work like you in <b>thirty seconds</b>.
+    Trim it like packing a small bag for a trip — only what you'd genuinely miss.</p>
+
+    <h3>A tiny example to model (not to copy)</h3>
+    <div class="filebox">
+      <div class="filebar">● ● ●&nbsp;&nbsp;CLAUDE.md&nbsp;&nbsp;<span style="float:right">11 / 50 lines</span></div>
+      <div class="filebody"><span class="c"># CLAUDE.md</span>
+
+<span class="c">## Purpose</span>
+We turn class recordings into short lessons for teachers.
+
+<span class="c">## Rules — never break</span>
+- Never share learner data.
+- Always ask before deleting a file.
+
+<span class="c">## Where things live</span>
+- Formatting rules → the docs folder
+
+<span class="c">## How we work</span>
+- Write in simple English.
+- Short paragraphs; define every new term.</div>
+    </div>
+  </div>
+
+  <h2>What to submit</h2>
+  <ul>
+    <li>Your completed <code>CLAUDE.md</code> file (≤ 50 lines), for a real project of yours.</li>
+    <li>One or two sentences naming the project and who/what it's for.</li>
+  </ul>
+
+  <h2>How it will be assessed</h2>
+  <table class="grade">
+    <tr><th>Criterion</th><th>What we look for</th></tr>
+    <tr><td><b>Under 50 lines</b></td><td>Lean and focused; nothing pasted in that could be a pointer instead.</td></tr>
+    <tr><td><b>All four parts</b></td><td>Purpose, hard rules, pointers, and how-you-work are all present.</td></tr>
+    <tr><td><b>Specific, not vague</b></td><td>Rules and style are concrete enough to act on (no “write well”).</td></tr>
+    <tr><td><b>Real &amp; current</b></td><td>Describes a project you actually use, not last month's.</td></tr>
+    <tr><td><b>The 30-second test</b></td><td>A stranger could orient and work like you from it, fast.</td></tr>
+  </table>
+
+  <p class="foot">Submit your <code>CLAUDE.md</code> by the deadline. Tip: write five lines now, then add one
+  line every time your agent misunderstands you this week — that's how a great CLAUDE.md is really built.</p>
+
+</body>
+</html>
