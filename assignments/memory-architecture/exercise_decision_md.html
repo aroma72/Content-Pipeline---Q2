@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  @page { margin: 50px 58px; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Arial, sans-serif; color: #232a33; line-height: 1.55; font-size: 14.5px; }
+  .brand { font-size: 12px; letter-spacing: 2px; color: #6a3fb5; font-weight: 700; }
+  .head { background: #14304a; color: #fff; border-radius: 12px; padding: 20px 26px; margin: 6px 0 22px; }
+  .head .tag { font-size: 12px; letter-spacing: 2px; opacity: .8; }
+  .head h1 { margin: 4px 0 0; font-size: 28px; font-family: "Consolas", monospace; }
+  .head .sub { font-size: 15px; opacity: .92; margin-top: 6px; }
+  h2 { color: #6a3fb5; font-size: 17px; margin: 22px 0 8px; border-bottom: 2px solid #e6e6e6; padding-bottom: 5px; }
+  p { margin: 0 0 10px; }
+  .task { background: #f3eefb; border-left: 5px solid #6a3fb5; border-radius: 8px; padding: 13px 18px; font-size: 15px; }
+  ol { margin: 6px 0 10px; padding-left: 22px; }
+  li { margin-bottom: 6px; }
+  code { font-family: "Consolas", monospace; background: #eef0f2; padding: 1px 6px; border-radius: 4px; font-size: 13.5px; }
+  .hint { background: #f7f4fc; border: 1px solid #d6c6ee; border-left: 6px solid #6a3fb5; border-radius: 10px; padding: 14px 18px; margin-top: 8px; }
+  .hint .lbl { font-weight: 800; color: #6a3fb5; font-size: 14px; }
+  pre { background: #14304a; color: #eaf0f6; border-radius: 8px; padding: 14px 16px; font-family: "Consolas", monospace; font-size: 13px; line-height: 1.5; white-space: pre-wrap; margin: 10px 0; }
+  pre .c { color: #8aa0b4; }
+  pre .p { color: #c4a7f0; font-weight: 700; }
+  pre .o { color: #ffc067; }
+  .tip { font-style: italic; color: #4a5663; margin-top: 8px; }
+  .done { background: #fff8ec; border: 1px solid #f0d9a8; border-radius: 8px; padding: 12px 16px; margin-top: 18px; font-size: 14px; }
+  .done b { color: #b07a12; }
+</style>
+</head>
+<body>
+  <div class="brand">TALEEMABAD UNIVERSITY · AGENTIC AI MASTERY</div>
+  <div class="head">
+    <div class="tag">EXERCISE · MEMORY ARCHITECTURE</div>
+    <h1>decision.md</h1>
+    <div class="sub">Build your decision log — a record of your choices, and the reasons behind them.</div>
+  </div>
+
+  <h2>What you're making</h2>
+  <p><code>decision.md</code> captures the <b>choices</b> you make in your project — and <b>why</b> you made them. It's different from the journal: the journal captures lessons (often from mistakes); the decision log captures choices, on purpose. Write the "why" down, and neither you nor your agent has to second-guess a good choice weeks later.</p>
+
+  <h2>Your task</h2>
+  <div class="task">
+    <b>Ask Claude Code to create the file for you</b> — don't write it all by hand.
+    <div style="background:#fff;border:1px dashed #6a3fb5;border-radius:8px;padding:10px 14px;margin:9px 0;font-size:13.5px;color:#2a3744;">
+      💬 <b>Where do you do this?</b> In the <b>Claude Code chat</b>. Claude Code is the AI assistant that works right inside your project, and its <b>chat box</b> — the text box where you type — is where you talk to it. So: open your project in Claude Code, click into the chat box at the bottom, type or paste the instruction below, and press Enter to send it. Claude replies in that same chat and creates the file for you. <b>Every step of this exercise happens in that chat.</b>
+    </div>
+    Send a message like this:
+    <div style="background:#0d2034;border-radius:6px;padding:9px 14px;margin:9px 0;font-family:'Consolas',monospace;font-size:13px;color:#c4a7f0;">"Create a <span style="color:#fff;">decision.md</span> log for this project. Capture 3 real decisions we've made — for each, write what we decided, why, and what we ruled out."</div>
+    Then <b>read the file Claude made and tally it</b> against the three questions below. Your job is to <b>review and verify</b> — not to write it all yourself.
+  </div>
+
+  <h2>Read &amp; tally — does each entry answer…</h2>
+  <ol>
+    <li>☐ <b>What did you decide?</b></li>
+    <li>☐ <b>Why was it the right call?</b></li>
+    <li>☐ <b>What did you consider, but rule out?</b></li>
+  </ol>
+  <p style="font-size:13px;color:#4a5663;">Check they're <b>real decisions with a genuine trade-off</b> — not trivial ones. If a decision is trivial or a "why" is missing, send it back: <i>"This one has no real trade-off — replace it, and add the reasoning for decision 2."</i></p>
+
+  <h2>💡 Hint — how to do it</h2>
+  <div class="hint">
+    <div class="lbl">Refresher — what "good" looks like (your yardstick when reviewing Claude's file)</div>
+    <p>Three lines is a complete entry. Think of a doctor's notes — not just <i>what</i> happened, but <i>why</i> this over another. Use the example below to judge whether each decision Claude logged is real and worth keeping.</p>
+    <div class="lbl">Example</div>
+<pre><span class="c"># decision.md</span>
+
+<span class="o">2026-06-18 — where to store learner data</span>
+<span class="p">Decided:</span> keep it in a simple spreadsheet, not a big database.
+<span class="p">Why:</span> it's small, and only I use it.
+<span class="p">Considered:</span> a database — but overkill for now.</pre>
+    <div class="tip">Tip: your agent sees <i>what</i> you did, but never <i>why</i>. This file is how it (and future-you) finally knows the reasoning.</div>
+  </div>
+
+  <h2>📤 Final step — push it to GitHub</h2>
+  <p>Once Claude has created your file, <b>commit and push it to your existing project's GitHub repository</b> — the same project you've been working in this week, <b>not a new repo</b>. From your project folder:</p>
+<pre>git add decision.md
+git commit -m "Add decision.md log"
+git push</pre>
+
+  <div class="done">✅ <b>Done when:</b> <code>decision.md</code> (created by Claude Code, <b>reviewed and tallied by you</b>) has <b>3+ entries</b> that pass the three questions — <b>and it's pushed to GitHub.</b></div>
+</body>
+</html>

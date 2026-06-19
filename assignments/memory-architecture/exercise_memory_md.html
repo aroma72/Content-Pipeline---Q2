@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  @page { margin: 50px 58px; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Arial, sans-serif; color: #232a33; line-height: 1.55; font-size: 14.5px; }
+  .brand { font-size: 12px; letter-spacing: 2px; color: #2e8b50; font-weight: 700; }
+  .head { background: #14304a; color: #fff; border-radius: 12px; padding: 20px 26px; margin: 6px 0 22px; }
+  .head .tag { font-size: 12px; letter-spacing: 2px; opacity: .8; }
+  .head h1 { margin: 4px 0 0; font-size: 28px; font-family: "Consolas", monospace; }
+  .head .sub { font-size: 15px; opacity: .92; margin-top: 6px; }
+  h2 { color: #1f4788; font-size: 17px; margin: 22px 0 8px; border-bottom: 2px solid #e6e6e6; padding-bottom: 5px; }
+  p { margin: 0 0 10px; }
+  .task { background: #eef4ff; border-left: 5px solid #1f4788; border-radius: 8px; padding: 13px 18px; font-size: 15px; }
+  ul { margin: 6px 0 10px; padding-left: 22px; }
+  li { margin-bottom: 6px; }
+  code { font-family: "Consolas", monospace; background: #eef0f2; padding: 1px 6px; border-radius: 4px; font-size: 13.5px; }
+  .hint { background: #f3faf5; border: 1px solid #b8e0c6; border-left: 6px solid #2e8b50; border-radius: 10px; padding: 14px 18px; margin-top: 8px; }
+  .hint .lbl { font-weight: 800; color: #2e8b50; font-size: 14px; }
+  pre { background: #14304a; color: #eaf0f6; border-radius: 8px; padding: 14px 16px; font-family: "Consolas", monospace; font-size: 13px; line-height: 1.5; white-space: pre-wrap; margin: 10px 0; }
+  pre .c { color: #8aa0b4; }
+  pre .g { color: #7fd09a; }
+  pre .o { color: #ffc067; }
+  .tip { font-style: italic; color: #4a5663; margin-top: 8px; }
+  .done { background: #fff8ec; border: 1px solid #f0d9a8; border-radius: 8px; padding: 12px 16px; margin-top: 18px; font-size: 14px; }
+  .done b { color: #b07a12; }
+</style>
+</head>
+<body>
+  <div class="brand">TALEEMABAD UNIVERSITY · AGENTIC AI MASTERY</div>
+  <div class="head">
+    <div class="tag">EXERCISE · MEMORY ARCHITECTURE</div>
+    <h1>memory.md</h1>
+    <div class="sub">Build your project's journal — a running record of what you learn as you work.</div>
+  </div>
+
+  <h2>What you're making</h2>
+  <p><code>memory.md</code> is your agent's <b>journal</b>. Unlike the handbook (rules that rarely change), the journal is where you write what you learn <i>as you go</i> — one short, honest note per work session. It's how a lesson survives, so neither you nor your agent repeats the same mistake next week.</p>
+
+  <h2>Your task</h2>
+  <div class="task">
+    <b>Ask Claude Code to create the file for you</b> — don't write it all by hand.
+    <div style="background:#fff;border:1px dashed #1f4788;border-radius:8px;padding:10px 14px;margin:9px 0;font-size:13.5px;color:#2a3744;">
+      💬 <b>Where do you do this?</b> In the <b>Claude Code chat</b>. Claude Code is the AI assistant that works right inside your project, and its <b>chat box</b> — the text box where you type — is where you talk to it. So: open your project in Claude Code, click into the chat box at the bottom, type or paste the instruction below, and press Enter to send it. Claude replies in that same chat and creates the file for you. <b>Every step of this exercise happens in that chat.</b>
+    </div>
+    Send a message like this:
+    <div style="background:#0d2034;border-radius:6px;padding:9px 14px;margin:9px 0;font-family:'Consolas',monospace;font-size:13px;color:#a8d5ff;">"Create a <span style="color:#fff;">memory.md</span> journal for this project. Add 5 dated entries from our recent work sessions — each with a date, the task, and one true lesson I learned."</div>
+    Then <b>read the file Claude made and tally it</b> against the checklist below. Your job is to <b>review and verify</b> — not to write it all yourself.
+  </div>
+
+  <h2>Read &amp; tally — does Claude's file include…</h2>
+  <ul>
+    <li>☐ <b>5+ entries</b>, each with a clear <b>date</b></li>
+    <li>☐ the <b>real task</b> each entry refers to</li>
+    <li>☐ <b>one true lesson</b> per entry — a real decision, mistake, or insight (not generic filler)</li>
+  </ul>
+  <p style="font-size:13px;color:#4a5663;">If an entry looks vague or invented, send it back: <i>"Entry 3 is too generic — replace it with a real lesson from our actual work."</i> Repeat until the tally passes.</p>
+
+  <h2>💡 Hint — how to do it</h2>
+  <div class="hint">
+    <div class="lbl">Refresher — what "good" looks like (your yardstick when reviewing Claude's file)</div>
+    <p>The format is deliberately simple. A short, true note beats a long, polished one. Each entry should answer: <i>"What did I learn that I don't want to lose?"</i> Use the example below to judge whether Claude's entries are real and specific.</p>
+    <div class="lbl">Example</div>
+<pre><span class="c"># memory.md</span>
+
+<span class="o">2026-06-18 · weekly report</span>
+Tried sending the report as a big table — too cluttered.
+Next time → use short bullet points.
+
+<span class="o">2026-06-19 · onboarding email</span>
+A long intro paragraph got ignored.
+A one-line summary at the top worked far better.</pre>
+    <div class="tip">Tip: your first few entries may feel awkward or too simple — that's completely normal. Keep going; the entries add up fast.</div>
+  </div>
+
+  <h2>📤 Final step — push it to GitHub</h2>
+  <p>Once Claude has created your file, <b>commit and push it to your existing project's GitHub repository</b> — the same project you've been working in this week, <b>not a new repo</b>. From your project folder:</p>
+<pre>git add memory.md
+git commit -m "Add memory.md journal"
+git push</pre>
+
+  <div class="done">✅ <b>Done when:</b> <code>memory.md</code> (created by Claude Code, <b>reviewed and tallied by you</b>) has <b>5+ dated entries</b> that pass your checklist — <b>and it's pushed to GitHub.</b></div>
+</body>
+</html>

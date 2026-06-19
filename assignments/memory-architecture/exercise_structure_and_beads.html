@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  @page { margin: 50px 58px; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Arial, sans-serif; color: #232a33; line-height: 1.55; font-size: 14.5px; }
+  .brand { font-size: 12px; letter-spacing: 2px; color: #2e8b50; font-weight: 700; }
+  .head { background: #14304a; color: #fff; border-radius: 12px; padding: 20px 26px; margin: 6px 0 22px; }
+  .head .tag { font-size: 12px; letter-spacing: 2px; opacity: .8; }
+  .head h1 { margin: 4px 0 0; font-size: 26px; font-family: "Consolas", monospace; }
+  .head .sub { font-size: 15px; opacity: .92; margin-top: 6px; }
+  h2 { color: #1f4788; font-size: 17px; margin: 20px 0 8px; border-bottom: 2px solid #e6e6e6; padding-bottom: 5px; }
+  .part { color: #2e8b50; font-weight: 800; font-size: 14px; letter-spacing: .5px; margin: 14px 0 4px; }
+  p { margin: 0 0 10px; }
+  .task { background: #eef4ff; border-left: 5px solid #1f4788; border-radius: 8px; padding: 12px 18px; font-size: 14.5px; margin-bottom: 6px; }
+  ul { margin: 6px 0 10px; padding-left: 22px; }
+  li { margin-bottom: 5px; }
+  code { font-family: "Consolas", monospace; background: #eef0f2; padding: 1px 6px; border-radius: 4px; font-size: 13.5px; }
+  .hint { background: #f3faf5; border: 1px solid #b8e0c6; border-left: 6px solid #2e8b50; border-radius: 10px; padding: 14px 18px; margin-top: 8px; }
+  .hint .lbl { font-weight: 800; color: #2e8b50; font-size: 14px; }
+  pre { background: #14304a; color: #eaf0f6; border-radius: 8px; padding: 13px 16px; font-family: "Consolas", monospace; font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; margin: 8px 0; }
+  pre .c { color: #8aa0b4; }
+  pre .b { color: #8ab4ff; font-weight: 700; }
+  pre .g { color: #7fd09a; }
+  pre .o { color: #ffc067; }
+  pre .r { color: #ff9d8f; }
+  .callout { background: #fff3e0; border: 1px solid #f3c48f; border-radius: 8px; padding: 10px 15px; margin: 10px 0; font-size: 13.5px; }
+  .callout b { color: #b3631a; }
+  .tip { font-style: italic; color: #4a5663; margin-top: 8px; }
+  .done { background: #fff8ec; border: 1px solid #f0d9a8; border-radius: 8px; padding: 12px 16px; margin-top: 18px; font-size: 14px; }
+  .done b { color: #b07a12; }
+</style>
+</head>
+<body>
+  <div class="brand">TALEEMABAD UNIVERSITY · AGENTIC AI MASTERY</div>
+  <div class="head">
+    <div class="tag">EXERCISE · MEMORY ARCHITECTURE</div>
+    <h1>structure.md &nbsp;+&nbsp; Beads</h1>
+    <div class="sub">Organize your project so things have a home — and track your work so nothing slips.</div>
+  </div>
+
+  <h2>What you're making</h2>
+  <p>Two habits that work together: a <code>structure.md</code> that says <b>where everything lives</b>, and a <b>Beads</b> task tracker that follows <b>each task's whole life</b>. A tidy project gives your information a home; the tracker gives your work a memory.</p>
+
+  <h2>Your task</h2>
+
+  <div class="part">PART 1 — Organize (structure.md)</div>
+  <div class="task">
+    Sort your project files into clear folders (e.g. <code>notes/</code>, <code>instructions/</code>, <code>data/</code>). Add a <code>structure.md</code> that explains where each kind of thing lives. Then <b>test it</b> — ask your agent to find one file and confirm it goes straight there.
+  </div>
+
+  <div class="part">PART 2 — Track (Beads)</div>
+  <div class="task">
+    Set up Beads by <b>giving the link below to your Claude</b> and asking it to set up Beads as instructed there:
+    <div style="background:#0d2034;border-radius:6px;padding:9px 14px;margin:9px 0;font-family:'Consolas',monospace;font-size:13.5px;color:#8ab4ff;word-break:break-all;">https://github.com/gastownhall/beads</div>
+    For example, paste this to Claude: <i>“Set up Beads in my project, following the instructions here: https://github.com/gastownhall/beads”</i> — and let it do the setup for you.
+    <br><br>
+    Once it's set up, <b>run the whole system end-to-end to see whether it actually works</b> — create a task, open it, move it through its states (in progress → blocked/waiting → done), and close it. The point is to <b>watch the tracker work</b>, not to hit a task quota.
+  </div>
+
+  <div class="callout">⚠️ <b>Remember:</b> Beads is <b>not just a to-do list — it's a task tracker.</b> A to-do list only shows what's left; a tracker follows the whole life of each task (opened → in progress → blocked/waiting → done).</div>
+
+  <h2>💡 Hint — how to do it</h2>
+  <div class="hint">
+    <div class="lbl">Refresher + Example — structure.md</div>
+    <p>One short file that maps your folders. Keep it to a line per folder.</p>
+<pre><span class="c"># structure.md</span>
+<span class="b">notes/</span>         → my notes &amp; journal (memory.md lives here)
+<span class="b">instructions/</span>  → rules for the agent (CLAUDE.md)
+<span class="b">data/</span>          → raw data &amp; exports
+<span class="b">decisions/</span>     → decision.md</pre>
+    <div class="lbl">Refresher + Example — Beads tracker</div>
+    <p>Each task is an item you open and close; the status shows where it stands.</p>
+<pre><span class="c">.beads — task tracker</span>
+<span class="g">&#9745;</span> Write the script            <span class="g">done</span>
+<span class="o">&#9654;</span> Render the video            <span class="o">in progress</span>
+<span class="r">&#8987;</span> Get reviewer approval       <span class="r">waiting on review</span>
+<span class="c">&#9744;</span> Add captions                <span class="c">to do</span></pre>
+    <div class="tip">Tip: after you build it, ask your agent to "find the data" — watch it go straight to <code>data/</code>. That's a well-organized project.</div>
+  </div>
+
+  <h2>📤 Final step — push it to GitHub</h2>
+  <p>Once both are set up, <b>commit and push them to your existing project's GitHub repository</b> — the same project you've been working in this week, <b>not a new repo</b>. From your project folder:</p>
+<pre>git add structure.md .beads
+git commit -m "Add structure.md and Beads tracker"
+git push</pre>
+
+  <div class="done">✅ <b>Done when:</b> <code>structure.md</code> exists (plus one example of your agent finding a file) and you've <b>run Beads end-to-end</b> — a task moving through its states and closing — confirming the whole tracker works — <b>and both are pushed to GitHub.</b></div>
+</body>
+</html>

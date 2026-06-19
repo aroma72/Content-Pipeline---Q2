@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  @page { margin: 48px 56px; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Arial, sans-serif; color: #232a33; line-height: 1.5; font-size: 13.8px; }
+  .brand { font-size: 11.5px; letter-spacing: 2px; color: #2e8b50; font-weight: 700; }
+  .head { background: #14304a; color: #fff; border-radius: 12px; padding: 20px 26px; margin: 6px 0 18px; }
+  .head .tag { font-size: 11.5px; letter-spacing: 2px; opacity: .8; }
+  .head h1 { margin: 4px 0 0; font-size: 26px; }
+  .head .sub { font-size: 14.5px; opacity: .92; margin-top: 6px; }
+
+  h2 { color: #1f4788; font-size: 16px; margin: 20px 0 8px; border-bottom: 2px solid #e6e6e6; padding-bottom: 5px; }
+  p { margin: 0 0 9px; }
+  .goal { background: #eef4ff; border-left: 5px solid #1f4788; border-radius: 8px; padding: 12px 16px; font-size: 14px; }
+  .ob { background: #f3faf5; border: 1px solid #b8e0c6; border-radius: 8px; padding: 11px 15px; font-size: 13px; margin: 8px 0 4px; }
+  .ob b { color: #2e8b50; }
+  code { font-family: "Consolas", monospace; background: #eef0f2; padding: 1px 6px; border-radius: 4px; font-size: 12.8px; }
+
+  .step { border: 1px solid #dfe3ea; border-radius: 10px; padding: 0 0 12px; margin: 14px 0; page-break-inside: avoid; overflow: hidden; }
+  .sh { background: #f3f6fb; padding: 11px 16px; border-bottom: 1px solid #e3e8f0; }
+  .sh .num { font-size: 11px; letter-spacing: 1.5px; color: #2e8b50; font-weight: 700; }
+  .sh .ti { font-size: 16px; font-weight: 700; color: #14304a; margin-top: 1px; }
+  .sb { padding: 10px 16px 0; }
+  .prompt { background: #0d2034; border-radius: 6px; padding: 9px 14px; margin: 8px 0; font-family: "Consolas", monospace; font-size: 12.8px; color: #a8d5ff; }
+  .prompt b { color: #fff; }
+
+  table { width: 100%; border-collapse: collapse; margin: 8px 0; }
+  th { background: #1f4788; color: #fff; text-align: left; padding: 7px 11px; font-size: 12px; }
+  td { border: 1px solid #e0e0e0; padding: 7px 11px; font-size: 12.6px; vertical-align: top; }
+  td.f { font-family: "Consolas", monospace; color: #1f4788; white-space: nowrap; }
+  td.d { text-align: center; width: 92px; color: #9aa0aa; }
+
+  pre { background: #14304a; color: #eaf0f6; border-radius: 8px; padding: 12px 15px; font-family: "Consolas", monospace; font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; margin: 8px 0; }
+  .push { background: #eef2f7; border: 1px solid #c6d2e0; border-left: 6px solid #14304a; border-radius: 10px; padding: 12px 16px; margin-top: 8px; }
+  .push b { color: #14304a; }
+  .submit { background: #fff8ec; border: 1px solid #f0d9a8; border-radius: 8px; padding: 12px 16px; margin-top: 12px; font-size: 13.5px; }
+  .submit b { color: #b07a12; }
+</style>
+</head>
+<body>
+  <div class="brand">TALEEMABAD UNIVERSITY · AGENTIC AI MASTERY</div>
+  <div class="head">
+    <div class="tag">WEEK ASSIGNMENT · MEMORY ARCHITECTURE</div>
+    <h1>Validate Your Memory System</h1>
+    <div class="sub">Prove the files you built this week are real, correct, and working together.</div>
+  </div>
+
+  <p class="goal"><b>You've already built the pieces.</b> In this week's exercises, you had Claude Code create your <code>memory.md</code> and <code>decision.md</code>, set up your <code>structure.md</code>, and install <b>Beads</b> (<code>.beads</code>). <b>This assignment does not ask you to make anything new</b> — it validates that those files exist, meet the standard, and actually work as a memory system.</p>
+
+  <div class="ob">📊 <b>Outcome-based &amp; evidence-based.</b> Your <b>GitHub repository is the evidence</b> — it already contains the files you made in the exercises. Here you run a validation pass to confirm each one meets the bar, and prove the system works end-to-end.</div>
+
+  <!-- STEP 1 -->
+  <div class="step">
+    <div class="sh"><div class="num">STEP 1 — SELF-AUDIT</div><div class="ti">Tally your files against the standard</div></div>
+    <div class="sb">
+      <p>Open each file you created in the exercises and confirm it meets the bar below. Tick each row only if it genuinely passes.</p>
+      <table>
+        <tr><th>File (from your exercises)</th><th>Standard it must meet</th><th>Passes?</th></tr>
+        <tr><td class="f">memory.md</td><td><b>5+ dated entries</b> — each a real task + one true lesson (not filler)</td><td class="d">☐</td></tr>
+        <tr><td class="f">decision.md</td><td><b>3+ decisions</b> — each with what · why · what you ruled out</td><td class="d">☐</td></tr>
+        <tr><td class="f">structure.md</td><td>maps your folders, and you can show the agent <b>finding one file</b></td><td class="d">☐</td></tr>
+        <tr><td class="f">.beads</td><td><b>5+ tracked tasks</b> across at least two states (e.g. in&nbsp;progress, done)</td><td class="d">☐</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- STEP 2 -->
+  <div class="step">
+    <div class="sh"><div class="num">STEP 2 — LET CLAUDE AUDIT IT</div><div class="ti">Have Claude Code check your work</div></div>
+    <div class="sb">
+      <p>In your project, ask Claude Code to audit the files and report back. Paste this:</p>
+      <div class="prompt">"Audit my project's memory files and tell me, for each, whether it meets the standard:<br>
+      • <b>memory.md</b> — 5+ dated entries, each a real lesson<br>
+      • <b>decision.md</b> — 3+ entries with what / why / ruled-out<br>
+      • <b>structure.md</b> — maps the folders<br>
+      • <b>.beads</b> — 5+ tasks across at least two states.<br>
+      List anything missing or weak."</div>
+      <p>If Claude flags a gap, fix it the same way you did in the exercises (ask Claude to revise), then re-run the audit until everything passes. <b>You're verifying — not rewriting from scratch.</b></p>
+    </div>
+  </div>
+
+  <!-- STEP 3 capstone -->
+  <div class="step">
+    <div class="sh"><div class="num">STEP 3 — CAPSTONE · PROVE IT WORKS</div><div class="ti">Pick the project up cold in a fresh chat</div></div>
+    <div class="sb">
+      <p>Open your project in a <b>brand-new chat</b> with your agent. Without re-explaining anything, ask it to use its memory files to answer:</p>
+      <div class="prompt">"Using only the project's files, tell me: the rules you follow, my most recent lesson, one key decision and why, where the data lives, and what's left to do."</div>
+      <p><b>This is the real test.</b> If the agent answers correctly — pulling from <code>CLAUDE.md</code>, <code>memory.md</code>, <code>decision.md</code>, <code>structure.md</code>, and <code>.beads</code> — your memory system works. If it can't, a file is missing or thin: go back and strengthen it.</p>
+    </div>
+  </div>
+
+  <h2>📤 Confirm everything is on GitHub</h2>
+  <div class="push">
+    <b>Make sure all the files are pushed to your existing project's GitHub repository</b> — the same project repo you've used all week, <b>not a new one</b>. That repo is your submission. From your project folder:
+<pre>git add memory.md decision.md structure.md .beads CLAUDE.md
+git commit -m "Memory Architecture: validated memory system"
+git push</pre>
+    <span style="font-size:12.5px;color:#56627a;">(Most of these were pushed during the exercises — this just confirms the latest versions are up.)</span>
+  </div>
+
+  <div class="submit">📌 <b>Submit:</b> share the link to your GitHub repository. You pass the assignment when the repo contains all four files meeting the standard in Step 1, <b>and</b> your agent passes the Step 3 cold-start test.</div>
+</body>
+</html>
