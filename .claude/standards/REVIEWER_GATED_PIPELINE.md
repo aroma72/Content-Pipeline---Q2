@@ -106,7 +106,7 @@ When Aroma is not satisfied, the reviewer MUST persist the feedback so it is nev
 
 | # | Step | Reviewer validates against | Hard-fail (block) conditions |
 |---|------|----------------------------|------------------------------|
-| 1 | **Script** | `SCRIPTING_STANDARDS.md`, `VIDEO_SCRIPTING_BEST_PRACTICES.md`, duration word-budget | Word count can't be spoken in target seconds; off-topic; missing the required idea/structure; (teaching videos) <3 diverse-domain examples |
+| 1 | **Script** | `SCRIPTING_STANDARDS.md`, `VIDEO_SCRIPTING_BEST_PRACTICES.md`, duration word-budget | Word count can't be spoken in target seconds; off-topic; missing the required idea/structure; (teaching videos) no single protagonist carried in depth, OR domain-hops/switches characters, OR uses a real colleague's name |
 | 2 | **Voiceover** | `VOICEOVER_POLICY.md`, VO pacing feedback | No explicit permission for ElevenLabs; regenerated instead of extracted when extraction was possible; duration > cap; rushed (within-phrase >~6 wps); inaudible; trailing dead air |
 | 3 | **Composition (TSX)** | `VIDEO_PRODUCTION_RULES.md` (frame math, SVG safety), visual-audio sync feedback | `durationInFrames` ≠ VO_seconds×30 (±30); text overflow/clipping; on-screen text ≠ VO; "mentor tone"/stage cues rendered on screen; static/boring |
 | 4 | **Silent render** | `video-render` skill | Wrong dimensions/fps; duration > cap; blank/black/frozen frames; missing scenes |

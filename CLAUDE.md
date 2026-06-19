@@ -17,7 +17,7 @@ owner: aroma
 |--|--|
 | Produce a video with reviewer gates (human-approved, step-by-step) | `/pipeline-review` → `.claude/standards/REVIEWER_GATED_PIPELINE.md` |
 | Evaluate video quality (QA rating system) | `docs/QA_QUICK_REFERENCE.md` → `.claude/standards/QA_RATING_SYSTEM.md` |
-| Write scripts (concept depth, diverse examples) | `.claude/standards/SCRIPTING_STANDARDS.md` |
+| Write scripts (concept depth, single protagonist story) | `.claude/standards/SCRIPTING_STANDARDS.md` |
 | Render videos (Remotion) | `docs/video-production.md` |
 | Extract & mux voiceover | `docs/audio-extraction.md` |
 | Understand frame count formula | `docs/design-standards.md` |
@@ -79,9 +79,9 @@ owner: aroma
 - All ratings logged to `.beads/qa_ratings.jsonl` for weekly reporting
 
 🚫 **Scripting:**
-- All scripts MUST follow SCRIPTING_STANDARDS.md — concept depth + 3+ diverse examples (not only Taleemabad)
-- Script examples from at least 3 domains (manufacturing, healthcare, finance, sports, cooking, etc.)
-- Taleemabad context is the FINAL example, never the only one
+- All scripts MUST follow SCRIPTING_STANDARDS.md — concept depth + a SINGLE protagonist story (supersedes the old "3+ diverse examples" rule)
+- Teach through ONE named, invented protagonist (e.g. "Ali, a statistician") in ONE running scenario, followed in depth — NOT a list of multiple domain examples
+- Go deep, not wide: friction → fix → structure → failure mode → payoff, all on the protagonist's task; reuse the same protagonist across a video series; never use a real colleague's name
 
 🚫 **Infrastructure:**
 - Never hardcode SYSTEM_PROMPT — extract to `prompts/{name}.txt`
@@ -120,7 +120,7 @@ owner: aroma
 
 - **REVIEWER_GATED_PIPELINE.md** — Per-step reviewers, human-approval gates, feedback persistence, Review Log artifact
 - **QA_RATING_SYSTEM.md** — 7-factor quality rubric, scoring 0–7, minimum thresholds, remediation workflow
-- **SCRIPTING_STANDARDS.md** — Concept depth, diverse examples, validation checklist (CRITICAL for all scripts)
+- **SCRIPTING_STANDARDS.md** — Concept depth, single protagonist story, validation checklist (CRITICAL for all scripts)
 - **VIDEO_PRODUCTION_RULES.md** — Frame math, SVG safety, text prevention
 - **VOICEOVER_POLICY.md** — ElevenLabs policy, extraction workflow
 - **DOC_TYPE_SYSTEM.md** — Doc types and line limits

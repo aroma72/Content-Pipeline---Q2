@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Memory Architecture — Part 2 (Story Edition)</title>
+<style>
+  @page { margin: 50px 58px; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Arial, sans-serif; color: #222; line-height: 1.5; font-size: 14px; }
+  h1 { color: #14304a; font-size: 29px; margin: 0 0 4px; }
+  .sub { color: #6b7280; font-size: 15px; margin-bottom: 10px; }
+  .legend { font-size: 12.5px; color: #6b7280; margin: 4px 0 22px; background:#f6f8fb; border:1px solid #e3e8f0; border-radius:8px; padding:10px 14px; }
+  .legend b { color: #1f4788; }
+  .maptitle { color: #1f4788; font-size: 18px; font-weight: 700; margin: 24px 0 10px; border-bottom: 2px solid #e6e6e6; padding-bottom: 6px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+  th { background: #1f4788; color: #fff; text-align: left; padding: 9px 12px; font-size: 13px; }
+  td { border: 1px solid #e0e0e0; padding: 9px 12px; font-size: 13.3px; vertical-align: top; }
+  td.v { font-weight: 800; color: #1f4788; white-space: nowrap; width: 64px; }
+  td.nm { font-weight: 600; color: #14304a; }
+  td.slo { color: #2e8b50; }
+  .vid { border: 1px solid #dfe3ea; border-radius: 12px; padding: 0 0 18px; margin: 22px 0; page-break-inside: avoid; overflow: hidden; }
+  .vhead { background: #14304a; color: #fff; padding: 14px 22px; }
+  .n { font-size: 12px; letter-spacing: 1.5px; opacity: .8; }
+  .t { font-size: 21px; font-weight: 700; margin-top: 2px; }
+  .vmeta { margin-top: 8px; }
+  .pill { display: inline-block; background: #2e8b50; color: #fff; font-size: 11.5px; font-weight: 700; border-radius: 20px; padding: 3px 12px; margin-right: 6px; }
+  .pill.gray { background: #56627a; }
+  .vbody { padding: 16px 22px 0; }
+  .teaches { background: #eef4ff; border-left: 4px solid #1f4788; padding: 9px 14px; font-size: 13.3px; border-radius: 6px; margin: 0 0 12px; }
+  .teaches b { color: #1f4788; }
+  .lead { background: #fff7e8; border-left: 4px solid #e6a417; border-radius: 6px; padding: 9px 14px; font-size: 14px; margin: 0 0 12px; }
+  .lead .lbl { font-size: 10.5px; letter-spacing: 1px; font-weight: 800; color: #b07a12; display:block; margin-bottom:2px; }
+  .script p { margin: 0 0 11px; font-size: 14px; }
+  .case { background:#f3faf5; border:1px solid #cce7d5; border-left:4px solid #2e8b50; border-radius:6px; padding:8px 13px; margin:9px 0; font-size:13.6px; }
+  .case .ind { font-weight:700; color:#2e8b50; }
+  code { font-family: "Consolas", monospace; background: #eef0f2; padding: 1px 6px; border-radius: 4px; font-size: 13px; }
+  .deliv { background: #f3faf5; border: 1px solid #b8e0c6; border-left: 6px solid #2e8b50; border-radius: 8px; padding: 11px 16px; font-size: 13.5px; margin: 12px 22px 0; }
+  .deliv .lbl { font-weight: 800; color: #2e8b50; }
+</style>
+</head>
+<body>
+  <h1>Memory Architecture — Part 2 <span style="font-size:18px;color:#2e8b50;">· Story Edition</span></h1>
+  <div class="sub">Scaling &amp; sustaining your agent's memory · 5 videos · ≤3 min each</div>
+  <div class="legend">
+    <b>Style note —</b> each script follows <b>one person, Ali, a statistician</b>, across his real weekly workflow,
+    and goes <i>deep on a single example</i> rather than listing several. Every script still <b>leads with the answer</b>
+    (Minto's Pyramid Principle), frames the problem as <b>Situation → Complication → Question → Answer</b> (SCQA), keeps
+    its teaching points <b>MECE</b> (no overlap, no gaps), uses <b>one metaphor per concept</b>, and ends with one small
+    file to create. The continuous Ali story carries across all five videos. Text below is the word-for-word voiceover.
+  </div>
+
+  <div class="maptitle">SLO coverage map — which video covers which SLO</div>
+  <table>
+    <tr><th>Video</th><th>Name</th><th>SLO covered</th></tr>
+    <tr><td class="v">Video 1</td><td class="nm">The Skill File — Your Agent's Standard Operating Procedure</td><td class="slo">Create a well-structured skill file</td></tr>
+    <tr><td class="v">Video 2</td><td class="nm">Skills vs. Agents — Knowing What to Build</td><td class="slo">Difference between a skill file and agents</td></tr>
+    <tr><td class="v">Video 3</td><td class="nm">Weekly Maintenance — Protecting Your Memory's ROI</td><td class="slo">Perform weekly maintenance</td></tr>
+    <tr><td class="v">Video 4</td><td class="nm">Fresh Sessions — Resetting Without Losing Ground</td><td class="slo">Start fresh sessions strategically</td></tr>
+    <tr><td class="v">Video 5</td><td class="nm">Lazy Loading — Scaling Memory Without Drowning In It</td><td class="slo">Implement lazy loading for large memory</td></tr>
+  </table>
+
+  <!-- ============ VIDEO 1 ============ -->
+  <div class="vid">
+    <div class="vhead">
+      <div class="n">VIDEO 1</div>
+      <div class="t">The Skill File — Your Agent's Standard Operating Procedure</div>
+      <div class="vmeta"><span class="pill">SLO: Create a well-structured skill file</span><span class="pill gray">~2:30</span></div>
+    </div>
+    <div class="vbody">
+      <div class="teaches"><b>Teaches:</b> a skill file is an SOP for one task; the four parts (name · when to use · steps · one example); the one-skill-one-job rule.</div>
+      <div class="lead"><span class="lbl">PYRAMID LEAD (answer first)</span>The fastest way to make your agent — that is, your project — more reliable is to stop re-explaining tasks and start writing skill files.</div>
+      <div class="script">
+        <p>The fastest way to make your agent — that is, your project — more reliable is to stop re-explaining tasks... and write one skill file. Lead with that — everything else follows.</p>
+        <p class="case"><span class="ind">Meet Ali.</span> Ali is a statistician at a research lab. Every Monday, a new dataset lands on his desk, and his job is to turn it into one clean summary report — the same shape, every week.</p>
+        <p>So every Monday, Ali opens his agent and explains the task. "Drop the empty rows. Check the totals. Flag anything that looks off. Then write it up in our standard format." The results are good... but he types that same paragraph again, and again, week after week.</p>
+        <p>One Monday he stops, and asks a sharper question. Why am I teaching this task from scratch every single time? That question is the whole lesson.</p>
+        <p>The fix is a skill file. Think of it as a standard operating procedure — an SOP — for one task. A short, structured document that teaches your agent to do that one task the same way, every time. Write it once. Reuse it forever.</p>
+        <p>Here's what Ali actually wrote — and it's only four parts.</p>
+        <p>One: a <b>name</b>. In plain words — "Clean and summarize a weekly dataset." If he can't name it simply, the task isn't clear yet.</p>
+        <p>Two: <b>when to use it</b>. "Use this whenever a new raw dataset arrives." Now the agent reaches for it at the right moment, without Ali asking.</p>
+        <p>Three: the <b>steps</b>. Short, and in order. Drop the empty rows. Verify the column totals. Flag the outliers. Write the summary in the house format. Four lines — not an essay.</p>
+        <p>Four: <b>one worked example</b>. Ali pastes in last week's finished report. Now "good" is visible — the agent can see the target, instead of guessing at it.</p>
+        <p>Name. When. Steps. Example. Nothing more.</p>
+        <p>Now, the trap Ali nearly fell into. He was tempted to pour everything into one giant file — cleaning, charting, emailing the team, all at once. Don't. The rule is <b>one skill, one job</b>. A bundled file turns messy... and a messy file gets ignored. When Ali needed charts, he simply wrote a second skill.</p>
+        <p>And his very first draft? Honestly — rough. And that's exactly right. An SOP earns its quality through use; Ali sharpened it the next Monday, and the Monday after that. A working draft beats a perfect file you never wrote.</p>
+        <p>So here's your move. Pick the one task you repeat most — the paragraph you keep retyping. Then ask: if I had to write its SOP — its name, when to use it, the steps, and one example — what would it say? Write that down. That... is your first skill file.</p>
+      </div>
+      <div class="deliv"><span class="lbl">📄 YOUR FILE:</span> One skill file for a task you repeat — with all four parts (name · when to use · steps · one worked example). Keep it to a single task.</div>
+    </div>
+  </div>
+
+  <!-- ============ VIDEO 2 ============ -->
+  <div class="vid">
+    <div class="vhead">
+      <div class="n">VIDEO 2</div>
+      <div class="t">Skills vs. Agents — Knowing What to Build</div>
+      <div class="vmeta"><span class="pill">SLO: Difference between a skill file and agents</span><span class="pill gray">~2:25</span></div>
+    </div>
+    <div class="vbody">
+      <div class="teaches"><b>Teaches:</b> a skill = an instruction; an agent = the operator that uses many skills and judges; when to build each; skills compound the agent's value.</div>
+      <div class="lead"><span class="lbl">PYRAMID LEAD (answer first)</span>A skill is an instruction; an agent is the operator. Confuse the two and you'll over-build.</div>
+      <div class="script">
+        <p>A skill is an instruction; an agent is the operator. Confuse the two... and you'll over-build everything. So let's be precise, because the distinction changes what you build.</p>
+        <p class="case"><span class="ind">Back to Ali.</span> He now has a shelf of skills — clean a dataset, build a chart, draft a summary. But he hits a new confusion: what exactly is the difference between a skill and the agent itself?</p>
+        <p>Picture Ali's own desk. The skill is the printed procedure clipped above it — fixed steps for one job. Ali, the statistician, is the operator — he runs many procedures, watches for the odd result, and decides what to do when a number looks wrong. The procedure can't act. Ali acts, using it.</p>
+        <p>So a skill is know-how. An agent is the doer that puts know-how to work.</p>
+        <p>When should Ali build each? Two clean cases, no overlap. If he wants one task done the same way every time — that's a skill. If he needs something to take initiative across many steps, choosing and combining skills as it goes — that's an agent.</p>
+        <p>And here's the relationship that ties it together: you equip an agent with skills. A strong agent is simply a capable operator with a shelf of sharp skills. This is where the return compounds — improve one skill, and every task that uses it gets better, with no change to the agent itself.</p>
+        <p>So Ali builds a content agent for his weekly reports. He hands it three skills — clean the data, build the chart, draft the summary. The agent decides which to use for each new dataset, runs them in order, and hands him a finished pack. He wrote the skills once; the agent reuses them every week.</p>
+        <p>If the line still feels blurry, that's normal — it sharpens the moment you build one of each.</p>
+        <p>So take three tasks you do often, and sort them. Does this just need to run the same way every time? That's a skill. Or does it need to take charge across many steps? That's an agent. That one sort tells you exactly what to build next.</p>
+      </div>
+      <div class="deliv"><span class="lbl">📄 YOUR FILE:</span> List 3 tasks you do often. Mark each <b>skill</b> (same way every time) or <b>agent</b> (takes charge across many steps), with one line on why.</div>
+    </div>
+  </div>
+
+  <!-- ============ VIDEO 3 ============ -->
+  <div class="vid">
+    <div class="vhead">
+      <div class="n">VIDEO 3</div>
+      <div class="t">Weekly Maintenance — Protecting Your Memory's ROI</div>
+      <div class="vmeta"><span class="pill">SLO: Perform weekly maintenance</span><span class="pill gray">~2:15</span></div>
+    </div>
+    <div class="vbody">
+      <div class="teaches"><b>Teaches:</b> memory decays without upkeep; a 15-minute weekly routine of 4 steps — prune journal · trim handbook · close tasks · archive stale files.</div>
+      <div class="lead"><span class="lbl">PYRAMID LEAD (answer first)</span>An unmaintained memory system decays — a 15-minute weekly review protects everything you built.</div>
+      <div class="script">
+        <p>Let's start with the conclusion: an unmaintained memory system quietly decays... and a fifteen-minute weekly review protects everything you've built. That's the whole video; the rest is why and how.</p>
+        <p class="case"><span class="ind">Ali has built a lot now</span> — a handbook, a journal, a shelf of skills, a task list. But systems drift. Over a few weeks, his journal fills with notes that are no longer true. A handbook rule expires. Finished tasks sit open on the list.</p>
+        <p>Left alone, his agent starts making decisions from outdated information — and Ali won't notice until a report comes out wrong.</p>
+        <p>Think of it like the instruments in Ali's lab. A calibrated instrument left unchecked drifts — slowly, invisibly — until one day the readings are simply wrong. Nobody schedules that failure; they just skip the calibration. Memory drifts the same way.</p>
+        <p>So Ali runs four steps, once a week. One: skim the journal — keep what's still true, let the rest go. Two: open the handbook — trim a rule that no longer fits, add one he keeps needing. Three: work the task list — close what's done, note what's next. Four: archive or delete the files he's finished with. That's the whole routine — fifteen minutes.</p>
+        <p>For Ali, it's every Friday. He opens three things — his <code>CLAUDE.md</code>, his <code>memory.md</code>, and his task tracker. He reads each quickly, tidies as he goes, closes anything finished. Come Monday, his agent reads only current information — not last month's leftovers.</p>
+        <p>An honest word: Ali will miss a week. That's fine — maintenance isn't a perfect streak, it's a habit you return to. Even one pass after two weeks away beats no habit at all.</p>
+        <p>So choose your slot now — Friday afternoon, say. Set a fifteen-minute timer, and ask the only question that matters: if I read my own files right now... is everything still true? Or am I about to carry clutter into next week?</p>
+      </div>
+      <div class="deliv"><span class="lbl">📄 YOUR FILE:</span> A <code>maintenance.md</code> checklist (the four steps), a chosen weekly day, and one full pass done this week — noting what you cleaned up.</div>
+    </div>
+  </div>
+
+  <!-- ============ VIDEO 4 ============ -->
+  <div class="vid">
+    <div class="vhead">
+      <div class="n">VIDEO 4</div>
+      <div class="t">Fresh Sessions — Resetting Without Losing Ground</div>
+      <div class="vmeta"><span class="pill">SLO: Start fresh sessions strategically</span><span class="pill gray">~2:25</span></div>
+    </div>
+    <div class="vbody">
+      <div class="teaches"><b>Teaches:</b> a full context degrades performance; a reset restores it without losing memory (memory lives in files); 3 triggers; save-to-file first.</div>
+      <div class="lead"><span class="lbl">PYRAMID LEAD (answer first)</span>When an agent slows or drifts, the fix usually isn't a better prompt — it's a fresh session.</div>
+      <div class="script">
+        <p>When your agent slows down, drifts, or starts repeating itself, the instinct is to write a better prompt. Usually the real fix is simpler: start a fresh session. Lead with that.</p>
+        <p class="case"><span class="ind">One afternoon, Ali's agent starts dragging.</span> It repeats a question he already answered. Its replies turn vague. His first instinct is to craft a cleverer prompt — but the real problem is somewhere else.</p>
+        <p>Here's the mechanism. Your agent works on a desk — its short-term attention, the space it's actively holding right now. A long session piles that desk high with old questions, earlier answers, and a couple of wrong turns. The fuller the desk, the slower and foggier the thinking. A fresh session clears the desk — and, crucially, Ali loses nothing, because the real memory lives in his files, not the chat.</p>
+        <p>Think of Ali's whiteboard. Six hours into a hard analysis, it's a tangle of crossed-out numbers and dead ends. Wiping it clean isn't losing the work — the conclusions are already saved in his notebook. The clean board is what lets him think clearly again.</p>
+        <p>So when does Ali reset? Three triggers, cleanly separated. One: he's switching to a different task — finish, then start clean. Two: the conversation has started going in circles and isn't improving. Three: the answers are getting sloppy — the tell-tale sign the desk is overloaded.</p>
+        <p>One discipline before he resets: save what matters to a file first. Reached a decision? Write it to the decision log. Learned something? Add it to the journal. Then the new session opens with the good material already on the shelf.</p>
+        <p>So Ali spends an hour getting a tricky analysis exactly right. He saves the final notes to <code>memory.md</code>, records the key choice in <code>decision.md</code> — then starts fresh to write the report. The new session is fast and sharp, and nothing valuable was lost.</p>
+        <p>It can feel wasteful to walk away from a conversation you put real effort into. But you're not discarding the work — only the clutter. The work is safe in your files. So next time things feel slow or stuck, ask one question: have I saved what matters? If yes — reset, and feel the difference.</p>
+      </div>
+      <div class="deliv"><span class="lbl">📄 YOUR TASK:</span> Next time you switch tasks, save what matters to a file, then start a fresh session. Note in <code>memory.md</code> when the reset helped.</div>
+    </div>
+  </div>
+
+  <!-- ============ VIDEO 5 ============ -->
+  <div class="vid">
+    <div class="vhead">
+      <div class="n">VIDEO 5</div>
+      <div class="t">Lazy Loading — Scaling Memory Without Drowning In It</div>
+      <div class="vmeta"><span class="pill">SLO: Implement lazy loading for large memory</span><span class="pill gray">~2:30</span></div>
+    </div>
+    <div class="vbody">
+      <div class="teaches"><b>Teaches:</b> loading all memory hurts speed &amp; cost; keep a small always-loaded index and load detail on demand; the 3 steps (split by topic · one-line index · load on demand).</div>
+      <div class="lead"><span class="lbl">PYRAMID LEAD (answer first)</span>As memory grows, loading everything every time hurts speed and cost — load an index always, details on demand.</div>
+      <div class="script">
+        <p>Start with the answer: as your agent's memory grows, loading all of it every time makes the agent slower and more expensive — so load a small index always, and the details only when you need them. That's lazy loading.</p>
+        <p class="case"><span class="ind">Ali's system is working</span> — so well that his memory keeps growing. The situation is a good one: his agent keeps learning, so the notes keep piling up. The complication is the catch — attention is limited, and the desk only holds so much.</p>
+        <p>Pile a hundred pages of notes onto that desk, and the important things get buried — the agent slows, and every run costs more. More memory is not more useful. The right memory, at the right moment, is.</p>
+        <p>Picture Ali's filing room. He doesn't carry every folder to his desk each morning — he keeps one index card listing where each folder lives, and pulls a folder only when a question needs it. That's what keeps him fast.</p>
+        <p>For Ali's agent, it's three steps. One: split a big memory file into smaller ones by topic — decisions in one, lessons in another. Two: write a one-line index — a short file naming what each file is for. Three: keep only that index loaded by default; the agent opens a detailed file just when the task calls for it.</p>
+        <p>So Ali keeps a short <code>memory-index.md</code>. It reads: "decisions — why we chose things; lessons — what went wrong before; data-notes — where the numbers live." Ask about a past choice, and the agent reads the index, opens only <code>decision.md</code>, and leaves the rest on the shelf. Faster, sharper, cheaper.</p>
+        <p>If splitting files and writing an index sounds like a project, don't make it one — start with a single index... and one file split. You'll feel the difference immediately, and grow it from there.</p>
+        <p>So look at your largest memory file and ask: could this become a short index — plus a few smaller files I open only when I need them? That... is the whole move.</p>
+      </div>
+      <div class="deliv"><span class="lbl">📄 YOUR FILES:</span> A <code>memory-index.md</code> (one line per file, saying what it's for), and one oversized file split into smaller topic files the agent opens on demand.</div>
+    </div>
+  </div>
+
+</body>
+</html>

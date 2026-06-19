@@ -1,6 +1,6 @@
 ---
 type: standards
-last_verified: 2026-06-02
+last_verified: 2026-06-19
 owner: aroma
 ---
 
@@ -8,7 +8,15 @@ owner: aroma
 
 Requirements for all script generation (voiceover, video narration, explainer content).
 
-## Core Requirement: Concept Depth & Diverse Examples
+## Core Requirement: Concept Depth via a Single Protagonist Story
+
+> **House style (effective 2026-06-19):** scripts teach a concept by following **ONE named
+> protagonist through ONE running scenario**, going *deep* — not by listing several short
+> examples from different domains. Depth now comes from staying with one person across the
+> whole lifecycle of the concept (the pain → the fix → the structure → the failure mode →
+> the payoff), not from breadth. This **supersedes** the old "3+ diverse examples" rule.
+> See [feedback_scripting_standards](../../memory/feedback_scripting_standards.md).
+
 
 Every script MUST demonstrate genuine conceptual understanding through:
 
@@ -25,54 +33,57 @@ Every script MUST demonstrate genuine conceptual understanding through:
 **✅ Deep:**
 "Variables are named containers that let you refer to data by a meaningful label instead of remembering its location in memory. This matters because it makes code readable and reusable — imagine if you had to remember 50 memory addresses instead of using names like `student_score` or `course_title`. When you change what's stored in a variable, everywhere you use that label automatically gets the new value."
 
-### 2. Diverse Examples (Required)
+### 2. Single Protagonist Story (Required)
 
-Scripts must include examples from AT LEAST 3 different domains, **never only ed-tech or Taleemabad context**.
+Teach the concept through **ONE named, invented protagonist** living **ONE concrete scenario**,
+followed in depth for the whole script. Do **not** list 3 short examples from different domains.
 
-**Example domains to choose from:**
-- Manufacturing / supply chain
-- Healthcare / medical diagnosis
-- Finance / banking
-- Sports / fitness
-- Cooking / culinary
-- Architecture / construction
-- Music / audio production
-- Transportation / logistics
-- Agriculture / farming
-- Retail / e-commerce
-- Environmental science
-- Social dynamics / psychology
-- Mechanics / physics
+**Rules for the protagonist:**
+- **One character, named, generic** — e.g. "Meet Ali. Ali is a statistician at a research lab."
+  Give them a real job and a recurring task. **Never use a real colleague's name** (use an invented
+  persona + generic role).
+- **One scenario, carried the whole way through** — the same person and task illustrate every part
+  of the concept. Don't switch to a factory, then a hospital, then a kitchen.
+- **Go deep, not wide** — walk the protagonist through the concept's full arc: the friction they
+  feel → the fix → each part of the structure shown *on their concrete task* → the failure mode they
+  nearly hit → the payoff. This depth is what replaces breadth.
+- **Continuity across a series** — when a week has multiple videos, keep the *same* protagonist across
+  all of them so the story compounds (Ali in V1 builds a skill, in V2 learns skills-vs-agents, etc.).
+- **Taleemabad** is no longer required as a "final example." The protagonist may inhabit a
+  Taleemabad-flavoured task, but the teaching rides on the character's story, not a tacked-on case.
 
-**❌ Wrong (only ed-tech examples):**
-"Conditional logic is used in Learning Management Systems to decide which module students see based on their test scores."
+**❌ Wrong (multiple shallow domain examples):**
+"Retail: a chain standardized restocking and errors fell 40%. Healthcare: a hospital issued one
+blood-draw protocol and rejections dropped. Taleemabad: you turn a recording into a summary..."
 
-**✅ Correct (3+ diverse domains):**
-"Conditional logic decides what happens next based on a condition. In a medical diagnosis system, if blood pressure > 140, the alert is 'hypertension risk.' In a restaurant kitchen, if order size > 50, the chef switches to batch prep instead of individual plates. In a factory, if temperature > 90°C, the cooling system activates. In a Taleemabad course, if quiz_score ≥ 80%, unlock next lesson. Same principle, different contexts."
+**✅ Correct (one protagonist, deep):**
+"Meet Ali, a statistician. Every Monday a new dataset lands on his desk... [we follow Ali feeling the
+pain of re-explaining the task, writing his first skill file, naming it, listing the steps, nearly
+bundling too much into one file, and sharpening it the next week]." One person, one task, full depth.
 
 ### 3. Structural Pattern for Scripts
 
-**Header:** Name the concept + state its purpose
+**Lead with the answer (Pyramid):** State the takeaway in the first line.
 ```
-"Today we're exploring [CONCEPT]. This matters because [WHY]."
-```
-
-**Mechanism:** Explain how it works
-```
-"Here's how [CONCEPT] works: [STEP 1] → [STEP 2] → [RESULT]"
+"The fastest way to [outcome] is to [the one move]. Lead with that — everything else follows."
 ```
 
-**Diverse Examples (3+):** Show in unrelated contexts
+**Meet the protagonist:** Introduce the one character + their recurring task.
 ```
-"You see this in [Domain 1]: [example]
-You see it in [Domain 2]: [example]  
-You see it in [Domain 3]: [example]
-And in Taleemabad: [example]"
+"Meet [Name]. [Name] is a [generic role] who, every [cadence], has to [recurring task]."
 ```
 
-**Consolidation:** Bring learner back to the principle
+**Friction → Question:** Show the pain in their world, then the question that unlocks the concept.
 ```
-"So at its core, [CONCEPT] is about [PRINCIPLE]. When you encounter [SIGNAL], you'll know to [ACTION]."
+"So every week [Name] [does the painful thing]... until they stop and ask: [the key question]."
+```
+
+**Mechanism, shown on their task:** Explain how the concept works *using the protagonist's scenario*,
+including each structural part and the common failure mode they nearly hit.
+
+**Consolidation + handoff to the learner:** Return to the principle, then turn it on the viewer.
+```
+"So here's your move: [reflection prompt applied to the learner's own work]."
 ```
 
 ---
@@ -128,8 +139,10 @@ Before finalizing any script, verify:
 - [ ] **Concept defined explicitly** — could a person unfamiliar with this topic understand the core principle?
 - [ ] **WHY explained** — does the script say why this concept matters?
 - [ ] **Mechanism shown** — can the learner see how it actually works?
-- [ ] **3+ diverse examples** — are examples from different industries/domains, not just ed-tech?
-- [ ] **Taleemabad context last** — is the course example the final example, not the only one?
+- [ ] **Single protagonist** — is there ONE named, invented character (not a real colleague) carrying the whole script?
+- [ ] **One scenario, deep** — does the script stay in that character's situation the whole way (no domain-hopping)?
+- [ ] **Full concept arc** — do we see the friction → fix → structure → failure mode → payoff on the protagonist's task?
+- [ ] **Continuity** — in a series, is it the same protagonist across videos?
 - [ ] **No jargon without definition** — are technical terms explained when first introduced?
 - [ ] **Plain language** — can a 12-14 year old understand the core explanation?
 - [ ] **Emotional acknowledgment (2+ moments)** — does the script normalize confusion early and reassure at technical peaks?
@@ -141,11 +154,13 @@ Before finalizing any script, verify:
 
 | Pitfall | Fix |
 |---------|-----|
-| "This is how Taleemabad uses it..." (only example) | Add 3 examples from other domains first |
-| Concept stated but not explained | Add WHY + HOW section before examples |
-| Examples all from tech/ed | Pick from manufacturing, healthcare, sports, cooking, etc. |
-| Learner can't see the mechanism | Add step-by-step breakdown or visual sequence |
-| Examples too similar | Vary domain AND context (factory ≠ hospital ≠ kitchen) |
+| Lists several short examples from different domains | Collapse into ONE protagonist + ONE scenario, followed in depth |
+| Switches characters/contexts mid-script (factory → hospital → kitchen) | Keep the same person and task throughout |
+| Uses a real colleague's name | Use an invented persona + generic role (e.g. "Ali, a statistician") |
+| Protagonist named but concept stays abstract | Show every structural part *on the protagonist's concrete task* |
+| Story skips the hard parts | Include the friction they feel and the failure mode they nearly hit |
+| Different protagonist each video in a series | Reuse the same protagonist so the story compounds |
+| Concept stated but not explained | Add WHY + HOW before the story arc |
 | Script goes technical without emotional buffer | Add normalizing phrase before complexity; add slow-down signal at peak |
 | Uses "obviously," "simply," "as you know," "just" | Replace with "here's how it works" or "let's look at this together" |
 
@@ -156,8 +171,8 @@ Before finalizing any script, verify:
 When reviewing scripts, ask:
 
 1. **Depth:** Does this explain the concept's core mechanism, or just name it?
-2. **Examples:** Are there 3+ examples from different industries?
-3. **Context:** Is Taleemabad one of many examples, not the primary one?
+2. **Protagonist:** Is there ONE named, invented character (not a real colleague) carrying the whole script?
+3. **One scenario, deep:** Does the script stay in that character's situation — friction, fix, structure, failure mode, payoff — without domain-hopping?
 4. **Clarity:** Could someone with no background understand this?
 5. **Tone:** Does the script acknowledge difficulty and reassure the learner at hard moments? Are there at least 2 emotional checkpoints?
 
@@ -222,4 +237,4 @@ For video scripts, slides and voiceover must align. Learners with little AI back
 
 ---
 
-*Last verified: 2026-06-02*
+*Last verified: 2026-06-19*

@@ -16,7 +16,7 @@ Rules:
 - Glossary definitions must be one sentence maximum
 - **SCRIPTING STANDARD (CRITICAL):** All content must follow .claude/standards/SCRIPTING_STANDARDS.md:
   * Every concept MUST demonstrate depth: explain WHAT, WHY, and HOW it works
-  * MUST include 3+ diverse examples from different domains (manufacturing, healthcare, finance, sports, cooking, architecture, etc. — NOT only ed-tech or Taleemabad context)
-  * Taleemabad/Learning context should be the FINAL example, not the only one
-  * Glossary examples should also span diverse domains when possible
+  * Teach through ONE named, invented protagonist in ONE running scenario, followed in depth (e.g. "Meet Ali, a statistician...") — NOT a list of multiple short domain examples. This supersedes the old "3+ diverse examples" rule.
+  * Go deep, not wide: friction → fix → structure → failure mode → payoff, all on the protagonist's concrete task. Reuse the same protagonist across a video series. Never use a real colleague's name.
+  * Taleemabad is no longer a required final example — the protagonist may inhabit a Taleemabad-flavoured task, but the teaching rides on the character's story
 - Output ONLY valid JSON — no prose, no markdown fences

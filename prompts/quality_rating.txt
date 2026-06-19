@@ -68,13 +68,13 @@ EVALUATION RULES:
    Check: Safe zone (80px V, 120px H)? Text ≥24px body, ≥28px bullets? SVG ≥850px? Georgia serif? Colors correct (#F5F1E8 bg, #6B5344 headings)?
 
 5. STORYTELLING (1.0 to 0.0):
-   - 1.0: Clear narrative arc, WHY explained, 3+ diverse examples, engaging pacing, concept depth shown
-   - 0.8–0.9: Strong storytelling, WHY and HOW explained, 2+ examples, minor pacing issue
-   - 0.6–0.7: Logical progression but WHY shallow, examples limited to 1–2 domains or Taleemabad only
-   - 0.4–0.5: Disjointed narrative, jumps between topics, only Taleemabad context, concept depth lacking
+   - 1.0: Clear narrative arc, WHY explained, ONE protagonist followed in depth (friction→fix→structure→failure mode→payoff), engaging pacing, concept depth shown
+   - 0.8–0.9: Strong storytelling, WHY and HOW explained, single protagonist + scenario carried through, minor depth/pacing gap
+   - 0.6–0.7: Logical progression but WHY shallow, OR story abstract (named character but concept not shown on their concrete task)
+   - 0.4–0.5: Disjointed narrative, domain-hops or switches characters mid-script, concept depth lacking
    - 0.0–0.3: No clear narrative, confusing progression, surface-level only
 
-   Check: Is opening hook present (why does this matter)? Is WHY explained (consequence)? Is HOW explained (mechanism)? Are there 3+ diverse examples from different domains (NOT only Taleemabad)? Does it follow SCRIPTING_STANDARDS.md?
+   Check: Is opening hook present / does it lead with the answer? Is WHY explained (consequence)? Is HOW explained (mechanism)? Is there ONE named, invented protagonist followed in depth through one scenario (NOT a list of domain examples, NOT a real colleague's name)? Does it follow SCRIPTING_STANDARDS.md?
 
 6. VOICEOVER QUALITY & ACCURACY (1.0 to 0.0):
    - 1.0: Clear, confident delivery, proper pacing, synchronized, no misspoken words
@@ -101,8 +101,8 @@ SCORING GUIDELINES:
 - A factor scoring <0.6 is a FAILING FACTOR — must be fixed in remediation
 
 CRITICAL RULE (from SCRIPTING_STANDARDS.md):
-- If storytelling has only Taleemabad/ed-tech examples, max score is 0.7 (FAIL category)
-- 3+ diverse domain examples required for 0.8+ score
+- A single named, invented protagonist followed in depth through one scenario is required for 0.8+ score
+- If the script domain-hops, switches characters mid-script, or stays abstract (named character but concept not shown on their concrete task), max score is 0.7 (FAIL category)
 - Concept depth (WHAT, WHY, HOW) required for >0.6 score
 
 MINIMUM THRESHOLD (Default for Drawing Room): 4.9

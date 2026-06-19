@@ -26,7 +26,7 @@ Internal QA framework for evaluating all content videos before publication.
 | 2 | **Objectives Coverage** | All stated learning outcomes explicitly addressed | 100% of objectives met, measurable evidence | 1.0 |
 | 3 | **Post-Production** | Technical execution: color, sound mix, encoding, timing | No artifacts, clean transitions, professional finish | 1.0 |
 | 4 | **Visuals** | Design clarity, typography safety, diagram quality, composition | No text cutoff, 850px+ viewBox, 28px+ bullets, safe zone respected | 1.0 |
-| 5 | **Storytelling** | Narrative flow, engagement, pacing, concept depth | Clear progression, diverse examples, WHY explained | 1.0 |
+| 5 | **Storytelling** | Narrative flow, engagement, pacing, concept depth | Clear progression, ONE protagonist followed in depth, WHY explained | 1.0 |
 | 6 | **Voice-Over Quality & Accuracy** | Audio clarity, synchronization with visuals, script fidelity | Clean audio, precise sync, no jargon without definition | 1.0 |
 | 7 | **QA at Each Step** | Process adherence, pre-render checks, frame count validation | All gates passed, smoke test clean, checklist complete | 1.0 |
 
@@ -131,19 +131,19 @@ Internal QA framework for evaluating all content videos before publication.
 
 | Score | Criteria |
 |-------|----------|
-| **1.0** | ✅ Clear narrative arc. WHY explained. 3+ diverse examples. Engaging pacing. Concept depth shown. |
-| **0.8–0.9** | ✅ Strong storytelling. WHY and HOW explained. Examples present (2+ domains). Minor pacing issue. |
-| **0.6–0.7** | ⚠️ Logical progression but WHY shallow. Examples limited to 1–2 domains or Taleemabad only. |
-| **0.4–0.5** | ⚠️ Disjointed narrative. Jumps between topics. Only Taleemabad context shown. Concept depth lacking. |
+| **1.0** | ✅ Clear narrative arc. WHY explained. ONE protagonist followed in depth (friction→fix→structure→failure mode→payoff). Engaging pacing. Concept depth shown. |
+| **0.8–0.9** | ✅ Strong storytelling. WHY and HOW explained. Single protagonist + scenario carried through, minor depth/pacing gap. |
+| **0.6–0.7** | ⚠️ Logical progression but WHY shallow, OR the story is abstract (named character but concept not shown on their concrete task). |
+| **0.4–0.5** | ⚠️ Disjointed narrative — domain-hops between examples or switches characters mid-script. Concept depth lacking. |
 | **0.0–0.3** | ❌ No clear narrative, confusing progression, or purely surface-level explanation. |
 
 **Evaluation Checklist:**
-- [ ] Clear opening hook (why does this matter?)
+- [ ] Clear opening hook / leads with the answer (why does this matter?)
 - [ ] Concept defined explicitly (not assumed knowledge)
 - [ ] WHY explained (consequence of understanding/not understanding)
 - [ ] HOW explained (mechanism or steps)
-- [ ] 3+ diverse examples from different domains
-- [ ] Taleemabad context is final example, not only one
+- [ ] ONE named, invented protagonist carries the whole script (not a real colleague)
+- [ ] Stays in that protagonist's single scenario, in depth — no domain-hopping
 - [ ] Pacing steady (no long pauses, no rushed segments)
 - [ ] Transitions between topics smooth
 - [ ] Closing reinforces main takeaway
@@ -392,7 +392,7 @@ Escalate for design review
 - Document all scores <0.8 with specific evidence
 
 **Common Pitfalls:**
-- Don't rate Storytelling 1.0 if only Taleemabad example shown (requires 3+ domains)
+- Don't rate Storytelling 1.0 if the script domain-hops or stays abstract; 1.0 requires ONE protagonist followed in depth on a concrete task
 - Don't score Visuals high if any text is outside safe zone (even slightly)
 - Don't pass on QA at Each Step if pre-render checks not completed
 - Don't score VO high if sync drifts >0.2s
