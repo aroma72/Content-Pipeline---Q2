@@ -1,0 +1,25 @@
+# Explainer-video pipeline — commit source, never artifacts.
+# The render dumps are enormous (a single video's frames/ is multiple GB).
+
+.env
+.DS_Store
+node_modules/
+
+# Rendered / generated video artifacts (regenerable, not committed)
+art/
+layers/
+audio/
+frames/
+frames_bend/
+out/
+preview/
+preview-lesson/
+*.mp4
+*.mov
+*.webm
+*.wav
+*.mp3
+*.gif
+
+# keep brand assets (fonts/logo) — they are source, not artifacts
+!brand-intro-outro/brand/**

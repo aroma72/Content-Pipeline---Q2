@@ -1,0 +1,31 @@
+/* info.css — infographic template styling + evolution primitives.
+   .seq  = staggered reveal element (revealed progressively across the beat)
+   .io   = fade/slide-in state (straight)         .io-late = late state-change
+   All motion is DRIVEN by seekTo() setting inline styles — deterministic. */
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;
+  padding:44px 56px;box-shadow:0 12px 48px rgba(46,42,36,.12)}
+
+.seq{opacity:0;transform:translateY(18px)}          /* start hidden; seekTo reveals */
+.io{opacity:0}
+.io-late{opacity:.35}
+
+/* checks */
+.checks{display:flex;flex-direction:column;gap:26px;min-width:820px}
+.check{display:flex;align-items:center;gap:24px;font-size:46px;color:var(--ink)}
+.check .box{width:52px;height:52px;border-radius:12px;border:4px solid var(--muted);
+  display:flex;align-items:center;justify-content:center;color:#fff;font-size:34px}
+.check.on .box{background:var(--accent);border-color:var(--accent)}
+
+/* four-parts grid */
+.fourparts{display:grid;grid-template-columns:1fr 1fr;gap:32px;min-width:980px}
+.part{background:var(--card);border:2px solid var(--line);border-left:10px solid var(--accent);
+  border-radius:14px;padding:34px 40px;font-size:48px;color:var(--head)}
+.part .num{font-size:28px;color:var(--muted);display:block;margin-bottom:8px}
+
+/* gauge */
+.gauge{display:flex;flex-direction:column;align-items:center;gap:28px}
+.gauge .bar{width:900px;height:46px;background:#EFE7D7;border-radius:999px;overflow:hidden}
+.gauge .fillbar{height:100%;width:0;background:var(--accent);border-radius:999px}
+.gauge .val{font-size:96px;color:var(--head);font-weight:700}
+.gauge .lab{font-size:40px;color:var(--muted)}

@@ -15,10 +15,11 @@ owner: aroma
 
 | I want to... | Go to... |
 |--|--|
+| **Make an explainer/lesson video (DEFAULT pipeline)** | **`creating-explainer-videos` skill → `explainer-videos/EXPLAINER-VIDEO-PIPELINE-SPEC.md`** |
 | Produce a video with reviewer gates (human-approved, step-by-step) | `/pipeline-review` → `.claude/standards/REVIEWER_GATED_PIPELINE.md` |
 | Evaluate video quality (QA rating system) | `docs/QA_QUICK_REFERENCE.md` → `.claude/standards/QA_RATING_SYSTEM.md` |
 | Write scripts (concept depth, single protagonist story) | `.claude/standards/SCRIPTING_STANDARDS.md` |
-| Render videos (Remotion) | `docs/video-production.md` |
+| Render videos (Remotion — LEGACY, pre-explainer videos only) | `docs/video-production.md` |
 | Extract & mux voiceover | `docs/audio-extraction.md` |
 | Understand frame count formula | `docs/design-standards.md` |
 | Fix text cutoff in diagrams | `docs/troubleshooting.md` |
@@ -39,27 +40,34 @@ owner: aroma
 | `docs/` | Reference documentation |
 | `.claude/` | Harness config: hooks, standards, agents, skills |
 | `.beads/` | Work tracking (append-only JSONL) |
-| `drawing-room-video/drawing-room-remotion/` | Remotion React components (submodule) |
-| `video_production/` | Rendered output folders |
+| `explainer-videos/` | DEFAULT pipeline: brand bumpers + per-video folders (beats.js → branded MP4) |
+| `drawing-room-video/drawing-room-remotion/` | Remotion React components (LEGACY) |
+| `video_production/` | Rendered output folders (legacy) |
 | `updated/` | Final published videos (with VO muxed) |
 
 ---
 
 ## Critical Rules (Never Break These)
 
+🚫 **Default Video Pipeline (explainer/lesson videos):**
+- New content uses the `creating-explainer-videos` skill (beats.js → Imagen art → Python cutout → Gemini TTS → Puppeteer/ffmpeg → brand bumpers). Spec: `explainer-videos/EXPLAINER-VIDEO-PIPELINE-SPEC.md`
+- Remotion + ElevenLabs are LEGACY — use only to maintain pre-existing videos, not for new ones
+- Deliverable is always `<name>_final.mp4` (wrapped in brand bumpers), never the bare render
+- No paid AI video (Veo rejected). Follow the 7 LAWS in the skill's SKILL.md
+
 🚫 **Voiceover:**
-- Never use ElevenLabs without explicit permission
-- Never regenerate VO — extract from existing and edit visuals to match
-- Extract: `ffmpeg -i input.mp4 -vn -acodec aac -y output.aac`
+- Default is **Gemini TTS** via the explainer pipeline, one-take normalized (`tts-lesson.js`); paid Imagen/TTS never fire without `--yes`/`CONFIRM_SPEND=1` (ask first)
+- ElevenLabs (legacy): never use without explicit permission; never regenerate — extract & edit visuals to match (`ffmpeg -i in.mp4 -vn -acodec aac -y out.aac`)
 
 🚫 **Git:**
 - Always commit submodule FIRST, then main repo pointer
 - Never force-push to main
 
-🚫 **Video Rendering:**
+🚫 **Video Rendering (LEGACY Remotion — pre-explainer videos only):**
 - Frame count: `frames = VO_seconds × 30fps` (max +30 buffer)
 - Verify before render: Root.tsx `durationInFrames` matches formula
 - Final videos go in `updated/` folder
+- New videos: use the explainer pipeline instead (1920×1080 / 30fps / yuv420p / AAC)
 
 🚫 **SVG Diagrams:**
 - ViewBox minimum 850px height for 7-node radials
@@ -109,8 +117,12 @@ owner: aroma
 
 | Skill | Command |
 |-------|---------|
+| creating-explainer-videos (DEFAULT pipeline) | `creating-explainer-videos` |
+| writing-explainer-scripts | `writing-explainer-scripts` |
+| reviewing-explainer-scripts (step-0 gate) | `reviewing-explainer-scripts` |
+| animation-motion-design | `animation-motion-design` |
 | pipeline-review | `/pipeline-review` |
-| video-render | `/video-render` |
+| video-render (legacy Remotion) | `/video-render` |
 | audio-mux | `/audio-mux` |
 | git-workflow | `/git-workflow` |
 
@@ -121,28 +133,17 @@ owner: aroma
 - **REVIEWER_GATED_PIPELINE.md** — Per-step reviewers, human-approval gates, feedback persistence, Review Log artifact
 - **QA_RATING_SYSTEM.md** — 7-factor quality rubric, scoring 0–7, minimum thresholds, remediation workflow
 - **SCRIPTING_STANDARDS.md** — Concept depth, single protagonist story, validation checklist (CRITICAL for all scripts)
-- **VIDEO_PRODUCTION_RULES.md** — Frame math, SVG safety, text prevention
-- **VOICEOVER_POLICY.md** — ElevenLabs policy, extraction workflow
-- **DOC_TYPE_SYSTEM.md** — Doc types and line limits
-- **METADATA_CONTRACT.md** — Frontmatter requirements
+- **VIDEO_PRODUCTION_RULES.md** — Frame math, SVG safety, text prevention (legacy)
+- **VOICEOVER_POLICY.md** / **DOC_TYPE_SYSTEM.md** / **METADATA_CONTRACT.md** — VO policy · doc types & line limits · frontmatter
 
 ---
 
 ## Known Failures (See `.beads/failures.jsonl`)
 
-- Text cutoff in SVG → expand viewBox to 850px
-- Blank slides beyond audio → frame count = VO_seconds × 30
-- Wrong submodule order → commit submodule FIRST
-- Stale frame counts → validate before rendering
+- SVG text cutoff → viewBox 850px · blank slides → frames = VO_seconds × 30 · wrong submodule order → submodule FIRST · stale frame counts → validate first
+- Explainer pipeline: dark-bg art breaks cutout (force cream) · stale `frames/` → `rm -rf` & re-render · `clips == beats` before compile
 
 ---
 
-## Pre-Push Quality Gate
-
-```bash
-bash .claude/scripts/smoke-test.sh
-```
-
----
-
-*Last updated: 2026-06-02*
+## Pre-Push Quality Gate: `bash .claude/scripts/smoke-test.sh`
+*Last updated: 2026-07-09*
