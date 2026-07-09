@@ -32,7 +32,12 @@ async function renderOne(mode, seconds, outFile) {
   fs.mkdirSync(framesDir, { recursive: true });
   fs.mkdirSync(path.dirname(outFile), { recursive: true });
 
-  const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--force-color-profile=srgb'] });
+  const _o = { headless: 'new', args: ['--no-sandbox', '--force-color-profile=srgb'] };
+  const _cands = [process.env.CHROME_PATH, 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'].filter(Boolean);
+  const _found = _cands.find(p => { try { return fs.existsSync(p); } catch { return false; } });
+  if (_found) _o.executablePath = _found; else _o.channel = 'chrome';
+  const browser = await puppeteer.launch(_o);
   try {
     const page = await browser.newPage();
     await page.setViewport({ width: W, height: H, deviceScaleFactor: 1 });
