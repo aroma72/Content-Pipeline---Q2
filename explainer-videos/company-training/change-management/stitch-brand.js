@@ -52,12 +52,45 @@ for (const f of [intro, outro]) {
   if (!fs.existsSync(f)) { console.error(`[brand] bumper missing: ${f}`); process.exit(1); }
 }
 
-// concat with re-encode (all three share the render invariants)
+// concat with re-encode (all three share the render invariants) -> temp
 const list = path.join(workDir, 'concat.txt');
+const concatMp4 = path.join(workDir, '_concat.mp4');
 fs.writeFileSync(list, [intro, lesson, outro].map(f => `file '${f.replace(/\\/g, '/')}'`).join('\n'));
 console.log('[brand] concat intro + lesson + outro …');
 execFileSync(ffmpeg, ['-y', '-f', 'concat', '-safe', '0', '-i', list,
   '-c:v', 'libx264', '-preset', 'medium', '-crf', '18', '-pix_fmt', 'yuv420p', '-r', '30', '-s', '1920x1080',
-  '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', out], { stdio: ['ignore', 'ignore', 'inherit'] });
+  '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', concatMp4], { stdio: ['ignore', 'ignore', 'inherit'] });
+
+// ---- background music: starts at the logo, plays throughout, ducked under narration ----
+function probeSeconds(file) {
+  let info = '';
+  try { execFileSync(ffmpeg, ['-i', file], { stdio: ['ignore', 'ignore', 'pipe'] }); }
+  catch (e) { info = (e.stderr || '').toString(); }
+  const m = info.match(/Duration:\s*(\d+):(\d+):(\d+\.\d+)/);
+  return m ? (+m[1] * 3600 + +m[2] * 60 + +m[3]) : 0;
+}
+function findMusic() {
+  const cands = [process.env.MUSIC_FILE, path.join(brandDir, 'brand', 'music.mp3'),
+    path.join(brandDir, 'brand', 'music.wav')].filter(Boolean);
+  return cands.find(p => { try { return fs.existsSync(p); } catch { return false; } }) || null;
+}
+const dur = probeSeconds(concatMp4);
+let musicSrc = findMusic();
+if (!musicSrc) {
+  // synthesize a calm piano-style bed (see make-music.js) — drop brand/music.mp3 to override
+  musicSrc = path.join(workDir, '_music.wav');
+  console.log('[brand] no music file found — synthesizing a calm piano bed (drop brand/music.mp3 to override) …');
+  execFileSync(process.execPath, [path.join(brandDir, 'make-music.js'),
+    '--dur', dur.toFixed(2), '--out', musicSrc], { stdio: 'inherit' });
+}
+
+console.log('[brand] mixing ducked background music over the full video …');
+execFileSync(ffmpeg, ['-y', '-i', concatMp4, '-i', musicSrc,
+  '-filter_complex',
+  `[1:a]aresample=48000[bed];` +
+  `[bed][0:a]sidechaincompress=threshold=0.03:ratio=6:attack=20:release=500[duck];` +
+  `[0:a][duck]amix=inputs=2:normalize=0,alimiter=limit=0.95[a]`,
+  '-map', '0:v', '-c:v', 'copy', '-map', '[a]', '-c:a', 'aac', '-b:a', '192k', '-ar', '48000',
+  '-shortest', out], { stdio: ['ignore', 'ignore', 'inherit'] });
 
 console.log(`\n[brand] DELIVERABLE -> ${out}`);

@@ -6,62 +6,74 @@
 <style>
   html,body{margin:0;width:1920px;height:1080px;overflow:hidden}
   #b{position:relative;width:1920px;height:1080px;display:flex;flex-direction:column;
-     align-items:center;justify-content:center;gap:28px;font-family:var(--ff,Georgia),serif}
-  #logo{width:220px;height:220px;object-fit:contain;opacity:0}
-  #logofallback{width:160px;height:160px;border-radius:32px;opacity:0}
-  #brand{font-size:96px;font-weight:800;letter-spacing:1px;opacity:0}
-  #title{font-size:64px;max-width:1400px;text-align:center;opacity:0}
-  #tag,#sign{font-size:40px;opacity:0}
-  #bar{position:absolute;bottom:0;left:0;height:12px;width:0}
+     align-items:center;justify-content:center;gap:26px;
+     background:linear-gradient(135deg,#F7F3EB 0%,#E9E5DE 55%,#C6C3BE 100%)}
+  #logoWrap{opacity:0;filter:drop-shadow(0 10px 22px rgba(38,54,79,.18))}
+  #logoImg{width:300px;height:auto;object-fit:contain}
+  #word{opacity:0;text-align:center;line-height:1}
+  #word .name{font-family:Georgia,serif;font-weight:700;font-size:84px;color:#26364F;letter-spacing:1px}
+  #word .uni{font-family:"Segoe UI",Arial,sans-serif;font-weight:600;font-size:30px;color:#17A2A2;
+     letter-spacing:14px;margin-top:8px}
+  #divider{width:150px;height:5px;background:#17A2A2;border-radius:3px;opacity:0;margin:6px 0 4px}
+  #title{font-family:Georgia,serif;font-weight:700;font-size:76px;color:#26364F;max-width:1500px;
+     text-align:center;opacity:0}
+  #sign{font-family:Georgia,serif;font-size:44px;color:#3B6FE6;opacity:0}
+  #bar{position:absolute;bottom:0;left:0;height:12px;width:0;background:#17A2A2}
 </style>
 </head>
 <body>
 <div id="b">
-  <img id="logo" alt="">
-  <div id="logofallback"></div>
-  <div id="brand"></div>
+  <div id="logoWrap"></div>
+  <div id="word"><div class="name">Taleemabad</div><div class="uni">UNIVERSITY</div></div>
+  <div id="divider"></div>
   <div id="title"></div>
-  <div id="tag"></div>
   <div id="sign"></div>
 </div>
 <div id="bar"></div>
 <script>
 /* Deterministic bumper. render-bumpers.js injects window.__BUMPER before load and
    drives window.seekTo(ms). mode = 'intro' | 'outro'. */
-const D = window.__BUMPER || { mode:'intro', title:'Lesson', cfg:{ brandName:'Drawing Room', tagline:'', signOff:'', bg:'#F5F1E8', ink:'#2E2A24', head:'#6B5344', accent:'#C08A3E', fontFamily:'Georgia' } };
-const C = D.cfg;
-document.documentElement.style.setProperty('--ff', C.fontFamily || 'Georgia');
-document.getElementById('b').style.background = C.bg;
-document.getElementById('brand').style.color = C.head;
-document.getElementById('title').style.color = C.ink;
-document.getElementById('tag').style.color = C.accent;
-document.getElementById('sign').style.color = C.head;
-document.getElementById('bar').style.background = C.accent;
-document.getElementById('logofallback').style.background = C.accent;
+const D = window.__BUMPER || { mode:'intro', title:'Lesson', cfg:{} };
+const C = Object.assign({ signOff:'Thank you.', introSeconds:2.8, outroSeconds:2.6 }, D.cfg || {});
+const NAVY='#26364F', GREEN='#3DA35D';
 
-const logo = document.getElementById('logo');
-if (D.logoDataUri) { logo.src = D.logoDataUri; } else { logo.remove(); document.getElementById('logofallback').id = 'logo'; }
-
-document.getElementById('brand').textContent = C.brandName || '';
-document.getElementById('tag').textContent = C.tagline || '';
-if (D.mode === 'intro') {
-  document.getElementById('title').textContent = D.title || '';
-  document.getElementById('sign').remove();
-} else {
-  document.getElementById('title').remove();
-  document.getElementById('sign').textContent = C.signOff || '';
+// Taleemabad brand mark — faithful recreation of the official icon:
+// blue play, blue open-book, blue speaker, green sparkle. (Drop brand/logo.png to use the exact PNG.)
+function logoSVG(){
+  const BLUE='#3D6FE6';
+  const tile=(x,y,fill,glyph)=>`<rect x="${x}" y="${y}" width="92" height="92" rx="24" fill="${fill}"/>${glyph}`;
+  const play='<path d="M38 30 L70 48 L38 66 Z" fill="#fff"/>';
+  const book='<path d="M150 36 C143 32 133 32 125 36 L125 64 C133 60 143 60 150 64 Z" fill="#fff"/>'+
+             '<path d="M154 36 C161 32 171 32 179 36 L179 64 C171 60 161 60 154 64 Z" fill="#fff"/>';
+  const speaker='<path d="M28 144 h10 l16 -13 v42 l-16 -13 h-10 z" fill="#fff"/>'+
+                '<path d="M60 141 a14 14 0 0 1 0 22" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"/>';
+  const sparkle='<path d="M152 127 L158 146 L177 152 L158 158 L152 177 L146 158 L127 152 L146 146 Z" fill="#fff"/>'+
+                '<path d="M173 131 l2.5 6 6 2.5 -6 2.5 -2.5 6 -2.5 -6 -6 -2.5 6 -2.5 z" fill="#fff"/>';
+  return `<svg width="300" height="300" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+    ${tile(2,2,BLUE,play)}
+    ${tile(106,2,BLUE,book)}
+    ${tile(2,106,BLUE,speaker)}
+    ${tile(106,106,GREEN,sparkle)}
+  </svg>`;
 }
+const lw = document.getElementById('logoWrap');
+lw.innerHTML = D.logoDataUri ? `<img id="logoImg" src="${D.logoDataUri}" alt="">` : logoSVG();
 
-const clamp = (v,a,b)=>Math.min(b,Math.max(a,v));
-const dur = (D.mode==='intro'?(C.introSeconds||2.6):(C.outroSeconds||2.6))*1000;
-window.seekTo = function(ms){
-  const p = clamp(ms/dur,0,1);
-  const rise=(d)=>clamp((p-d)/0.18,0,1);
+if (D.mode === 'intro') { document.getElementById('title').textContent = D.title || ''; document.getElementById('sign').remove(); }
+else { document.getElementById('title').remove(); document.getElementById('sign').textContent = C.signOff || ''; }
+
+const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
+const dur=(D.mode==='intro'?(C.introSeconds||2.8):(C.outroSeconds||2.6))*1000;
+window.seekTo=function(ms){
+  const p=clamp(ms/dur,0,1);
+  const rise=(d)=>clamp((p-d)/0.16,0,1);
   const set=(id,d,dy)=>{const n=document.getElementById(id); if(!n)return; const a=rise(d);
     n.style.opacity=a; n.style.transform=`translateY(${(1-a)*(dy||16)}px)`;};
-  set('logo',0.02,24); document.getElementById('logo').style.transform=`scale(${0.9+0.1*rise(0.02)})`;
-  set('brand',0.15,18);
-  if(D.mode==='intro'){ set('title',0.4,18); set('tag',0.62,12);} else { set('sign',0.35,18); set('tag',0.15,12);}
+  const lwEl=document.getElementById('logoWrap'); const la=rise(0.0);
+  lwEl.style.opacity=la; lwEl.style.transform=`scale(${0.9+0.1*la})`;
+  set('word',0.14,16);
+  const dv=document.getElementById('divider'); dv.style.opacity=rise(0.3); dv.style.transform=`scaleX(${rise(0.3)})`;
+  if(D.mode==='intro'){ set('title',0.42,20);} else { set('sign',0.4,18); }
   document.getElementById('bar').style.width=(p*100)+'%';
 };
 window.seekTo(0);

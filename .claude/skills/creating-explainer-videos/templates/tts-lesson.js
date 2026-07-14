@@ -27,10 +27,11 @@ const AUD = path.join(process.cwd(), 'audio');
 fs.mkdirSync(AUD, { recursive: true });
 
 // (1) one voice  (2) one style directive — identical on EVERY call.
-const VOICE = process.env.TTS_VOICE || 'Charon';
-const STYLE = 'Read this in a calm, warm, encouraging teacher voice at a steady, ' +
-  'deliberate pace — not rushed, gentle and clear: ';
-const TEMPERATURE = 0.7; // (3)
+const VOICE = process.env.TTS_VOICE || 'Aoede'; // warm, natural, human
+const STYLE = 'Say the following like a warm, friendly human mentor talking to a ' +
+  'colleague — natural conversational intonation, gentle rhythm, light emphasis on the ' +
+  'key words, unhurried but never flat or robotic. Speak it naturally: ';
+const TEMPERATURE = 0.85; // (3) a touch more variation = more human
 
 // ---- WAV helpers ------------------------------------------------------------
 function pcmToWav(pcm, sampleRate = 24000, channels = 1, bits = 16) {
@@ -130,13 +131,18 @@ function silenceWav(seconds) {
     const { b, rawPath } = raw[i];
     let factor = rates[i] / median;            // >1 => slower than median => speed up
     factor = Math.min(1.1, Math.max(0.9, factor));
+    // human breathing pause after each sentence; a touch longer when the visual/mode changes
+    const nb = raw[i + 1] && raw[i + 1].b;
+    const pause = (!nb || nb.mode !== b.mode) ? 0.7 : 0.4;
     const out = path.join(AUD, `vo_${b.id}.wav`);
-    // (4) atempo + (5) loudnorm in one pass
+    // trim clip's own silence tight -> (4) atempo -> (5) loudnorm -> add a deliberate breathing pause
+    const trim = 'silenceremove=start_periods=1:start_threshold=-40dB:start_silence=0.04,' +
+      'areverse,silenceremove=start_periods=1:start_threshold=-40dB:start_silence=0.04,areverse';
     ff(['-y', '-i', rawPath,
-      '-filter:a', `atempo=${factor.toFixed(4)},loudnorm=I=-16:TP=-1.5:LRA=11`,
+      '-filter:a', `${trim},atempo=${factor.toFixed(4)},loudnorm=I=-16:TP=-1.5:LRA=11,apad=pad_dur=${pause}`,
       '-ar', '24000', '-ac', '1', out]);
     durations[b.id] = +wavSeconds(out).toFixed(3);
-    console.log(`[tts] ${b.id} tempo×${factor.toFixed(3)} -> ${durations[b.id]}s`);
+    console.log(`[tts] ${b.id} tempo×${factor.toFixed(3)} +${pause}s pause -> ${durations[b.id]}s`);
   }
   // cleanup raw
   for (const { rawPath } of raw) { try { fs.unlinkSync(rawPath); } catch {} }
