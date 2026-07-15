@@ -39,9 +39,9 @@ Teach the concept through **ONE named, invented protagonist** living **ONE concr
 followed in depth for the whole script. Do **not** list 3 short examples from different domains.
 
 **Rules for the protagonist:**
-- **One character, named, generic** — e.g. "Meet Ali. Ali is a statistician at a research lab."
-  Give them a real job and a recurring task. **Never use a real colleague's name** (use an invented
-  persona + generic role).
+- **One character, ALWAYS named "Ali", generic role** — e.g. "Meet Ali. Ali is a statistician at a
+  research lab." The protagonist's name is **always Ali** (never Bilal or any other name), for any
+  example in any video. Give Ali a real job and a recurring task. **Never use a real colleague's name.**
 - **One scenario, carried the whole way through** — the same person and task illustrate every part
   of the concept. Don't switch to a factory, then a hospital, then a kitchen.
 - **Go deep, not wide** — walk the protagonist through the concept's full arc: the friction they

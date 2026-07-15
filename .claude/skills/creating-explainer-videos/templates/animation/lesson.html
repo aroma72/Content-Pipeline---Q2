@@ -74,23 +74,36 @@ function driveLayer(item, ms) {
   const p = clamp((ms - item.start) / item.dur, 0, 1); // beat progress 0..1
   const L = item.layer;
   const drift = Math.sin(ms / 900) * 3; // continuous gentle drift (Law 6: never dead-still)
+  const dir = (item.beat.id.charCodeAt(item.beat.id.length - 1) % 2) ? 1 : -1; // alternate pan per beat
 
-  // camera / Ken Burns
+  // camera / Ken Burns — stronger, directional
   const img = L.querySelector('.fill');
   if (img) {
     if (item.beat.mode === 'scene') {
-      const s = 1.05 + 0.10 * p;
-      img.style.transform = `scale(${s}) translate(${(-2 + 4 * p)}px, ${drift * 0.3}px)`;
+      const s = 1.08 + 0.16 * p;                       // pronounced slow push-in
+      const panX = dir * (-16 + 32 * p);               // horizontal pan (alternates direction)
+      const panY = -6 + 12 * p + drift * 0.4;
+      img.style.transform = `scale(${s.toFixed(4)}) translate(${panX.toFixed(1)}px, ${panY.toFixed(1)}px)`;
     } else {
-      img.style.transform = `scale(${1.02 + 0.04 * p})`;
+      // ali plate: gentle push-in + counter-drift for parallax vs the puppet
+      img.style.transform = `scale(${(1.04 + 0.07 * p).toFixed(4)}) translate(${(-drift * 0.4).toFixed(1)}px, 0)`;
     }
   }
-  // puppet sway + breathe
+  // puppet: sway + breathe + vertical bob + slow push-in (clearly alive)
   const boy = L.querySelector('.puppet');
   if (boy) {
-    const sway = 0.6 * Math.sin(p * Math.PI * 2 * 1.4);
-    const breathe = 1 + 0.006 * Math.sin(p * Math.PI * 2 * 2.2);
-    boy.style.transform = `rotate(${sway}deg) scale(${breathe}) translateY(${drift * 0.2}px)`;
+    const sway = 1.1 * Math.sin(p * Math.PI * 2 * 1.2);
+    const bob = 3.2 * Math.sin(p * Math.PI * 2 * 1.6);
+    const breathe = 1 + 0.012 * Math.sin(p * Math.PI * 2 * 2.0);
+    const pin = 1.0 + 0.06 * p;
+    boy.style.transform =
+      `translate(${(drift * 0.5).toFixed(1)}px, ${(bob + drift * 0.3).toFixed(1)}px) ` +
+      `rotate(${sway.toFixed(2)}deg) scale(${(breathe * pin).toFixed(4)})`;
+  }
+  // info card: continuous gentle float so it's never dead-still
+  const card = L.querySelector('.info-wrap');
+  if (card && item.beat.mode === 'info') {
+    card.style.transform = `translateY(${(Math.sin(ms / 1100) * 3).toFixed(1)}px)`;
   }
   // staggered .seq reveals across ~70% of the beat
   const seqs = L.querySelectorAll('.seq');

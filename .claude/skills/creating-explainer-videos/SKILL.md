@@ -56,22 +56,41 @@ Pipeline: `beats.js` → `generate-lesson-art.js` (Imagen) → `segment-all.py` 
 
 `--yes` (or `CONFIRM_SPEND=1`) is required on steps 3 and 5 — the cost guard blocks paid calls otherwise.
 
+## Quality bar — measure EVERY video against this (see memory: explainer-video-quality-standard)
+Established on the Change Management video. A miss is a FAIL to fix, not ship:
+1. Protagonist **always named "Ali"** — one invented protagonist, in depth, for any example.
+2. **Warm human voice** (Aoede, conversational, temp ~0.85) — never robotic.
+3. **Breathing pauses** — trim each clip's dead-air, then add ~0.4s after a sentence / ~0.7s at a visual change.
+4. **Consistent flat-illustration visuals** — never mix photoreal with illustration; same Ali throughout.
+5. **No baked-in text in images** (prompts forbid text/letters/numbers; blank props); teaching text is crisp HTML.
+6. **Cutouts never cut an object halfway** — whole object or none; 2-person/complex beats use `scene`, not `ali`.
+7. **Movement in every beat** — push-in / parallax / Ken Burns + evolving infographics; no dead-still holds.
+8. **Taleemabad bumpers** intro+outro (logo+wordmark, intro title, no outro sign-off unless asked).
+9. **Subtle calm music** (School-of-Life vibe) starts at the logo, ducks under VO; prefer `brand/music.mp3`.
+
 ## Non-negotiable LAWS (each fixed a shipped defect — do not drop any)
 1. **Always ship wrapped in the brand bumpers.** Deliverable is `<name>_final.mp4`, never the bare
    render. Intro title comes from `--title`. No CSS/beat title cards (no double-titling).
-2. **One voice, one take.** `tts-lesson.js` pins all five: one voice, one style directive, temp ~0.7,
-   Pass-2 tempo-to-median (`atempo` ±10%), loudnorm EBU R128 on every clip.
+2. **One warm, human, one-take voice.** `tts-lesson.js` pins: voice `Aoede`, one conversational style
+   directive, temp ~0.85, tempo-to-median (`atempo` ±10%), loudnorm EBU R128, silence trimmed, then a
+   deliberate breathing pause per beat (0.4s / 0.7s at visual change). Human, never robotic or rushed.
 3. **Force a fresh render.** `compile-lesson.js` wipes frames unless `--reuse`; when in doubt
    `rm -rf frames/<dir>` first. (A stale-frame cache once made edits silently not appear.)
 4. **Clean-hero art or the cutout fails.** Character centered, standing, plain cream bg; props float
    detached; no desk/scenery/ground/shadow; no dark/navy fill. A full-image bbox = merged = bad art.
-5. **Scene + plain + real data + progressive.** Prefer `scene` over floating characters; plain short
+5. **Never cut an object halfway (lasso rule).** The cutout includes a WHOLE object or none. `ali`
+   (cutout) beats must be a SINGLE subject; any beat with a second person/complex composition uses
+   `scene` (no cutout) so nothing is sliced at the frame edge.
+6. **Consistent illustration + no baked text.** ALL beats flat 2D vector illustration (never photoreal);
+   same Ali throughout; art prompts forbid text/letters/numbers (blank props). Teaching text is HTML.
+7. **Scene + plain + real data + progressive.** Prefer `scene` over floating characters; plain short
    narration (read aloud); real values on screen; one persistent visual that BUILDS; one concept/video.
-   Follows `.claude/standards/SCRIPTING_STANDARDS.md` (single protagonist, in depth).
-6. **Infographics must evolve, not hold.** `.seq` reveals across the beat, a late `.io-late` change,
-   plus continuous gentle drift so nothing is dead-still.
-7. **Everything deterministic / seekable.** `window.seekTo(ms)` recomputes every visual from time;
-   text count-ups via `data-tick`. Frame-stepping is exact.
+   Follows `.claude/standards/SCRIPTING_STANDARDS.md` (single protagonist Ali, in depth).
+8. **Movement in every beat.** Visible motion always — push-in / parallax / Ken Burns on art; infographics
+   evolve (`.seq` reveals across the beat, a late `.io-late` change, continuous gentle drift). No dead-still.
+9. **Subtle calm music from the logo.** `stitch-brand.js` lays a soft contemplative bed over the whole
+   video (starts at the intro logo), ducked under narration. Prefer `brand/music.mp3`; else `make-music.js`.
+10. **Everything deterministic / seekable.** `window.seekTo(ms)` recomputes every visual from time.
 
 ## Cost & policy
 - **No paid AI video (Veo rejected)** — motion comes from cutout-puppet animation, not video models.

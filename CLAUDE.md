@@ -51,9 +51,10 @@ owner: aroma
 
 🚫 **Default Video Pipeline (explainer/lesson videos):**
 - New content uses the `creating-explainer-videos` skill (beats.js → Imagen art → Python cutout → Gemini TTS → Puppeteer/ffmpeg → brand bumpers). Spec: `explainer-videos/EXPLAINER-VIDEO-PIPELINE-SPEC.md`
+- Every video MUST meet the **Explainer Video Quality Standard** (skill SKILL.md "Quality bar"): protagonist always named **Ali**, warm human voice, breathing pauses, consistent flat-illustration visuals, no baked-in text, cutouts never cut an object halfway (whole object or `scene` mode), visible movement in every beat, Taleemabad bumpers, subtle calm ducked music
 - Remotion + ElevenLabs are LEGACY — use only to maintain pre-existing videos, not for new ones
 - Deliverable is always `<name>_final.mp4` (wrapped in brand bumpers), never the bare render
-- No paid AI video (Veo rejected). Follow the 7 LAWS in the skill's SKILL.md
+- No paid AI video (Veo rejected). Follow the LAWS in the skill's SKILL.md
 
 🚫 **Voiceover:**
 - Default is **Gemini TTS** via the explainer pipeline, one-take normalized (`tts-lesson.js`); paid Imagen/TTS never fire without `--yes`/`CONFIRM_SPEND=1` (ask first)
@@ -88,7 +89,7 @@ owner: aroma
 
 🚫 **Scripting:**
 - All scripts MUST follow SCRIPTING_STANDARDS.md — concept depth + a SINGLE protagonist story (supersedes the old "3+ diverse examples" rule)
-- Teach through ONE named, invented protagonist (e.g. "Ali, a statistician") in ONE running scenario, followed in depth — NOT a list of multiple domain examples
+- Teach through ONE named, invented protagonist in ONE running scenario, followed in depth — NOT a list of multiple domain examples. **The protagonist is ALWAYS named "Ali"** (never Bilal or any other name), for any example in any video
 - Go deep, not wide: friction → fix → structure → failure mode → payoff, all on the protagonist's task; reuse the same protagonist across a video series; never use a real colleague's name
 
 🚫 **Infrastructure:**
