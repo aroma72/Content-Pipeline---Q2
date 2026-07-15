@@ -29,3 +29,23 @@
 .gauge .fillbar{height:100%;width:0;background:var(--accent);border-radius:999px}
 .gauge .val{font-size:96px;color:var(--head);font-weight:700}
 .gauge .lab{font-size:40px;color:var(--muted)}
+
+/* ---- M07-style typography cards (statement / twocard / quote) ---- */
+.statement{max-width:1560px;text-align:center;padding:0 60px}
+.statement .stmt{font-family:var(--serif);font-weight:700;font-size:104px;line-height:1.14;color:var(--head)}
+.statement .stmt .hi{color:var(--accent)}
+.statement .stmt-sub{font-family:var(--sans);font-size:46px;color:var(--muted);margin-top:34px}
+
+.twocard{display:flex;flex-direction:column;align-items:center;gap:36px}
+.twocard-row{display:flex;align-items:center;gap:44px}
+.twocard .mini-card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:34px 44px;min-width:560px}
+.twocard .mini-title{font-family:var(--sans);font-weight:700;font-size:42px;color:var(--head);margin-bottom:20px}
+.twocard .mini-item{font-family:var(--sans);font-size:38px;color:var(--ink);margin:12px 0}
+.twocard .mini-card.bad{border-top:12px solid var(--muted)}
+.twocard .mini-card.good{border-top:12px solid var(--accent)}
+.twocard .arrow{font-size:84px;color:var(--muted)}
+
+.quote{max-width:1560px;text-align:center;padding:0 60px}
+.quote .q-mark{font-family:var(--serif);font-size:150px;color:var(--accent);line-height:.5;margin-bottom:26px}
+.quote .q-text{font-family:var(--serif);font-weight:700;font-size:90px;line-height:1.2;color:var(--head)}
+.quote .q-by{font-family:var(--sans);font-size:42px;color:var(--muted);margin-top:32px}

@@ -55,5 +55,50 @@
     return wrap;
   };
 
+  // M07-style typography: one bold line, a single keyword popped in accent
+  T.statement = (d) => {
+    const wrap = el('div', 'statement');
+    const line = el('div', 'stmt seq');
+    const text = d.text || '', hi = d.hi || '';
+    const idx = hi ? text.indexOf(hi) : -1;
+    if (idx >= 0) {
+      line.appendChild(document.createTextNode(text.slice(0, idx)));
+      line.appendChild(el('span', 'hi', hi));
+      line.appendChild(document.createTextNode(text.slice(idx + hi.length)));
+    } else { line.textContent = text; }
+    wrap.appendChild(line);
+    if (d.sub) wrap.appendChild(el('div', 'stmt-sub seq', d.sub));
+    return wrap;
+  };
+
+  // before/after: two mini-cards + arrow; the "after" (right) resolves late
+  T.twocard = (d) => {
+    const wrap = el('div', 'twocard');
+    if (d.title) wrap.appendChild(el('div', 'info-title seq', d.title));
+    const row = el('div', 'twocard-row');
+    const mk = (c, cls) => {
+      const card = el('div', 'mini-card seq ' + (cls || ''));
+      card.appendChild(el('div', 'mini-title', c.title || ''));
+      (c.items || []).forEach((it) => card.appendChild(el('div', 'mini-item', it)));
+      return card;
+    };
+    row.appendChild(mk(d.left || {}, 'bad'));
+    row.appendChild(el('div', 'arrow seq', '→'));
+    const right = mk(d.right || {}, 'good');
+    right.classList.add('io-late'); // the good outcome resolves late
+    row.appendChild(right);
+    wrap.appendChild(row);
+    return wrap;
+  };
+
+  // big closing quote card
+  T.quote = (d) => {
+    const wrap = el('div', 'quote');
+    wrap.appendChild(el('div', 'q-mark seq', '“'));
+    wrap.appendChild(el('div', 'q-text seq', d.text || ''));
+    if (d.by) wrap.appendChild(el('div', 'q-by seq', d.by));
+    return wrap;
+  };
+
   window.InfoTemplates = T;
 })();
