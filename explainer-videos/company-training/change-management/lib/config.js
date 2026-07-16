@@ -53,6 +53,14 @@ function geminiKey() {
   return k;
 }
 
+// key for kie.ai "omni" visuals (Nano Banana 2 = Gemini 3.1 Flash Image).
+// kie keys are 32-char hex; GEMINI_OMNI_API_KEY is the funded account, KIE_API_KEY the fallback.
+function omniKey() {
+  const k = process.env.GEMINI_OMNI_API_KEY || process.env.KIE_API_KEY || '';
+  if (!k) { console.error('\n[config] No kie.ai key (GEMINI_OMNI_API_KEY / KIE_API_KEY) found in .env.\n'); process.exit(1); }
+  return k;
+}
+
 // --- cost guard --------------------------------------------------------------
 function spendApproved() {
   if (process.env.CONFIRM_SPEND === '1' || process.env.CONFIRM_SPEND === 'true') return true;
@@ -86,8 +94,12 @@ function guardSpend({ action, units, unitCost }) {
 const MODELS = {
   art: 'imagen-4.0-ultra-generate-001',
   tts: 'gemini-2.5-flash-preview-tts',
+  // kie.ai "omni" visuals: Nano Banana 2 == Gemini 3.1 Flash Image (still images)
+  omni: process.env.OMNI_MODEL || 'nano-banana-2',
 };
+
+const KIE_BASE = 'https://api.kie.ai/api/v1';
 
 const COST = { imagePerImage: 0.04, ttsPerClip: 0.002 };
 
-module.exports = { geminiKey, guardSpend, spendApproved, MODELS, COST };
+module.exports = { geminiKey, omniKey, guardSpend, spendApproved, MODELS, COST, KIE_BASE };
