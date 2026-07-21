@@ -49,6 +49,19 @@ for (const b of beats) {
   if (fs.existsSync(ap)) { try { anchors[b.id] = JSON.parse(fs.readFileSync(ap, 'utf8')); } catch {} }
 }
 
+// gather per-beat moving clips (Video A: image-to-video) if generated
+const clips = {};
+for (const b of beats) {
+  if (fs.existsSync(path.join(CWD, 'clips', `${b.id}.mp4`))) clips[b.id] = true;
+}
+
+// gather per-beat head/body rig pivots (Video B: rigged puppet) if split
+const rigs = {};
+for (const b of beats) {
+  const rp = path.join(CWD, 'layers', b.id, 'rig.json');
+  if (fs.existsSync(rp)) { try { rigs[b.id] = JSON.parse(fs.readFileSync(rp, 'utf8')); } catch {} }
+}
+
 const isSample = process.argv.includes('--sample');
 const reuse = process.argv.includes('--reuse');
 const framesDir = path.join(CWD, 'frames', NAME);
@@ -73,8 +86,9 @@ async function withPage(fn) {
     const page = await browser.newPage();
     await page.setViewport({ width: W, height: H, deviceScaleFactor: 1 });
     // inject data BEFORE the page scripts run (avoids file:// fetch/CORS issues)
-    await page.evaluateOnNewDocument((data) => { window.__DATA = data; }, { beats, durations, anchors });
-    const url = 'file://' + path.join(__dirname, 'animation', 'lesson.html').replace(/\\/g, '/');
+    await page.evaluateOnNewDocument((data) => { window.__DATA = data; }, { beats, durations, anchors, clips, rigs });
+    const htmlRel = process.env.LESSON_HTML || 'animation/lesson.html';
+    const url = 'file://' + path.join(__dirname, htmlRel).replace(/\\/g, '/');
     await page.goto(url, { waitUntil: 'load' });
     await page.waitForFunction('window.ready === true', { timeout: 20000 });
     await fn(page);
