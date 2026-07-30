@@ -61,10 +61,10 @@ module.exports = [
     art: `${ALI}, gesturing confidently toward a floating bullseye target with an arrow in the centre, ${HERO}`,
   },
   {
-    id: '09', mode: 'scene',
-    vo: 'Think of it like a teacher’s answer key for the agent’s homework.',
+    id: '09', mode: 'ali',
+    vo: 'Think of it like a teacher’s answer key the agent can be checked against.',
     cap: 'Like an answer key',
-    art: `${ALI} holding a blank answer-key sheet beside a blank homework worksheet, comparing them thoughtfully, warm study setting, ${STYLE}`,
+    art: `${ALI}, smiling and gesturing openly toward a large floating green check mark inside a soft golden circular seal, no paper, no sheet, no book, no writing of any kind, ${HERO}`,
   },
   {
     id: '10', mode: 'info',

@@ -71,7 +71,12 @@ function rmrf(p) { fs.rmSync(p, { recursive: true, force: true }); }
 
 // Prefer a system Chrome if puppeteer's bundled browser isn't installed.
 function launchOpts() {
-  const o = { headless: 'new', args: ['--no-sandbox', '--force-color-profile=srgb'] };
+  // Explicit unique userDataDir: Puppeteer only auto-deletes profiles IT created in
+  // the temp dir; giving our own dir means it never runs the close-time unlink that
+  // throws EBUSY on Windows (Crashpad/antivirus holds a lock on the profile files).
+  const udir = path.join(CWD, '.chrome-profile', `${NAME}-${process.pid}`);
+  fs.mkdirSync(udir, { recursive: true });
+  const o = { headless: 'new', userDataDir: udir, args: ['--no-sandbox', '--force-color-profile=srgb'] };
   const candidates = [process.env.CHROME_PATH,
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'].filter(Boolean);

@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lesson timeline</title>
+<link rel="stylesheet" href="mckinsey.css">
+<link rel="stylesheet" href="info.css">
+</head>
+<body>
+<div id="stage"></div>
+<script src="info.js"></script>
+<script>
+/*
+ * The seekable timeline (LAW 7: deterministic / seekable).
+ * compile-lesson.js injects window.__DATA = {beats, durations, anchors} BEFORE
+ * this runs (see evaluateOnNewDocument); for a standalone browser preview we
+ * fall back to fetching ./data.json. Every visual state is a pure function of
+ * time — seekTo(ms) recomputes from scratch, so frame-stepping is exact.
+ */
+const stage = document.getElementById('stage');
+
+function buildData() {
+  return window.__DATA || null;
+}
+
+function makeLayer(beat, anchors) {
+  const L = document.createElement('div');
+  L.className = 'layer'; L.dataset.id = beat.id;
+
+  if (CLIPS[beat.id]) {
+    // real i2v motion clip for this beat — the moving visual replaces the still/puppet.
+    const vid = document.createElement('video');
+    vid.className = 'fill vid'; vid.src = `../clips/${beat.id}.mp4`;
+    vid.muted = true; vid.playsInline = true; vid.preload = 'auto';
+    L.appendChild(vid);
+    // overlays (e.g. the price-list screen on beat 20) still ride on top of the clip.
+    if (beat.overlay && window.InfoTemplates[beat.overlay.tpl]) {
+      const ob = document.createElement('div'); ob.className = 'overlay-box';
+      ob.appendChild(window.InfoTemplates[beat.overlay.tpl](beat.overlay.data || {}));
+      L.appendChild(ob);
+    }
+  } else if (beat.mode === 'info' && beat.info && window.InfoTemplates[beat.info.tpl]) {
+    const wrap = document.createElement('div'); wrap.className = 'info-wrap';
+    wrap.appendChild(window.InfoTemplates[beat.info.tpl](beat.info.data || {}));
+    L.appendChild(wrap);
+  } else if (beat.mode === 'ali' && anchors) {
+    const plate = document.createElement('img'); plate.className = 'fill'; plate.src = `../layers/${beat.id}/plate.png`;
+    L.appendChild(plate);
+    const boy = document.createElement('img'); boy.className = 'puppet'; boy.src = `../layers/${beat.id}/boy.png`;
+    const bb = anchors.bbox, iw = anchors.image_w, ih = anchors.image_h;
+    boy.style.left = (bb[0] / iw * 100) + '%';
+    boy.style.top = (bb[1] / ih * 100) + '%';
+    boy.style.width = ((bb[2] - bb[0]) / iw * 100) + '%';
+    L.appendChild(boy);
+    if (beat.overlay && window.InfoTemplates[beat.overlay.tpl]) {
+      const ob = document.createElement('div'); ob.className = 'overlay-box';
+      ob.appendChild(window.InfoTemplates[beat.overlay.tpl](beat.overlay.data || {}));
+      L.appendChild(ob);
+    }
+  } else {
+    // scene (or ali fallback with no cutout): full art + lower-third caption
+    const img = document.createElement('img'); img.className = 'fill'; img.src = `../art/${beat.id}.png`;
+    L.appendChild(img);
+  }
+  if (beat.cap) { const c = document.createElement('div'); c.className = 'caption'; c.textContent = beat.cap; L.appendChild(c); }
+  return L;
+}
+
+let TL = [];       // [{id,start,end,dur,layer}]
+let CLIPS = {};    // {id:true} for beats with an i2v motion clip
+function buildTimeline(data) {
+  const anchors = data.anchors || {};
+  CLIPS = data.clips || {};
+  let t = 0;
+  data.beats.forEach((b) => {
+    const dur = (data.durations[b.id] || 2) * 1000;
+    const layer = makeLayer(b, anchors[b.id]);
+    stage.appendChild(layer);
+    TL.push({ id: b.id, start: t, end: t + dur, dur, layer, beat: b });
+    t += dur;
+  });
+}
+
+// ---- deterministic drive ----------------------------------------------------
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+async function driveLayer(item, ms) {
+  const p = clamp((ms - item.start) / item.dur, 0, 1); // beat progress 0..1
+  const L = item.layer;
+  const drift = Math.sin(ms / 900) * 3; // continuous gentle drift (Law 6: never dead-still)
+  const dir = (item.beat.id.charCodeAt(item.beat.id.length - 1) % 2) ? 1 : -1; // alternate pan per beat
+
+  // i2v motion clip: the clip IS the motion — deterministically seek it to this beat's time
+  // and WAIT for the frame before returning (compile awaits seekTo, so the screenshot is exact).
+  const vid = L.querySelector('video.fill');
+  if (vid) {
+    vid.style.transform = 'scale(1.03)'; // hide any 1px edge from the clip
+    const dur = vid.duration || (item.dur / 1000);
+    const t = clamp((ms - item.start) / 1000, 0, Math.max(0, dur - 0.06));
+    if (Math.abs((vid.currentTime || 0) - t) > 0.005) {
+      await new Promise((res) => {
+        let done = false;
+        const on = () => { if (done) return; done = true; vid.removeEventListener('seeked', on); res(); };
+        vid.addEventListener('seeked', on);
+        try { vid.currentTime = t; } catch (e) { on(); }
+        setTimeout(on, 600); // fallback: never hang the render
+      });
+    }
+  }
+
+  // camera / Ken Burns — stronger, directional (STILL images only; clips move on their own)
+  const img = L.querySelector('img.fill');
+  if (img) {
+    if (item.beat.mode === 'scene') {
+      const s = 1.08 + 0.16 * p;                       // pronounced slow push-in
+      const panX = dir * (-16 + 32 * p);               // horizontal pan (alternates direction)
+      const panY = -6 + 12 * p + drift * 0.4;
+      img.style.transform = `scale(${s.toFixed(4)}) translate(${panX.toFixed(1)}px, ${panY.toFixed(1)}px)`;
+    } else {
+      // ali plate: gentle push-in + counter-drift for parallax vs the puppet
+      img.style.transform = `scale(${(1.04 + 0.07 * p).toFixed(4)}) translate(${(-drift * 0.4).toFixed(1)}px, 0)`;
+    }
+  }
+  // puppet: sway + breathe + vertical bob + slow push-in (clearly alive)
+  const boy = L.querySelector('.puppet');
+  if (boy) {
+    const sway = 1.1 * Math.sin(p * Math.PI * 2 * 1.2);
+    const bob = 3.2 * Math.sin(p * Math.PI * 2 * 1.6);
+    const breathe = 1 + 0.012 * Math.sin(p * Math.PI * 2 * 2.0);
+    const pin = 1.0 + 0.06 * p;
+    boy.style.transform =
+      `translate(${(drift * 0.5).toFixed(1)}px, ${(bob + drift * 0.3).toFixed(1)}px) ` +
+      `rotate(${sway.toFixed(2)}deg) scale(${(breathe * pin).toFixed(4)})`;
+  }
+  // info card: continuous gentle float so it's never dead-still
+  const card = L.querySelector('.info-wrap');
+  if (card && item.beat.mode === 'info') {
+    card.style.transform = `translateY(${(Math.sin(ms / 1100) * 3).toFixed(1)}px)`;
+  }
+  // staggered .seq reveals across ~70% of the beat
+  const seqs = L.querySelectorAll('.seq');
+  seqs.forEach((s, i) => {
+    const t0 = (i / Math.max(1, seqs.length)) * 0.7;
+    const a = clamp((p - t0) / 0.12, 0, 1);
+    s.style.opacity = a;
+    s.style.transform = `translateY(${(1 - a) * 18}px)`;
+  });
+  // late state changes
+  L.querySelectorAll('.io-late').forEach((n) => {
+    const on = p > 0.6;
+    if (n.classList.contains('check')) n.classList.toggle('on', on);
+    n.style.opacity = on ? 1 : 0.35;
+    if (n.classList.contains('fillbar')) n.style.width = (on ? (n.dataset.pct || 0) : 0) + '%';
+  });
+  // text count-ups
+  L.querySelectorAll('[data-tick]').forEach((n) => {
+    const target = parseFloat(n.dataset.tick) || 0;
+    const a = clamp((p - 0.1) / 0.6, 0, 1);
+    n.textContent = String(Math.round(target * a));
+  });
+}
+
+window.seekTo = async function (ms) {
+  let active = TL[TL.length - 1];
+  for (const it of TL) { if (ms >= it.start && ms < it.end) { active = it; break; } }
+  for (const it of TL) it.layer.style.opacity = (it === active) ? 1 : 0;
+  if (active) await driveLayer(active, ms);
+};
+
+(function init() {
+  const data = buildData();
+  const go = (d) => { buildTimeline(d);
+    // wait for images to decode AND video clips to load their first frame (so seeks land on
+    // a real frame, not black) before signalling ready.
+    const imgs = [...document.images].map(im => im.decode ? im.decode().catch(() => {}) : Promise.resolve());
+    const vids = [...document.querySelectorAll('video')].map(v => new Promise((res) => {
+      if (v.readyState >= 2) return res();
+      v.addEventListener('loadeddata', res, { once: true });
+      v.addEventListener('error', res, { once: true });
+      setTimeout(res, 8000);
+    }));
+    Promise.all([...imgs, ...vids])
+      .then(() => window.seekTo(0))
+      .then(() => { window.ready = true; }); };
+  if (data) { go(data); }
+  else { fetch('./data.json').then(r => r.json()).then(go).catch(e => { document.title = 'no data'; window.ready = true; }); }
+})();
+</script>
+</body>
+</html>

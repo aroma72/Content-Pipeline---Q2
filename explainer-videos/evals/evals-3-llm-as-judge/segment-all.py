@@ -111,6 +111,12 @@ def process(png: Path):
     rgb = np.asarray(img)
 
     mask = foreground_mask(rgb)
+    # Bridge the neck/collar BEFORE isolating the subject so the HEAD stays attached
+    # to the torso as ONE connected component. A light-coloured collar can otherwise
+    # split the head into its own blob that largest_component() then drops (leaving the
+    # head static in the plate) — that is the head/neck "cut" that shows once the body moves.
+    if HAVE_SCIPY:
+        mask = ndimage.binary_closing(mask, structure=np.ones((29, 9)), iterations=1)
     mask = largest_component(mask)
 
     # Keep each cut-out object SOLID: close thin gaps (e.g. a neck) and fill any
