@@ -1,0 +1,63 @@
+# The repo carries gigabytes of rendered media, virtualenvs and Chrome profiles.
+# Sending that as build context would make every deploy enormous and slow, so this
+# file denies everything and then re-admits only what the server actually needs.
+# Docker applies rules in order, so the trims at the bottom win over the admits.
+
+*
+
+# --- the code the server runs --------------------------------------------------
+!package.json
+!package-lock.json
+!server
+!orchestrator
+!prompts
+!.claude
+!explainer-videos
+
+# --- trim the heavy parts back out ---------------------------------------------
+# .claude is admitted for its skill templates and standards; nothing else in it
+# belongs in an image.
+.claude/logs
+.claude/plugins
+.claude/agents
+.claude/commands
+
+# Per-video working state. All of it is regenerated inside the container, and a
+# stale frames/ directory is a known cause of corrupted renders.
+explainer-videos/**/.chrome-profile
+explainer-videos/**/frames
+explainer-videos/**/out
+explainer-videos/**/audio
+explainer-videos/**/art
+explainer-videos/**/clips
+
+# Dependencies are installed in the image, never copied from a Windows host —
+# native modules built on win32 do not run on Linux.
+**/node_modules
+**/__pycache__
+**/venv
+**/.venv
+
+# Media. The brand bumpers are the one exception and are restored below.
+**/*.mp4
+**/*.webm
+**/*.mov
+**/*.wav
+**/*.mp3
+**/*.aac
+**/*.pdf
+**/*.docx
+**/*.pptx
+
+# --- the one media exception ---------------------------------------------------
+# LAW 1: the deliverable is the bumper-wrapped video, so the bumpers must ship.
+!explainer-videos/brand-intro-outro/brand/**
+!explainer-videos/brand-intro-outro/*.html
+!explainer-videos/brand-intro-outro/*.js
+!explainer-videos/brand-intro-outro/*.json
+
+# --- never ---------------------------------------------------------------------
+.env
+.env.*
+.git
+.beads/*.jsonl
