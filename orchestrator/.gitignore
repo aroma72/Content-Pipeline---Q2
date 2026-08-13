@@ -1,0 +1,9 @@
+# Google OAuth tokens. These are live credentials for the YouTube channel —
+# committing them would publish channel write-access to anyone with repo access.
+.credentials/
+
+# Per-run state — regenerable, and one file per run adds up fast.
+.runs/
+
+# The live queue is local working state, not source. The schema is in lib/queue.js.
+queue.jsonl
