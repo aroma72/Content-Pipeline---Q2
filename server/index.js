@@ -17,9 +17,8 @@ try { require('../orchestrator/lib/env').loadDotenv(); } catch { /* not fatal */
 const express = require('express');
 const { config, readiness } = require('./lib/config');
 const slack = require('./lib/slack');
-const jira = require('./lib/jira');
-const jobs = require('./lib/jobs');
-const { parseRequest, adfToText } = require('./lib/parse');
+const tick = require('./lib/tick');
+const { parseRequest } = require('./lib/parse');
 
 const app = express();
 
@@ -31,10 +30,26 @@ app.use(express.json({
 }));
 
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, surfaces: readiness(), jobs: jobs.status() });
+  res.json({ ok: true, surfaces: readiness(), tick: tick.status() });
 });
 
-app.get('/', (_req, res) => res.type('text').send('Drawing Room agent. Talk to me in Slack or Jira.'));
+app.get('/', (_req, res) => res.type('text').send('Drawing Room agent. Mention me in Slack, or file a ticket in Notion.'));
+
+/**
+ * Run a tick by hand. Useful for testing without waiting for the timer, and for
+ * driving the loop from an external scheduler instead of the in-process one.
+ * Secret-gated: a tick starts real, paid work.
+ */
+app.post('/tick', async (req, res) => {
+  const supplied = req.query.token || req.get('x-tick-token') || '';
+  if (!config.tick.secret || supplied !== config.tick.secret) {
+    return res.status(401).json({ error: 'bad or missing token' });
+  }
+  // A tick can run for the length of a render, far longer than any sane HTTP
+  // timeout, so acknowledge immediately and let it continue in the background.
+  res.status(202).json({ started: true });
+  tick.runTick({ trigger: 'manual' }).catch((e) => console.error('[tick]', e.message));
+});
 
 // ─── Slack ────────────────────────────────────────────────────────────────────
 
@@ -103,70 +118,26 @@ async function handleSlack(event) {
     return;
   }
 
-  const result = jobs.submit({
-    topic: parsed.topic,
-    series: parsed.series,
-    origin,
-    requestedBy: event.user,
-  });
-
-  if (!result.ok) await slack.postMessage({ ...origin, text: `Couldn't queue that: ${result.error}` });
-}
-
-// ─── Jira ─────────────────────────────────────────────────────────────────────
-
-// Jira's outgoing webhooks carry no signature, so the endpoint is protected by a
-// shared secret in the URL that the webhook is registered with.
-app.post('/jira/webhook', (req, res) => {
-  const supplied = req.query.token || req.get('x-webhook-token') || '';
-  if (!config.jira.webhookSecret || supplied !== config.jira.webhookSecret) {
-    console.warn('[jira] rejected webhook: bad or missing token');
-    return res.status(401).send('bad token');
-  }
-
-  res.status(200).send();
-  handleJira(req.body || {}).catch((e) => console.error('[jira] handler:', e));
-});
-
-async function handleJira(body) {
-  const issueKey = body.issue && body.issue.key;
-  if (!issueKey) return;
-
-  // Only comments and new issues carry a request; ignore field edits, transitions
-  // and the rest of the firehose Jira will send.
-  let text = '';
-  let author = '';
-  if (body.comment) {
-    text = adfToText(body.comment.body);
-    author = body.comment.author && body.comment.author.accountId;
-  } else if (body.webhookEvent === 'jira:issue_created' && body.issue.fields) {
-    text = `${body.issue.fields.summary || ''} ${adfToText(body.issue.fields.description)}`;
-  } else {
-    return;
-  }
-
-  // Our own result comments contain the words that would re-trigger a build.
-  if (author && author === process.env.JIRA_BOT_ACCOUNT_ID) return;
-
-  const parsed = parseRequest(text);
-  if (!parsed.ok) {
-    // Stay quiet on ordinary Jira chatter — this webhook sees every comment on
-    // the project, and replying to all of them would be unbearable.
-    if (parsed.reason === 'no_series' || parsed.reason === 'no_topic') {
-      await jira.addComment(issueKey, parsed.question);
+  // The webhook path does not dispatch directly. It creates the ticket the tick
+  // would have created, then lets the tick pick it up — so a video started by a
+  // push and one started by polling follow the identical path, and there is only
+  // one place where work can begin.
+  const notion = require('./lib/notion');
+  try {
+    const ticket = await notion.createTicket({
+      title: parsed.topic,
+      series: parsed.series,
+      source: 'slack',
+      dedupeKey: `slack-${event.channel}-${event.ts}`,
+      notes: `[slack:${event.channel}/${origin.threadTs}]`,
+    });
+    if (!ticket.alreadyExisted) {
+      await slack.postMessage({ ...origin, text: `Queued *${parsed.topic}*.\n${ticket.url}` });
+      tick.runTick({ trigger: 'slack-event' }).catch(() => {});
     }
-    return;
+  } catch (e) {
+    await slack.postMessage({ ...origin, text: `Couldn't queue that: ${e.message}` });
   }
-
-  const origin = { type: 'jira', issueKey };
-  const result = jobs.submit({
-    topic: parsed.topic,
-    series: parsed.series,
-    origin,
-    requestedBy: author,
-  });
-
-  if (!result.ok) await jira.addComment(issueKey, `Couldn't queue that: ${result.error}`);
 }
 
 // ─── start ────────────────────────────────────────────────────────────────────
@@ -177,9 +148,13 @@ app.listen(config.port, () => {
   console.log('[server] surfaces:', JSON.stringify(r));
   // Say plainly at boot what will not work, instead of letting the first real
   // request be the thing that discovers it.
-  if (!r.slack) console.warn('[server] Slack is NOT configured — set SLACK_BOT_TOKEN and SLACK_SIGNING_SECRET');
-  if (!r.jira) console.warn('[server] Jira is NOT configured — set JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN');
-  if (!r.jiraWebhook) console.warn('[server] JIRA_WEBHOOK_SECRET unset — /jira/webhook will reject everything');
+  if (!r.slackPost) console.warn('[server] SLACK_BOT_TOKEN unset — cannot post or upload');
+  if (!r.slackPoll) console.warn('[server] SLACK_USER_TOKEN unset — cannot poll for mentions (search.messages needs a user token)');
+  if (!r.notion) console.warn('[server] NOTION_API_KEY / NOTION_DATABASE_ID unset — no work queue');
   if (!r.model) console.warn('[server] no ANTHROPIC_API_KEY — the thinking stages cannot run in a container');
+  if (!r.gemini) console.warn('[server] no GEMINI_API_KEY / GOOGLE_STUDIO_API_KEY — no art or voiceover');
   if (!r.budgetAuthorised) console.warn('[server] PIPELINE_BUDGET_USD is 0 — every request will refuse to spend');
+  if (r.dryRun) console.log('[server] DRY RUN is on — the chain runs but nothing is spent or rendered');
+
+  tick.startLoop();
 });

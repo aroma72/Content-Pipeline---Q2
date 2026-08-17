@@ -55,6 +55,25 @@ async function postMessage({ channel, text, threadTs }) {
       unfurl_links: false,
     });
   } catch (e) {
+    const unreachable = /channel_not_found|not_in_channel/.test(e.message);
+
+    // The user token searches every conversation Aroma can see, including DMs
+    // and channels the bot was never invited to. Posting there is impossible, so
+    // the answer goes to the home channel instead of vanishing — a reply nobody
+    // receives is worse than a reply in the wrong place.
+    if (unreachable && config.slack.defaultChannel && channel !== config.slack.defaultChannel) {
+      try {
+        return await client.chat.postMessage({
+          channel: config.slack.defaultChannel,
+          text: `${text}\n_(couldn't reply in the original conversation — I'm not a member of it)_`,
+          unfurl_links: false,
+        });
+      } catch (inner) {
+        console.error('[slack] fallback post failed:', inner.message);
+        return null;
+      }
+    }
+
     console.error('[slack] postMessage failed:', e.message);
     return null;
   }
@@ -106,4 +125,60 @@ async function uploadVideo({ channel, threadTs, filePath, title, comment }) {
   }
 }
 
-module.exports = { verifySlackRequest, postMessage, uploadVideo, isConfigured: () => Boolean(client) };
+/**
+ * Find messages mentioning the bot, newest last.
+ *
+ * search.messages needs a USER token — bot tokens get `not_allowed_token_type`.
+ * Slack has no "since" parameter here, so it returns the same historical matches
+ * on every call; the caller must dedupe. That is what the ticket dedupe key is
+ * for, and skipping it means one mention produces a video on every single tick.
+ */
+async function searchMentions({ limit = 20 } = {}) {
+  if (!config.slack.userToken || !config.slack.botUserId) return [];
+
+  const query = `<@${config.slack.botUserId}>`;
+  const url = `https://slack.com/api/search.messages?query=${encodeURIComponent(query)}`
+    + `&count=${limit}&sort=timestamp&sort_dir=desc`;
+
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${config.slack.userToken}` } });
+  const body = await res.json().catch(() => ({}));
+  if (!body.ok) {
+    console.error('[slack] search.messages failed:', body.error);
+    return [];
+  }
+
+  return ((body.messages && body.messages.matches) || []).map((m) => ({
+    text: m.text || '',
+    ts: m.ts,
+    // A reply belongs to its thread; a top-level message is its own thread root.
+    threadTs: (m.thread_ts) || m.ts,
+    channel: (m.channel && m.channel.id) || null,
+    channelName: (m.channel && m.channel.name) || '',
+    // Search reports a human as `user` (an id) but a bot as `username` (a name),
+    // so both are carried. Comparing only the id lets the bot's own posts look
+    // like someone else's and be acted on.
+    user: m.user || '',
+    username: m.username || '',
+    botId: m.bot_id || null,
+    permalink: m.permalink || '',
+  })).filter((m) => m.channel);
+}
+
+/** Replies in one thread — used to look for an approval after we asked. */
+async function threadReplies({ channel, threadTs, limit = 50 }) {
+  if (!client) return [];
+  try {
+    const r = await client.conversations.replies({ channel, ts: threadTs, limit });
+    return (r.messages || []).map((m) => ({
+      text: m.text || '', ts: m.ts, user: m.user || '', botId: m.bot_id || null,
+    }));
+  } catch (e) {
+    console.error('[slack] conversations.replies failed:', e.message);
+    return [];
+  }
+}
+
+module.exports = {
+  verifySlackRequest, postMessage, uploadVideo, searchMentions, threadReplies,
+  isConfigured: () => Boolean(client),
+};

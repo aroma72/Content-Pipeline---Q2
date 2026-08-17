@@ -92,9 +92,14 @@ function parseRequest(rawText) {
     return {
       ok: false,
       reason: 'no_series',
+      // Must say "mention me": polling finds work via search.messages, which only
+      // returns messages containing the bot's handle. A bare thread reply is
+      // invisible to the harness, and the human is left waiting on a bot that
+      // never saw them.
       question:
-        `Which series should "${topic}" go in? Reply with e.g. \`series: evals\` — ` +
-        `it decides the folder and the module number, so I won't guess it.`,
+        `Which series should "${topic}" go in? It decides the folder and the module ` +
+        `number, so I won't guess it.\n` +
+        `Mention me again with the series, e.g. \`@content_queen make a video about ${topic}, series: evals\``,
     };
   }
 
