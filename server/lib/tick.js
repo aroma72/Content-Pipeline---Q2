@@ -177,14 +177,28 @@ async function dispatch(ticket, report) {
     // The spine's queue is append-only and rejects a duplicate id. A dispatch
     // that died partway leaves its item behind, so a plain failure here would
     // wedge that ticket permanently: every retry re-enqueues, re-fails, blocks.
-    // Reclaim the orphan instead when it is genuinely not running.
+    // Reclaim the item instead whenever it is not actively running.
     const existing = queue.get(`${ticket.series}/${queue.slugify(ticket.title)}`);
-    if (existing && ['queued', 'failed'].includes(existing.status)) {
-      item = existing;
-      log(`reusing orphaned queue item ${existing.id} (${existing.status})`);
+    const reusable = existing && ['queued', 'failed', 'done', 'blocked'].includes(existing.status);
+
+    if (reusable) {
+      // `done` is included deliberately. Asking for the same topic again is a
+      // request to make it again, and refusing because a previous run finished
+      // means a topic can only ever be built once. Re-running is cheap to get
+      // wrong safely: produce skips outputs already on disk rather than paying
+      // for them twice.
+      if (existing.status !== 'queued') queue.requeue(existing.id);
+      item = queue.get(existing.id);
+      log(`reusing queue item ${existing.id} (was ${existing.status})`);
     } else {
-      await notion.update(ticket.id, { status: 'Blocked', notes: `${ticket.notes} — ${e.message}` });
-      await say(`Couldn't queue that: ${e.message}`);
+      const why = existing
+        ? `queue item ${existing.id} is ${existing.status} — it may still be running`
+        : e.message;
+      await notion.update(ticket.id, { status: 'Blocked', notes: `${ticket.notes} — ${why}` });
+      await say(`Couldn't queue that: ${why}`);
+      // Say so in the report. A silent return here reads as "nothing to do",
+      // which is exactly how this went unnoticed the first time.
+      report.errors.push(`dispatch skipped: ${why}`);
       return;
     }
   }

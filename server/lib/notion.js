@@ -37,7 +37,16 @@ async function notionFetch(path, options = {}) {
   return body;
 }
 
-const text = (s) => [{ type: 'text', text: { content: String(s == null ? '' : s).slice(0, 1900) } }];
+/**
+ * Notion rich_text. An empty string must become an EMPTY ARRAY, not an array
+ * holding an empty string: `is_empty` is false for the latter, so a ticket
+ * "cleared" that way stays invisible to the queue filter forever — released by
+ * a failed run, but never picked up again.
+ */
+const text = (s) => {
+  const v = String(s == null ? '' : s);
+  return v ? [{ type: 'text', text: { content: v.slice(0, 1900) } }] : [];
+};
 
 /** Read a property back out of a page, tolerating the ones we never set. */
 function readProps(page) {

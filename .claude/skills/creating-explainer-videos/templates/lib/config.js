@@ -83,9 +83,13 @@ function guardSpend({ action, units, unitCost }) {
 }
 
 // --- models (change here if they move) --------------------------------------
+// Overridable by env so the next retirement is a Railway variable, not a code
+// change and redeploy. imagen-4.0-* was retired from the Gemini API and now 404s
+// with a pointer to gemini-*-image, which speaks generateContent rather than
+// predict -- see generate-lesson-art.js.
 const MODELS = {
-  art: 'imagen-4.0-ultra-generate-001',
-  tts: 'gemini-2.5-flash-preview-tts',
+  art: process.env.GEMINI_IMAGE_MODEL || 'gemini-3.1-flash-image',
+  tts: process.env.GEMINI_TTS_MODEL || 'gemini-2.5-flash-preview-tts',
 };
 
 const COST = { imagePerImage: 0.04, ttsPerClip: 0.002 };

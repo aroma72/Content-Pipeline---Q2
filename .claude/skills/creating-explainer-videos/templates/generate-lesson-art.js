@@ -29,13 +29,26 @@ const artBeats = beats.filter(b => (b.mode === 'ali' || b.mode === 'scene') && b
 const onlyIds = (process.env.ART_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
 const todo = onlyIds.length ? artBeats.filter(b => onlyIds.includes(b.id)) : artBeats;
 
+/**
+ * Generate one image.
+ *
+ * The Imagen models this used to call (`imagen-4.0-*` via `:predict`) have been
+ * retired from the Gemini API -- the service now answers that request with a 404
+ * naming gemini-*-image as the replacement, and no imagen-* model is listed for
+ * this key at all. The replacement family speaks a DIFFERENT protocol, so this is
+ * not a model rename: `:generateContent` with the image returned as an inlineData
+ * part, rather than `:predict` with predictions[0].bytesBase64Encoded.
+ *
+ * Aspect ratio moves into the prompt because generateContent has no equivalent of
+ * Imagen's parameters block.
+ */
 async function imagen(prompt, key, mode) {
   // clean-hero cream suffix ONLY for ali beats (they get cut out); scene beats keep depth/setting.
   const finalPrompt = (mode === 'ali') ? (prompt + CLEAN_HERO_SUFFIX) : prompt;
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODELS.art}:predict`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODELS.art}:generateContent`;
   const body = {
-    instances: [{ prompt: finalPrompt }],
-    parameters: { sampleCount: 1, aspectRatio: '16:9', personGeneration: 'allow_adult' },
+    contents: [{ role: 'user', parts: [{ text: `${finalPrompt} 16:9 widescreen aspect ratio.` }] }],
+    generationConfig: { responseModalities: ['IMAGE'] },
   };
   for (let attempt = 1; attempt <= 3; attempt++) {
     const res = await fetch(url, {
@@ -45,13 +58,19 @@ async function imagen(prompt, key, mode) {
     });
     if (res.ok) {
       const json = await res.json();
-      const b64 = json?.predictions?.[0]?.bytesBase64Encoded;
-      if (!b64) throw new Error('Imagen returned no image bytes: ' + JSON.stringify(json).slice(0, 300));
-      return Buffer.from(b64, 'base64');
+      const parts = json?.candidates?.[0]?.content?.parts || [];
+      const img = parts.find((p) => p.inlineData && p.inlineData.data);
+      if (!img) {
+        // A refusal comes back as a text part with a 200, so report what it said
+        // rather than a bare "no image" that sends someone hunting for a bug.
+        const said = parts.map((p) => p.text).filter(Boolean).join(' ').slice(0, 200);
+        throw new Error(`No image returned${said ? ` — model said: ${said}` : ''}: ${JSON.stringify(json).slice(0, 200)}`);
+      }
+      return Buffer.from(img.inlineData.data, 'base64');
     }
     const txt = await res.text();
     if (res.status >= 500 && attempt < 3) { await new Promise(r => setTimeout(r, 1500 * attempt)); continue; }
-    throw new Error(`Imagen HTTP ${res.status}: ${txt.slice(0, 300)}`);
+    throw new Error(`Image API HTTP ${res.status}: ${txt.slice(0, 300)}`);
   }
 }
 
