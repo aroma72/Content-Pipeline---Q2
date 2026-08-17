@@ -94,6 +94,31 @@ async function createTicket({ title, series, notes, source, dedupeKey, status = 
   return { ...readProps(page), alreadyExisted: false };
 }
 
+/**
+ * The open ticket for a Slack thread, if any.
+ *
+ * The harness's rule is one context key per thread: a thread is a conversation
+ * about one piece of work. Without this check every message in a thread spawns
+ * its own ticket, they all match the same follow-up reply, and one request turns
+ * into several identical videos.
+ */
+async function findOpenByThread(slackRef) {
+  const body = await notionFetch(`/databases/${config.notion.databaseId}/query`, {
+    method: 'POST',
+    body: JSON.stringify({
+      filter: {
+        and: [
+          { property: 'Notes', rich_text: { contains: `[slack:${slackRef}]` } },
+          { property: 'Status', select: { does_not_equal: 'Done' } },
+        ],
+      },
+      page_size: 5,
+    }),
+  });
+  const hit = (body.results || [])[0];
+  return hit ? readProps(hit) : null;
+}
+
 /** Look for a ticket already carrying this key. */
 async function findByDedupeKey(dedupeKey) {
   const body = await notionFetch(`/databases/${config.notion.databaseId}/query`, {
@@ -133,6 +158,9 @@ async function queuedTickets({ status = 'Not Started' } = {}) {
 async function update(pageId, props) {
   const properties = {};
   if (props.status) properties.Status = { select: { name: props.status } };
+  // A clarification stub is created before the real topic is known, so the title
+  // has to be rewritable once the human supplies it.
+  if (props.title) properties.Deliverable = { title: text(props.title) };
   if (props.sessionId !== undefined) properties['Agent Session ID'] = { rich_text: text(props.sessionId) };
   if (props.videoUrl !== undefined) properties['Video URL'] = { url: props.videoUrl || null };
   if (props.qaScore !== undefined && props.qaScore !== null) properties['QA Score'] = { number: props.qaScore };
@@ -175,5 +203,6 @@ async function comment(pageId, body) {
 }
 
 module.exports = {
-  isConfigured, createTicket, findByDedupeKey, queuedTickets, update, comment, readProps,
+  isConfigured, createTicket, findByDedupeKey, findOpenByThread, queuedTickets,
+  update, comment, readProps,
 };

@@ -16,6 +16,16 @@ const { config } = require('./config');
 
 // How someone asks for a video. Anything else is treated as conversation.
 const MAKE_RE = /\b(make|create|produce|build|do|record|generate)\b/i;
+
+/**
+ * Series, as people actually write it: "series: evals", "series evals",
+ * "series called testing", "series named 'testing'".
+ *
+ * The `called|named` alternatives matter — without them the plain form captures
+ * the word "called" as the series name, and files the video under a folder of
+ * that name.
+ */
+const SERIES_PATTERN = /\bseries\s*(?:called\s+|named\s+|[:=]\s*)?["'“”]?([a-z0-9][a-z0-9._-]*)["'“”]?/i;
 const VIDEO_RE = /\b(video|lesson|explainer|clip)\b/i;
 
 /** Remove Slack's mention markup, e.g. "<@U123ABC> hello" -> "hello". */
@@ -53,13 +63,13 @@ function parseRequest(rawText) {
     return { ok: false, reason: 'not_a_request' };
   }
 
-  // Pull "series: evals" or "series evals" out before it can pollute the topic.
+  // Pull the series out before it can pollute the topic.
   let series = '';
-  const seriesMatch = text.match(/\bseries\s*[:=]?\s*([a-z0-9][a-z0-9._-]*)/i);
+  const seriesMatch = text.match(SERIES_PATTERN);
   if (seriesMatch) series = seriesMatch[1].toLowerCase();
 
   let topic = text
-    .replace(/\bseries\s*[:=]?\s*[a-z0-9][a-z0-9._-]*/i, ' ')
+    .replace(SERIES_PATTERN, ' ')
     // Strip the request framing so the topic reads as a title, not an instruction.
     .replace(/^.*?\b(?:make|create|produce|build|do|record|generate)\b\s*/i, '');
 
@@ -106,4 +116,52 @@ function parseRequest(rawText) {
   return { ok: true, topic, series, title: topic };
 }
 
-module.exports = { parseRequest, stripSlackMentions, adfToText };
+/**
+ * Read a follow-up reply in a thread the bot is already part of.
+ *
+ * Unlike parseRequest this does NOT demand a full "make a video about X"
+ * sentence: the conversation already established that a video is wanted, so a
+ * reply only has to supply the missing pieces. Returns whatever it can find, so
+ * "series: evals" alone is useful, and so is a bare topic in quotes.
+ */
+function parseFollowUp(rawText) {
+  const text = stripSlackMentions(rawText).replace(/\s+/g, ' ').trim();
+  if (!text) return {};
+
+  const out = {};
+
+  const sm = text.match(SERIES_PATTERN);
+  let rest = text;
+  if (sm) {
+    out.series = sm[1].toLowerCase();
+    // Cut the series phrase out before hunting for a topic, or a quoted series
+    // name gets picked up as the topic too.
+    rest = text.slice(0, sm.index) + ' ' + text.slice(sm.index + sm[0].length);
+  }
+
+  // A quoted phrase is the clearest statement of intent someone can make.
+  const quoted = rest.match(/["'“”]([^"'“”]{3,80})["'“”]/);
+  if (quoted) {
+    out.topic = quoted[1].trim();
+    return out;
+  }
+
+  // Otherwise take what follows a topic preposition, e.g. "... has to be on ai in 2030".
+  const after = rest.match(/\b(?:about|on|for|covering|regarding)\b\s+(.{3,90})$/i);
+  if (after) {
+    out.topic = after[1]
+      .replace(/^(?:the\s+)?(?:video|lesson|explainer|clip)\s+/i, '')
+      .replace(/[\s,.:;!]+$/g, '')
+      .trim();
+  }
+
+  // A reply that is nothing but a single bare word is a series name -- the
+  // commonest answer to "which series?".
+  if (!out.series && !out.topic && /^[a-z0-9][a-z0-9._-]{1,30}$/i.test(text)) {
+    out.series = text.toLowerCase();
+  }
+
+  return out;
+}
+
+module.exports = { parseRequest, parseFollowUp, stripSlackMentions, adfToText, SERIES_PATTERN };

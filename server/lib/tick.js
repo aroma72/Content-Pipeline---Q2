@@ -25,7 +25,7 @@ const path = require('path');
 const { config } = require('./config');
 const slack = require('./slack');
 const notion = require('./notion');
-const { parseRequest } = require('./parse');
+const { parseRequest, parseFollowUp } = require('./parse');
 
 const queue = require('../../orchestrator/lib/queue');
 const spine = require('../../orchestrator/lib/spine');
@@ -42,6 +42,9 @@ const log = (msg) => console.log(`[tick] ${msg}`);
 const MARK = {
   slack: (channel, threadTs) => `[slack:${channel}/${threadTs}]`,
   approval: (usd) => `[approval:${usd}]`,
+  // Watermark of the newest thread reply already handled, so follow-ups are
+  // processed exactly once however many ticks run.
+  seen: (ts) => `[seen:${ts}]`,
 };
 const readMark = (notes, name) => {
   const m = String(notes || '').match(new RegExp(`\\[${name}:([^\\]]+)\\]`));
@@ -92,6 +95,12 @@ async function intakeFromSlack(report) {
       continue;
     }
 
+    // A thread is one piece of work. If it already has an open ticket, this
+    // message is part of that conversation rather than a new job — otherwise a
+    // three-message exchange becomes three videos.
+    const openForThread = await notion.findOpenByThread(`${m.channel}/${m.threadTs}`);
+    if (openForThread) continue;
+
     const ticket = await notion.createTicket({
       title: parsed.topic,
       series: parsed.series,
@@ -108,6 +117,89 @@ async function intakeFromSlack(report) {
       threadTs: m.threadTs,
       text: `Queued *${parsed.topic}* (series \`${parsed.series}\`).\nTracking it here: ${ticket.url}`,
     });
+  }
+}
+
+// ─── step 1b: replies in threads we are already in ───────────────────────────
+
+/**
+ * Read follow-up replies without needing another @-mention.
+ *
+ * search.messages only returns messages containing the bot's handle, so a plain
+ * thread reply — the natural way to answer "which series?" — was invisible. The
+ * bot asked a question and then ignored the answer, which is worse than not
+ * asking. Any thread with a ticket in it is a conversation we are part of, so
+ * its replies are read directly via conversations.replies.
+ *
+ * A `[seen:<ts>]` watermark on the ticket makes this idempotent: only replies
+ * newer than the last one processed are acted on, so a reply cannot be handled
+ * twice on successive ticks.
+ */
+async function followUpThreads(report) {
+  // Only conversations still waiting on something. A finished ticket's thread is
+  // history, not an inbox.
+  const open = [
+    ...await notion.queuedTickets({ status: 'Blocked' }).catch(() => []),
+    ...await notion.queuedTickets({ status: 'Not Started' }).catch(() => []),
+  ];
+
+  // One ticket per thread. Two tickets sharing a thread both match the same
+  // reply, and one answer becomes two identical videos.
+  const handledThreads = new Set();
+
+  for (const t of open) {
+    const slackRef = readMark(t.notes, 'slack');
+    if (!slackRef) continue;
+    // A ticket asking to overspend is answered by resolveApprovals, not here.
+    if (readMark(t.notes, 'approval')) continue;
+    if (handledThreads.has(slackRef)) continue;
+    handledThreads.add(slackRef);
+
+    const [channel, threadTs] = slackRef.split('/');
+    const replies = await slack.threadReplies({ channel, threadTs });
+    if (!replies.length) continue;
+
+    const seen = readMark(t.notes, 'seen') || threadTs;
+    const fresh = replies.filter((r) =>
+      Number(r.ts) > Number(seen)
+      && !r.botId
+      && r.user !== config.slack.botUserId
+    );
+    if (!fresh.length) continue;
+
+    const newest = fresh[fresh.length - 1];
+    let notes = `${t.notes} `.replace(/\[seen:[^\]]+\]/, '') + MARK.seen(newest.ts);
+
+    // Later replies win — someone correcting themselves means the last word.
+    const merged = {};
+    for (const r of fresh) Object.assign(merged, parseFollowUp(r.text));
+
+    const series = merged.series || t.series;
+    // A clarification stub carries a placeholder title, never a real topic.
+    const stub = /^Needs detail:/i.test(t.title);
+    const topic = merged.topic || (stub ? '' : t.title);
+
+    if (!series || !topic) {
+      await notion.update(t.id, { notes });
+      const missing = !series ? 'which series it belongs to' : 'what the video should be about';
+      await slack.postMessage({ channel, threadTs, text: `Got it — still need ${missing}.` });
+      report.followUps++;
+      continue;
+    }
+
+    await notion.update(t.id, {
+      status: 'Not Started',
+      series,
+      sessionId: '',
+      notes,
+      title: topic,
+    });
+    await slack.postMessage({
+      channel, threadTs,
+      text: `Thanks — building *${topic}* in series \`${series}\`.`,
+    });
+    report.followUps++;
+    log(`follow-up accepted: "${topic}" / ${series}`);
   }
 }
 
@@ -292,7 +384,7 @@ async function runTick({ trigger = 'timer' } = {}) {
 
   const report = {
     trigger, startedAt: new Date().toISOString(),
-    mentionsSeen: 0, created: 0, asked: 0, approved: 0, declined: 0,
+    mentionsSeen: 0, created: 0, asked: 0, followUps: 0, approved: 0, declined: 0,
     dispatched: 0, completed: 0, askedApproval: 0, errors: [],
   };
 
@@ -301,6 +393,9 @@ async function runTick({ trigger = 'timer' } = {}) {
       await intakeFromSlack(report).catch((e) => report.errors.push(`intake: ${e.message}`));
     }
     if (notion.isConfigured()) {
+      // Before approvals and before dispatch: a reply may be the very thing that
+      // makes a blocked ticket runnable this tick rather than the next one.
+      await followUpThreads(report).catch((e) => report.errors.push(`follow-ups: ${e.message}`));
       await resolveApprovals(report).catch((e) => report.errors.push(`approvals: ${e.message}`));
 
       const queued = await notion.queuedTickets();
@@ -340,5 +435,5 @@ module.exports = {
   // Exposed for tests. The spend gate is skipped under dryRun inside produce, so
   // the ask-for-permission path can only be exercised by handing report_result a
   // blocked run directly — otherwise it would need a real, paying run to verify.
-  _internals: { report_result, readMark, MARK, APPROVE_RE, DENY_RE },
+  _internals: { report_result, readMark, MARK, APPROVE_RE, DENY_RE, followUpThreads, intakeFromSlack },
 };
