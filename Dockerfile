@@ -37,6 +37,13 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python
 
 WORKDIR /app
 
+# The judgement stages run through `claude -p`, not the Anthropic API. That is
+# deliberate (see orchestrator/lib/llm-cli.js): the same models under the
+# subscription already being paid for, and one fewer credential to hold. The CLI
+# therefore has to exist inside the image, authenticated by
+# CLAUDE_CODE_OAUTH_TOKEN rather than an interactive login.
+RUN npm install -g @anthropic-ai/claude-code --no-audit --no-fund
+
 # Dependencies first: this layer is cached and only rebuilt when the manifests
 # change, so ordinary code edits redeploy in seconds instead of minutes.
 COPY package.json package-lock.json* ./

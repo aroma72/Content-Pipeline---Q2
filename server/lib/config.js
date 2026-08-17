@@ -64,7 +64,15 @@ function readiness() {
     slackPost: Boolean(config.slack.botToken),
     slackPoll: Boolean(config.slack.userToken),
     notion: Boolean(config.notion.apiKey && config.notion.databaseId),
-    model: Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN),
+    // The judgement stages prefer `claude -p` under the subscription, so a
+    // long-lived CLI token counts as "we can reach a model" just as much as an
+    // API key does. Reporting only on the key made a working CLI setup look
+    // broken on /health.
+    model: Boolean(
+      process.env.CLAUDE_CODE_OAUTH_TOKEN
+      || process.env.ANTHROPIC_API_KEY
+      || process.env.ANTHROPIC_AUTH_TOKEN
+    ),
     gemini: Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_STUDIO_API_KEY),
     budgetAuthorised: config.pipeline.budgetUsd > 0,
     dryRun: config.pipeline.dryRun,
