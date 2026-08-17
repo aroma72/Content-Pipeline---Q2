@@ -132,12 +132,37 @@ async function update(pageId, props) {
   return notionFetch(`/pages/${pageId}`, { method: 'PATCH', body: JSON.stringify({ properties }) });
 }
 
-/** Progress and results go on the ticket as comments, so the page reads as a log. */
+/**
+ * Progress and results go on the ticket as comments, so the page reads as a log.
+ *
+ * The comment endpoint needs comment capabilities on the integration, which are
+ * granted in Notion's UI and cannot be set through the API. When they are absent
+ * every call 403s. Rather than lose the record — the run log is the whole point —
+ * fall back to appending onto the Notes property, which only needs the update
+ * capability the integration already has.
+ */
 async function comment(pageId, body) {
-  return notionFetch('/comments', {
-    method: 'POST',
-    body: JSON.stringify({ parent: { page_id: pageId }, rich_text: text(body) }),
-  });
+  try {
+    return await notionFetch('/comments', {
+      method: 'POST',
+      body: JSON.stringify({ parent: { page_id: pageId }, rich_text: text(body) }),
+    });
+  } catch (e) {
+    if (!/restricted_resource|unauthorized|403/i.test(e.message)) throw e;
+
+    const page = await notionFetch(`/pages/${pageId}`);
+    const current = ((page.properties && page.properties.Notes && page.properties.Notes.rich_text) || [])
+      .map((x) => x.plain_text).join('');
+    const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
+    return notionFetch(`/pages/${pageId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        // Notes is capped at 2000 chars by Notion; keep the tail, which is the
+        // most recent and most useful part of a run log.
+        properties: { Notes: { rich_text: text(`${current}\n[${stamp}] ${body}`.slice(-1900)) } },
+      }),
+    });
+  }
 }
 
 module.exports = {
