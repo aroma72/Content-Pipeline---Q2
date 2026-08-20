@@ -71,21 +71,37 @@ async function synth(text, key) {
       speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: VOICE } } },
     },
   };
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-      body: JSON.stringify(body),
-    });
-    if (res.ok) {
-      const j = await res.json();
-      const b64 = j?.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
-      if (!b64) throw new Error('TTS returned no audio: ' + JSON.stringify(j).slice(0, 200));
-      return Buffer.from(b64, 'base64'); // raw PCM 24k/16/mono
+  const ATTEMPTS = 6;
+  let lastErr;
+  for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        const j = await res.json();
+        const b64 = j?.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
+        if (!b64) throw new Error('TTS returned no audio: ' + JSON.stringify(j).slice(0, 200));
+        return Buffer.from(b64, 'base64'); // raw PCM 24k/16/mono
+      }
+      const txt = (await res.text()).slice(0, 200);
+      // retry rate-limits + server errors; fail fast on other 4xx (e.g. 400 bad request)
+      if ((res.status === 429 || res.status >= 500) && attempt < ATTEMPTS) {
+        lastErr = new Error(`HTTP ${res.status}: ${txt}`); await new Promise(r => setTimeout(r, 1500 * attempt)); continue;
+      }
+      throw new Error(`TTS HTTP ${res.status}: ${txt}`);
+    } catch (e) {
+      lastErr = e;
+      // CRITICAL: also retry THROWN errors — a network blip ("fetch failed") is a TypeError,
+      // not an HTTP status, and used to fall straight through to a silent clip (the v7 bug).
+      const retryable = /fetch failed|network|ECONN|ETIMEDOUT|EAI_AGAIN|socket|terminated|returned no audio/i.test(String(e.message));
+      if (retryable && attempt < ATTEMPTS) { await new Promise(r => setTimeout(r, 1500 * attempt)); continue; }
+      throw e;
     }
-    if (res.status >= 500 && attempt < 3) { await new Promise(r => setTimeout(r, 1500 * attempt)); continue; }
-    throw new Error(`TTS HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
   }
+  throw lastErr;
 }
 function silenceWav(seconds) {
   const n = Math.max(1, Math.round(24000 * seconds));
@@ -105,6 +121,7 @@ function silenceWav(seconds) {
 
   // ---- Pass 1: synth raw clips (skip if sidecar text unchanged) ----
   const raw = [];
+  const fellBack = []; // beats that could not be synthesized after all retries (SILENT)
   for (const b of beats) {
     const rawPath = path.join(AUD, `raw_${b.id}.wav`);
     const sidecar = path.join(AUD, `vo_${b.id}.txt`);
@@ -115,11 +132,19 @@ function silenceWav(seconds) {
       catch (e) {
         const est = Math.max(1.2, b.vo.split(/\s+/).length * 0.42);
         fs.writeFileSync(rawPath, silenceWav(est));
+        fellBack.push(b.id);
         console.log(`FALLBACK silence ${est.toFixed(1)}s (${e.message})`);
       }
       fs.writeFileSync(sidecar, b.vo);
     }
     raw.push({ b, rawPath, secs: wavSeconds(rawPath) });
+  }
+  // A silent fallback = a beat with NO speech. Never let this pass as a clean build:
+  // surface it loudly and exit non-zero so the run is re-tried (this was the v7 defect).
+  if (fellBack.length) {
+    console.error(`\n[tts] ❌ ${fellBack.length} beat(s) fell back to SILENCE after retries: ${fellBack.join(', ')}`);
+    console.error(`[tts] These beats have NO voiceover. Re-run 'node tts-lesson.js --yes' (network was flaky), then re-compile.`);
+    process.exitCode = 1;
   }
 
   // ---- Pass 2a: tempo-to-median (chars/sec), clamp ±10% ----

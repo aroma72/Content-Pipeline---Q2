@@ -259,5 +259,89 @@
     return wrap;
   };
 
+  // browser — a browser window chrome with a body slot; blank white for the "money frame"
+  // (v04 beat 19) or holds a short line. Real UI, never baked into art.
+  //   data:{ url?, blank?:bool, text? }
+  T.browser = (d) => {
+    const wrap = el('div', 'browserwin seq');
+    const bar = el('div', 'screen-bar');
+    bar.appendChild(el('span', 'dot r')); bar.appendChild(el('span', 'dot y')); bar.appendChild(el('span', 'dot g'));
+    bar.appendChild(el('span', 'url', d.url || ''));
+    wrap.appendChild(bar);
+    const body = el('div', 'browser-body' + (d.blank ? ' blank' : ''));
+    if (d.text) body.appendChild(el('div', 'browser-text', d.text));
+    wrap.appendChild(body);
+    return wrap;
+  };
+
+  // grid — N cells revealed one-by-one, each toned (good=green tick). v04 beat 23 "twelve green".
+  //   data:{ n, tone?:'good'|'bad', title? }
+  T.grid = (d) => {
+    const wrap = el('div', 'gridwrap');
+    if (d.title) wrap.appendChild(el('div', 'info-title seq', d.title));
+    const g = el('div', 'cellgrid');
+    const n = d.n || 12;
+    for (let i = 0; i < n; i++) {
+      const c = el('div', 'cell seq ' + (d.tone || 'good'));
+      c.appendChild(el('span', 'tick', (d.tone === 'bad') ? '✗' : '✓'));
+      g.appendChild(c);
+    }
+    wrap.appendChild(g);
+    return wrap;
+  };
+
+  // scoresheet — two mark sheets side by side, rows reveal, disagreement rows flagged.
+  // v05 hero (beats 15/16/22): same layout twice so "agree on 7 -> agree on 9" reads as one thing.
+  //   data:{ a:{title,rows:[{label,mark:'✓'|'✗'}]}, b:{...}, diff?:[idx], note? }
+  T.scoresheet = (d) => {
+    const wrap = el('div', 'scoresheets');
+    const row = el('div', 'sheets-row');
+    const mk = (c) => {
+      const s = el('div', 'sheet seq');
+      s.appendChild(el('div', 'sheet-title', c.title || ''));
+      (c.rows || []).forEach((r, i) => {
+        const rr = el('div', 'sheet-row' + ((d.diff || []).includes(i) ? ' diff' : ''));
+        rr.appendChild(el('span', 'sheet-lab', r.label || ('Item ' + (i + 1))));
+        rr.appendChild(el('span', 'sheet-mark ' + (r.mark === '✗' ? 'bad' : 'good'), r.mark || '✓'));
+        s.appendChild(rr);
+      });
+      return s;
+    };
+    row.appendChild(mk(d.a || {}));
+    row.appendChild(mk(d.b || {}));
+    wrap.appendChild(row);
+    if (d.note) wrap.appendChild(el('div', 'sheets-note io-late', d.note));
+    return wrap;
+  };
+
+  // bars — a horizontal bar GRAPH with count-up values out of a fixed scale (e.g. /10).
+  // For before/after comparisons (v07 baseline 5 -> 8, v05 agreement 7 -> 9). Biggest/after
+  // row can be flagged tone:'big'. Bars grow late (.io-late), values count up (data-tick).
+  //   data:{ items:[{label,value,tone?:'big'|'bad'}], max?, suffix?, title? }
+  T.bars = (d) => {
+    const wrap = el('div', 'card bars');
+    if (d.title) wrap.appendChild(el('div', 'info-title seq', d.title));
+    const items = d.items || [];
+    const max = d.max || Math.max(1, ...items.map((i) => i.value || 0));
+    items.forEach((it) => {
+      const t = it.tone === 'big' ? ' big' : (it.tone === 'bad' ? ' bad' : '');
+      const row = el('div', 'bar-row seq');
+      row.appendChild(el('div', 'bar-label' + t, it.label || ''));
+      const track = el('div', 'bar-track');
+      const fill = el('div', 'bar-fill fillbar io-late' + t);
+      fill.dataset.pct = String(Math.round(((it.value || 0) / max) * 100));
+      track.appendChild(fill);
+      row.appendChild(track);
+      const v = el('div', 'bar-value' + t, '0');
+      v.dataset.tick = String(it.value || 0);
+      const val = el('div', 'bar-valwrap' + t);
+      val.appendChild(v);
+      if (d.suffix) val.appendChild(el('span', 'bar-suffix', d.suffix));
+      row.appendChild(val);
+      wrap.appendChild(row);
+    });
+    return wrap;
+  };
+
   window.InfoTemplates = T;
 })();

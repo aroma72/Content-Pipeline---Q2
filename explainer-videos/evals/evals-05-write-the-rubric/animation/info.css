@@ -91,6 +91,52 @@
 .spec-chip.bad .dot{background:var(--bad)}
 .spec-lab{font-family:var(--sans);font-weight:700;font-size:48px;color:var(--head);text-align:center}
 
+/* bars — horizontal bar graph with count-up values out of a scale (before/after) */
+.bars{display:flex;flex-direction:column;gap:38px;min-width:1180px}
+.bar-row{display:grid;grid-template-columns:340px 1fr 190px;align-items:center;gap:40px}
+.bar-label{font-family:var(--sans);font-weight:700;font-size:52px;color:var(--head)}
+.bar-label.big{color:var(--good)} .bar-label.bad{color:var(--bad)}
+.bar-track{height:56px;background:#EFE7D7;border-radius:999px;overflow:hidden}
+.bar-fill{height:100%;width:0;background:var(--muted);border-radius:999px}
+.bar-fill.big{background:var(--good)} .bar-fill.bad{background:var(--bad)}
+.bar-valwrap{display:flex;align-items:baseline;gap:8px;justify-content:flex-end}
+.bar-value{font-family:var(--serif);font-weight:700;font-size:78px;color:var(--head)}
+.bar-value.big{color:var(--good)} .bar-value.bad{color:var(--bad)}
+.bar-suffix{font-family:var(--sans);font-size:40px;color:var(--muted)}
+
+/* browser — window chrome + body slot (v04 blank money-frame) */
+.browserwin{width:1500px;background:var(--card);border:1px solid var(--line);border-radius:16px;
+  overflow:hidden;box-shadow:0 18px 60px rgba(46,42,36,.18)}
+.browserwin .url{margin-left:18px;font-family:var(--sans);font-size:30px;color:var(--muted);
+  background:var(--bg);border-radius:8px;padding:6px 22px}
+.browser-body{min-height:560px;background:#fff;display:flex;align-items:center;justify-content:center}
+.browser-body.blank{background:#fff}
+.browser-text{font-family:var(--sans);font-size:44px;color:var(--ink)}
+
+/* grid — N toned cells (v04 twelve-green) */
+.gridwrap{display:flex;flex-direction:column;align-items:center;gap:36px}
+.cellgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:28px}
+.cell{width:210px;height:150px;border-radius:14px;display:flex;align-items:center;justify-content:center;
+  border:2px solid var(--line)}
+.cell.good{background:rgba(92,138,70,.14);border-color:var(--good)}
+.cell.bad{background:rgba(192,101,62,.14);border-color:var(--bad)}
+.cell .tick{font-size:78px;font-weight:700}
+.cell.good .tick{color:var(--good)} .cell.bad .tick{color:var(--bad)}
+
+/* scoresheet — two mark sheets side by side (v05 hero) */
+.scoresheets{display:flex;flex-direction:column;align-items:center;gap:30px}
+.sheets-row{display:flex;gap:60px}
+.sheet{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:28px 34px;min-width:560px;
+  box-shadow:0 12px 40px rgba(46,42,36,.10)}
+.sheet-title{font-family:var(--sans);font-weight:700;font-size:40px;color:var(--head);margin-bottom:18px;text-align:center}
+.sheet-row{display:flex;justify-content:space-between;align-items:center;gap:24px;padding:12px 14px;border-radius:10px;
+  font-family:var(--sans);font-size:34px;color:var(--ink)}
+.sheet-row.diff{background:rgba(224,168,74,.20);outline:2px solid var(--accent)}
+.sheet-mark{font-size:40px;font-weight:700}
+.sheet-mark.good{color:var(--good)} .sheet-mark.bad{color:var(--bad)}
+.sheets-note{font-family:var(--sans);font-weight:700;font-size:46px;color:var(--accent);
+  background:var(--card);border:2px solid var(--line);border-radius:12px;padding:16px 34px}
+
 /* piles — four-pile horizontal bar chart (video 02 engine: beats 15 & 17) */
 .piles{display:flex;flex-direction:column;gap:34px;min-width:1180px}
 .pile-row{display:grid;grid-template-columns:360px 1fr 130px;align-items:center;gap:40px}

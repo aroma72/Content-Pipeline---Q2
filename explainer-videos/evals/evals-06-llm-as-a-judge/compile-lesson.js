@@ -108,18 +108,36 @@ async function renderFull() {
     console.log(`[compile] --reuse: keeping ${existing} cached frames, skipping render.`);
     return;
   }
+  // Fresh render wipes; a resume (--reuse) keeps whatever frames exist and fills the gaps.
   if (!reuse) { rmrf(framesDir); }
   fs.mkdirSync(framesDir, { recursive: true });
   console.log(`[compile] ${beats.length} beats, ${total.toFixed(1)}s, ${totalFrames} frames -> ${framesDir}`);
-  await withPage(async (page) => {
-    for (let f = 0; f < totalFrames; f++) {
-      const ms = (f / FPS) * 1000;
-      await page.evaluate((t) => window.seekTo(t), ms);
-      await page.screenshot({ path: path.join(framesDir, `f_${String(f).padStart(6, '0')}.png`) });
-      if (f % 30 === 0) process.stdout.write(`\r[compile] frame ${f}/${totalFrames}`);
+  // Render in CHUNKS, each in a FRESH browser: bounds Chrome memory so long renders don't
+  // crash with "detached Frame", and a crash only loses the current chunk. Already-written
+  // frames are skipped, so a crashed chunk is retried and resumes exactly where it stopped.
+  const CHUNK = 400;
+  const fp = (f) => path.join(framesDir, `f_${String(f).padStart(6, '0')}.png`);
+  let f = 0;
+  while (f < totalFrames) {
+    const start = f;
+    const end = Math.min(totalFrames, start + CHUNK);
+    try {
+      await withPage(async (page) => {
+        for (let i = start; i < end; i++) {
+          if (!fs.existsSync(fp(i))) {
+            await page.evaluate((t) => window.seekTo(t), (i / FPS) * 1000);
+            await page.screenshot({ path: fp(i) });
+          }
+          f = i + 1;
+          if (f % 30 === 0) process.stdout.write(`\r[compile] frame ${f}/${totalFrames}`);
+        }
+      });
+    } catch (e) {
+      console.log(`\n[compile] browser died near frame ${f} (${String(e.message).slice(0, 50)}); relaunching to resume…`);
+      // f holds the last frame written; loop re-enters with a fresh browser and continues.
     }
-    process.stdout.write('\n');
-  });
+  }
+  process.stdout.write('\n');
 }
 
 async function renderSample() {

@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Module 11 Assessment</title>
+<style>
+  :root{
+    --bg:#1b2029; --panel:#222834; --panel2:#1f2530; --line:#2f3745; --tab:#2a313d;
+    --ink:#d6dbe6; --muted:#8b95a7; --accent:#39c5b7; --teal:#4db6ac; --green:#7bc47f;
+    --warn:#e0a84a; --user:#2d3542; --serif:Georgia,'Times New Roman',serif;
+    --mono:'Cascadia Code','SF Mono',Consolas,'DejaVu Sans Mono',monospace;
+    --sans:'Segoe UI',system-ui,Arial,sans-serif;
+    --cream:#F5F1E8; --head:#26303a;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:1920px;height:1080px;overflow:hidden;background:var(--bg);font-family:var(--sans)}
+  #stage{position:relative;width:1920px;height:1080px}
+  .layer{position:absolute;inset:0;opacity:0}
+
+  /* ---- IDE chrome ---- */
+  .win{position:absolute;inset:36px;background:var(--panel2);border-radius:16px;overflow:hidden;
+    box-shadow:0 30px 90px rgba(0,0,0,.45);display:flex;flex-direction:column}
+  .titlebar{height:56px;background:#171c24;display:flex;align-items:center;gap:16px;padding:0 24px;border-bottom:1px solid var(--line)}
+  .dots{display:flex;gap:10px}.dot{width:16px;height:16px;border-radius:50%}
+  .dot.r{background:#e06c75}.dot.y{background:#e5c07b}.dot.g{background:#98c379}
+  .tab{color:var(--muted);font-size:24px;font-family:var(--mono)}
+  .tab b{color:var(--ink);font-weight:600}
+  /* persistent method label banner below the titlebar */
+  .methodbar{height:58px;flex:none;display:flex;align-items:center;justify-content:center;
+    background:#161b23;border-bottom:1px solid var(--line)}
+  .methodchip{background:var(--accent);color:#0a201d;font-family:var(--sans);font-weight:800;
+    font-size:27px;letter-spacing:2px;text-transform:uppercase;padding:9px 34px;border-radius:999px;
+    box-shadow:0 6px 20px rgba(0,0,0,.30)}
+  .body{flex:1;display:grid;grid-template-columns:360px 1fr 640px;min-height:0}
+
+  /* sidebar / file tree */
+  .side{background:#191e26;border-right:1px solid var(--line);padding:26px 0;overflow:hidden}
+  .side .h{color:var(--muted);font-size:20px;letter-spacing:2px;text-transform:uppercase;padding:0 26px 16px}
+  .file{display:flex;align-items:center;gap:12px;padding:9px 26px;color:var(--muted);font-size:26px;font-family:var(--mono)}
+  .file .ic{width:12px;height:12px;border-radius:3px;background:#3a4453;flex:none}
+  .file.dir .ic{background:var(--teal);border-radius:2px}
+  .file.active{background:#232b37;color:var(--ink);box-shadow:inset 4px 0 0 var(--accent)}
+  .file .dotnew{width:12px;height:12px;border-radius:50%;background:var(--green);margin-left:auto}
+  .file .ok{margin-left:auto;color:var(--green);font-size:26px}
+  .file.i1{padding-left:52px}
+
+  /* editor */
+  .editor{background:var(--panel2);display:flex;flex-direction:column;min-width:0}
+  .etab{height:48px;display:flex;align-items:center;gap:12px;padding:0 28px;background:#20262f;border-bottom:1px solid var(--line);
+    color:var(--ink);font-family:var(--mono);font-size:24px}
+  .etab .dotname{width:10px;height:10px;border-radius:50%;background:var(--accent)}
+  .code{flex:1;padding:34px 34px;overflow:hidden;counter-reset:ln}
+  .cl{display:flex;gap:26px;font-family:var(--mono);font-size:30px;line-height:1.7;color:var(--ink);white-space:pre-wrap}
+  .cl::before{counter-increment:ln;content:counter(ln);color:#3f4a5a;width:44px;text-align:right;flex:none}
+  .cl .cm{color:#5f6b7d}.cl .kw{color:#c99be0}.cl .st{color:#9fd39f}.cl .ok{color:var(--green)}
+  .cl.md{color:#cdd3df}.cl.h{color:#fff;font-weight:700}
+  .term{border-top:1px solid var(--line);background:#12161d;padding:20px 34px;min-height:150px}
+  .term .tl{font-family:var(--mono);font-size:26px;line-height:1.6;color:#9fb0c3}
+  .term .tl.g{color:var(--green)}.term .tl.p{color:var(--muted)}
+
+  /* chat */
+  .chat{background:#1d232d;border-left:1px solid var(--line);display:flex;flex-direction:column;min-width:0}
+  .chat .ch{height:56px;display:flex;align-items:center;gap:14px;padding:0 30px;border-bottom:1px solid var(--line);color:var(--ink);font-size:26px;font-weight:600}
+  .chat .logo{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--teal));flex:none}
+  .msgs{flex:1;padding:30px;display:flex;flex-direction:column;gap:26px;overflow:hidden}
+  .msg{max-width:100%}
+  .msg .who{font-size:20px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:10px}
+  .bub{font-size:29px;line-height:1.5;white-space:pre-wrap;border-radius:14px;padding:22px 26px}
+  .msg.you .bub{background:var(--user);color:#e8edf5;border:1px solid #384252}
+  .msg.claude .bub{background:#232b37;color:#dfe6f0;border-left:4px solid var(--accent)}
+  .msg.claude .bub.warn{border-left-color:var(--warn)}
+  .inbar{height:70px;margin:0 30px 30px;border:1px solid var(--line);border-radius:14px;background:#161b23;display:flex;align-items:center;padding:0 26px;color:#55606f;font-family:var(--mono);font-size:26px}
+  .caret{display:inline-block;width:3px;height:34px;background:var(--accent);margin-left:6px;vertical-align:middle}
+
+  /* card beats */
+  .card{position:absolute;inset:0;background:radial-gradient(1200px 700px at 50% 40%, #232c39, var(--bg));
+    display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:0 220px}
+  .card .small{color:var(--accent);font-family:var(--sans);font-size:34px;letter-spacing:5px;text-transform:uppercase;margin-bottom:34px}
+  .card .big{color:#fff;font-family:var(--serif);font-weight:700;font-size:88px;line-height:1.18}
+  .card .sub{color:var(--muted);font-family:var(--sans);font-size:40px;margin-top:40px}
+  .card .rule{width:120px;height:5px;background:var(--accent);border-radius:3px;margin:44px auto 0}
+  .seq{opacity:0;transform:translateY(16px)}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script>
+const stage = document.getElementById('stage');
+const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
+const esc=(s)=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+// light syntax touch for code/markdown lines
+function fmtLine(text, file){
+  const isMd = /\.md$/.test(file||'');
+  if(isMd){ const t=esc(text)||'&nbsp;'; return {cls:'cl md'+(/^#\s/.test(text)?' h':''), html:t}; }
+  // split off a trailing line comment, build in ONE pass so inserted class names
+  // are never re-matched by a later regex (the bug that mangled comment lines).
+  let code=text, comment='';
+  const ci=text.indexOf('//');
+  if(ci>=0){ code=text.slice(0,ci); comment=text.slice(ci); }
+  let h=esc(code)
+    .replace(/("[^"]*"|'[^']*')/g,'<span class="st">$1</span>')
+    .replace(/(✓|✔)/g,'<span class="ok">$&</span>');
+  if(comment) h+='<span class="cm">'+esc(comment)+'</span>';
+  return {cls:'cl', html:h||'&nbsp;'};
+}
+
+function makeIDE(b){
+  const s = b.screen||{};
+  const wrap = document.createElement('div'); wrap.className='layer';
+  const win = document.createElement('div'); win.className='win';
+  // titlebar
+  win.innerHTML = `<div class="titlebar"><div class="dots"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div>
+    <div class="tab">my-project — <b>Claude Code</b></div></div>`;
+  // persistent METHOD label banner (kept even when empty so IDE beats don't shift height)
+  const mb = document.createElement('div'); mb.className = 'methodbar';
+  if (s.method) mb.innerHTML = `<span class="methodchip">Method ${esc(s.method)}</span>`;
+  win.appendChild(mb);
+  const body = document.createElement('div'); body.className='body';
+
+  // sidebar
+  const side = document.createElement('div'); side.className='side';
+  side.innerHTML = '<div class="h">Explorer</div>';
+  (s.tree||[]).forEach(f=>{
+    const dir = /\/$/.test(f.name);
+    const row = document.createElement('div');
+    row.className='file'+(dir?' dir':'')+(f.indent?' i1':'')+(f.name===s.active?' active':'');
+    row.innerHTML = `<span class="ic"></span><span>${esc(f.name)}</span>`+
+      (f.tag==='new'?'<span class="dotnew"></span>':'')+(f.tag==='ok'?'<span class="ok">✓</span>':'');
+    side.appendChild(row);
+  });
+  body.appendChild(side);
+
+  // editor
+  const ed = document.createElement('div'); ed.className='editor';
+  const e = s.editor||{name:'',lines:[]};
+  const etab = document.createElement('div'); etab.className='etab';
+  etab.innerHTML = `<span class="dotname"></span>${esc(e.name||'')}`;
+  ed.appendChild(etab);
+  const code = document.createElement('div'); code.className='code';
+  (e.lines||[]).forEach(ln=>{ const f=fmtLine(ln,e.name); const d=document.createElement('div'); d.className=f.cls+' seq'; d.innerHTML=f.html||'&nbsp;'; code.appendChild(d); });
+  ed.appendChild(code);
+  if(s.terminal && s.terminal.length){
+    const term=document.createElement('div'); term.className='term';
+    s.terminal.forEach((tl,i)=>{ const d=document.createElement('div'); const g=/→|passed|live|now/.test(tl)&&!/^\$/.test(tl); const p=/^\$/.test(tl);
+      d.className='tl seq'+(g?' g':'')+(p?' p':''); d.textContent=tl; term.appendChild(d); });
+    ed.appendChild(term);
+  }
+  body.appendChild(ed);
+
+  // chat
+  const chat=document.createElement('div'); chat.className='chat';
+  chat.innerHTML='<div class="ch"><span class="logo"></span>Claude Code</div>';
+  const msgs=document.createElement('div'); msgs.className='msgs';
+  (s.chat||[]).forEach(m=>{
+    const mm=document.createElement('div'); mm.className='msg seq '+(m.role==='you'?'you':'claude');
+    const warn=/^⚠/.test(m.text)?' warn':'';
+    mm.innerHTML=`<div class="who">${m.role==='you'?'You':'Claude'}</div><div class="bub${warn}">${esc(m.text)}</div>`;
+    msgs.appendChild(mm);
+  });
+  chat.appendChild(msgs);
+  const inbar=document.createElement('div'); inbar.className='inbar'; inbar.innerHTML='Message Claude Code…<span class="caret"></span>';
+  chat.appendChild(inbar);
+  body.appendChild(chat);
+
+  win.appendChild(body); wrap.appendChild(win);
+  return wrap;
+}
+
+function makeCard(b){
+  const wrap=document.createElement('div'); wrap.className='layer';
+  const c=document.createElement('div'); c.className='card';
+  const d=b.card||{};
+  c.innerHTML = (d.small?`<div class="small seq">${esc(d.small)}</div>`:'')+
+    `<div class="big seq">${esc(d.big||'')}</div>`+
+    (d.sub?`<div class="sub seq">${esc(d.sub)}</div>`:'')+`<div class="rule seq"></div>`;
+  wrap.appendChild(c); return wrap;
+}
+
+let TL=[];
+function buildTimeline(data){
+  let t=0;
+  data.beats.forEach(b=>{
+    const dur=(data.durations[b.id]||3)*1000;
+    const layer = b.mode==='card'?makeCard(b):makeIDE(b);
+    stage.appendChild(layer);
+    TL.push({id:b.id,start:t,end:t+dur,dur,layer,beat:b});
+    t+=dur;
+  });
+}
+
+function drive(item,ms){
+  const p=clamp((ms-item.start)/item.dur,0,1);
+  const L=item.layer;
+  // gentle push-in on the whole window / card (movement in every beat)
+  const win=L.querySelector('.win');
+  if(win){ const s=(1+0.012*p).toFixed(4); win.style.transform=`scale(${s})`; }
+  const card=L.querySelector('.card');
+  if(card){ card.style.transform=`translateY(${(Math.sin(ms/1100)*4).toFixed(1)}px)`; }
+  // caret blink
+  const caret=L.querySelector('.caret'); if(caret) caret.style.opacity = (Math.floor(ms/500)%2)?0.2:1;
+  // staggered reveals across ~65% of the beat
+  const seqs=L.querySelectorAll('.seq');
+  seqs.forEach((el,i)=>{ const t0=(i/Math.max(1,seqs.length))*0.6; const a=clamp((p-t0)/0.14,0,1);
+    el.style.opacity=a; el.style.transform=`translateY(${(1-a)*16}px)`; });
+}
+
+window.seekTo=function(ms){
+  let active=TL[TL.length-1];
+  for(const it of TL){ if(ms>=it.start && ms<it.end){active=it;break;} }
+  for(const it of TL) it.layer.style.opacity=(it===active)?1:0;
+  if(active) drive(active,ms);
+};
+
+(function init(){
+  const data=window.__DATA;
+  if(!data){document.title='no data';window.ready=true;return;}
+  buildTimeline(data);
+  window.seekTo(0);
+  window.ready=true;
+})();
+</script>
+</body>
+</html>
