@@ -5,6 +5,18 @@
 
 set -e
 
+# Fail fast and legibly on missing tools. Without this, a missing jq aborts at
+# the first update_health call with a bare "jq: command not found" and exit 127,
+# which reads like the check ran and failed rather than never having started.
+for _tool in jq; do
+  if ! command -v "$_tool" >/dev/null 2>&1; then
+    echo "FATAL: required tool '$_tool' is not on PATH."
+    echo "  Install (Windows, no admin): download jq.exe to %LOCALAPPDATA%\\Programs\\jq\\bin and add it to PATH"
+    echo "  Install (macOS/Linux):       brew install jq  /  apt-get install jq"
+    exit 2
+  fi
+done
+
 CHECK_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 HEALTH_FILE=".claude/logs/health.json"
 TEMP_RESULTS="/tmp/infra_check_$$.json"

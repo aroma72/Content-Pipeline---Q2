@@ -23,11 +23,17 @@ if %errorLevel% neq 0 (
 echo ✓ Running as Administrator
 echo.
 
-REM Set paths
+REM Set paths -- derived from this file's location, never hardcoded.
+REM The project path contains a space ("Content Queen"), and an unquoted path
+REM makes schtasks split it into Execute="c:\Users\Aroma" + stray arguments.
 set "TASK_NAME=Drawing Room Daily Health Check"
-set "SCRIPT_PATH=c:\Users\Aroma Tahir\Downloads\Content Queen\.claude\scripts\infrastructure-check.sh"
-set "WORK_DIR=c:\Users\Aroma Tahir\Downloads\Content Queen"
+set "WORK_DIR=%~dp0..\.."
+set "RUNNER=%~dp0run-health-check.cmd"
+set "SCRIPT_PATH=%~dp0infrastructure-check.sh"
 set "BASH_PATH=C:\Program Files\Git\bin\bash.exe"
+
+REM Normalise WORK_DIR to an absolute path without the ..\..
+pushd "%WORK_DIR%" && set "WORK_DIR=%CD%" && popd
 
 REM Check if bash exists
 if not exist "%BASH_PATH%" (
@@ -51,7 +57,10 @@ echo   Time: 11:00 AM daily
 echo   Script: %SCRIPT_PATH%
 echo.
 
-schtasks /create /tn "%TASK_NAME%" /tr "cmd /c cd /d \"%WORK_DIR%\" && \"%BASH_PATH%\" -c \"bash '%SCRIPT_PATH%' >> .claude/logs/health.log 2>&1\"" /sc daily /st 11:00 /f
+REM /tr must receive the path wrapped in ESCAPED inner quotes ("\"...\""),
+REM otherwise schtasks splits the command at the first space. The runner .cmd
+REM handles cd, logging and redirection itself, so nothing else belongs here.
+schtasks /create /tn "%TASK_NAME%" /tr "\"%RUNNER%\"" /sc daily /st 11:00 /f
 
 if %errorLevel% equ 0 (
     echo.

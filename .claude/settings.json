@@ -7,10 +7,8 @@
       "Bash:python",
       "Bash:ffmpeg",
       "Bash:git",
-      "PowerShell($env:ANTHROPIC_API_KEY = \"<REDACTED-ROTATE-THIS-KEY>\"; python -c \"import anthropic; c = anthropic.Anthropic\\(\\); m = c.messages.create\\(model='claude-haiku-4-5-20251001', max_tokens=10, messages=[{'role':'user','content':'hi'}]\\); print\\('OK:', m.content[0].text\\)\")",
       "PowerShell(python3 --version)",
       "PowerShell(py --version)",
-      "PowerShell($env:ANTHROPIC_API_KEY = \"<REDACTED-ROTATE-THIS-KEY>\"; py -c \"import anthropic; c = anthropic.Anthropic\\(\\); m = c.messages.create\\(model='claude-haiku-4-5-20251001', max_tokens=20, messages=[{'role':'user','content':'say hi'}]\\); print\\('KEY WORKS:', m.content[0].text\\)\")",
       "PowerShell(Get-Command node -ErrorAction SilentlyContinue; Get-ChildItem \"C:\\\\Program Files\\\\nodejs\" -ErrorAction SilentlyContinue; Get-ChildItem \"$env:APPDATA\\\\npm\" -ErrorAction SilentlyContinue | Select-Object -First 5)",
       "Read(//c/Program Files/**)"
     ]

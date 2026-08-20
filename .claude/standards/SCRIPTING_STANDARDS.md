@@ -20,6 +20,15 @@ Requirements for all script generation (voiceover, video narration, explainer co
 
 Every script MUST demonstrate genuine conceptual understanding through:
 
+### 0. Research-Grounded — Web-First (Non-Negotiable)
+
+Before drafting, the writer MUST research the topic on the web (via the `writing-explainer-scripts`
+skill's Step 0). Two tracks: (a) **latest accurate facts** on the topic, and (b) the **best proven
+techniques for teaching it** (analogies, worked examples, common misconceptions). Produce a cited
+`research.md` (verified facts with source URLs + dates, best analogy, misconceptions to pre-empt,
+current numbers/tool names). The script's metaphor, failure-mode beat, and any on-screen numbers MUST
+trace to that brief. Never script a topic from memory alone — facts must be current and sourced.
+
 ### 1. Concept Depth (Non-Negotiable)
 
 - **Define the core principle explicitly** — don't assume learners know it
@@ -86,6 +95,53 @@ including each structural part and the common failure mode they nearly hit.
 "So here's your move: [reflection prompt applied to the learner's own work]."
 ```
 
+### 3b. Interactive Question — QUESTION → REVEAL (Required, effective 2026-08-17)
+
+> **House rule (effective 2026-08-17):** EVERY video MUST contain an in-video interactive
+> **QUESTION → REVEAL** pair, so the audience actively answers before being told, and feels engaged.
+> Established on the autonomy series ([interactive_quiz_card](../../memory/interactive_quiz_card.md)).
+> This is non-negotiable and applies to every new video and every re-cut.
+
+- **The QUESTION beat** poses one multiple-choice question about the concept just taught, with
+  3–4 plausible options, and a `note` like "Write your answer down." It uses `holdAfter` (≈6s) so the
+  video pauses long enough for the viewer to actually answer.
+- **The REVEAL beat** comes a few beats later: the same stem + options, now with the correct `answer`
+  marked and a one-line `note` explaining why.
+- Place the QUESTION at roughly the two-thirds mark (after the concept is taught, before the payoff),
+  and the REVEAL shortly after so the loop closes inside the video.
+- Mechanics (explainer pipeline): use the `info` template `quiz`.
+  - QUESTION: `{ id, mode:'info', holdAfter:6, vo, cap, info:{ tpl:'quiz', data:{ stem, options:[…], note:'Write your answer down.' } } }`
+  - REVEAL:   `{ id, mode:'info', vo, cap, info:{ tpl:'quiz', data:{ stem, options:[…], answer:<index>, note:'…why…' } } }`
+  - Requires `T.quiz` in `animation/info.js`, the `.quiz*` styles in `animation/info.css`, and the
+    `+ (b.holdAfter||0)` term in `tts-lesson.js`'s pause calc. Port these into any folder that lacks them.
+- For non-`info` formats (e.g. the Claude Code IDE-screencast assessment), pose the QUESTION and
+  REVEAL as two `card`/screen beats that carry the same "answer first, then reveal" structure.
+
+---
+
+### 3c. Animation at the Story Points — omni i2v (Required, effective 2026-08-17)
+
+> **Rule:** Every video moves in every beat (Ken Burns / cutout-puppet / evolving infographics), AND
+> **2–4 beats carry real generated motion** because movement genuinely helps the teaching there.
+> Established on the autonomy + evals series ([feedback_use_animations](../../memory/feedback_use_animations.md)).
+
+- **Pick the beats while writing the script, not after.** The script author names them; the gate
+  (`reviewing-explainer-scripts`) hard-fails a script that doesn't.
+- **Choose beats where motion teaches**, not beats where motion decorates:
+  - an emotional turn (the protagonist's realisation, the moment it goes wrong),
+  - a metaphor coming alive (the thing the whole video hangs on),
+  - the closing invite (the last beat, so the video doesn't end on a still).
+  A static definition or a list beat does **not** get i2v — an evolving infographic already moves.
+- **Declare them** at the bottom of `beats.js`:
+  `module.exports.animateIds = ['04','12','22'];  // i2v story beats`
+- **Generate with omni** (paid, kie-gated, confirm spend):
+  `ART_IDS=04,12,22 node generate-lesson-video-omni.js --yes` → `clips/<id>.mp4`.
+  `compile-lesson.js` uses a clip automatically when present and **falls back to Ken Burns** when it
+  isn't — so a credit-out never blocks the render, it just quietly costs the motion.
+- **Two modes, always ask first** ([feedback_omni_two_modes](../../memory/feedback_omni_two_modes.md)):
+  full i2v animation vs camera-pan on stills. Ali must stay consistent in either.
+- Exempt: IDE-screencast assignment/assessment videos (no character art; i2v does not apply).
+
 ---
 
 ## 4. Mentor Tone & Emotional Pacing
@@ -146,6 +202,7 @@ Before finalizing any script, verify:
 - [ ] **No jargon without definition** — are technical terms explained when first introduced?
 - [ ] **Plain language** — can a 12-14 year old understand the core explanation?
 - [ ] **Emotional acknowledgment (2+ moments)** — does the script normalize confusion early and reassure at technical peaks?
+- [ ] **Interactive QUESTION → REVEAL present** — is there an in-video multiple-choice question (with `holdAfter` so the viewer can answer) AND a matching reveal a few beats later? (Required in EVERY video.)
 - [ ] **No shaming language** — are words like "obviously," "as you know," "simple," or "just" avoided?
 
 ---
@@ -237,4 +294,4 @@ For video scripts, slides and voiceover must align. Learners with little AI back
 
 ---
 
-*Last verified: 2026-06-19*
+*Last verified: 2026-08-17 — added the required in-video QUESTION → REVEAL interactive beat (§3b).*

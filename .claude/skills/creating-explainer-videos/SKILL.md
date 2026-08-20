@@ -49,12 +49,15 @@ Pipeline: `beats.js` → `generate-lesson-art.js` (Imagen) → `segment-all.py` 
 | 3 | `node generate-lesson-art.js --yes` | `art/*.png` — eyeball each; regenerate any that won't cut clean |
 | 4 | `python segment-all.py` | `layers/<id>/{boy,plate}.png`+anchors — verify **tight** bboxes |
 | 5 | `node tts-lesson.js --yes` | `audio/vo_<id>.wav` + `durations.json` (one-take normalized) |
+| 5b | `ART_IDS=<animateIds> node generate-lesson-video-omni.js --yes` | `clips/<id>.mp4` — **REQUIRED** real i2v motion on the 2–4 story beats (Standard §3c). Compile auto-uses them; falls back to Ken Burns if a clip is missing |
 | 6 | `SAMPLE_IDS=03,05 node compile-lesson.js --sample` | early/mid/late frames per beat — confirm motion |
 | 7 | `node compile-lesson.js` | `out/<name>.mp4` — the **bare** lesson (NOT the deliverable) |
 | 8 | `node stitch-brand.js --title "<Title>" --lesson out/<name>.mp4 --out out/<name>_final.mp4` | **the deliverable** |
 | 9 | `node verify.js` | acceptance checklist (Section 11 of the spec) |
 
-`--yes` (or `CONFIRM_SPEND=1`) is required on steps 3 and 5 — the cost guard blocks paid calls otherwise.
+`--yes` (or `CONFIRM_SPEND=1`) is required on steps 3, 5 and 5b — the cost guard blocks paid calls otherwise.
+Two non-negotiables the gate enforces before you reach step 3: an interactive **QUESTION → REVEAL** pair
+(§3b) and **`animateIds`** naming the 2–4 story beats to animate with omni (§3c).
 
 ## Quality bar — measure EVERY video against this (see memory: explainer-video-quality-standard)
 Established on the Change Management video. A miss is a FAIL to fix, not ship:
@@ -64,7 +67,7 @@ Established on the Change Management video. A miss is a FAIL to fix, not ship:
 4. **Consistent flat-illustration visuals** — never mix photoreal with illustration; same Ali throughout.
 5. **No baked-in text in images** (prompts forbid text/letters/numbers; blank props); teaching text is crisp HTML.
 6. **Cutouts never cut an object halfway** — whole object or none; 2-person/complex beats use `scene`, not `ali`.
-7. **Movement in every beat** — push-in / parallax / Ken Burns + evolving infographics; no dead-still holds.
+7. **Movement in every beat** — push-in / parallax / Ken Burns + evolving infographics; no dead-still holds. **AND add real i2v motion on the 2–4 story-critical beats** where movement carries the story (emotional turns, a metaphor coming alive, the closing invite) — `generate-lesson-video-omni.js` (paid, kie-gated, confirm spend); compile auto-uses `clips/<id>.mp4`, falls back to Ken Burns if absent. See animation-motion-design + memory `feedback_use_animations`. Also add an interactive **QUESTION → REVEAL** quiz (SCRIPTING_STANDARDS §3b).
 8. **Taleemabad bumpers** intro+outro (logo+wordmark, intro title, no outro sign-off unless asked).
 9. **Subtle calm music** (School-of-Life vibe) starts at the logo, ducks under VO; prefer `brand/music.mp3`.
 

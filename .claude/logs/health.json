@@ -1,22 +1,22 @@
 {
-  "check_time": "2026-05-20T15:30:00Z",
-  "status": "healthy",
+  "check_time": "2026-08-20T06:00:09Z",
+  "status": "unhealthy",
   "checks": {
     "prompts_directory": {
       "status": "pass",
-      "detail": "4 prompt files found"
+      "detail": "21 prompt files found"
     },
     "hardcoded_prompts": {
       "status": "pass",
       "detail": "No hardcoded prompts detected"
     },
     "prompt_loading": {
-      "status": "pass",
-      "detail": "All skills load prompts correctly"
+      "status": "fail",
+      "detail": "Skills unable to load prompts"
     },
     "logger_operational": {
       "status": "pass",
-      "detail": "session.log: 2048 bytes"
+      "detail": "session.log: 60170 bytes"
     },
     "eval_dataset": {
       "status": "pass",
@@ -24,15 +24,15 @@
     },
     "test_files": {
       "status": "pass",
-      "detail": "1 test file found"
+      "detail": "1 test files found"
     },
     "unit_tests": {
-      "status": "pass",
-      "detail": "Smoke test passed"
+      "status": "fail",
+      "detail": "Unit test failed"
     },
     "pipeline_structure": {
-      "status": "pass",
-      "detail": "6-stage orchestrator validated"
+      "status": "fail",
+      "detail": "Pipeline structure validation failed"
     },
     "dependencies": {
       "status": "pass",
@@ -40,9 +40,8 @@
     },
     "memory_system": {
       "status": "pass",
-      "detail": "5 memory files"
+      "detail": "Memory system not found (OK if first run)"
     }
   },
-  "next_check": "2026-05-21T06:00:00Z",
-  "summary": "All 10 infrastructure checks passed. System healthy."
+  "next_check": "2026-08-21T06:00:29Z"
 }

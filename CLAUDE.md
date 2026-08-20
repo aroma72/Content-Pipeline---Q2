@@ -91,6 +91,7 @@ owner: aroma
 - All scripts MUST follow SCRIPTING_STANDARDS.md — concept depth + a SINGLE protagonist story (supersedes the old "3+ diverse examples" rule)
 - Teach through ONE named, invented protagonist in ONE running scenario, followed in depth — NOT a list of multiple domain examples. **The protagonist is ALWAYS named "Ali"** (never Bilal or any other name), for any example in any video
 - Go deep, not wide: friction → fix → structure → failure mode → payoff, all on the protagonist's task; reuse the same protagonist across a video series; never use a real colleague's name
+- **EVERY video MUST include an in-video interactive QUESTION → REVEAL** (viewer answers, then reveal) — `quiz` info template + `holdAfter` on the question. Non-negotiable for all new videos. See SCRIPTING_STANDARDS §3b
 
 🚫 **Infrastructure:**
 - Never hardcode SYSTEM_PROMPT — extract to `prompts/{name}.txt`
