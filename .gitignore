@@ -91,3 +91,16 @@ blender/Blender/
 
 # Backups
 *.backup
+
+# OAuth refresh tokens (long-lived credentials — never commit)
+orchestrator/.credentials/
+
+# Puppeteer/Chrome user-data dirs — browser session state, never commit
+.chrome-profile/
+
+# Per-project dependency trees for the avatar experiments — ~930MB of
+# duplicated ffmpeg/ffprobe platform binaries. Reinstall with `npm install`.
+fashion-tech-*/node_modules/
+
+# Windows shortcuts
+*.lnk
