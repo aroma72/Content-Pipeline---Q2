@@ -27,6 +27,11 @@ apply this rubric directly.
 6. **More than one concept** for a technical video.
 7. **Hard-coded fast-moving model names** in narration (say "a modern image model (e.g. …)").
 8. **Title-card beats** present (bumpers own the title, not beats).
+8b. **`ali` beat holds/overlaps a prop** (laptop, phone, papers, mug, tool…) → the cutout slices it
+    into a nonsensical half-object. Props may only float *detached* beside a clean-hero Ali; anything
+    held/leaned-on, or any 2-object composition, MUST be `mode:'scene'`. Run `node qa-cutouts.js` — it
+    fails this deterministically. (Body-only poses — three fingers, thumbs-up, open hands — are fine.)
+    See memory `feedback_cutout_qa`.
 9. **No interactive QUESTION → REVEAL** (Standard §3b, REQUIRED effective 2026-08-17): every video must
    contain an in-video multiple-choice QUESTION beat (with `holdAfter` so the viewer can answer) AND a
    matching REVEAL beat a few beats later. Missing either → NOT READY. Confirm the QUESTION uses
