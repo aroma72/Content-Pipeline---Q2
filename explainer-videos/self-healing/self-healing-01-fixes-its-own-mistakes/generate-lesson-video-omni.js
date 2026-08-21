@@ -26,15 +26,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const I2V_MODEL = process.env.I2V_MODEL || 'wan/2-6-image-to-video';
 
-// per-beat motion direction (falls back to a calm idle). Keeps the flat-illustration look.
-// Motions stay SMALL and in-character so the flat 2D art does not morph (i2v drifts on big movement).
-// Tuned for VIDEO 01 (self-healing: act -> check -> retry). Small, in-character motions.
-// RETUNE THIS MAP FOR EVERY NEW VIDEO — beat ids repeat across videos, so a stale map silently
-// animates the wrong story.
+// per-beat motion direction (falls back to a calm idle).
+// Tuned for VIDEO 01 V2 (shop ledger rebuild). RETUNE FOR EVERY NEW VIDEO — ids repeat.
 const MOTION = {
-  '24': 'the young man faces forward with a warm confident smile and gives a small sure nod, a slow settled breath, gentle natural motion',
-  '07': 'a smooth solid rounded panel stands as a barrier inside a warm room, a plain empty tray drifts up against it and is gently stopped, the man at the doorway watches attentively and blinks, calm contained motion, no big movement',
-  '09': 'a glowing ball of warm honey light slowly brightens and pulses once, a fresh blank card floats up beside it and a soft curved arrow sweeps around in a gentle loop, calm hopeful motion',
+  '15': 'a glowing ball of warm honey light brightens above an open filing drawer, a fresh blank card floats up beside it and a soft curved arrow sweeps around in a gentle loop back toward the drawer, calm hopeful motion',
+  '28': 'the young man faces forward with a warm confident smile and gives a small sure nod, a slow settled breath, gentle natural motion',
+  '08': 'a thick untidy stack of cream paper bills settles and slumps slightly on the wooden shop counter as if just dropped, the young man behind it lifts his hands in dismay and his shoulders sag, calm dismayed motion',
 };
 const DEFAULT_MOTION = 'natural subtle character animation, the person breathes, blinks and shifts weight gently, flat 2D vector animation, camera locked, no style change';
 const STYLE_LOCK = ' Keep the exact same flat 2D vector illustration art style, same colors, same character design; smooth 2D animation; static locked camera; no text.' +

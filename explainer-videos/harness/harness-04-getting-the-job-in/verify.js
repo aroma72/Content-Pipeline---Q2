@@ -97,5 +97,15 @@ if (fs.existsSync('durations.json') && fs.existsSync(final)) {
   else if (fd != null) pass('brand bumpers present (final is longer than the bare lesson)');
 }
 
+
+// 5. A/V SYNC GUARD — the bare lesson MUST be 30fps. A non-30fps bare concatenated with 30fps
+//    bumpers makes the video race ahead of the audio (VO lags the visuals). Never render off-30.
+if (fs.existsSync('out/lesson.mp4')) {
+  const bi = ffInfo('out/lesson.mp4');
+  const m = bi.match(/(\d+(?:\.\d+)?) fps/);
+  const bfps = m ? parseFloat(m[1]) : null;
+  if (bfps !== null && Math.round(bfps) !== 30) fail(`bare lesson is ${bfps}fps (must be 30) — A/V will DESYNC against 30fps bumpers`);
+  else if (bfps !== null) pass(`bare lesson 30fps (A/V sync safe)`);
+}
 console.log(ok ? '\nVERIFY: PASS' : '\nVERIFY: FAIL');
 process.exit(ok ? 0 : 1);

@@ -24,7 +24,7 @@ const { mixAudio } = require('./mix-audio');
 const beats = require('./beats.js');
 const CWD = process.cwd();
 const NAME = process.env.LESSON_NAME || 'lesson';
-const FPS = +(process.env.RENDER_FPS)||30, W = 1920, H = 1080;
+const FPS = 30, W = 1920, H = 1080; // native only — non-30fps desyncs vs 30fps bumpers
 
 const durPath = path.join(CWD, 'durations.json');
 if (!fs.existsSync(durPath)) { console.error('[compile] durations.json missing — run tts-lesson.js first.'); process.exit(1); }
@@ -90,7 +90,7 @@ async function withPage(fn) {
   const browser = await puppeteer.launch(launchOpts());
   try {
     const page = await browser.newPage();
-    await page.setViewport({ width: W, height: H, deviceScaleFactor: +(process.env.RENDER_DSF)||1 });
+    await page.setViewport({ width: W, height: H, deviceScaleFactor: 1 });
     // inject data BEFORE the page scripts run (avoids file:// fetch/CORS issues)
     await page.evaluateOnNewDocument((data) => { window.__DATA = data; }, { beats, durations, anchors, clips, rigs });
     const htmlRel = process.env.LESSON_HTML || 'animation/lesson.html';
