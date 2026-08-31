@@ -28,6 +28,16 @@ function check(name, fn) {
     console.log(`  FAIL  ${name}\n          ${e.message}`);
   }
 }
+async function checkAsync(name, fn) {
+  try {
+    const detail = await fn();
+    pass++;
+    console.log(`  PASS  ${name}${detail ? `  (${detail})` : ''}`);
+  } catch (e) {
+    failures.push({ name, message: e.message });
+    console.log(`  FAIL  ${name}\n          ${e.message}`);
+  }
+}
 function assert(cond, msg) { if (!cond) throw new Error(msg); }
 
 // --- 1. .env is loaded, and GOOGLE_STUDIO_API_KEY bridges to GEMINI_API_KEY ---
@@ -110,7 +120,7 @@ async function interpreterChecks() {
 }
 
 // --- 4. Blank info beats -----------------------------------------------------
-function beatChecks() {
+async function beatChecks() {
   console.log('\n3. beats validation (was: 4 info beats rendered as blank cream frames, silently)');
   const { validateBeats } = require('./lib/validate-beats');
   const realDir = path.join(__dirname, '..', 'explainer-videos', 'evals', 'evals-08-when-the-score-lies');
@@ -323,6 +333,152 @@ function beatChecks() {
     // that factor neutrally on every video.
     assert(/quality_sensors/.test(src), 'qa.js does not pass the sensor results to the judge');
     return 'passed through';
+  });
+
+  // --- 4e. Animation: motion lives on the beat -----------------------------
+  console.log('\n3e. i2v animation (was: not in the spine at all, and a stale per-video motion map)');
+
+  check('the animator reads motion off the BEAT, not a per-video map', () => {
+    const src = fs.readFileSync(path.join(tplDir, 'generate-lesson-video-omni.js'), 'utf8');
+    // A hardcoded map travels with the copied folder and beat ids repeat, so a
+    // scaffolded video silently animated the previous video's story.
+    assert(/b\.motion \|\| MOTION\[b\.id\]/.test(src), 'motion is not taken from the beat first');
+    assert(/const MOTION = \{\};/.test(src), 'the per-video MOTION map is still populated in the template');
+    return 'per-beat';
+  });
+
+  check('only beats that ask for motion are animated', () => {
+    const src = fs.readFileSync(path.join(tplDir, 'generate-lesson-video-omni.js'), 'utf8');
+    // Animating every art beat costs more than the whole rest of the video.
+    assert(/const wantMotion = artBeats\.filter\(\(b\) => b\.motion\)/.test(src),
+      'the animator still defaults to every art beat');
+    return 'opt-in';
+  });
+
+  check('motion survives the writer -> beats.js round trip', () => {
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'script.js'), 'utf8');
+    const fn = (src.match(/function renderBeatsFile[\s\S]*?\n\}/) || [])[0];
+    const renderBeatsFile = eval('(' + fn.replace('function renderBeatsFile', 'function') + ')');
+    const out = renderBeatsFile({ title: 'T', beats: [
+      { id: '01', mode: 'scene', vo: 'x', art: 'a', motion: 'he writes steadily down the page' },
+    ] });
+    assert(/motion: "he writes steadily down the page"/.test(out), 'renderBeatsFile dropped motion');
+    return 'written';
+  });
+
+  check('animation is inside the spend estimate the budget gate checks', () => {
+    const { estimateSpend, i2vSeconds } = require('./lib/stages/produce')._internals;
+    const beats = [
+      { id: '01', mode: 'scene', vo: 'x', art: 'a', motion: 'small movement' },
+      { id: '02', mode: 'scene', vo: 'x', art: 'a' },
+    ];
+    const est = estimateSpend(beats, path.join(os.tmpdir(), 'no-such-video-dir'));
+    // i2v is priced per second, so it can dwarf art+TTS -- a budget gate that does
+    // not see it is guarding the cheap half of the bill.
+    assert(est.animBeats === 1, `expected 1 animated beat, got ${est.animBeats}`);
+    assert(est.animUsd > 0, 'animation priced at zero');
+    assert(est.totalUsd > est.artUsd + est.ttsUsd, 'animation is not in the total');
+    // Must round to kie's fixed clip buckets, or the estimate is not the bill.
+    assert(i2vSeconds(3) === 5 && i2vSeconds(8) === 10 && i2vSeconds(13) === 15,
+      'clip length does not round to kie buckets');
+    return `$${est.totalUsd} incl. $${est.animUsd} animation`;
+  });
+
+  check('animation runs after TTS (it needs the measured durations) and before the render', () => {
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'produce.js'), 'utf8');
+    const at = (n) => src.indexOf(n);
+    assert(at('// 4b. animation') > at('// 4. voiceover'), 'animation runs before TTS measures durations');
+    assert(at('// 4b. animation') < at('// 5. render'), 'animation runs after the render, so clips are ignored');
+    return 'ordered';
+  });
+
+  check('a failed or unaffordable animation falls back to stills, it does not fail the run', () => {
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'produce.js'), 'utf8');
+    // A run that dies because kie is out of credits trades a good video for no video.
+    assert(/animation SKIPPED/.test(src) && /animation_skipped_over_budget/.test(src),
+      'over-budget animation is not a graceful skip');
+    assert(/animation FAILED[\s\S]{0,200}falling back to stills/.test(src),
+      'an i2v failure is not a graceful fallback');
+    return 'graceful';
+  });
+
+  // --- 4f. Human review before YouTube -------------------------------------
+  console.log('\n3f. the human review gate (was: QA pass -> straight to YouTube)');
+
+  check('review sits between qa and upload in the chain', () => {
+    const { STAGE_ORDER } = require('./lib/spine');
+    assert(STAGE_ORDER.indexOf('review') === STAGE_ORDER.indexOf('qa') + 1, 'review is not right after qa');
+    assert(STAGE_ORDER.indexOf('review') < STAGE_ORDER.indexOf('upload'), 'review is not before upload');
+    return STAGE_ORDER.join(' -> ');
+  });
+
+  await checkAsync('without an approval the run BLOCKS, it does not publish', async () => {
+    const review = require('./lib/stages/review');
+    const base = {
+      item: { topic: 'x' },
+      state: { runId: 'r', interventions: [], spend: { usd: 0 } },
+      artifacts: { produce: { finalPath: 'out/x_final.mp4' }, qa: { combined_score: 6.1 } },
+      log: () => {},
+    };
+    let blocked = false;
+    try { await review.run({ ...base, opts: { dryRun: false } }); }
+    catch (e) { blocked = e.name === 'BlockedError' && /awaiting human review/.test(e.blocker || ''); }
+    assert(blocked, 'an unreviewed video was allowed through to upload');
+    const ok = await review.run({ ...base, opts: { dryRun: false, reviewApproved: 'Aroma (Slack)' } });
+    assert(ok && ok.approved, 'an approved video was still blocked');
+    return 'fails closed';
+  });
+
+  check('the blocker carries what Slack needs to post', () => {
+    // BlockedError destructures only { blocker, planItem, details } -- a sibling key
+    // is dropped, and state.finishStage used to flatten the error to its message.
+    const { BlockedError } = require('./lib/spine-errors');
+    const e = new BlockedError('x', { blocker: 'b', details: { finalPath: 'a.mp4', qaScore: 6 } });
+    assert(e.details && e.details.finalPath === 'a.mp4', 'BlockedError drops details');
+    const stateSrc = fs.readFileSync(path.join(__dirname, 'lib', 'state.js'), 'utf8');
+    assert(/if \(error\.details\) s\.details = error\.details;/.test(stateSrc),
+      'finishStage still flattens a blocker to its message');
+    return 'carried';
+  });
+
+  check('a change request never counts as approval', () => {
+    const { reviewVerdict } = require('../server/lib/tick')._internals;
+    // "yes but change the ending" as approval publishes the unchanged ending --
+    // the one outcome this gate exists to prevent.
+    const cases = [
+      ['approve', 'approved'], ['approve, no changes needed', 'approved'],
+      ['yes but change the ending', 'changes'], ['approve but fix the typo', 'changes'],
+      ['reject', 'rejected'], ['do not publish this', 'rejected'],
+      ['hmm', 'changes'],
+    ];
+    for (const [t, want] of cases) {
+      const got = reviewVerdict(t);
+      assert(got === want, `"${t}" -> ${got}, wanted ${want}`);
+    }
+    return `${cases.length} phrasings`;
+  });
+
+  check('approval reaches the spine, so a re-dispatch can actually publish', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'server', 'lib', 'tick.js'), 'utf8');
+    assert(/reviewApproved/.test(src), 'tick never passes reviewApproved to the spine');
+    assert(/\[reviewed:approved\]/.test(src), 'the approved marker is not read off the ticket');
+    return 'wired';
+  });
+
+  // --- 4g. Slack says which gates ran --------------------------------------
+  console.log('\n3g. Slack reports the evidence (was: a bare QA score)');
+
+  check('the Slack report lists the sensors, not just the score', () => {
+    const { sensorLines } = require('../server/lib/tick')._internals;
+    const out = sensorLines([
+      { ok: true, what: 'the Evals-Grade Visual Standard' },
+      { ok: false, what: 'grammar and clarity', detail: '2 errors' },
+    ]);
+    // A bare score cannot tell you whether the video was inspected or just narrated.
+    assert(/✅ the Evals-Grade Visual Standard/.test(out), 'passing sensors are not listed');
+    assert(/❌ grammar and clarity — 2 errors/.test(out), 'a failing sensor loses its finding');
+    assert(/no quality sensors recorded/.test(sensorLines([])), 'an empty list is not called out');
+    return 'listed';
   });
 
   // --- 5. The bare-mp4 filename handoff ------------------------------------
@@ -1093,7 +1249,7 @@ async function llmChecks() {
 
 (async () => {
   await interpreterChecks();
-  beatChecks();
+  await beatChecks();
   await uploadChecks();
   await llmChecks();
   await integrationChecks();

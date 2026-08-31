@@ -27,7 +27,15 @@ const { validateBeats } = require('../validate-beats');
 // Unit costs, kept in step with templates/lib/config.js COST. If that file
 // changes these must change with it -- an understated estimate would let a run
 // slip past a budget that was meant to stop it.
-const COST = { imagePerImage: 0.04, ttsPerClip: 0.002 };
+const COST = { imagePerImage: 0.04, ttsPerClip: 0.002, i2vPerSecond: 0.05 };
+
+// kie.ai clips come in fixed lengths; a beat is billed at the bucket above its
+// voiceover, so pricing must round the same way generate-lesson-video-omni.js does
+// or the estimate the budget is checked against is not the bill.
+function i2vSeconds(secs) {
+  const d = Math.ceil(Number(secs) || 5);
+  return d > 11 ? 15 : (d > 6 ? 10 : 5);
+}
 
 /**
  * Price this specific video from its own beats, not a flat guess.
@@ -40,13 +48,43 @@ function estimateSpend(beats, dir) {
   const ttsAlreadyBought = hasOutput(path.join(dir, 'audio'), '.wav');
   const images = artAlreadyBought ? 0 : artNeeded.length;
   const clips = ttsAlreadyBought ? 0 : (beats || []).length;
+
+  // Animation is priced per SECOND, so a handful of moving beats can cost more than
+  // every still in the video put together. It must be inside the estimate the budget
+  // gate checks, or the gate is guarding the cheap half of the bill.
+  const animBeats = (beats || []).filter((b) => b.mode !== 'info' && b.art && b.motion);
+  const animAlreadyBought = hasOutput(path.join(dir, 'clips'), '.mp4');
+  const animSecs = animAlreadyBought
+    ? 0
+    : animBeats.reduce((a, b) => a + i2vSeconds(readDuration(dir, b.id)), 0);
+
+  const artUsd = images * COST.imagePerImage;
+  const ttsUsd = clips * COST.ttsPerClip;
+  const animUsd = animSecs * COST.i2vPerSecond;
   return {
     images,
     clips,
-    artUsd: Number((images * COST.imagePerImage).toFixed(2)),
-    ttsUsd: Number((clips * COST.ttsPerClip).toFixed(3)),
-    totalUsd: Number((images * COST.imagePerImage + clips * COST.ttsPerClip).toFixed(2)),
+    animBeats: animAlreadyBought ? 0 : animBeats.length,
+    animSecs,
+    artUsd: Number(artUsd.toFixed(2)),
+    ttsUsd: Number(ttsUsd.toFixed(3)),
+    animUsd: Number(animUsd.toFixed(2)),
+    totalUsd: Number((artUsd + ttsUsd + animUsd).toFixed(2)),
   };
+}
+
+/**
+ * This beat's measured voiceover length, if TTS has already run.
+ *
+ * Before TTS there is no durations.json, so animation is priced at the 5s floor and
+ * re-priced accurately at the animate step -- which is also where it is re-checked
+ * against the budget, so an under-estimate here cannot become an unapproved spend.
+ */
+function readDuration(dir, id) {
+  try {
+    const d = JSON.parse(fs.readFileSync(path.join(dir, 'durations.json'), 'utf8'));
+    return d[id];
+  } catch { return undefined; }
 }
 
 /**
@@ -132,7 +170,7 @@ function copyTemplates(src, dest, log) {
 }
 
 // Exported for the regression tests; not part of the stage contract.
-module.exports._internals = { estimateSpend, isFresherThanInputs, copyTemplates, COST };
+module.exports._internals = { estimateSpend, isFresherThanInputs, copyTemplates, i2vSeconds, COST };
 
 module.exports = Object.assign(module.exports, {
   name: 'produce',
@@ -258,6 +296,7 @@ module.exports = Object.assign(module.exports, {
 
     log(`estimated spend: ${est.images} image(s) x $${COST.imagePerImage} = $${est.artUsd}` +
         ` + ${est.clips} TTS clip(s) x $${COST.ttsPerClip} = $${est.ttsUsd}` +
+        (est.animBeats ? ` + ${est.animBeats} animated beat(s) / ${est.animSecs}s x $${COST.i2vPerSecond} = $${est.animUsd}` : '') +
         `  ->  $${est.totalUsd}`);
 
     if (!spendApproved && !opts.dryRun) {
@@ -339,6 +378,82 @@ module.exports = Object.assign(module.exports, {
         state.recordSpend(st, {
           stage: 'produce', usd: est.ttsUsd, detail: `gemini tts: ${est.clips} clip(s)`,
         });
+      }
+    }
+
+    // 4b. animation -- real image-to-video motion on the beats that asked for it.
+    // Runs AFTER TTS because it prices and trims each clip against that beat's
+    // measured voiceover length from durations.json, and BEFORE the render because
+    // compile-lesson.js picks up clips/<id>.mp4 in place of the still.
+    //
+    // Deliberately NOT fatal. A video with Ken Burns on every beat is the format we
+    // shipped for months; a run that dies because kie is out of credits would trade a
+    // good video for no video. The fallback is logged and carried into the QA
+    // evidence, never silent.
+    const motionBeats = ((artifacts.script && artifacts.script.beats) || [])
+      .filter((b) => b.mode !== 'info' && b.art && b.motion);
+
+    if (!motionBeats.length) {
+      log('no beat asks for motion -- stills with the Ken Burns camera');
+    } else if (hasOutput(path.join(dir, 'clips'), '.mp4')) {
+      log(`clips/ already populated -- skipping animation (no re-spend)`);
+      sensorResults.push({ ok: true, sensor: 'animate', what: 'i2v motion', detail: 'clips already on disk' });
+    } else {
+      // Re-price against the real durations now that TTS has measured them, and
+      // re-check the budget: the pre-TTS estimate used the 5s floor.
+      const animSecs = motionBeats.reduce((a, b) => a + i2vSeconds(readDuration(dir, b.id)), 0);
+      const animUsd = Number((animSecs * COST.i2vPerSecond).toFixed(2));
+      const room = budget === null || budget === undefined ? 0 : budget - (st.spend.usd + animUsd);
+
+      if (opts.dryRun) {
+        log(`animation: skipped (dry run) -- would animate ${motionBeats.length} beat(s), ~$${animUsd}`);
+      } else if (room < 0) {
+        // Not an error: the still version is a complete video.
+        log(`animation SKIPPED -- ${motionBeats.length} beat(s) / ${animSecs}s would cost $${animUsd}, ` +
+            `over the remaining budget. Falling back to stills.`);
+        state.recordIntervention(st, {
+          stage: 'produce',
+          kind: 'animation_skipped_over_budget',
+          detail: `i2v needs $${animUsd}; budget left $${(budget - st.spend.usd).toFixed(2)}`,
+        });
+        sensorResults.push({
+          ok: true, sensor: 'animate', what: 'i2v motion',
+          detail: `skipped: $${animUsd} over budget -- video uses stills`,
+        });
+      } else {
+        log(`animating ${motionBeats.length} beat(s) / ${animSecs}s (paid, ~$${animUsd})`);
+        try {
+          await run('node', ['generate-lesson-video-omni.js', '--yes'], {
+            env: { ...process.env, ART_IDS: motionBeats.map((b) => b.id).join(',') },
+            timeoutMs: 45 * 60 * 1000,
+          });
+          // Count what actually arrived. generate-lesson-video-omni.js sets a non-zero
+          // exit on a per-beat failure but still writes the clips that succeeded, and
+          // partial motion is fine -- so trust the files, not the exit code.
+          const got = missingPerBeat(motionBeats, dir, 'clips', (id) => `${id}.mp4`);
+          const made = motionBeats.length - got.length;
+          state.recordSpend(st, {
+            stage: 'produce',
+            usd: Number((made > 0 ? (animSecs * COST.i2vPerSecond * made / motionBeats.length) : 0).toFixed(2)),
+            detail: `kie i2v: ${made} clip(s)`,
+          });
+          log(`animation: ${made}/${motionBeats.length} beat(s) moving` +
+              (got.length ? ` (${got.join(',')} stayed still)` : ''));
+          sensorResults.push({
+            ok: true, sensor: 'animate', what: 'i2v motion',
+            detail: `${made}/${motionBeats.length} beats animated`,
+          });
+        } catch (e) {
+          log(`animation FAILED (${String(e.message).split('\n')[0].slice(0, 160)}) -- falling back to stills`);
+          state.recordIntervention(st, {
+            stage: 'produce', kind: 'animation_failed',
+            detail: String(e.message).slice(0, 300),
+          });
+          sensorResults.push({
+            ok: false, sensor: 'animate', what: 'i2v motion',
+            detail: `failed, video uses stills: ${String(e.message).split('\n')[0].slice(0, 200)}`,
+          });
+        }
       }
     }
 

@@ -63,6 +63,10 @@ Check every one of these:
     (gauge, bignum, tally, bars, scoresheet, piles) carrying actual numbers, and at
     most two `statement` text cards. A deck of text slabs is a blocker: the automated
     visual gate rejects it before any art is bought, so passing it here wastes a round.
+14. MOTION — between 2 and 4 beats carry a motion field, placed on the turns of the
+    story (the mistake, the fix, the payoff), each describing a small in-character
+    movement and nothing about style, camera or colour. Zero is a miss; more than
+    four is expensive and reads as busy. Flag either as a minor, not a blocker.
 
 Be specific. "Beat 07 art prompt says 'a chart labelled Revenue' — labels are baked-in
 text; make the chart blank and move 'Revenue' to an overlay" is useful. "Improve the art

@@ -42,6 +42,9 @@ const log = (msg) => console.log(`[tick] ${msg}`);
 const MARK = {
   slack: (channel, threadTs) => `[slack:${channel}/${threadTs}]`,
   approval: (usd) => `[approval:${usd}]`,
+  // The video is built and waiting on Aroma to watch it. Distinct from `approval`,
+  // which is about money BEFORE the work; this is about the work itself, after.
+  review: (runId) => `[review:${runId}]`,
   // Watermark of the newest thread reply already handled, so follow-ups are
   // processed exactly once however many ticks run.
   seen: (ts) => `[seen:${ts}]`,
@@ -54,6 +57,38 @@ const readMark = (notes, name) => {
 /** Words that count as a human granting permission to overspend. */
 const APPROVE_RE = /\b(approve[d]?|approval|yes|go ahead|proceed|do it|ok(ay)?)\b/i;
 const DENY_RE = /\b(no|deny|denied|stop|cancel|don'?t)\b/i;
+
+/**
+ * A review verdict is three-way, not two. "Change the ending" is neither approval
+ * nor rejection, and treating it as either loses the actual instruction -- so an
+ * unmatched reply on a review thread is CHANGES, and the text is kept verbatim.
+ */
+const REJECT_RE = /\b(reject(ed)?|scrap|bin it|discard|don'?t (publish|upload)|do not (publish|upload))\b/i;
+const CHANGE_RE = /\b(change|changes|fix|redo|re-?do|tweak|edit|edits|swap|shorten|lengthen|re-?record|replace|adjust|rework|instead)\b/i;
+// "approve, no changes needed" is an approval that happens to contain the word.
+const NO_CHANGE_RE = /\b(no|zero|without|not?)\s+(changes?|edits?|fixes)\b|\bnothing to (change|fix)\b/i;
+
+function reviewVerdict(text) {
+  const t = String(text || '');
+  if (REJECT_RE.test(t)) return 'rejected';
+
+  // A change request BEATS an approval word. "yes but change the ending" is not
+  // permission to publish the ending as it stands, and reading it as one would
+  // put the unchanged cut on YouTube -- the single outcome this gate exists to
+  // prevent. Checked before approval for exactly that reason.
+  if (CHANGE_RE.test(t) && !NO_CHANGE_RE.test(t)) return 'changes';
+
+  // Strip "no changes needed" before asking whether this is a denial: its "no" is
+  // part of an approval, and left in it reads as one, so "approve, no changes
+  // needed" came out as neither approved nor rejected.
+  const cleaned = t.replace(NO_CHANGE_RE, ' ');
+  if (APPROVE_RE.test(cleaned) && !DENY_RE.test(cleaned)) return 'approved';
+  if (DENY_RE.test(cleaned) && !APPROVE_RE.test(cleaned)) return 'rejected';
+
+  // Anything unrecognised is 'changes': it leaves the video unpublished, which is
+  // the safe direction to be wrong in.
+  return 'changes';
+}
 
 // ─── step 1: Slack -> tickets ────────────────────────────────────────────────
 
@@ -245,6 +280,72 @@ async function resolveApprovals(report) {
   }
 }
 
+// ─── step 2b: videos waiting for Aroma to watch them ──────────────────
+
+/**
+ * A finished video sits Blocked until a person replies in its Slack thread.
+ *
+ * Approve -> the ticket goes back in the queue carrying `[reviewed:approved]`, and
+ * the next dispatch runs the chain again. That re-run is nearly free: produce skips
+ * art, TTS, animation, the render and the bumpers when they are already on disk, so
+ * it walks straight through to the review stage, which now passes.
+ *
+ * Reject -> Done, nothing uploaded. Changes -> the request is written onto the
+ * ticket and it stays Blocked; a video that needs edits is not something this loop
+ * can fix on its own, and pretending otherwise would silently publish the old cut.
+ */
+async function resolveReviews(report) {
+  const blocked = await notion.queuedTickets({ status: 'Blocked' }).catch(() => []);
+  for (const t of blocked) {
+    const runId = readMark(t.notes, 'review');
+    const slackRef = readMark(t.notes, 'slack');
+    if (!runId || !slackRef) continue;
+    // Already answered on an earlier tick.
+    if (/\[reviewed:/.test(String(t.notes || ''))) continue;
+
+    const [channel, threadTs] = slackRef.split('/');
+    const replies = await slack.threadReplies({ channel, threadTs });
+
+    // Only a human's reply counts -- the bot's own request contains "approve".
+    const human = replies.filter((r) => !r.botId && r.user !== config.slack.botUserId);
+    // The newest reply is the decision; earlier ones are the conversation.
+    const decision = human[human.length - 1];
+    if (!decision) continue;
+
+    const verdict = reviewVerdict(decision.text);
+
+    if (verdict === 'approved') {
+      await notion.update(t.id, {
+        status: 'Not Started',
+        notes: `${t.notes} [reviewed:approved]`,
+      });
+      await slack.postMessage({ channel, threadTs, text: 'Approved — uploading it to YouTube as unlisted now.' });
+      report.reviewApproved++;
+      log(`review approved: ${t.title}`);
+      continue;
+    }
+
+    if (verdict === 'rejected') {
+      await notion.update(t.id, { status: 'Done', notes: `${t.notes} [reviewed:rejected]` });
+      await slack.postMessage({ channel, threadTs, text: 'Understood — not uploading it. Nothing has been published.' });
+      report.reviewRejected++;
+      continue;
+    }
+
+    // Changes: keep the words, they are the brief for the next cut.
+    await notion.update(t.id, {
+      notes: `${t.notes} [reviewed:changes] ${String(decision.text).slice(0, 300)}`,
+    });
+    await notion.comment(t.id, `Changes requested: ${String(decision.text).slice(0, 1500)}`).catch(() => {});
+    await slack.postMessage({
+      channel, threadTs,
+      text: 'Noted — I have written that on the ticket and left the video unpublished. '
+          + 'Rebuilding with changes is not automatic yet, so this one needs a hand.',
+    });
+    report.reviewChanges++;
+  }
+}
+
 // ─── step 3: dispatch ────────────────────────────────────────────────────────
 
 async function dispatch(ticket, report) {
@@ -302,9 +403,16 @@ async function dispatch(ticket, report) {
 
   let final;
   try {
+    // A ticket that came back from review carries its approval; the review stage
+    // fails closed without it, so this is the only way a video reaches YouTube.
+    const reviewApproved = /\[reviewed:approved\]/.test(String(ticket.notes || ''))
+      ? 'Aroma (Slack)'
+      : false;
+
     final = await spine.execute(item, {
       resumeState: st,
       budgetUsd,
+      reviewApproved,
       stopAfter: config.pipeline.stopAfter || null,
       dryRun: config.pipeline.dryRun,
       quiet: true,
@@ -319,6 +427,20 @@ async function dispatch(ticket, report) {
   await report_result(final, ticket, say, report);
 }
 
+/**
+ * One line per quality gate that ran.
+ *
+ * "Done — QA 6.4/7.0" alone cannot tell you whether the video was actually
+ * inspected or merely narrated: the QA judge never sees the pictures. Listing the
+ * sensors makes the difference visible at a glance.
+ */
+function sensorLines(results) {
+  if (!results || !results.length) return '_no quality sensors recorded_';
+  return results
+    .map((r) => `${r.ok ? '✅' : '❌'} ${r.what || r.sensor}${r.detail && !r.ok ? ` — ${String(r.detail).split('\n')[0].slice(0, 120)}` : ''}`)
+    .join('\n');
+}
+
 /** Turn a finished run into a ticket update, a Slack post, and maybe a question. */
 async function report_result(final, ticket, say, report) {
   const produced = final.artifacts && final.artifacts.produce;
@@ -330,6 +452,36 @@ async function report_result(final, ticket, say, report) {
       .find(([, s]) => s.status === 'failed' || s.status === 'blocked');
     const where = stuck ? stuck[0] : 'unknown';
     const why = (stuck && stuck[1].error) || 'no reason recorded';
+
+    // The video is built and waiting to be watched. Not a failure either: this is
+    // the pipeline handing the decision to a person, which is the point.
+    if (where === 'review') {
+      const st2 = (final.stages && final.stages.review) || {};
+      const d = st2.details || {};
+      const filePath = d.finalPath || (final.artifacts && final.artifacts.produce && final.artifacts.produce.finalPath);
+
+      await notion.update(ticket.id, {
+        status: 'Blocked',
+        qaScore: typeof d.qaScore === 'number' ? d.qaScore : undefined,
+        notes: `${ticket.notes} ${MARK.review(final.runId)}`,
+      });
+
+      const ask = `*${ticket.title}* is ready to watch.`
+        + (typeof d.qaScore === 'number' ? `  ·  QA ${d.qaScore.toFixed(1)}/7.0` : '')
+        + `\n${sensorLines(d.sensorResults)}`
+        + `\n\nReply *approve* to put it on YouTube (unlisted), *reject* to bin it, `
+        + `or just say what to change. Nothing is published until you answer.`;
+
+      const chan = readMark(ticket.notes, 'slack');
+      const [rc, rt] = chan ? chan.split('/') : [config.slack.defaultChannel, null];
+      if (filePath) {
+        await slack.uploadVideo({ channel: rc, threadTs: rt, filePath, title: ticket.title, comment: ask });
+      } else {
+        await say(ask);
+      }
+      report.awaitingReview++;
+      return;
+    }
 
     // The budget blocker is not a failure — it is the pipeline asking to spend.
     const overBudget = /costs ~\$([0-9.]+)/.exec(String(why));
@@ -362,6 +514,7 @@ async function report_result(final, ticket, say, report) {
 
   const summary = `Done — *${ticket.title}*`
     + (typeof qaScore === 'number' ? `  ·  QA ${qaScore.toFixed(1)}/7.0` : '')
+    + `\n${sensorLines(produced && produced.sensorResults)}`
     + (config.pipeline.dryRun ? '\n_(dry run — no video was actually rendered)_' : '');
 
   await notion.comment(ticket.id, summary.replace(/\*/g, '')).catch(() => {});
@@ -385,7 +538,9 @@ async function runTick({ trigger = 'timer' } = {}) {
   const report = {
     trigger, startedAt: new Date().toISOString(),
     mentionsSeen: 0, created: 0, asked: 0, followUps: 0, approved: 0, declined: 0,
-    dispatched: 0, completed: 0, askedApproval: 0, errors: [],
+    dispatched: 0, completed: 0, askedApproval: 0,
+    awaitingReview: 0, reviewApproved: 0, reviewRejected: 0, reviewChanges: 0,
+    errors: [],
   };
 
   try {
@@ -397,6 +552,8 @@ async function runTick({ trigger = 'timer' } = {}) {
       // makes a blocked ticket runnable this tick rather than the next one.
       await followUpThreads(report).catch((e) => report.errors.push(`follow-ups: ${e.message}`));
       await resolveApprovals(report).catch((e) => report.errors.push(`approvals: ${e.message}`));
+      // Before dispatch, so an approval given between ticks publishes this tick.
+      await resolveReviews(report).catch((e) => report.errors.push(`reviews: ${e.message}`));
 
       const queued = await notion.queuedTickets();
       report.queueDepth = queued.length;
@@ -435,5 +592,6 @@ module.exports = {
   // Exposed for tests. The spend gate is skipped under dryRun inside produce, so
   // the ask-for-permission path can only be exercised by handing report_result a
   // blocked run directly — otherwise it would need a real, paying run to verify.
-  _internals: { report_result, readMark, MARK, APPROVE_RE, DENY_RE, followUpThreads, intakeFromSlack },
+  _internals: { report_result, readMark, MARK, APPROVE_RE, DENY_RE, followUpThreads, intakeFromSlack,
+    resolveReviews, reviewVerdict, sensorLines },
 };

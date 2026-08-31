@@ -49,7 +49,7 @@ const RETRY_BACKOFF_MS = [5000, 15000, 30000];
  *   }
  * `output` is persisted to state.artifacts[name] and passed to later stages.
  */
-const STAGE_ORDER = ['research', 'script', 'gate', 'produce', 'qa', 'upload', 'nazim'];
+const STAGE_ORDER = ['research', 'script', 'gate', 'produce', 'qa', 'review', 'upload', 'nazim'];
 
 function loadStages(overrides = {}) {
   const stages = {
@@ -58,6 +58,8 @@ function loadStages(overrides = {}) {
     gate:     require('./stages/gate'),
     produce:  require('./stages/produce'),
     qa:       require('./stages/qa'),
+    // Between QA and upload: a person watches it before it reaches YouTube.
+    review:   require('./stages/review'),
     upload:   require('./stages/upload'),
     nazim:    require('./stages/nazim'),
   };

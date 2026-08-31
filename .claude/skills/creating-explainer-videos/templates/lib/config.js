@@ -53,6 +53,12 @@ function geminiKey() {
   return k;
 }
 
+function omniKey() {
+  const k = process.env.GEMINI_OMNI_API_KEY || process.env.KIE_API_KEY || '';
+  if (!k) { console.error('\n[config] No kie.ai key (GEMINI_OMNI_API_KEY / KIE_API_KEY) found in .env.\n'); process.exit(1); }
+  return k;
+}
+
 // --- cost guard --------------------------------------------------------------
 function spendApproved() {
   if (process.env.CONFIRM_SPEND === '1' || process.env.CONFIRM_SPEND === 'true') return true;
@@ -92,6 +98,10 @@ const MODELS = {
   tts: process.env.GEMINI_TTS_MODEL || 'gemini-2.5-flash-preview-tts',
 };
 
-const COST = { imagePerImage: 0.04, ttsPerClip: 0.002 };
+const KIE_BASE = 'https://api.kie.ai/api/v1';
 
-module.exports = { geminiKey, guardSpend, spendApproved, MODELS, COST };
+// i2v is priced per SECOND of generated clip, unlike art and TTS -- so a few
+// animated beats cost more than every still in the video put together.
+const COST = { imagePerImage: 0.04, ttsPerClip: 0.002, i2vPerSecond: 0.05 };
+
+module.exports = { geminiKey, omniKey, guardSpend, spendApproved, MODELS, COST, KIE_BASE };

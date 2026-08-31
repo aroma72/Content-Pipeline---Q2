@@ -55,6 +55,22 @@ Place it about three-quarters of the way through, on the idea the video most wan
 stick. A video without a quiz beat is rejected before any art is bought, so this is not
 optional. `answer` must be a valid index into `options`, and `options` needs at least two.
 
+MOTION — pick 2 to 4 beats, no more:
+On the few beats where movement genuinely carries the story, add a `motion` field
+describing the small, in-character movement the still should perform. Those beats
+become real moving video; every other beat gets a slow camera push over the still,
+which is the house look and is fine.
+
+  * keep it SMALL and physical — "he writes steadily down the page", "she sets the
+    mug down and looks up", "the cards settle into a row one after another"
+  * describe only what MOVES; never restate the art, the style or the colours
+  * no camera moves, no scene changes, no new objects appearing
+  * 2-4 beats total. Motion on everything costs more than the rest of the video put
+    together, reads as busy, and the flat 2D art distorts when pushed too far.
+
+Put motion on the turn of the story — the moment of the mistake, the fix, or the
+payoff — not on the setup.
+
 LENGTH: write 16-20 beats, never more than 22. One beat is one spoken sentence of a
 measured 6.2 seconds, so 16-20 lands the finished video in the 1.5-2.5 minute house
 range. The reviewer is held to the same 16-22 range, so it will not ask you for more.

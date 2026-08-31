@@ -35,6 +35,10 @@ const SCHEMA = {
           // clip's trailing pause -- this is what gives the viewer time to answer
           // the quiz question before the next beat reveals it.
           holdAfter: { type: 'number', description: 'seconds of silence after this beat; use 2 on the quiz beat' },
+          // Real image-to-video motion on this beat. Lives ON the beat, never in a
+          // per-video map: beat ids repeat across videos, so a copied map animates
+          // the previous video's story with nothing failing.
+          motion: { type: 'string', description: 'optional; on 2-4 story-critical beats only, describe the small in-character movement' },
           // Required on info beats -- without it the beat renders as a blank frame.
           info: {
             type: 'object',
@@ -84,6 +88,7 @@ function renderBeatsFile(script) {
       // tts-lesson.js reads holdAfter off the beat in beats.js, and this function
       // is the only thing that puts it there.
       Number(b.holdAfter) > 0 ? `    holdAfter: ${JSON.stringify(Number(b.holdAfter))}` : null,
+      b.motion ? `    motion: ${JSON.stringify(b.motion)}` : null,
     ].filter(Boolean).join(',\n');
     return `  {\n${fields},\n  },`;
   });
@@ -118,6 +123,10 @@ const EDIT_SCHEMA = {
           // clip's trailing pause -- this is what gives the viewer time to answer
           // the quiz question before the next beat reveals it.
           holdAfter: { type: 'number', description: 'seconds of silence after this beat; use 2 on the quiz beat' },
+          // Real image-to-video motion on this beat. Lives ON the beat, never in a
+          // per-video map: beat ids repeat across videos, so a copied map animates
+          // the previous video's story with nothing failing.
+          motion: { type: 'string', description: 'optional; on 2-4 story-critical beats only, describe the small in-character movement' },
           info: {
             type: 'object',
             properties: {
@@ -149,6 +158,10 @@ const EDIT_SCHEMA = {
           // clip's trailing pause -- this is what gives the viewer time to answer
           // the quiz question before the next beat reveals it.
           holdAfter: { type: 'number', description: 'seconds of silence after this beat; use 2 on the quiz beat' },
+          // Real image-to-video motion on this beat. Lives ON the beat, never in a
+          // per-video map: beat ids repeat across videos, so a copied map animates
+          // the previous video's story with nothing failing.
+          motion: { type: 'string', description: 'optional; on 2-4 story-critical beats only, describe the small in-character movement' },
           info: { type: 'object', additionalProperties: true },
         },
         required: ['after_id', 'vo', 'mode'],

@@ -106,7 +106,14 @@ function finishStage(state, name, { status, output, error }) {
   s.status = status;
   s.finishedAt = new Date().toISOString();
   s.ms = new Date(s.finishedAt) - startedAt;
-  if (error) s.error = String(error && error.message ? error.message : error);
+  if (error) {
+    s.error = String(error && error.message ? error.message : error);
+    // Keep the structured payload too. Flattening a blocker to its message means
+    // whoever has to ACT on it -- post the video, quote the score, name the failing
+    // sensor -- has to parse English out of a string, or silently does without.
+    if (error.blocker) s.blocker = error.blocker;
+    if (error.details) s.details = error.details;
+  }
   state.stages[name] = s;
   if (output !== undefined) state.artifacts[name] = output;
   return save(state);

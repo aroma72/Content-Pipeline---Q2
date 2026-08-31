@@ -11,11 +11,15 @@
 
 /** A dependency the stage cannot proceed without (missing spec, access, approval). */
 class BlockedError extends Error {
-  constructor(message, { blocker, planItem } = {}) {
+  constructor(message, { blocker, planItem, details } = {}) {
     super(message);
     this.name = 'BlockedError';
     this.blocker = blocker || null;
     this.planItem = planItem || null;
+    // Anything the blocker's handler needs to act (a file to post, a score to
+    // quote). Named keys passed as siblings are silently dropped by this
+    // destructure, so everything structured goes in here.
+    this.details = details || null;
   }
 }
 
