@@ -151,13 +151,16 @@ module.exports = Object.assign(module.exports, {
     if (opts.dryRun) {
       log('dry run -- skipping filesystem preconditions and every pipeline command');
     } else {
-      // Scaffold from the skill templates if this folder is new. Mechanical and
-      // safe: copy only files that are missing, so a re-run never clobbers a
-      // beats.js the script stage just wrote or art already paid for.
-      if (!fs.existsSync(path.join(dir, 'compile-lesson.js'))) {
-        log('scaffolding video folder from skill templates');
-        copyTemplates(PATHS.videoTemplates, dir, log);
-      }
+      // Scaffold from the skill templates. Mechanical and safe: copy only files
+      // that are MISSING, so a re-run never clobbers a beats.js the script stage
+      // just wrote or art already paid for.
+      //
+      // Runs unconditionally, not just for a new folder. Gating it on
+      // "compile-lesson.js is absent" meant a folder scaffolded before a template
+      // was added never received it -- which is exactly how the four QA sensors
+      // came to exist in templates/ and be absent from older video folders.
+      log('syncing missing files from the skill templates');
+      copyTemplates(PATHS.videoTemplates, dir, log);
       if (!fs.existsSync(path.join(dir, 'beats.js'))) {
         throw new BlockedError(
           `No beats.js in ${dir}. The script stage must write beats.js before produce runs.`,
@@ -178,6 +181,72 @@ module.exports = Object.assign(module.exports, {
       }
       log(`beats validated: ${artifacts.script.beats.length} beat(s), no blocking problems`);
     }
+
+    const run = (cmd, args, extra = {}) => shell.run(cmd, args, {
+      cwd: dir,
+      dryRun: opts.dryRun,
+      onLine: (line) => log(line.slice(0, 160)),
+      ...extra,
+    });
+
+    // --- quality sensors --------------------------------------------------
+    // The skill ships four gates that a human running the pipeline by hand always
+    // ran and this stage never did: the autonomous path shipped on verify.js
+    // alone, which measures the container (fps, duration, audio) and nothing
+    // about whether the video is any good. The QA stage cannot cover for them --
+    // it is a text-only judge that is told, in writing, that it cannot watch the
+    // MP4, so it scores visuals from the beat plan and passes pretty scripts with
+    // bad pictures.
+    //
+    // Each sensor exits non-zero with its own findings on stdout/stderr. Those
+    // findings are the whole value, so they are carried into the RejectedError
+    // (the reviewer/redraft loop reads them) and into `sensorResults` (the QA
+    // judge and the Slack report read them).
+    const sensorResults = [];
+    const sensor = async (script, what, args = []) => {
+      if (opts.dryRun) { log(`${script}: skipped (dry run)`); return; }
+
+      // A gate that silently does not run is worse than no gate -- it reports
+      // safety it never checked. If the file is missing after the template sync,
+      // that is a defect in the scaffold, not a reason to continue.
+      if (!fs.existsSync(path.join(dir, script))) {
+        throw new Error(
+          `${script} is missing from ${dir} -- the quality gate for ${what} cannot run. ` +
+          `Check that it exists in ${PATHS.videoTemplates}.`
+        );
+      }
+
+      try {
+        const res = await run('node', [script, ...args], { timeoutMs: 20 * 60 * 1000 });
+        const verdict = String(res.stdout || '').split(/\r?\n/)
+          .map((l) => l.trim()).filter(Boolean).pop() || 'passed';
+        sensorResults.push({ ok: true, sensor: script, what, detail: verdict.slice(0, 300) });
+        return;
+      } catch (e) {
+        // A spawn failure or a timeout is an infrastructure problem, not a
+        // verdict on the video -- rethrow so the stage's own retry handles it.
+        if (!(e instanceof shell.CommandError) || e.code === null) throw e;
+
+        const findings = `${e.stdout || ''}\n${e.stderr || ''}`
+          .split(/\r?\n/).map((l) => l.trim())
+          .filter((l) => l && !/^\[.*\] (Reviewed|Judge)/.test(l))
+          .slice(-25).join('\n');
+
+        sensorResults.push({ ok: false, sensor: script, what, detail: findings.slice(0, 800) });
+        // RejectedError keeps only `verdict` and `details`, so the sensor's identity
+        // goes INSIDE details -- passed as a sibling key it is silently dropped and
+        // the Slack report cannot say which gate failed.
+        throw new RejectedError(
+          `${what} FAILED (${script}, exit ${e.code}):\n${findings}`,
+          { verdict: 'SENSOR_FAIL', details: { sensor: script, what, findings } }
+        );
+      }
+    };
+
+    // Script-level sensors run BEFORE the spend gate: both read only beats.js, so
+    // a script that would produce a bad video costs nothing to reject here.
+    await sensor('qa-visuals.js', 'the Evals-Grade Visual Standard');
+    await sensor('qa-cutouts.js', 'half-cut props on cutout beats');
 
     // --- spend gate (ILHAM plan 3.2) -------------------------------------
     // Priced from this video's own beats, and from what is already on disk, so
@@ -206,12 +275,6 @@ module.exports = Object.assign(module.exports, {
       );
     }
 
-    const run = (cmd, args, extra = {}) => shell.run(cmd, args, {
-      cwd: dir,
-      dryRun: opts.dryRun,
-      onLine: (line) => log(line.slice(0, 160)),
-      ...extra,
-    });
 
     // 1. deps
     if (!fs.existsSync(path.join(dir, 'node_modules'))) {
@@ -255,6 +318,12 @@ module.exports = Object.assign(module.exports, {
         });
       }
     }
+
+    // 2b. judge the PIXELS. qa-visuals read the script; this reads the images and
+    // catches what no text gate can see -- flipped hands, melted faces, baked-in
+    // lettering. Costs a few paise and runs before TTS and the ~1h render, so a
+    // defective image is caught while regenerating it is still cheap.
+    await sensor('qa-art.js', 'anatomy/rendering defects in the generated art');
 
     // 3. cutout
     log('segmenting cutouts');
@@ -330,11 +399,17 @@ module.exports = Object.assign(module.exports, {
       .filter((l) => /^[✅❌]/.test(l))
       .map((l) => ({ ok: l.startsWith('✅'), what: l.slice(1).trim() }));
 
+    // 8. grammar/clarity over every human-readable string -- narration and the
+    // on-screen cards. Last because it reads beats.js, which nothing after the
+    // render changes, and because its findings are line edits: cheap to act on,
+    // and embarrassing to ship.
+    await sensor('eval-text.js', 'grammar and clarity of the spoken and on-screen text');
+
     const finalPath = path.join(dir, final);
     if (!opts.dryRun && !fs.existsSync(finalPath)) {
       throw new Error(`verify.js passed but ${final} is missing -- refusing to report success`);
     }
 
-    return { dir, finalPath, title, bare: path.join(dir, bare), verifyChecks };
+    return { dir, finalPath, title, bare: path.join(dir, bare), verifyChecks, sensorResults };
   },
 });

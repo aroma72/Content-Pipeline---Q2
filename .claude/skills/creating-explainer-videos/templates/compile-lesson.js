@@ -49,6 +49,19 @@ for (const b of beats) {
   if (fs.existsSync(ap)) { try { anchors[b.id] = JSON.parse(fs.readFileSync(ap, 'utf8')); } catch {} }
 }
 
+// gather per-beat moving clips (Video A: image-to-video) if generated
+const clips = {};
+for (const b of beats) {
+  if (fs.existsSync(path.join(CWD, 'clips', `${b.id}.mp4`))) clips[b.id] = true;
+}
+
+// gather per-beat head/body rig pivots (Video B: rigged puppet) if split
+const rigs = {};
+for (const b of beats) {
+  const rp = path.join(CWD, 'layers', b.id, 'rig.json');
+  if (fs.existsSync(rp)) { try { rigs[b.id] = JSON.parse(fs.readFileSync(rp, 'utf8')); } catch {} }
+}
+
 const isSample = process.argv.includes('--sample');
 const reuse = process.argv.includes('--reuse');
 const framesDir = path.join(CWD, 'frames', NAME);
@@ -58,7 +71,14 @@ function rmrf(p) { fs.rmSync(p, { recursive: true, force: true }); }
 
 // Prefer a system Chrome if puppeteer's bundled browser isn't installed.
 function launchOpts() {
-  const o = { headless: 'new', args: ['--no-sandbox', '--force-color-profile=srgb'] };
+  // Explicit unique userDataDir: Puppeteer only auto-deletes profiles IT created in
+  // the temp dir; giving our own dir means it never runs the close-time unlink that
+  // throws EBUSY on Windows (Crashpad/antivirus holds a lock on the profile files).
+  const udir = path.join(CWD, '.chrome-profile', `${NAME}-${process.pid}${launchOpts.__w != null ? '-w' + launchOpts.__w : ''}`);
+  fs.mkdirSync(udir, { recursive: true });
+  // A 2K-art beat can exceed the default 180s protocol timeout mid-screenshot.
+  const o = { headless: 'new', userDataDir: udir, protocolTimeout: 300000,
+    args: ['--no-sandbox', '--force-color-profile=srgb'] };
   const candidates = [process.env.CHROME_PATH,
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'].filter(Boolean);
@@ -67,14 +87,33 @@ function launchOpts() {
   return o;
 }
 
+
+// PARALLEL RENDER (2026-08-21): the frame loop was single-threaded — one page, one frame at a time
+// — using ~1 of 8 cores. Frames are INDEPENDENT because window.seekTo(ms) recomputes every visual
+// from time (LAW 10), so N workers each render a stripe. RENDER_WORKERS=1 restores serial.
+async function openPage(worker) {
+  launchOpts.__w = worker;            // unique Chrome profile per worker (they cannot share one)
+  const opts = launchOpts();
+  launchOpts.__w = undefined;
+  const browser = await puppeteer.launch(opts);
+  const page = await browser.newPage();
+  await page.setViewport({ width: W, height: H, deviceScaleFactor: 1 });
+  await page.evaluateOnNewDocument((data) => { window.__DATA = data; }, { beats, durations, anchors, clips, rigs });
+  const htmlRel = process.env.LESSON_HTML || 'animation/lesson.html';
+  const url = 'file://' + path.join(__dirname, htmlRel).replace(/\\/g, '/');
+  await page.goto(url, { waitUntil: 'load' });
+  await page.waitForFunction('window.ready === true', { timeout: 60000 });
+  return { browser, page };
+}
+
 async function withPage(fn) {
   const browser = await puppeteer.launch(launchOpts());
   try {
     const page = await browser.newPage();
     await page.setViewport({ width: W, height: H, deviceScaleFactor: 1 });
     // inject data BEFORE the page scripts run (avoids file:// fetch/CORS issues)
-    await page.evaluateOnNewDocument((data) => { window.__DATA = data; }, { beats, durations, anchors });
-    const url = 'file://' + path.join(__dirname, 'animation', 'lesson.html').replace(/\\/g, '/');
+    await page.evaluateOnNewDocument((data) => { window.__DATA = data; }, { beats, durations, anchors, clips, rigs });
+    const url = 'file://' + path.join(__dirname, process.env.LESSON_HTML || 'animation/lesson.html').replace(/\\/g, '/');
     await page.goto(url, { waitUntil: 'load' });
     await page.waitForFunction('window.ready === true', { timeout: 20000 });
     await fn(page);
@@ -91,15 +130,25 @@ async function renderFull() {
   if (!reuse) { rmrf(framesDir); }
   fs.mkdirSync(framesDir, { recursive: true });
   console.log(`[compile] ${beats.length} beats, ${total.toFixed(1)}s, ${totalFrames} frames -> ${framesDir}`);
-  await withPage(async (page) => {
-    for (let f = 0; f < totalFrames; f++) {
-      const ms = (f / FPS) * 1000;
-      await page.evaluate((t) => window.seekTo(t), ms);
-      await page.screenshot({ path: path.join(framesDir, `f_${String(f).padStart(6, '0')}.png`) });
-      if (f % 30 === 0) process.stdout.write(`\r[compile] frame ${f}/${totalFrames}`);
-    }
-    process.stdout.write('\n');
-  });
+  const WORKERS = Math.max(1, Math.min(parseInt(process.env.RENDER_WORKERS || '6', 10),
+    require('os').cpus().length - 2, totalFrames));
+  console.log(`[compile] rendering with ${WORKERS} parallel worker(s)`);
+  let done = 0;
+  const stripe = async (w) => {
+    const { browser, page } = await openPage(w);
+    try {
+      for (let f = w; f < totalFrames; f += WORKERS) {
+        await page.evaluate((t) => window.seekTo(t), (f / FPS) * 1000);
+        await page.screenshot({ path: path.join(framesDir, `f_${String(f).padStart(6, '0')}.png`) });
+        if ((++done) % 120 === 0) process.stdout.write(`\r[compile] frame ${done}/${totalFrames}`);
+      }
+    } finally { await browser.close(); }
+  };
+  await Promise.all(Array.from({ length: WORKERS }, (_, w) => stripe(w)));
+  process.stdout.write(`\r[compile] frame ${totalFrames}/${totalFrames}\n`);
+  const written = fs.readdirSync(framesDir).filter((f) => f.endsWith('.png')).length;
+  if (written !== totalFrames) throw new Error(`render incomplete: ${written}/${totalFrames} frames`);
+  console.log(`[compile] all ${written} frames verified present`);
 }
 
 async function renderSample() {

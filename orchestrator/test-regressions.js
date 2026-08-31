@@ -128,11 +128,14 @@ function beatChecks() {
     return 'rejected';
   });
 
-  check('every one of the six real templates is ACCEPTED', () => {
+  check('every real template name is ACCEPTED', () => {
+    // Per-template check on one-beat scripts, so the whole-script quiz rule does
+    // not apply -- that rule has its own tests in 3b.
     const tpls = ['checks', 'fourparts', 'gauge', 'statement', 'twocard', 'quote'];
     for (const t of tpls) {
       const { errors } = validateBeats([{ id: '01', mode: 'info', vo: 'X.', info: { tpl: t, data: {} } }], realDir);
-      assert(errors.length === 0, `template '${t}' wrongly rejected: ${errors[0]}`);
+      const structural = errors.filter((e) => !/QUESTION->REVEAL|quiz beat/.test(e));
+      assert(structural.length === 0, `template '${t}' wrongly rejected: ${structural[0]}`);
     }
     return tpls.join(', ');
   });
@@ -143,11 +146,15 @@ function beatChecks() {
     return 'rejected';
   });
 
-  check('the real shipped beats.js passes clean', () => {
+  check('the real shipped beats.js has no structural/render defects', () => {
     const beats = require(path.join(realDir, 'beats.js'));
     const { errors } = validateBeats(beats, realDir);
-    assert(errors.length === 0, `real beats.js has errors: ${errors.join('; ')}`);
-    return `${beats.length} beats, 0 errors`;
+    // evals-08 was published before the QUESTION->REVEAL mandate, so it trips that
+    // rule legitimately. This test is about the render-breaking defects it was
+    // written for; the quiz rule has its own tests below.
+    const structural = errors.filter((e) => !/QUESTION->REVEAL|quiz beat/.test(e));
+    assert(structural.length === 0, `real beats.js has errors: ${structural.join('; ')}`);
+    return `${beats.length} beats, 0 structural errors`;
   });
 
   check('template list is read from info.js, so it cannot drift', () => {
@@ -155,6 +162,167 @@ function beatChecks() {
     const names = knownTemplates(realDir);
     assert(Array.isArray(names) && names.length === 6, `expected 6 templates, got ${names && names.length}`);
     return names.join(',');
+  });
+
+  // --- 4b. The interactive QUESTION -> REVEAL ------------------------------
+  // Mandatory in CLAUDE.md and SCRIPTING_STANDARDS for months, enforced nowhere,
+  // so the autonomous path never produced one. Encoded in structure now.
+  console.log('\n3b. the mandatory quiz beat (was: required in prose, checked by nothing)');
+
+  const tplDir = path.join(__dirname, '..', '.claude', 'skills', 'creating-explainer-videos', 'templates');
+  const okBeats = () => ([
+    { id: '01', mode: 'scene', vo: 'A sentence.', art: 'a cream room, no text' },
+    { id: '02', mode: 'info', vo: 'Which one?', holdAfter: 2,
+      info: { tpl: 'quiz', data: { stem: 'Which check survives?', options: ['A', 'B'], answer: 1 } } },
+  ]);
+
+  check('a script with NO quiz beat is REJECTED', () => {
+    const { errors } = validateBeats([okBeats()[0]], tplDir);
+    assert(errors.some((e) => /QUESTION->REVEAL/.test(e)), 'a video with no question was accepted');
+    return 'rejected';
+  });
+
+  check('a well-formed quiz beat is ACCEPTED', () => {
+    const { errors } = validateBeats(okBeats(), tplDir);
+    assert(errors.length === 0, `wrongly rejected: ${errors.join('; ')}`);
+    return 'accepted';
+  });
+
+  check('a quiz beat with no holdAfter is REJECTED (no pause to answer in)', () => {
+    const b = okBeats(); delete b[1].holdAfter;
+    const { errors } = validateBeats(b, tplDir);
+    assert(errors.some((e) => /holdAfter/.test(e)), 'a question with no thinking pause was accepted');
+    return 'rejected';
+  });
+
+  check('a quiz beat with a blank stem or <2 options is REJECTED', () => {
+    const noStem = okBeats(); noStem[1].info.data = { options: ['A', 'B'], answer: 0 };
+    const oneOpt = okBeats(); oneOpt[1].info.data = { stem: 'Q?', options: ['A'], answer: 0 };
+    assert(validateBeats(noStem, tplDir).errors.some((e) => /data\.stem/.test(e)), 'blank stem accepted');
+    assert(validateBeats(oneOpt, tplDir).errors.some((e) => /data\.options/.test(e)), 'single option accepted');
+    return 'both rejected';
+  });
+
+  check('an out-of-range quiz answer index is REJECTED', () => {
+    const b = okBeats(); b[1].info.data.answer = 5;
+    const { errors } = validateBeats(b, tplDir);
+    assert(errors.some((e) => /data\.answer/.test(e)), 'an answer pointing at no option was accepted');
+    return 'rejected';
+  });
+
+  check('a folder with a stale animation kit says so, not "add a quiz beat"', () => {
+    // realDir predates the quiz template, so the advice must be actionable.
+    const { errors } = validateBeats([okBeats()[0]], realDir);
+    const e = errors.find((x) => /QUESTION->REVEAL/.test(x));
+    assert(e && /stale/.test(e), `unhelpful message: ${e}`);
+    return 'names the stale kit';
+  });
+
+  // --- 4c. The scaffold can actually build what is now required -------------
+  console.log('\n3c. the skill templates (was: a July renderer scaffolding every autonomous video)');
+
+  check('templates/animation/info.js defines the quiz template', () => {
+    const { knownTemplates } = require('./lib/validate-beats');
+    const names = knownTemplates(tplDir) || [];
+    assert(names.includes('quiz'), `no quiz template; has: ${names.join(',')}`);
+    return `${names.length} templates`;
+  });
+
+  check('the script schema can emit every template the renderer defines', () => {
+    const { knownTemplates } = require('./lib/validate-beats');
+    const rendered = knownTemplates(tplDir) || [];
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'script.js'), 'utf8');
+    const missing = rendered.filter((t) => !new RegExp(`'${t}'`).test(src));
+    // The enum froze at six while info.js grew to eighteen, so the writer could
+    // not emit a quiz card even when told to.
+    assert(missing.length === 0, `schema cannot emit: ${missing.join(', ')}`);
+    return `${rendered.length} templates reachable`;
+  });
+
+  check('holdAfter survives the writer -> beats.js round trip', () => {
+    // Same extraction trick the applyEdits tests below use: the stage exports only
+    // its contract, so reach the pure helper out of the source.
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'script.js'), 'utf8');
+    const fn = (src.match(/function renderBeatsFile[\s\S]*?\n\}/) || [])[0];
+    assert(fn, 'renderBeatsFile not found in script.js');
+    const renderBeatsFile = eval('(' + fn.replace('function renderBeatsFile', 'function') + ')');
+    const out = renderBeatsFile({ title: 'T', beats: okBeats() });
+    // Dropped here, the quiz pause is silently lost: tts-lesson.js reads it off beats.js.
+    assert(/holdAfter:\s*2/.test(out), 'renderBeatsFile dropped holdAfter');
+    return 'written';
+  });
+
+  check('tts-lesson.js turns holdAfter into real silence', () => {
+    const src = fs.readFileSync(path.join(tplDir, 'tts-lesson.js'), 'utf8');
+    assert(/holdAfter/.test(src), 'the template TTS script ignores holdAfter -- the pause is fictional');
+    return 'honoured';
+  });
+
+  check('templates/compile-lesson.js binds every identifier it injects', () => {
+    // openPage() passed { beats, durations, anchors, clips, rigs } while clips and
+    // rigs were never declared -- a ReferenceError on every fresh scaffold.
+    const src = fs.readFileSync(path.join(tplDir, 'compile-lesson.js'), 'utf8');
+    const injected = (src.match(/window\.__DATA = data; \}, \{ ([^}]+) \}/) || [])[1];
+    assert(injected, 'could not find the __DATA injection');
+    for (const name of injected.split(',').map((x) => x.trim()).filter(Boolean)) {
+      assert(
+        new RegExp(`(const|let|var)\\s+${name}\\b`).test(src),
+        `compile-lesson.js injects '${name}' but never declares it -- ReferenceError at render`
+      );
+    }
+    return injected;
+  });
+
+  // --- 4d. The quality sensors actually run --------------------------------
+  console.log('\n3d. produce runs the quality sensors (was: verify.js only, on the autonomous path)');
+
+  check('produce.js runs all four sensors, each before the spend it protects', () => {
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'produce.js'), 'utf8');
+    const at = (needle) => src.indexOf(needle);
+    for (const name of ['qa-visuals.js', 'qa-cutouts.js', 'qa-art.js', 'eval-text.js']) {
+      assert(at(`sensor('${name}'`) !== -1, `produce.js never runs ${name}`);
+    }
+    assert(at("sensor('qa-visuals.js'") < at('--- spend gate'), 'qa-visuals runs after money is committed');
+    assert(at("sensor('qa-cutouts.js'") < at('--- spend gate'), 'qa-cutouts runs after money is committed');
+    assert(at("sensor('qa-art.js'") < at('// 4. voiceover'), 'qa-art runs after TTS is bought');
+    return 'all four, correctly ordered';
+  });
+
+  check('every sensor ships in the templates, so a scaffold can run them', () => {
+    for (const name of ['qa-visuals.js', 'qa-cutouts.js', 'qa-art.js', 'eval-text.js']) {
+      assert(fs.existsSync(path.join(tplDir, name)), `${name} missing from the skill templates`);
+    }
+    return '4 present';
+  });
+
+  check('the template sync is unconditional, so old folders get new gates', () => {
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'produce.js'), 'utf8');
+    // Gating the copy on "compile-lesson.js is absent" is how folders scaffolded
+    // before a gate existed never received it.
+    assert(
+      !/if \(!fs\.existsSync\(path\.join\(dir, 'compile-lesson\.js'\)\)\)/.test(src),
+      'copyTemplates is still gated on the folder being brand new'
+    );
+    return 'unconditional';
+  });
+
+  check('a sensor failure is a RejectedError carrying the findings', () => {
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'produce.js'), 'utf8');
+    assert(/SENSOR_FAIL/.test(src), 'sensor failures are not tagged for the reviewer loop');
+    // RejectedError keeps only verdict+details, so a sibling "sensor" key is dropped.
+    assert(/details: \{ sensor: script/.test(src),
+      'the failing sensor name is not inside details -- it is silently dropped');
+    assert(/e instanceof shell\.CommandError/.test(src),
+      'a spawn failure would be reported as a quality verdict');
+    return 'tagged + distinguishes infra failure';
+  });
+
+  check('the QA judge is shown the sensor verdicts', () => {
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'qa.js'), 'utf8');
+    // Without these the judge has no observation of the visuals at all and scores
+    // that factor neutrally on every video.
+    assert(/quality_sensors/.test(src), 'qa.js does not pass the sensor results to the judge');
+    return 'passed through';
   });
 
   // --- 5. The bare-mp4 filename handoff ------------------------------------

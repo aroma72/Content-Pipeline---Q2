@@ -63,10 +63,19 @@ module.exports = {
           'Technical/production factors: score from mechanical_checks, which are real',
           'measurements of the finished file. All passing = production is sound.',
           'Content factors: score from script_text and beats.',
+          'VISUALS: score from quality_sensors, not from guesswork. qa-art is a vision',
+          'judge that DID look at every generated image; qa-visuals and qa-cutouts',
+          'checked the visual plan. All passing is real evidence the visuals are sound.',
           'If a factor genuinely cannot be assessed from this evidence, score it',
           'neutrally (0.7) and say so in notes rather than scoring it low.',
         ].join(' '),
         mechanical_checks: produced.verifyChecks || [],
+        // Verdicts from the four quality sensors that ran during produce. Without
+        // these the judge had no observation of the VISUALS at all and scored that
+        // factor neutrally on every video -- a pretty script with bad pictures
+        // passed. qa-art in particular is a vision judge that DID look at the
+        // images, so its verdict is real evidence about what is on screen.
+        quality_sensors: produced.sensorResults || [],
         learning_outcomes: [artifacts.research && artifacts.research.slo].filter(Boolean),
         script_text: (artifacts.script.beats || []).map((b) => b.vo).join(' '),
         beats: (artifacts.script.beats || []).map((b) => ({

@@ -139,6 +139,69 @@ function validateBeats(beats, videoDir, opts = {}) {
     }
   }
 
+  // --- whole-script: the interactive QUESTION -> REVEAL ------------------------
+  // Non-negotiable for every lesson video (CLAUDE.md, SCRIPTING_STANDARDS §3b):
+  // the viewer is asked something and answers before the reveal. It was mandated
+  // in prose for months and enforced nowhere, so the autonomous path simply never
+  // produced one -- the same lesson as the blank info beat above. Encode it in
+  // structure, do not request it.
+  const quizzes = beats.filter((b) => b && b.mode === 'info' && b.info && b.info.tpl === 'quiz');
+
+  if (!quizzes.length) {
+    // A folder scaffolded from the pre-2026-08-31 templates has no quiz template
+    // at all, so "add a quiz beat" would be unactionable advice. Say which it is.
+    if (tpls && !tpls.includes('quiz')) {
+      errors.push(
+        `no QUESTION->REVEAL beat, and this folder's animation/info.js has no 'quiz' template ` +
+        `to build one with -- its animation kit is stale. Copy animation/info.js + info.css from ` +
+        `the skill templates, then add the quiz beat.`
+      );
+    } else {
+      errors.push(
+        `no QUESTION->REVEAL beat: every video must ask the viewer a question and let them ` +
+        `answer before revealing it. Add an info beat with info:{tpl:'quiz', data:{stem, options, ` +
+        `answer, note}} plus holdAfter, and a following beat that gives the answer.`
+      );
+    }
+  }
+
+  for (const q of quizzes) {
+    const at = `beat ${q.id}`;
+    const d = (q.info && q.info.data) || {};
+
+    // Without a pause the question and its answer land back-to-back and the
+    // viewer never gets to think -- which is the entire point of the beat.
+    // holdAfter is real: tts-lesson.js adds it to that beat's trailing silence.
+    if (!(Number(q.holdAfter) > 0)) {
+      errors.push(
+        `${at}: quiz beat has no holdAfter -- the viewer gets no pause to answer in. ` +
+        `Add holdAfter: 2 (seconds of silence after the question).`
+      );
+    }
+
+    // Same class as the blank info beat: a quiz card with no stem or no options
+    // renders as an empty box and nothing errors.
+    if (!d.stem || !String(d.stem).trim()) {
+      errors.push(`${at}: quiz beat has no data.stem -- the question would render blank.`);
+    }
+    if (!Array.isArray(d.options) || d.options.length < 2) {
+      errors.push(`${at}: quiz beat needs at least 2 data.options to choose between.`);
+    } else if (d.answer == null || !Number.isInteger(d.answer)
+               || d.answer < 0 || d.answer >= d.options.length) {
+      errors.push(
+        `${at}: quiz data.answer must be the index of the correct option ` +
+        `(0..${d.options.length - 1}), got ${JSON.stringify(d.answer)}.`
+      );
+    }
+  }
+
+  if (quizzes.length > 1) {
+    warnings.push(
+      `${quizzes.length} quiz beats -- the house format is ONE question per video ` +
+      `(beats ${quizzes.map((q) => q.id).join(', ')})`
+    );
+  }
+
   return { errors, warnings };
 }
 

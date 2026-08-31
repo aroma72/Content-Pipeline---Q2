@@ -54,6 +54,15 @@ Check every one of these:
 11. Beat count is 16-22. At a measured 6.2 seconds per beat that is 1.7-2.3 minutes,
     which is the house range. Do NOT ask for more beats than 22, and do not treat a
     script inside 16-22 as thin on beat count alone -- say which MOMENT is missing.
+12. THE INTERACTIVE QUESTION — exactly one beat is mode "info" with info.tpl "quiz",
+    carrying holdAfter (2 seconds) and a `vo` that asks the question out loud, with the
+    NEXT beat giving the answer. This is mandatory in every video and its absence is
+    always a BLOCKER. Check the question is worth asking: it must have a defensible
+    answer the video has earned, not a guess or a definition recall.
+13. REAL NUMBERS ON SCREEN — at least three different data templates across the video
+    (gauge, bignum, tally, bars, scoresheet, piles) carrying actual numbers, and at
+    most two `statement` text cards. A deck of text slabs is a blocker: the automated
+    visual gate rejects it before any art is bought, so passing it here wastes a round.
 
 Be specific. "Beat 07 art prompt says 'a chart labelled Revenue' — labels are baked-in
 text; make the chart blank and move 'Revenue' to an overlay" is useful. "Improve the art

@@ -17,6 +17,27 @@ for _tool in jq; do
   fi
 done
 
+# Resolve the Python interpreter instead of assuming `python3`. On the Windows
+# dev machine Python installs as python.exe / the `py` launcher and `python3`
+# does not exist, so checks 3, 7 and 8 reported FAIL every day while the code
+# they test was fine. Same fix already applied to smoke-test.sh.
+PY=""
+for cand in python3 python; do
+  if command -v "$cand" >/dev/null 2>&1 && "$cand" -c "" >/dev/null 2>&1; then
+    PY="$cand"; break
+  fi
+done
+if [ -z "$PY" ] && command -v py >/dev/null 2>&1 && py -3 -c "" >/dev/null 2>&1; then
+  PY="py -3"
+fi
+if [ -z "$PY" ] && [ -n "$LOCALAPPDATA" ]; then
+  # Windows installs per-user and does not add Python to PATH unless the
+  # installer checkbox was ticked, so absence from PATH is not absence.
+  for cand in "$LOCALAPPDATA/Programs/Python"/Python3*/python.exe; do
+    if [ -x "$cand" ]; then PY="$cand"; break; fi
+  done
+fi
+
 CHECK_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 HEALTH_FILE=".claude/logs/health.json"
 TEMP_RESULTS="/tmp/infra_check_$$.json"
@@ -68,7 +89,10 @@ fi
 
 # 3. Check skills can load prompts
 echo -n "3. Prompt loading... "
-if python3 -c "
+if [ -z "$PY" ]; then
+  echo "✗ FAIL: no Python interpreter"
+  update_health "prompt_loading" "fail" "No Python interpreter found (tried python3, python, py -3)"
+elif $PY -c "
 from skills.signal_intake import SignalIntakeSkill
 from skills.content_planner import ContentPlannerSkill
 " 2>/dev/null; then
@@ -114,7 +138,10 @@ fi
 
 # 7. Run unit test (quick smoke test)
 echo -n "7. Unit test smoke... "
-if python3 -m pytest tests/test_signal_intake.py::TestSignalIntakeSkill::test_initialization -v 2>&1 | grep -q "passed"; then
+if [ -z "$PY" ]; then
+  echo "✗ FAIL: no Python interpreter"
+  update_health "unit_tests" "fail" "No Python interpreter found (tried python3, python, py -3)"
+elif $PY -m pytest tests/test_signal_intake.py::TestSignalIntakeSkill::test_initialization -v 2>&1 | grep -q "passed"; then
   echo "✓"
   update_health "unit_tests" "pass" "Smoke test passed"
 else
@@ -124,7 +151,10 @@ fi
 
 # 8. Validate pipeline structure
 echo -n "8. Pipeline validation... "
-if python3 main.py --dry-run 2>/dev/null | grep -q "PERCEIVE"; then
+if [ -z "$PY" ]; then
+  echo "✗ FAIL: no Python interpreter"
+  update_health "pipeline_structure" "fail" "No Python interpreter found (tried python3, python, py -3)"
+elif $PY main.py --dry-run 2>/dev/null | grep -q "PERCEIVE"; then
   echo "✓"
   update_health "pipeline_structure" "pass" "6-stage orchestrator validated"
 else
@@ -144,7 +174,7 @@ fi
 
 # 10. Check memory files
 echo -n "10. Memory system... "
-MEMORY_COUNT=$(find C:\Users\Aroma\ Tahir\.claude\projects\*\memory -name "*.md" -type f 2>/dev/null | wc -l)
+MEMORY_COUNT=$(find "$HOME/.claude/projects"/*/memory -name "*.md" -type f 2>/dev/null | wc -l)
 if [ "$MEMORY_COUNT" -gt 0 ]; then
   echo "✓ ($MEMORY_COUNT files)"
   update_health "memory_system" "pass" "$MEMORY_COUNT memory files"

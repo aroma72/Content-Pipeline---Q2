@@ -87,8 +87,18 @@ def foreground_mask(rgb: np.ndarray) -> np.ndarray:
     ]).astype(float)
     cream = np.median(corners, axis=0)
     dist = np.sqrt(((rgb.astype(float) - cream) ** 2).sum(axis=2))
-    fg = dist > 55.0  # far from cream = subject; tolerates vignette/gradient
-    return fg
+    near_cream = dist < 55.0  # cream-ish candidate background
+    if HAVE_SCIPY:
+        # True background = cream-ish pixels CONNECTED TO THE IMAGE BORDER. Interior
+        # light areas (a white shirt collar, white paper) are cream-ish but NOT
+        # border-connected, so they stay part of the subject — nothing INSIDE the
+        # character (e.g. the neck/collar joint) ever gets cut out.
+        lbl, n = ndimage.label(near_cream)
+        border = set(lbl[0, :]) | set(lbl[-1, :]) | set(lbl[:, 0]) | set(lbl[:, -1])
+        border.discard(0)
+        bg = np.isin(lbl, list(border)) if border else np.zeros_like(near_cream)
+        return ~bg
+    return dist > 55.0  # fallback: far-from-cream = subject
 
 
 def process(png: Path):
@@ -101,7 +111,43 @@ def process(png: Path):
     rgb = np.asarray(img)
 
     mask = foreground_mask(rgb)
+    # Bridge the neck/collar BEFORE isolating the subject so the HEAD stays attached
+    # to the torso as ONE connected component. A light-coloured collar can otherwise
+    # split the head into its own blob that largest_component() then drops (leaving the
+    # head static in the plate) — that is the head/neck "cut" that shows once the body moves.
+    if HAVE_SCIPY:
+        mask = ndimage.binary_closing(mask, structure=np.ones((29, 9)), iterations=1)
     mask = largest_component(mask)
+
+    # Keep each cut-out object SOLID: close thin gaps (e.g. a neck) and fill any
+    # interior holes so light/near-cream regions INSIDE the object (white paper on a
+    # clipboard, a shirt collar, eye whites) are never cut out. Without this, those
+    # areas read as background and leave holes that make the object look sliced apart.
+    if HAVE_SCIPY:
+        mask = ndimage.binary_closing(mask, iterations=3)
+        mask = ndimage.binary_fill_holes(mask)
+    else:
+        # pure-numpy hole fill: flood the background from the border; holes are the
+        # background pixels never reached, so everything not reached becomes foreground.
+        h, w = mask.shape
+        reach = np.zeros_like(mask, dtype=bool)
+        stack = []
+        for x in range(w):
+            if not mask[0, x]: stack.append((0, x))
+            if not mask[h - 1, x]: stack.append((h - 1, x))
+        for y in range(h):
+            if not mask[y, 0]: stack.append((y, 0))
+            if not mask[y, w - 1]: stack.append((y, w - 1))
+        while stack:
+            cy, cx = stack.pop()
+            if reach[cy, cx] or mask[cy, cx]:
+                continue
+            reach[cy, cx] = True
+            for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                ny, nx = cy + dy, cx + dx
+                if 0 <= ny < h and 0 <= nx < w and not reach[ny, nx] and not mask[ny, nx]:
+                    stack.append((ny, nx))
+        mask = mask | (~reach)
 
     if mask.sum() < 500:
         print(f"[seg] {rid}: WARN tiny/empty subject ({int(mask.sum())} px) — check the art.")

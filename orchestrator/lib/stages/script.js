@@ -31,13 +31,23 @@ const SCHEMA = {
           mode: { type: 'string', enum: ['ali', 'scene', 'info'] },
           art: { type: 'string', description: 'art prompt; forbid text/letters/numbers' },
           overlay: { type: 'string', description: 'optional HTML overlay text' },
+          // Seconds of extra silence AFTER this beat. tts-lesson.js adds it to the
+          // clip's trailing pause -- this is what gives the viewer time to answer
+          // the quiz question before the next beat reveals it.
+          holdAfter: { type: 'number', description: 'seconds of silence after this beat; use 2 on the quiz beat' },
           // Required on info beats -- without it the beat renders as a blank frame.
           info: {
             type: 'object',
             properties: {
+              // Every template animation/info.js actually defines. The enum was
+              // frozen at the six that existed in July while the renderer grew to
+              // eighteen -- so the writer could not emit a quiz card, or any of the
+              // data templates the visual standard requires, even when asked to.
               tpl: {
                 type: 'string',
-                enum: ['checks', 'fourparts', 'gauge', 'statement', 'twocard', 'quote'],
+                enum: ['quiz', 'checks', 'fourparts', 'gauge', 'statement', 'twocard', 'quote',
+                  'bignum', 'tally', 'bars', 'piles', 'scoresheet', 'grid',
+                  'spectrum', 'screen', 'answers', 'browser', 'promptcard'],
               },
               data: { type: 'object', additionalProperties: true },
             },
@@ -70,6 +80,10 @@ function renderBeatsFile(script) {
       b.art ? `    art: ${JSON.stringify(b.art)}` : null,
       b.info ? `    info: ${JSON.stringify(b.info)}` : null,
       b.overlay ? `    overlay: ${JSON.stringify(b.overlay)}` : null,
+      // Must be written out, or the quiz beat's thinking pause is silently lost:
+      // tts-lesson.js reads holdAfter off the beat in beats.js, and this function
+      // is the only thing that puts it there.
+      Number(b.holdAfter) > 0 ? `    holdAfter: ${JSON.stringify(Number(b.holdAfter))}` : null,
     ].filter(Boolean).join(',\n');
     return `  {\n${fields},\n  },`;
   });
@@ -100,10 +114,16 @@ const EDIT_SCHEMA = {
           mode: { type: 'string', enum: ['ali', 'scene', 'info'] },
           art: { type: 'string' },
           overlay: { type: 'string' },
+          // Seconds of extra silence AFTER this beat. tts-lesson.js adds it to the
+          // clip's trailing pause -- this is what gives the viewer time to answer
+          // the quiz question before the next beat reveals it.
+          holdAfter: { type: 'number', description: 'seconds of silence after this beat; use 2 on the quiz beat' },
           info: {
             type: 'object',
             properties: {
-              tpl: { type: 'string', enum: ['checks', 'fourparts', 'gauge', 'statement', 'twocard', 'quote'] },
+              tpl: { type: 'string', enum: ['quiz', 'checks', 'fourparts', 'gauge', 'statement', 'twocard', 'quote',
+                  'bignum', 'tally', 'bars', 'piles', 'scoresheet', 'grid',
+                  'spectrum', 'screen', 'answers', 'browser', 'promptcard'] },
               data: { type: 'object', additionalProperties: true },
             },
             required: ['tpl', 'data'],
@@ -125,6 +145,10 @@ const EDIT_SCHEMA = {
           mode: { type: 'string', enum: ['ali', 'scene', 'info'] },
           art: { type: 'string' },
           overlay: { type: 'string' },
+          // Seconds of extra silence AFTER this beat. tts-lesson.js adds it to the
+          // clip's trailing pause -- this is what gives the viewer time to answer
+          // the quiz question before the next beat reveals it.
+          holdAfter: { type: 'number', description: 'seconds of silence after this beat; use 2 on the quiz beat' },
           info: { type: 'object', additionalProperties: true },
         },
         required: ['after_id', 'vo', 'mode'],
@@ -254,9 +278,22 @@ module.exports = {
       schema: patchMode ? EDIT_SCHEMA : SCHEMA,
       maxTokens: 16000,
       dryRun: opts.dryRun,
+      // The stub must satisfy the same structural rules as a real draft, or a dry
+      // run fails on the fixture rather than exercising the chain -- including the
+      // mandatory QUESTION -> REVEAL beat.
       dryRunValue: patchMode
         ? { edits: [] }
-        : { title: item.topic, beats: [{ id: '01', mode: 'scene', vo: '(dry run)', art: '(dry run)' }] },
+        : {
+          title: item.topic,
+          beats: [
+            { id: '01', mode: 'scene', vo: '(dry run)', art: '(dry run) no text' },
+            {
+              id: '02', mode: 'info', vo: '(dry run) here is your question.', holdAfter: 2,
+              info: { tpl: 'quiz', data: { stem: '(dry run)', options: ['A', 'B'], answer: 0 } },
+            },
+            { id: '03', mode: 'scene', vo: '(dry run) and the answer.', art: '(dry run) no text' },
+          ],
+        },
     });
 
     // Turn a patch back into a full script; a first draft is already one.

@@ -15,16 +15,45 @@ Output a JSON object with:
 
 An "info" beat WITHOUT a valid `info.tpl` renders as a completely BLANK frame. An
 `overlay` alone does not render anything. Every info beat must pick one of these
-six templates and supply exactly its data shape:
+templates and supply exactly its data shape:
 
+- quiz       {stem, options:[string,...], answer, note}  — the QUESTION card (see below); `answer` is the 0-based index of the correct option
 - checks     {title, items:[string,...]}            — a list revealed one by one
 - fourparts  {title, parts:[string,...]}            — a four-box grid
 - gauge      {label, value, max, good}              — a counting number + filling bar
 - statement  {text, hi, sub}                        — one bold line, `hi` is a substring of `text` to accent
 - twocard    {title, left:{title,items}, right:{title,items}}  — before/after comparison
 - quote      {text, by}                             — a closing quote card
+- bignum     {left:{big,lab,tone}, right:{big,lab,tone}, sep, note}  — two big counting numbers side by side
+- tally      {rows:[{label,count,tone}], caption}   — real tally marks, drawn in groups of five
+- bars       {items:[{label,value,tone}], max, suffix, title}  — horizontal bar graph, values count up
+- piles      {items:[{label,count,tone}], showCounts}  — items sorted into labelled piles
+- scoresheet {a:{title,rows:[{label,mark}]}, b:{title,rows:[{label,mark}]}, diff:[index,...], note}  — two mark sheets compared; `mark` is "✓" or "✗"
+- grid       {n, tone, title}                       — n cells revealed one by one; tone "good" or "bad"
+- spectrum   {items:[{label,tone}]}                 — chips along a spectrum; tone "good"|"mid"|"bad"
+- screen     {title, lines:[{k,v}]}                 — one mock app screen
+- answers    {prompt, a:{title,lines:[{k,v}]}, b:{title,lines:[{k,v}]}}  — two mock screens compared
+- browser    {url, blank, text}                     — a mock browser window
+- promptcard {app, text}                            — a chat window showing an exact prompt
 
-Use no template name other than those six.
+Use no template name other than those, and no data key other than the ones listed —
+an unknown key is ignored silently, so a card can render half-empty with nothing failing.
+Where a `tone` is accepted it is one of: good, bad, mid, big.
+
+REAL NUMBERS ON SCREEN: use at least three DIFFERENT data templates across the video
+(gauge, bignum, tally, bars, scoresheet, piles all count) and put actual numbers in
+them. A video whose only info cards are `statement` text slabs is rejected by the
+visual gate. At most two `statement` cards in the whole video.
+
+THE INTERACTIVE QUESTION — MANDATORY, EVERY VIDEO:
+Exactly one beat must be a QUESTION the viewer answers before you reveal anything:
+  * that beat is mode "info" with info.tpl "quiz"
+  * it carries `holdAfter: 2` — two seconds of silence so the viewer can actually think
+  * its `vo` asks the question out loud ("Here is your question: which of these...")
+  * the NEXT beat gives the answer and says why
+Place it about three-quarters of the way through, on the idea the video most wants to
+stick. A video without a quiz beat is rejected before any art is bought, so this is not
+optional. `answer` must be a valid index into `options`, and `options` needs at least two.
 
 LENGTH: write 16-20 beats, never more than 22. One beat is one spoken sentence of a
 measured 6.2 seconds, so 16-20 lands the finished video in the 1.5-2.5 minute house

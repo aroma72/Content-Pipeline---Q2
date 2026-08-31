@@ -158,7 +158,7 @@ function silenceWav(seconds) {
     factor = Math.min(1.1, Math.max(0.9, factor));
     // human breathing pause after each sentence; a touch longer when the visual/mode changes
     const nb = raw[i + 1] && raw[i + 1].b;
-    const pause = (!nb || nb.mode !== b.mode) ? 0.7 : 0.4;
+    const pause = ((!nb || nb.mode !== b.mode) ? 0.7 : 0.4) + (b.holdAfter || 0);
     const out = path.join(AUD, `vo_${b.id}.wav`);
     // trim clip's own silence tight -> (4) atempo -> (5) loudnorm -> add a deliberate breathing pause
     const trim = 'silenceremove=start_periods=1:start_threshold=-40dB:start_silence=0.04,' +
