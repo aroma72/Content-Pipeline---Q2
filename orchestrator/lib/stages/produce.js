@@ -21,7 +21,7 @@ const path = require('path');
 const { videoDir, PATHS } = require('../paths');
 const shell = require('../shell');
 const state = require('../state');
-const { BlockedError, RejectedError } = require('../spine-errors');
+const { BlockedError, RejectedError, RedraftError } = require('../spine-errors');
 const { validateBeats } = require('../validate-beats');
 
 // Unit costs, kept in step with templates/lib/config.js COST. If that file
@@ -136,10 +136,20 @@ function missingPerBeat(beats, dir, subdir, name) {
   const wanted = subdir === 'art'
     ? (beats || []).filter((b) => b.mode !== 'info' && b.art)
     : (beats || []);
+
+  // A redraft can reword a beat's art prompt while keeping its id, and the old PNG
+  // still exists -- so "the file is there" would silently ship the picture for the
+  // sentence that was replaced. Anything older than beats.js is stale, not done.
+  let beatsMs = 0;
+  try { beatsMs = fs.statSync(path.join(dir, 'beats.js')).mtimeMs; } catch { /* none yet */ }
+
   return wanted
     .filter((b) => {
       const p = path.join(dir, subdir, name(b.id));
-      try { return !fs.existsSync(p) || fs.statSync(p).size === 0; } catch { return true; }
+      try {
+        const st = fs.statSync(p);
+        return st.size === 0 || (beatsMs > 0 && st.mtimeMs < beatsMs);
+      } catch { return true; }
     })
     .map((b) => b.id);
 }
@@ -241,7 +251,7 @@ module.exports = Object.assign(module.exports, {
     // (the reviewer/redraft loop reads them) and into `sensorResults` (the QA
     // judge and the Slack report read them).
     const sensorResults = [];
-    const sensor = async (script, what, args = []) => {
+    const sensor = async (script, what, { redraftable = false } = {}) => {
       if (opts.dryRun) { log(`${script}: skipped (dry run)`); return; }
 
       // A gate that silently does not run is worse than no gate -- it reports
@@ -255,7 +265,7 @@ module.exports = Object.assign(module.exports, {
       }
 
       try {
-        const res = await run('node', [script, ...args], { timeoutMs: 20 * 60 * 1000 });
+        const res = await run('node', [script], { timeoutMs: 20 * 60 * 1000 });
         const verdict = String(res.stdout || '').split(/\r?\n/)
           .map((l) => l.trim()).filter(Boolean).pop() || 'passed';
         sensorResults.push({ ok: true, sensor: script, what, detail: verdict.slice(0, 300) });
@@ -271,6 +281,18 @@ module.exports = Object.assign(module.exports, {
           .slice(-25).join('\n');
 
         sensorResults.push({ ok: false, sensor: script, what, detail: findings.slice(0, 800) });
+        // A script-level sensor reads only beats.js, so its findings ARE a redraft
+        // brief -- specific, line-level and addressable by rewriting the script.
+        // Killing the run instead would mean the strictest gates could only ever
+        // reject a video, never improve one, and the LLM reviewer that passed it
+        // has no way to learn what the deterministic check saw.
+        if (redraftable) {
+          throw new RedraftError(
+            `${what} FAILED (${script}):\n${findings}`,
+            { fromStage: 'script', verdict: 'SENSOR_FAIL', feedback: findings }
+          );
+        }
+
         // RejectedError keeps only `verdict` and `details`, so the sensor's identity
         // goes INSIDE details -- passed as a sibling key it is silently dropped and
         // the Slack report cannot say which gate failed.
@@ -283,8 +305,8 @@ module.exports = Object.assign(module.exports, {
 
     // Script-level sensors run BEFORE the spend gate: both read only beats.js, so
     // a script that would produce a bad video costs nothing to reject here.
-    await sensor('qa-visuals.js', 'the Evals-Grade Visual Standard');
-    await sensor('qa-cutouts.js', 'half-cut props on cutout beats');
+    await sensor('qa-visuals.js', 'the Evals-Grade Visual Standard', { redraftable: true });
+    await sensor('qa-cutouts.js', 'half-cut props on cutout beats', { redraftable: true });
 
     // --- spend gate (ILHAM plan 3.2) -------------------------------------
     // Priced from this video's own beats, and from what is already on disk, so
@@ -518,6 +540,8 @@ module.exports = Object.assign(module.exports, {
     // on-screen cards. Last because it reads beats.js, which nothing after the
     // render changes, and because its findings are line edits: cheap to act on,
     // and embarrassing to ship.
+    // NOT redraftable: this runs after the render, and rewinding to script here
+    // would discard a finished video over a comma. The findings go to a human.
     await sensor('eval-text.js', 'grammar and clarity of the spoken and on-screen text');
 
     const finalPath = path.join(dir, final);

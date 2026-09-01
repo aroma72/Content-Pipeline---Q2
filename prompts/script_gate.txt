@@ -67,6 +67,10 @@ Check every one of these:
     story (the mistake, the fix, the payoff), each describing a small in-character
     movement and nothing about style, camera or colour. Zero is a miss; more than
     four is expensive and reads as busy. Flag either as a minor, not a blocker.
+15. EVERY SCENE SHOWS AN ACTION — each `scene` art prompt describes a physical act
+    (held, written, set down, lifted, handed over, crossed out), not only a mood or
+    an expression. A deterministic gate rejects a script whose scenes are portraits,
+    before any art is bought, so passing it here only wastes a redraft round.
 
 Be specific. "Beat 07 art prompt says 'a chart labelled Revenue' — labels are baked-in
 text; make the chart blank and move 'Revenue' to an overlay" is useful. "Improve the art

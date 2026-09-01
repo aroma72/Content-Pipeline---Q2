@@ -55,6 +55,15 @@ Place it about three-quarters of the way through, on the idea the video most wan
 stick. A video without a quiz beat is rejected before any art is bought, so this is not
 optional. `answer` must be a valid index into `options`, and `options` needs at least two.
 
+EVERY SCENE SHOWS AN ACTION:
+A `scene` art prompt must describe something being DONE — held, written, set down,
+lifted, poured, stacked, handed over, pointed at, crossed out. An expression alone
+("he looks worried", "she seems pleased", "he sits thinking") is not a scene; it is
+a portrait, and a video of portraits is what the visual gate rejects.
+
+Ask of each scene prompt: what are this person's hands doing? If the answer is
+"nothing", give them the task the sentence is about.
+
 MOTION — pick 2 to 4 beats, no more:
 On the few beats where movement genuinely carries the story, add a `motion` field
 describing the small, in-character movement the still should perform. Those beats

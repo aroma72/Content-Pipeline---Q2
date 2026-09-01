@@ -402,6 +402,64 @@ async function beatChecks() {
     return 'graceful';
   });
 
+  // --- 4e2. A failing gate must be able to IMPROVE the video ---------------
+  console.log('\n3e2. sensor findings drive a redraft (was: the strictest gates could only kill a run)');
+
+  check('the pre-spend sensors send the script back, they do not end the run', () => {
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'produce.js'), 'utf8');
+    assert(/qa-visuals\.js'[^)]*redraftable: true/.test(src), 'qa-visuals cannot redraft');
+    assert(/qa-cutouts\.js'[^)]*redraftable: true/.test(src), 'qa-cutouts cannot redraft');
+    assert(/new RedraftError\([\s\S]{0,200}fromStage: 'script'/.test(src), 'no redraft back to script');
+    return 'redraftable';
+  });
+
+  check('eval-text stays terminal -- it runs after the render', () => {
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'produce.js'), 'utf8');
+    const at = src.indexOf("sensor('eval-text.js'");
+    const line = src.slice(at, at + 200);
+    // Rewinding to script here would discard a finished video over a comma.
+    assert(!/redraftable/.test(line), 'eval-text would throw away a finished render');
+    return 'terminal by design';
+  });
+
+  check('a redrafted beat does not reuse the art from the sentence it replaced', () => {
+    // The redraft can reword a beat's art prompt and keep its id, so the old PNG
+    // still EXISTS -- and "the file is there" would ship the wrong picture.
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'produce.js'), 'utf8');
+    const fn = (src.match(/function missingPerBeat[\s\S]*?\n\}/) || [])[0];
+    assert(fn, 'missingPerBeat not found');
+    const missingPerBeat = eval('(' + fn.replace('function missingPerBeat', 'function') + ')');
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'stale-art-'));
+    try {
+      fs.mkdirSync(path.join(dir, 'art'));
+      const beats = [{ id: '01', mode: 'scene', art: 'a' }];
+      fs.writeFileSync(path.join(dir, 'art', '01.png'), 'x');
+      fs.writeFileSync(path.join(dir, 'beats.js'), 'module.exports=[]');  // newer than the art
+      const stale = missingPerBeat(beats, dir, 'art', (i) => `${i}.png`);
+      assert(stale.length === 1, 'art older than beats.js was treated as done');
+
+      const later = Date.now() / 1000 + 10;
+      fs.utimesSync(path.join(dir, 'art', '01.png'), later, later);
+      const fresh = missingPerBeat(beats, dir, 'art', (i) => `${i}.png`);
+      assert(fresh.length === 0, 'art newer than beats.js was needlessly re-bought');
+      return 'stale detected, fresh kept';
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  check('the writer and the gate are told the rule the sensor enforces', () => {
+    // A deterministic gate the writer has never heard of costs a redraft round
+    // on every single video.
+    const writer = fs.readFileSync(path.join(__dirname, '..', 'prompts', 'video_script.txt'), 'utf8');
+    const gate = fs.readFileSync(path.join(__dirname, '..', 'prompts', 'script_gate.txt'), 'utf8');
+    for (const [name, src] of [['writer', writer], ['gate', gate]]) {
+      assert(/quiz/i.test(src), `${name} prompt never mentions the quiz beat`);
+      assert(/motion/i.test(src), `${name} prompt never mentions motion`);
+      assert(/ACTION|physical act/i.test(src), `${name} prompt never mentions the scene-action rule`);
+    }
+    return 'quiz + motion + action in both';
+  });
+
   // --- 4f. Human review before YouTube -------------------------------------
   console.log('\n3f. the human review gate (was: QA pass -> straight to YouTube)');
 
