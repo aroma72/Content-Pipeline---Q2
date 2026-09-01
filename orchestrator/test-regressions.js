@@ -460,6 +460,73 @@ async function beatChecks() {
     return 'quiz + motion + action in both';
   });
 
+  // --- 4e3. An installed-but-unauthenticated CLI ---------------------------
+  // Found live on Railway 2026-09-01: /health reported model:false and every
+  // video request died in `research`. The image installs the claude CLI, so
+  // isAvailable() (which only runs `claude --version`) said yes, the router chose
+  // the CLI, and the call failed with no credential -- with an API key sitting
+  // unused, because the fallback only ran when the BINARY was missing.
+  console.log('\n3e3. model routing when the CLI has no credential');
+
+  check('an unauthenticated CLI is a hard, typed failure -- not a transient one', () => {
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'llm-cli.js'), 'utf8');
+    assert(/AUTH_FAILURE_RE/.test(src), 'no auth-failure detection at all');
+    assert(/AUTH_FAILURE_RE\.test\(e\.message\)[\s\S]{0,120}LlmUnavailableError/.test(src),
+      'an auth failure is not raised as LlmUnavailableError, so retries burn on it');
+    return 'typed';
+  });
+
+  check('CLAUDE_CODE_OAUTH_TOKEN is what the container authenticates with', () => {
+    const df = fs.readFileSync(path.join(__dirname, '..', 'Dockerfile'), 'utf8');
+    assert(/npm install -g @anthropic-ai\/claude-code/.test(df), 'the image no longer installs the CLI');
+    assert(/CLAUDE_CODE_OAUTH_TOKEN/.test(df), 'the Dockerfile no longer documents the CLI credential');
+    const cfg = fs.readFileSync(path.join(__dirname, '..', 'server', 'lib', 'config.js'), 'utf8');
+    assert(/CLAUDE_CODE_OAUTH_TOKEN/.test(cfg), '/health does not count the CLI token as a model credential');
+    return 'documented + surfaced on /health';
+  });
+
+  await checkAsync('the router falls back to the API key instead of failing the run', async () => {
+    const cliPath = require.resolve('./lib/llm-cli');
+    const apiPath = require.resolve('./lib/llm');
+    const routerPath = require.resolve('./lib/llm-router');
+    const saved = [cliPath, apiPath, routerPath].map((k) => [k, require.cache[k]]);
+    try {
+      class LlmUnavailableError extends Error {
+        constructor(m) { super(m); this.name = 'LlmUnavailableError'; }
+      }
+      let apiCalled = false;
+      require.cache[cliPath] = { id: cliPath, filename: cliPath, loaded: true, exports: {
+        isAvailable: async () => true,   // the binary exists, as in the container
+        askJson: async () => { throw new LlmUnavailableError('no credential'); },
+        LlmUnavailableError,
+      } };
+      require.cache[apiPath] = { id: apiPath, filename: apiPath, loaded: true, exports: {
+        askJson: async () => { apiCalled = true; return { ok: true }; },
+      } };
+      delete require.cache[routerPath];
+      const router = require('./lib/llm-router');
+
+      const hadKey = process.env.ANTHROPIC_API_KEY;
+      process.env.ANTHROPIC_API_KEY = 'sk-test';
+      await router.askJson({ log: () => {} });
+      assert(apiCalled, 'the API key was available and the router still failed the run');
+
+      delete process.env.ANTHROPIC_API_KEY;
+      const hadAuth = process.env.ANTHROPIC_AUTH_TOKEN;
+      delete process.env.ANTHROPIC_AUTH_TOKEN;
+      let threw = false;
+      try { await router.askJson({ log: () => {} }); } catch (e) { threw = e.name === 'LlmUnavailableError'; }
+      assert(threw, 'with no credential anywhere it must fail loudly, not silently');
+
+      if (hadKey) process.env.ANTHROPIC_API_KEY = hadKey;
+      if (hadAuth) process.env.ANTHROPIC_AUTH_TOKEN = hadAuth;
+      return 'falls back once, then fails loudly';
+    } finally {
+      for (const [k, v] of saved) { if (v) require.cache[k] = v; else delete require.cache[k]; }
+      delete require.cache[routerPath];
+    }
+  });
+
   // --- 4f. Human review before YouTube -------------------------------------
   console.log('\n3f. the human review gate (was: QA pass -> straight to YouTube)');
 

@@ -38,6 +38,13 @@ class LlmUnavailableError extends Error {
   constructor(message) { super(message); this.name = 'LlmUnavailableError'; }
 }
 
+/** How an unauthenticated or credential-less `claude` CLI announces itself. */
+const AUTH_FAILURE_RE = new RegExp([
+  'invalid api key', 'authentication_error', 'not logged ?in', 'please run .?/login',
+  'unauthorized', 'oauth token', 'no credentials', 'credit balance is too low',
+  'invalid_?token', 'expired token', 'login required',
+].join('|'), 'i');
+
 /** Is the CLI usable right now? */
 async function isAvailable() {
   try {
@@ -218,6 +225,25 @@ async function askJson({
         `${String(e.message).split('\n')[0]}`
       );
     }
+
+    // The binary is present but has no usable credential. This is NOT transient and
+    // retrying burns all three attempts on it, so it must be an LlmUnavailableError
+    // -- which is also what lets the router fall back to an API key.
+    //
+    // isAvailable() only runs `claude --version`, which succeeds on a bare install,
+    // so an unauthenticated CLI looks perfectly healthy right up to the first real
+    // call. In a container that is the normal state: the Dockerfile installs the
+    // CLI and expects CLAUDE_CODE_OAUTH_TOKEN to authenticate it.
+    if (AUTH_FAILURE_RE.test(e.message)) {
+      throw new LlmUnavailableError(
+        'The `claude` CLI is installed but has no usable credential, so the thinking ' +
+        'stages cannot run. Set CLAUDE_CODE_OAUTH_TOKEN (generate one with ' +
+        '`claude setup-token`) to use the Claude Code subscription, or set a valid ' +
+        'ANTHROPIC_API_KEY to use the direct-API backend instead. ' +
+        `CLI said: ${String(e.message).split('\n').slice(-2).join(' ').slice(0, 200)}`
+      );
+    }
+
     throw e;
   }
 

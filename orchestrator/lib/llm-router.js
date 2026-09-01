@@ -62,7 +62,23 @@ async function askJson(args) {
   if (args.log) {
     args.log(`llm backend: ${name}${note ? ` (${note})` : ''}`);
   }
-  return backend.askJson(args);
+
+  try {
+    return await backend.askJson(args);
+  } catch (e) {
+    // resolve() can only see whether the CLI BINARY runs, never whether it holds a
+    // credential -- `claude --version` succeeds on a bare install. So an
+    // unauthenticated CLI is discovered here, at the first real call, and the API
+    // key that was sitting there all along must still be used rather than failing
+    // the run. Exactly one fallback, and only in this direction.
+    const authless = e && e.name === 'LlmUnavailableError';
+    const haveKey = Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
+    if (name === 'cli' && authless && haveKey) {
+      if (args.log) args.log(`llm backend: api (the claude CLI has no credential; used the API key)`);
+      return api.askJson(args);
+    }
+    throw e;
+  }
 }
 
 module.exports = { askJson, resolve, chosenName, LlmUnavailableError: cli.LlmUnavailableError };
