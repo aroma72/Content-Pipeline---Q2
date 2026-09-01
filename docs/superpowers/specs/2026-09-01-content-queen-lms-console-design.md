@@ -168,7 +168,7 @@ is the honest display, and it is also most of the current log.
 | Slice | Work | Outcome |
 |---|---|---|
 | **0** | YouTube client id/secret, one-time `youtube-auth.js`, refresh token into Railway env, flip `STOP_AFTER` | Videos durable and addressable. **Human action, not code.** |
-| **1** | Extract `channel.js` from `tick.js` | Invisible. Unlocks everything. Regression tests stay green. |
+| **1** | Delete the §11 scaffolds; extract `channel.js` from `tick.js` | Invisible. Unlocks everything. Regression tests stay green. |
 | **2** | `/console` + messages + SSE + chat UI + standalone auth | A working console at its own URL. |
 | **3** | `library.js` + cards | The library, in the chat. |
 | **4** | Embed mode: HMAC verify, cookie, CSP | Drops into their iframe when they add it. |
@@ -186,7 +186,27 @@ Slices 1–4 are independently shippable. Slice 0 gates only the player in slice
   so console spend approval is unit-tested via `tick._internals.report_result`, never demonstrated
   by a green dry run.
 
-## 11. Open questions
+## 11. Scaffolds to delete first
+
+Three places already claim to integrate with an LMS, all against a **guessed** endpoint
+(`LMS_BASE_URL=https://api.taleemabad.com`, `LMS_API_KEY`) that AUTONOMY_PLAN 2.2 says is wrong:
+
+| Location | What it does |
+|---|---|
+| `agents/distribution_agent.py:164-174` | Validates a payload and `POST`s videos to `LMS_BASE_URL` |
+| `agents/learner_pack_publisher_agent.py:9` | Imports the same credentials; writes "metadata JSON for LMS ingestion" |
+| `.env.example` | Advertises both variables as if the contract were known |
+
+They are inert only because the variables are unset — `distribution_agent` guards on
+`if self.lms_api_key and self.lms_base_url`. **This is a trap for exactly this project:** setting
+`LMS_API_KEY` while wiring up the console would arm an untested push to an endpoint nobody has
+confirmed exists, from a code path nobody is watching.
+
+Delete all three before slice 1, so there is exactly one LMS integration path and it is the one in
+this document. If any of that Python is still wanted for a future learner-facing push (2.2), it
+should be rewritten against a real spec, not resurrected.
+
+## 12. Open questions
 
 1. **Their exact origin** for `frame-ancestors`. Blocks slice 4 only.
 2. **Who else may open the console.** Assumed: admin role only, single user. If other staff get
