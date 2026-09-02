@@ -9,7 +9,9 @@
  *   - REAL DATA on screen — 14 unpaid orders, 62,400 rupees, 3 weeks late, 0 -> 14 found — via
  *     bignum / screen / bars count-ups, NOT plain text cards. v1 had 7 `statement` beats; this has 2.
  *   - scene:info ratio flipped toward `scene` (11 scenes vs v1's 5), as in evals-01.
- * Series continuity kept: same locked Ali (art/_ref.png), honey ORB = the model, and the harness
+ * Series continuity kept: same locked Ali (art/_ref.png). The AI helper is a REAL LAPTOP with a
+ * blank screen (the evals-series convention, DESK/LAPTOP) — NOT a glowing orb; Aroma: the orb read as
+ * a vague blob. All AI output is crisp HTML (screen/bignum/bars), never baked into art. The harness
  * "room" is now literally Ali's back room. ONE concept: SELF-HEALING = detect + recover; the brain
  * never changed, the room did. Names "debugging in a loop" (Aroma's request).
  * `ali` beats stay clean-hero SINGLE SUBJECT with no held props (cutout law); anything held = `scene`.
@@ -25,10 +27,12 @@ const STYLE = 'flat 2D vector editorial illustration, clean rounded shapes, warm
 const HERO = `${STYLE}, single subject centered and standing, plain flat cream background`;
 // the persistent concrete setting — repeated in EVERY scene prompt (the evals-series trick)
 const SHOP = 'in Ali\'s small tidy shop, tall wooden shelves of neatly stacked paper parcels and ' +
-  'tins behind him, a polished wooden counter in front with a large open paper ledger and a small ' +
+  'tins behind him, a polished wooden counter in front with a large open paper ledger whose pages ' +
+  'show only abstract wavy pen strokes and ruled lines with no readable words or letters, and a small ' +
   'brass desk lamp, a wooden filing drawer at one end of the counter';
-const ORB = 'a small smooth glowing ball of warm honey light resting in the air just above the ' +
-  'counter, a plain featureless round orb with one soft highlight, no face, no brain shape, no text';
+const LAPTOP = 'a simple boxy cream-coloured desktop computer monitor sitting on the counter on a ' +
+  'small square stand, its screen a blank pale rectangle, a plain old-fashioned unbranded monitor with ' +
+  'a smooth empty casing and no logo, badge, sticker or marking anywhere on it';
 
 module.exports = [
   { id: '01', mode: 'info',
@@ -44,17 +48,17 @@ module.exports = [
   { id: '03', mode: 'scene',
     vo: 'He asks his AI helper which orders from last month were never paid.',
     cap: 'A simple question',
-    art: `${ALI} standing behind the counter speaking toward ${ORB}, one hand raised in a light asking gesture, the open ledger below, ${SHOP}, ${STYLE}` },
+    art: `${ALI} standing behind the counter beside ${LAPTOP}, speaking toward its screen with one hand raised in a light asking gesture, the open ledger below, ${SHOP}, ${STYLE}` },
 
   { id: '04', mode: 'scene',
     vo: 'The helper pulls open the records drawer and writes itself a request.',
     cap: 'It goes to the records',
-    art: `The wooden filing drawer pulled open on the counter with neat rows of upright record cards inside, ${ORB} hovering close above it, a single blank card lifted out and floating, ${SHOP}, ${STYLE}` },
+    art: `The wooden filing drawer pulled open on the counter with neat rows of upright record cards inside, ${LAPTOP} right beside the open drawer, a single blank card lifted halfway out of the drawer, ${SHOP}, ${STYLE}` },
 
   { id: '05', mode: 'scene',
     vo: 'One date in that request is wrong, so the answer comes back completely blank.',
     cap: 'A blank answer',
-    art: `${ALI} standing behind the counter holding up a single completely blank cream sheet of paper in both hands, looking at it with a puzzled frown, ${ORB} dimmed beside him, ${SHOP}, ${STYLE}` },
+    art: `${ALI} standing behind the counter holding up a single completely blank cream sheet of paper in both hands, looking at it with a puzzled frown, ${LAPTOP} open on the counter beside him, ${SHOP}, ${STYLE}` },
 
   { id: '06', mode: 'info',
     vo: 'It reports nothing unpaid, when fourteen orders were actually still open.',
@@ -89,7 +93,7 @@ module.exports = [
   { id: '11', mode: 'scene',
     vo: 'So Ali writes one small rule in the margin of his ledger.',
     cap: 'One rule in the margin',
-    art: `${ALI} standing behind the counter writing with a pen in the wide margin of the open ledger, leaning in with a focused expression, ${ORB} glowing softly nearby, ${SHOP}, ${STYLE}` },
+    art: `${ALI} standing behind the counter writing with a pen in the wide margin of the open ledger, leaning in with a focused expression, ${LAPTOP} open on the counter beside the ledger, ${SHOP}, ${STYLE}` },
 
   { id: '12', mode: 'info',
     vo: 'If a month had sales, then an empty unpaid list must be wrong.',
@@ -101,7 +105,7 @@ module.exports = [
   { id: '13', mode: 'scene',
     vo: 'Next month the blank sheet comes back, and the rule stops it at the counter.',
     cap: 'Stopped at the counter',
-    art: `A single blank cream sheet held flat against a simple upright wooden board standing on the counter, not passing beyond it, ${ORB} behind the board, ${ALI} watching attentively from the side, ${SHOP}, ${STYLE}` },
+    art: `A single blank cream sheet held flat against a simple upright wooden board standing on the counter, not passing beyond it, ${LAPTOP} open on the far side of the board, ${ALI} watching attentively from the side, ${SHOP}, ${STYLE}` },
 
   { id: '14', mode: 'info',
     vo: 'The error goes back to the helper instead of forward to Ali.',
@@ -113,12 +117,12 @@ module.exports = [
   { id: '15', mode: 'scene',
     vo: 'It reads what went wrong, corrects the date, and asks the drawer again.',
     cap: 'It fixes its own request',
-    art: `${ORB} glowing brighter directly above the open filing drawer with a fresh blank card floating beside it and a soft curved arrow looping back around toward the drawer, ${SHOP}, ${STYLE}` },
+    art: `${LAPTOP} open on the counter next to the pulled-open filing drawer, a fresh blank card lifting from the drawer and a soft curved arrow looping from the laptop back around to the drawer, ${SHOP}, ${STYLE}` },
 
   { id: '16', mode: 'scene',
     vo: 'This time the sheet comes back with fourteen rows written on it.',
     cap: 'Fourteen rows',
-    art: `${ALI} standing behind the counter holding up a cream sheet filled with neat ruled horizontal lines of handwriting, smiling with clear relief, ${ORB} bright beside him, ${SHOP}, ${STYLE}` },
+    art: `${ALI} standing behind the counter holding up a cream sheet filled with neat ruled horizontal lines of handwriting, smiling with clear relief, ${LAPTOP} open on the counter beside him, ${SHOP}, ${STYLE}` },
 
   { id: '17', mode: 'info',
     vo: 'Zero found before, fourteen found now, and nobody waited three weeks.',
@@ -197,4 +201,4 @@ module.exports.character = ALI;
 module.exports.refPrompt =
   `${ALI}, calm friendly character reference portrait from the waist up, facing forward, ` +
   `arms relaxed, neutral pleasant expression, ${HERO}`;
-module.exports.animateIds = ["08", "15", "28"]; // i2v: the supplier's bills land · it fixes itself · close
+module.exports.animateIds = ["13","15","08"]; // i2v story beats — physical actions, retuned for THIS video

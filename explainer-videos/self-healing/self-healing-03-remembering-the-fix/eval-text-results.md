@@ -1,7 +1,5 @@
 # eval-text-results — grammar / clarity
 
-Judge: gemini-2.5-flash. Reviewed 88 snippets. 0 error(s), 1 nit(s).
+Judge: gemini-2.5-flash. Reviewed 100 snippets. 0 error(s), 0 nit(s).
 
-| severity | text | problem | suggestion |
-|--|--|--|--|
-| nit | Improving removes next time. | The phrasing "removes next time" is slightly awkward and could be clearer. | Improving prevents a next time. |
+**No issues — all text reads cleanly.**

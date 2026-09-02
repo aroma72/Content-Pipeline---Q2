@@ -55,6 +55,13 @@ underlying facts must be accurate and current. **Do not draft beats until `resea
   note:'Write your answer down.'}}}` at ~⅔ through, and a REVEAL beat `{mode:'info', info:{tpl:'quiz',
   data:{stem, options, answer:<index>, note:'…why…'}}}` shortly after. (Non-`info` formats: two card/screen
   beats with the same answer-then-reveal structure.) See SCRIPTING_STANDARDS §3b.
+- **The Evals-Grade Visual Standard (DEFAULT for every video — Standard §3d).** Build the visuals the
+  way the evals series did, unless Aroma asks otherwise: (1) ONE concrete setting as a const, repeated
+  in every `scene` prompt — never an abstract "room with soft rounded walls"; (2) the AI is a real
+  **laptop with a plain blank screen**, NEVER a glowing orb/blob — its output is crisp HTML; (3) ≥28%
+  of beats are `scene`; (4) at most **2** plain `statement` cards; (5) ≥3 distinct data templates AND
+  real numbers (countable stakes — quantities, money, time, a before/after); (6) scenes show an act
+  (held, written, dropped), not just an expression. Verify with `node qa-visuals.js` before any art.
 - **Animation at the story points (REQUIRED in every video).** While drafting, mark the **2–4 beats
   where real movement genuinely carries the story** — an emotional turn, a metaphor coming alive, the
   closing invite — and export them as `module.exports.animateIds = ['04','12','22']`. These are

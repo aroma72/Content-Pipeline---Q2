@@ -43,6 +43,13 @@ apply this rubric directly.
     → NOT READY. Beats chosen purely to decorate a static definition → NEEDS WORK with the better beats
     named. (Exempt: IDE-screencast assignment/assessment videos, where i2v does not apply.)
 
+11. **Fails the Evals-Grade Visual Standard** (Standard §3d, REQUIRED effective 2026-08-21): run
+    `node qa-visuals.js` in the video folder. Any violation → NOT READY. The six rules: one concrete
+    persistent setting (not an abstract room) · the AI is a real laptop with a blank screen (NEVER a
+    glowing orb/blob) · ≥28% `scene` beats · ≤2 plain `statement` cards · ≥3 distinct data templates
+    plus real numbers · scenes show a physical action. This is the DEFAULT visual format for every
+    video unless Aroma asks for something else. (Exempt: IDE-screencast assignment videos.)
+
 ## Soft checks (→ NEEDS WORK)
 - **No web-research grounding** (Standard §0): script teaches factual/current claims but no cited
   `research.md` beside it, or on-screen numbers/analogy don't trace to it. (A purely illustrative

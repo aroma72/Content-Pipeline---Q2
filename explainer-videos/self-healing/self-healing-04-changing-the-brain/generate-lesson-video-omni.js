@@ -26,22 +26,24 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const I2V_MODEL = process.env.I2V_MODEL || 'wan/2-6-image-to-video';
 
-// per-beat motion direction (falls back to a calm idle). Keeps the flat-illustration look.
-// Motions stay SMALL and in-character so the flat 2D art does not morph (i2v drifts on big movement).
-// Tuned for VIDEO 04 (fine-tuning: the seventh place). Small, in-character motions.
-// RETUNE THIS MAP FOR EVERY NEW VIDEO — beat ids repeat across videos, so a stale map silently
-// animates the wrong story.
+// per-beat motion direction (falls back to a calm idle). Small, physical, object-led so
+// i2v cannot morph the scene (an earlier pass melted the helper into a glowing blob).
+// Tuned for VIDEO 04 (fine-tuning: the five conditions).
+// RETUNE FOR EVERY NEW VIDEO — beat ids repeat, so a stale map animates the wrong story.
 const MOTION = {
-  '11': 'the young man stands beside a tall neat stack of plain blank cards on a wooden crate and rests one hand on top of the stack, a small proud nod, gentle motion',
-  '24': 'the young man faces forward with a warm confident smile and gives a small sure nod, a slow settled breath, gentle natural motion',
-  '04': 'a glowing ball of honey light slowly deepens into a warmer richer amber and holds that new colour, soft light spreading gently across the room walls, the man watches closely, calm significant motion',
+  '14': 'the man stands at the counter and gives a small confident nod toward the box of slips and the monitor, a slow settled breath, gentle motion',
+  '03': 'the man pulls a plain wooden box packed tightly with cream paper slips forward onto the polished counter with both hands, the slips shifting slightly as it moves, steady effortful motion',
+  '08': 'the man\'s hands move cream paper slips one at a time into four separate shallow trays along the counter, sorting them steadily, calm repeating motion',
 };
 const DEFAULT_MOTION = 'natural subtle character animation, the person breathes, blinks and shifts weight gently, flat 2D vector animation, camera locked, no style change';
 const STYLE_LOCK = ' Keep the exact same flat 2D vector illustration art style, same colors, same character design; smooth 2D animation; static locked camera; no text.' +
   ' CRITICAL: keep the background exactly the same warm cream colour as the source image throughout.' +
   ' Do NOT darken the background, do NOT turn any area black, grey or charcoal, do NOT add dramatic or' +
   ' cinematic lighting, no vignette, no colour grading, no shadows creeping in, no night look.' +
-  ' Flat even lighting, bright warm cream and honey palette, identical to the input image.';
+  ' Flat even lighting, bright warm cream and honey palette, identical to the input image.' +
+  ' CRITICAL CAMERA LOCK: the camera does not move, zoom, push in, pull out, pan or tilt AT ALL.' +
+  ' The framing, crop and scale stay EXACTLY as in the source image for every frame — the same' +
+  ' objects remain visible at the same size and position. ONLY the named object or hands move.';
 
 const artBeats = beats.filter((b) => (b.mode === 'ali' || b.mode === 'scene') && b.art);
 const onlyIds = (process.env.ART_IDS || '').split(',').map((s) => s.trim()).filter(Boolean);
@@ -102,7 +104,11 @@ async function i2v(imageUrl, prompt, durSecs, key) {
 
 (async () => {
   if (!todo.length) { console.log('[i2v] no art beats.'); return; }
-  const secs = todo.reduce((a, b) => a + Math.min(15, Math.max(5, Math.ceil(durations[b.id] || 5))), 0);
+  // KIE_CLIP_LEN_FIX: kie returns ONLY 5s or 10s. A beat of 5-7s given a 5s clip freezes
+// for the remainder (the "lagging transition"). Always take 10s unless the beat truly is <=4.75s.
+const secs = todo.reduce((a, b) => a + Math.min(15, Math.max(5, Math.ceil(durations[b.id] || 5))), 0);
+const _kieLen = (d) => (d > 4.75 ? 10 : 5);
+
   guardSpend({ action: `Image-to-video ${todo.length} clip(s) via ${I2V_MODEL}`, units: secs, unitCost: 0.05 });
   const key = omniKey();
   console.log(`[i2v] model = ${I2V_MODEL}`);

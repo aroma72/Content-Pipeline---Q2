@@ -1,15 +1,12 @@
 'use strict';
 /*
  * beats.js — "Prove It Got Better" (Self-Healing & Self-Improving series, video 06, finale).
- * CONTINUES V01–V05: same locked Ali (art/_ref.png), shop + AI helper, honey ORB = the brain,
- * room = harness. ONE concept: a healing/improving loop is only real if it is MEASURED — and the
- * failure log is where the measurement comes from. The discipline: every incident gets what broke,
- * WHY (root cause, not symptom), the fix, and the lesson; every lesson becomes a permanent test case;
- * the pile of test cases is your eval set; the before/after number is what makes "better" a fact.
- * Closes the two gaps in V01-V05: learn-from-failure DISCIPLINE + EVALS-DRIVEN improvement.
- * De-duplicated vs the evals series (what an eval is / rubrics / judging at scale) — here evals exist
- * only as the scoreboard for the healing loop; explicit one-line nod to that series.
- * CAMERA-PAN build: stills + Ken Burns / cutout-puppet, plus i2v on the 3 story-critical beats.
+ * V2 REBUILD to the EVALS-GRADE VISUAL STANDARD (§3d) — verified by `node qa-visuals.js`.
+ * Same shop, same ledger, same LAPTOP helper. ONE concept: the loop is only real if it is MEASURED,
+ * and the failure log is where the measurement comes from. Closes the two gaps Aroma flagged:
+ * the LEARNING-FROM-FAILURE DISCIPLINE (four columns, root cause not symptom, every lesson becomes a
+ * permanent check) and EVAL DRIVEN improvement (the log becomes 20 test cases; 12/20 -> 18/20).
+ * De-duplicated vs the evals series — evals appear only as the scoreboard for the healing loop.
  * No baked text in any art prompt.
  */
 
@@ -20,8 +17,13 @@ const STYLE = 'flat 2D vector editorial illustration, clean rounded shapes, warm
   'palette, soft friendly storybook style, gentle depth, absolutely no text, no words, no letters, ' +
   'no numbers, no labels';
 const HERO = `${STYLE}, single subject centered and standing, plain flat cream background`;
-const ORB = 'a smooth simple glowing ball of warm honey light representing the AI, a plain featureless round orb with one soft highlight, no brain shape, no folds, no face, absolutely no text, no letters, no words on it';
-const ROOM = 'a cosy warm room with soft rounded walls around it';
+const SHOP = 'in Ali\'s small tidy shop, tall wooden shelves of neatly stacked paper parcels and ' +
+  'tins behind him, a polished wooden counter in front with a large open paper ledger whose pages ' +
+  'show only abstract wavy pen strokes and ruled lines with no readable words or letters, and a small ' +
+  'brass desk lamp, a wooden filing drawer at one end of the counter';
+const LAPTOP = 'a simple boxy cream-coloured desktop computer monitor sitting on the counter on a ' +
+  'small square stand, its screen a blank pale rectangle, a plain old-fashioned unbranded monitor with ' +
+  'a smooth empty casing and no logo, badge, sticker or marking anywhere on it';
 
 module.exports = [
   { id: '01', mode: 'info',
@@ -29,15 +31,15 @@ module.exports = [
     cap: 'The one idea',
     info: { tpl: 'statement', data: { text: 'Self-improving has to be eval driven.', hi: 'eval driven' } } },
 
-  { id: '02', mode: 'ali',
+  { id: '02', mode: 'scene',
     vo: 'Ali tells everyone his helper has got much better this month.',
     cap: 'It got better',
-    art: `${ALI}, standing with a proud pleased smile, one hand gesturing outward warmly, ${HERO}` },
+    art: `${ALI} standing behind the counter with a proud pleased smile, one hand resting on ${LAPTOP} and the other open toward the shop doorway, ${SHOP}, ${STYLE}` },
 
-  { id: '03', mode: 'ali',
+  { id: '03', mode: 'scene',
     vo: 'Then someone asks him how much better, and he has no answer at all.',
     cap: 'How much better?',
-    art: `${ALI}, standing with an uncertain caught-out expression, mouth slightly open, one hand paused mid-gesture, ${HERO}` },
+    art: `${ALI} standing behind the counter with an uncertain caught-out expression, mouth slightly open, one hand paused mid-gesture above the closed ledger, ${LAPTOP} beside it, ${SHOP}, ${STYLE}` },
 
   { id: '04', mode: 'info',
     vo: 'He believes it improved, but belief is not the same as evidence.',
@@ -46,15 +48,15 @@ module.exports = [
       left: { title: 'A feeling', items: ['It seems better', 'Fewer complaints lately', 'I think it learned'] },
       right: { title: 'Evidence', items: ['A number before', 'A number after', 'The same test both times'] } } } },
 
-  { id: '05', mode: 'info',
-    vo: 'So he starts the one habit that fixes this: a failure log.',
+  { id: '05', mode: 'scene',
+    vo: 'So he starts the one habit that fixes this: a failure log at the back of the ledger.',
     cap: 'Start a failure log',
-    info: { tpl: 'statement', data: { text: 'The one habit that fixes it: a failure log.', hi: 'a failure log' } } },
+    art: `${ALI} standing behind the counter opening the ledger to a fresh ruled page at the back and drawing four vertical column lines down it with a pen and ruler, ${LAPTOP} beside it, ${SHOP}, ${STYLE}` },
 
   { id: '06', mode: 'scene',
     vo: 'Every time the helper gets something wrong, he writes down four things.',
     cap: 'Four things, every time',
-    art: `${ALI} standing beside ${ROOM}, writing on a simple open notebook that floats near ${ORB}, four small blank marks on the page, ${STYLE}` },
+    art: `${ALI} standing behind the counter writing with a pen across four ruled columns on the open ledger page, leaning in with a careful focused expression, ${LAPTOP} beside it, ${SHOP}, ${STYLE}` },
 
   { id: '07', mode: 'info',
     vo: 'What broke, why it broke, what fixed it, and the lesson it leaves behind.',
@@ -64,67 +66,61 @@ module.exports = [
       { k: 'The fix', v: 'what you actually changed' }, { k: 'The lesson', v: 'what stops it returning' } ] } } },
 
   { id: '08', mode: 'ali',
-    vo: 'The second one is the one everybody skips, and it is the valuable one.',
+    vo: 'The second column is the one everybody skips, and it is the valuable one.',
     cap: 'Nobody writes the why',
     art: `${ALI}, standing and holding up two fingers with a pointed knowing expression, ${HERO}` },
 
   { id: '09', mode: 'info',
     vo: 'The symptom is a wrong answer; the cause is that nobody ever told it.',
     cap: 'Symptom versus cause',
-    info: { tpl: 'statement', data: { text: 'Symptom: a wrong answer. Cause: nobody told it.', hi: 'nobody told it' } } },
+    info: { tpl: 'twocard', data: { title: 'The same failure, written two ways',
+      left: { title: 'Symptom (useless)', items: ['It hallucinated', 'The answer was bad', 'It got confused'] },
+      right: { title: 'Cause (fixable)', items: ['Offered a stopped discount', 'Nobody wrote the rule down', 'Add it to the ledger'] } } } },
 
   { id: '10', mode: 'scene',
-    vo: 'One entry reads: it offered a discount that the shop had quietly stopped.',
-    cap: 'One real entry',
-    art: `${ALI} standing beside ${ROOM} looking at one plain card held apart from a small stack, ${ORB} dimmed slightly behind it, ${STYLE}` },
+    vo: 'A month of that, and the back of his ledger holds twenty real failures.',
+    cap: 'Twenty real failures',
+    art: `${ALI} standing behind the counter with both hands resting on a ledger page densely filled with twenty short handwritten rows across four columns, ${LAPTOP} beside it, ${SHOP}, ${STYLE}` },
 
   { id: '11', mode: 'info',
-    vo: 'The lesson does not stay in the notebook; it becomes a permanent check.',
-    cap: 'The lesson becomes a check',
-    info: { tpl: 'statement', data: { text: 'Every lesson becomes a permanent check.', hi: 'a permanent check' } } },
-
-  { id: '12', mode: 'ali',
     vo: 'That is the learning-from-failure discipline: a failure you only fix comes back.',
     cap: 'Learning-from-failure discipline',
-    art: `${ALI}, standing with a calm serious teaching expression, one hand open in a measured gesture, ${HERO}` },
+    info: { tpl: 'tally', data: { rows: [
+      { label: 'Only fixed', count: 9, tone: 'bad' },
+      { label: 'Fixed and logged', count: 1 } ], caption: 'A fix you do not write down returns' } } },
 
-  { id: '13', mode: 'scene',
-    vo: 'After a month, his notebook has turned into a row of real test cases.',
-    cap: 'The log becomes a test set',
-    art: `${ALI} standing beside ${ROOM} where a neat row of plain blank cards floats in a line beside ${ORB}, evenly spaced, ${STYLE}` },
+  { id: '12', mode: 'scene',
+    vo: 'Each lesson becomes a test he can run again, written on its own slip.',
+    cap: 'Each lesson becomes a test',
+    art: `Twenty cream paper slips laid out in four neat rows across the polished counter, ${ALI} behind them placing the last one down, ${LAPTOP} at one end, ${SHOP}, ${STYLE}` },
 
-  { id: '14', mode: 'info',
-    vo: 'Twenty cases, and not one of them invented — every one is a real failure.',
+  { id: '13', mode: 'info',
+    vo: 'Twenty cases, and not one invented — every one is a failure that really happened.',
     cap: 'All from real failures',
     info: { tpl: 'grid', data: { title: 'Twenty cases, all from real failures', n: 20, tone: 'good' } } },
 
-  { id: '15', mode: 'ali',
-    vo: 'Now Ali can finally ask his question in a way that has an answer.',
-    cap: 'A question with an answer',
-    art: `${ALI}, standing with a focused determined expression, slight forward lean, ${HERO}` },
-
-  { id: '16', mode: 'info',
+  { id: '14', mode: 'scene',
     vo: 'He runs all twenty on the old setup, then all twenty on the new one.',
     cap: 'Same test, both times',
-    info: { tpl: 'statement', data: { text: 'The same twenty, before and after.', hi: 'the same twenty' } } },
+    art: `${ALI} standing behind the counter holding one cream slip up toward ${LAPTOP} while the remaining slips sit in two sorted stacks on the counter, ${SHOP}, ${STYLE}` },
 
-  { id: '17', mode: 'info',
+  { id: '15', mode: 'info',
     vo: 'Twelve out of twenty before, eighteen out of twenty after.',
     cap: 'The number',
     info: { tpl: 'bars', data: { title: 'Cases passed, out of twenty', max: 20, suffix: '/20', items: [
       { label: 'Before', value: 12 }, { label: 'After', value: 18, tone: 'big' } ] } } },
 
-  { id: '18', mode: 'ali',
+  { id: '16', mode: 'ali',
     vo: 'Better is now a number he can show, not a feeling he has to defend.',
     cap: 'A number, not a feeling',
     art: `${ALI}, standing with a confident satisfied smile and a small assured nod, ${HERO}` },
 
-  { id: '19', mode: 'info',
+  { id: '17', mode: 'info',
     vo: 'And the two that still fail are not a disappointment; they are the next task.',
     cap: 'The failures are the list',
-    info: { tpl: 'statement', data: { text: 'The ones still failing are your to-do list.', hi: 'your to-do list' } } },
+    info: { tpl: 'gauge', data: { label: 'Cases still failing', value: 2, max: 20, good: 'That is next month\'s to-do list' } } },
 
-  { id: '20', mode: 'info',
+  { id: '18', mode: 'info',
     vo: 'That is what eval driven means: fail, log, fix, check, and measure.',
     cap: 'Eval-driven improvement',
     info: { tpl: 'screen', data: { title: 'Eval-driven improvement', lines: [
@@ -132,15 +128,15 @@ module.exports = [
       { k: 'Fix', v: 'store it where it lives' }, { k: 'Check', v: 'the lesson becomes a case' },
       { k: 'Measure', v: 'run them all, before and after' } ] } } },
 
-  { id: '21', mode: 'info', holdAfter: 6,
-    vo: 'Quick question: Ali says his helper improved but never kept a log — what does he actually have?',
+  { id: '19', mode: 'info', holdAfter: 6,
+    vo: 'Quick question: he says it improved but kept no log — what does he actually have?',
     cap: 'Your turn — write it down',
     info: { tpl: 'quiz', data: {
       stem: 'He says it improved, but kept no log. What does he have?',
       options: ['Proof it improved', 'A story he cannot check', 'A self-improving system', 'An eval set'],
       note: 'Write your answer down.' } } },
 
-  { id: '22', mode: 'info',
+  { id: '20', mode: 'info',
     vo: 'A story he cannot check, because nothing was written down to compare against.',
     cap: 'The answer',
     info: { tpl: 'quiz', data: {
@@ -148,23 +144,23 @@ module.exports = [
       options: ['Proof it improved', 'A story he cannot check', 'A self-improving system', 'An eval set'],
       answer: 1, note: 'No log, no baseline, no proof.' } } },
 
-  { id: '23', mode: 'info',
+  { id: '21', mode: 'ali',
     vo: 'Scoring those cases well is its own craft, and the evals series covers it.',
     cap: 'More on scoring',
-    info: { tpl: 'statement', data: { text: 'Scoring them well is its own craft.', hi: 'its own craft' } } },
+    art: `${ALI}, standing and gesturing lightly to one side with an open informative expression, ${HERO}` },
 
-  { id: '24', mode: 'ali',
+  { id: '22', mode: 'ali',
     vo: 'Your turn: open a failure log today and write the last thing that went wrong.',
     cap: 'Your turn',
     art: `${ALI}, facing the viewer, one hand open in a sincere encouraging gesture, warm and inviting, ${HERO}` },
 
-  { id: '25', mode: 'info',
+  { id: '23', mode: 'info',
     vo: 'Ask yourself: what broke, why, what fixed it, and what stops it coming back?',
     cap: 'Ask yourself',
     info: { tpl: 'promptcard', data: { app: 'Ask yourself',
       text: 'What broke? Why? What fixed it? What stops it coming back?' } } },
 
-  { id: '26', mode: 'ali',
+  { id: '24', mode: 'ali',
     vo: 'A system that cannot show its score is not improving; it is only hoping.',
     cap: 'Show the score',
     art: `${ALI}, facing the viewer with a warm confident smile and a small sure nod, ${HERO}` },
@@ -174,4 +170,4 @@ module.exports.character = ALI;
 module.exports.refPrompt =
   `${ALI}, calm friendly character reference portrait from the waist up, facing forward, ` +
   `arms relaxed, neutral pleasant expression, ${HERO}`;
-module.exports.animateIds = ["06", "13", "26"]; // i2v story beats (house rule: use-animations)
+module.exports.animateIds = ["12","14","05"]; // i2v story beats — physical actions, retuned for THIS video

@@ -46,7 +46,9 @@ Pipeline: `beats.js` → `generate-lesson-art.js` (Imagen) → `segment-all.py` 
 | 0 | gate the script (`reviewing-explainer-scripts`) | READY before any art/TTS/render |
 | 1 | `npm i` · ensure Python has Pillow+numpy · `.env` key present | env ready |
 | 2 | write `beats.js` (one beat/sentence; pick mode; overlays on ali beats that name things) | script as data |
+| 2b | `node qa-visuals.js` · `node qa-cutouts.js` | **REQUIRED before you spend a rupee.** §3d visual standard (one concrete setting · AI is a laptop, never a glowing orb · ≥28% `scene` · ≤2 `statement` cards · ≥3 data templates + real numbers · scenes show an action) and no half-cut props. Exit 2 → fix `beats.js` first |
 | 3 | `node generate-lesson-art.js --yes` | `art/*.png` — eyeball each; regenerate any that won't cut clean |
+| 3b | `node qa-art.js` | **REQUIRED before TTS/render.** Vision judge on every image: impossible hands (thumb on the wrong side, wrist not connecting), wrong finger counts, merged/floating limbs, broken faces, sliced objects, **and any baked-in text or LOGO**. Exit 2 → `ART_IDS=<ids> node generate-lesson-art-gemini.js --yes` and re-judge. (Caught an Apple logo on the laptop in 4 beats that a script gate cannot see.) |
 | 4 | `python segment-all.py` | `layers/<id>/{boy,plate}.png`+anchors — verify **tight** bboxes |
 | 5 | `node tts-lesson.js --yes` | `audio/vo_<id>.wav` + `durations.json` (one-take normalized) |
 | 5b | `ART_IDS=<animateIds> node generate-lesson-video-omni.js --yes` | `clips/<id>.mp4` — **REQUIRED** real i2v motion on the 2–4 story beats (Standard §3c). Compile auto-uses them; falls back to Ken Burns if a clip is missing |

@@ -144,6 +144,48 @@ including each structural part and the common failure mode they nearly hit.
 
 ---
 
+### 3d. The Evals-Grade Visual Standard (Required, effective 2026-08-21)
+
+> **Rule:** Every video's visuals are built the way the **evals series** built them — a concrete place,
+> a real device, full scenes, and numbers on screen. Established after Aroma rejected self-healing v01
+> ("the visuals are not great", "why is the helper a blob of glow"). **This is the DEFAULT for every
+> video from now on, unless she asks for something else.**
+> Enforced mechanically by `node qa-visuals.js` (exit 2 on violation) — run it BEFORE spending on art.
+
+**The six rules**
+
+| # | Rule | What it means |
+|---|------|---------------|
+| 1 | **Persistent concrete setting** | Define ONE physical place as a const (`SHOP`, `STALL`, `DESK`) and repeat it in **every** `scene` prompt — "in Ali's small tidy shop, tall wooden shelves of neatly stacked parcels and tins, a polished counter with a large open paper ledger, a brass desk lamp, a wooden filing drawer". **Never** an abstract "room with soft rounded walls". |
+| 2 | **The AI is a real device** | An open **laptop** (or phone/tablet) with a **plain blank screen** — the evals `DESK` convention. **Never** a glowing orb / ball of light / blob. The AI's actual output is crisp HTML (`screen`, `answers`, `promptcard`), never baked into the art. |
+| 3 | **Scene-led** | **≥28%** of beats are `scene` (full illustration + Ken Burns). Narrative beats belong in the real place, not floating on cream. |
+| 4 | **At most 2 plain text cards** | `statement` is for the opening idea and maybe one pivot. Everything else earns a data visual. |
+| 5 | **Real data on screen** | **≥3 distinct** data templates (`bignum`, `bars`, `tally`, `piles`, `gauge`, `grid`, `scoresheet`, `answers`, `screen`, `twocard`, `spectrum`, `checks`) **and real numbers** — the story must carry countable stakes (quantities, money, time, a before/after). |
+| 6 | **Physical actions in scenes** | A scene shows something being **done** — held, written, dropped, lifted, pulled open — not merely an expression. |
+
+**Storytelling shape that goes with it** (the evals spine, proven on the mango crate and the ledger):
+one protagonist, in one place, with one physical object that carries the concept · a concrete
+**cost** when it goes wrong (Ali: 14 unpaid orders, 62,400 rupees, 3 weeks late) · the fix applied to
+that same object · a **measured** before/after (0 → 14) so the payoff is a number, not a claim.
+
+Reference implementations: `explainer-videos/self-healing/self-healing-01-fixes-its-own-mistakes/beats.js`
+(ledger + laptop) and `explainer-videos/evals/evals-01-check-more-than-one/beats.js` (mango crate + tally).
+Exempt: IDE-screencast assignment/assessment videos (no character art) — `qa-visuals.js` skips them.
+
+**Rule 7 — the art itself must be inspected (`node qa-art.js`, REQUIRED effective 2026-08-21).**
+`qa-visuals.js` reads the SCRIPT; it cannot see what the image generator actually drew. A vision judge
+must check every `art/*.png` BEFORE any TTS or render, and the build fails on:
+impossible hands (thumb on the wrong side, palm/back confused, a wrist that does not connect) ·
+wrong finger counts · merged, duplicated or floating limbs · broken or asymmetric faces ·
+an object sliced in half · **any readable text, number or LOGO** (the art must be textless and
+unbranded — draw props as "plain unbranded", with "no logo, badge or emblem").
+Established after Aroma spotted an anatomically flipped hand in self-healing v02 beat 05; the first
+run of the new gate also found a real **Apple logo** baked into the laptop in four beats, which no
+script-level check could ever have caught. Advisory WARN for an expression that reads clearly angrier
+or sadder than the beat intends. See memory `feedback_art_vision_gate`.
+
+---
+
 ## 4. Mentor Tone & Emotional Pacing
 
 Scripts for learners new to AI often hit moments of difficulty. Your tone should acknowledge this and keep them feeling supported, not overwhelmed.

@@ -1,29 +1,21 @@
 #!/bin/bash
 set -u
-dir=self-healing-06-prove-it-got-better
-cd "$dir" || exit 1
-echo "################ $dir ################"
-echo "[clips] $(ls clips/*.mp4 2>/dev/null | wc -l) i2v clip(s)"
-for attempt in 1 2 3 4; do
-  rm -rf frames; rm -f out/lesson.mp4; touch .build_marker
+d=self-healing-06-prove-it-got-better
+cd "$d" || exit 1
+echo "[v06] clips: $(ls clips/*.mp4 2>/dev/null | wc -l) (must be 0 — no transitions)"
+want=$(node -e "const j=require('./durations.json');console.log(Object.values(j).filter(x=>typeof x==='number').reduce((a,c)=>a+c,0).toFixed(0))")
+for attempt in 1 2 3; do
+  rm -rf frames; rm -f out/lesson.mp4
   node compile-lesson.js > .compile.log 2>&1; rc=$?
-  grep -E "^\[compile\] [0-9]+ beats" .compile.log | tail -1
-  if [ $rc -eq 0 ] && [ -f out/lesson.mp4 ] && [ out/lesson.mp4 -nt .build_marker ]; then
-    echo "[ok] fresh lesson.mp4 (attempt $attempt)"; break
-  fi
-  reason=$(tail -c 3000 .compile.log | tr '\r' '\n' | grep -oE "(sidecar[^\"]*|ProtocolError|detached Frame|Target closed|Navigation timeout|Error: [^ ]+ .{0,60})" | head -1)
-  echo "!!! COMPILE FAILED (attempt $attempt, rc=$rc) — ${reason:-see .compile.log}"
-  [ $attempt -eq 4 ] && { echo "!!! GIVING UP"; rm -f .build_marker; exit 1; }
-  echo "[retry] cleaning orphaned chrome, re-running …"
-  node -e "
-    const {execSync}=require('child_process');
-    try{const o=execSync('wmic process where \"name=\'chrome.exe\'\" get ProcessId,ExecutablePath /format:csv',{encoding:'utf8'});
-    const p=o.split(/\r?\n/).filter(l=>l.toLowerCase().includes('puppeteer')).map(r=>r.trim().split(',').pop()).filter(x=>/^[0-9]+\$/.test(x));
-    if(p.length)execSync('taskkill /F '+p.map(x=>'/PID '+x).join(' '),{stdio:'ignore'});}catch(e){}
-  " 2>/dev/null
+  got=$(node -e "
+    const {execFileSync}=require('child_process');const f=require('ffmpeg-static');
+    try{execFileSync(f,['-hide_banner','-i','out/lesson.mp4'],{stdio:['pipe','pipe','pipe']});console.log(0);}
+    catch(e){const m=String(e.stderr||'').match(/Duration: (\d+):(\d+):(\d+)/);console.log(m?(+m[1]*3600 + +m[2]*60 + +m[3]):0);}
+  " 2>/dev/null || echo 0)
+  [ "$rc" -eq 0 ] && [ "${got:-0}" -ge $(( want * 95 / 100 )) ] && { echo "[ok] render ${got}s/${want}s"; break; }
+  echo "!!! render bad ($attempt) ${got:-0}s of ${want}s"
 done
-rm -f .build_marker
-node stitch-brand.js --title "Prove It Got Better" --lesson out/lesson.mp4 --out "out/${dir}_final.mp4" 2>&1 | grep -E "DELIVERABLE|Error" | tail -1
-node verify.js --final "out/${dir}_final.mp4" 2>&1 | tail -11
+node stitch-brand.js --title "Prove It Got Better" --lesson out/lesson.mp4 --out "out/${d}_final.mp4" >/dev/null 2>&1
+node verify.js --final "out/${d}_final.mp4" 2>&1 | grep -E "VERIFY:" | tail -1
 node eval-text.js 2>&1 | grep -E "^\[eval-text\]" | tail -1
-echo "V06 FINISHED"
+echo "V06 CLIP-FREE DONE"

@@ -1,5 +1,5 @@
 # eval-text-results — grammar / clarity
 
-Judge: gemini-2.5-flash. Reviewed 97 snippets. 0 error(s), 0 nit(s).
+Judge: gemini-2.5-flash. Reviewed 101 snippets. 0 error(s), 0 nit(s).
 
 **No issues — all text reads cleanly.**
