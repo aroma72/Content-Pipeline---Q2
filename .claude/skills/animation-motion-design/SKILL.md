@@ -56,6 +56,15 @@ the 2–4 per video where a still-with-pan undersells the moment.
 - **Consume:** `compile-lesson.js` auto-uses any `clips/<id>.mp4`; a beat with no clip falls back to
   cutout-puppet/Ken Burns. So if kie credits are out, clips just don't generate and the render still
   succeeds (no animation on those beats) — verify which beats actually got a clip.
+- ⚠️ **GATE EVERY CLIP: `node qa-clips.js` before you compile.** kie returns ONLY 5s or 10s clips, so a
+  5–7s beat given a 5s clip **freezes on its last frame** for the remainder — Aroma reported this as
+  "the transition is lagging", and it hit 8 of 18 clips. The gate auto-retimes short clips to fill their
+  beat (free), and REJECTS clips that are frozen (ssim > 0.985) or morphed/re-framed (ssim < 0.55 — the
+  subject melted into a blob or the camera zoomed in and cropped the character out). The generator now
+  also requests 10s for any beat > 4.75s. **Choose beats where ONE object moves physically** — a stack
+  landing, a hand writing, a slip stopping. A beat needing the model to hold a complex composition
+  together (two devices conferring, an abstract room) is what produces blobs. See memory
+  `feedback_clip_lag_gate`.
 - **Pick beats by story value:** normalize/reassure emotional beats, the metaphor "coming alive"
   scene, the final "your turn" invite. Keep motion small and in-character (flat 2D, camera locked,
   no style change) so it matches the illustration.

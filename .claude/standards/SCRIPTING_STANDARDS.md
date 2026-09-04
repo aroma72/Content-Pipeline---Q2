@@ -140,6 +140,17 @@ including each structural part and the common failure mode they nearly hit.
   isn't — so a credit-out never blocks the render, it just quietly costs the motion.
 - **Two modes, always ask first** ([feedback_omni_two_modes](../../memory/feedback_omni_two_modes.md)):
   full i2v animation vs camera-pan on stills. Ali must stay consistent in either.
+- **Every clip must pass `node qa-clips.js` BEFORE compiling** (REQUIRED effective 2026-09-02). It is a
+  self-healing gate: detect → repair → verify → reject if unrepairable. Three defects, all found in the
+  self-healing module:
+  | Defect | Cause | Gate action |
+  |---|---|---|
+  | **Frozen tail** ("the transition is lagging") | kie returns ONLY 5s or 10s clips, so a 5–7s beat gets 5s and holds its last frame for the remainder. Hit **8 of 18** clips | **Auto-repaired** — retimed with `setpts` to fill the beat (7–24% slowdown is imperceptible, costs no credits) |
+  | **Frozen clip** (ssim > 0.985 early vs late) | paid for motion, got a still | Rejected — regenerate |
+  | **Morphed / re-framed** (ssim < 0.55) | model rebuilt the scene: subject melted into a blob, or camera zoomed in and cropped the character out | Rejected — regenerate with simpler physical motion, or choose a different beat |
+  Prevention at source: `generate-lesson-video-omni.js` now requests a **10s clip for any beat > 4.75s**.
+  Pick beats where ONE object moves physically (a stack landing, a hand writing, a slip stopping) — never
+  a beat where the model must hold a complex composition together; that is what produces blobs.
 - Exempt: IDE-screencast assignment/assessment videos (no character art; i2v does not apply).
 
 ---

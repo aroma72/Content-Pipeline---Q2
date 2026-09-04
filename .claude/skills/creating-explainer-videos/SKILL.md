@@ -52,6 +52,7 @@ Pipeline: `beats.js` → `generate-lesson-art.js` (Imagen) → `segment-all.py` 
 | 4 | `python segment-all.py` | `layers/<id>/{boy,plate}.png`+anchors — verify **tight** bboxes |
 | 5 | `node tts-lesson.js --yes` | `audio/vo_<id>.wav` + `durations.json` (one-take normalized) |
 | 5b | `ART_IDS=<animateIds> node generate-lesson-video-omni.js --yes` | `clips/<id>.mp4` — **REQUIRED** real i2v motion on the 2–4 story beats (Standard §3c). Compile auto-uses them; falls back to Ken Burns if a clip is missing |
+| 5c | `node qa-clips.js` | **REQUIRED before compiling.** Self-healing clip gate: a clip SHORTER than its beat freezes on its last frame for the remainder (the "lagging transition") → **auto-retimed** to fill the beat; a FROZEN clip (ssim > 0.985) or a MORPHED/re-framed one (ssim < 0.55 — subject melted or cropped out) → rejected, exit 2, regenerate with simpler physical motion or pick another beat. Also flags palette drift vs the source art |
 | 6 | `SAMPLE_IDS=03,05 node compile-lesson.js --sample` | early/mid/late frames per beat — confirm motion |
 | 7 | `node compile-lesson.js` | `out/<name>.mp4` — the **bare** lesson (NOT the deliverable) |
 | 8 | `node stitch-brand.js --title "<Title>" --lesson out/<name>.mp4 --out out/<name>_final.mp4` | **the deliverable** |
