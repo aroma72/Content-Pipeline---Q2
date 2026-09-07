@@ -169,12 +169,15 @@ footer a{color:var(--accent)}
 
   <dl class="meta">
     <dt>Live demo</dt>
-    <dd><a href="https://claude.ai/code/artifact/5d7e4bf7-fd99-43cf-b55c-da43671357ac">claude.ai/code/artifact/5d7e4bf7-fd99-43cf-b55c-da43671357ac</a><br>
-      <span style="color:var(--muted);font-size:8.4pt">Clickable — press play, let it reach 0:39, and answer. Every screenshot in this document was captured from it.</span></dd>
+    <dd><a href="https://content-queen-production.up.railway.app/demo/quiz">content-queen-production.up.railway.app/demo/quiz</a><br>
+      <span style="color:var(--muted);font-size:8.4pt">Press play, let it reach the gold marker, and answer. Every screenshot in this document was captured from that page.</span></dd>
+    <dt>Live API</dt>
+    <dd><a href="https://content-queen-production.up.railway.app/api/v1">content-queen-production.up.railway.app/api/v1</a><br>
+      <span style="color:var(--muted);font-size:8.4pt">Deployed and serving. The index is public; the data routes need the bearer token Aroma will send you separately.</span></dd>
     <dt>Example video</dt>
-    <dd>Autonomy 01 — The Autonomy Spectrum · 1:55 · one checkpoint at 0:39</dd>
-    <dt>Scope</dt>
-    <dd>One overlay component and one JSON field. No change to how videos are stored, streamed or listed.</dd>
+    <dd>Autonomy 01 — The Autonomy Spectrum · one checkpoint, firing at 41.671s</dd>
+    <dt>Your scope</dt>
+    <dd>One overlay component in the player, and one call to fetch its data. No change to how videos are stored, streamed or listed.</dd>
   </dl>
 
   <section>
@@ -201,7 +204,7 @@ footer a{color:var(--accent)}
   </section>
 
   <footer>
-    Page 1 of 4 · the question content shown is the live checkpoint from Autonomy 01<br>
+    Page 1 of 5 · the question content shown is the live checkpoint from Autonomy 01<br>
     Frames captured from the rendered lesson and from the interactive demo linked above
   </footer>
 </div>
@@ -237,7 +240,7 @@ footer a{color:var(--accent)}
     </div>
   </section>
 
-  <footer>Page 2 of 4</footer>
+  <footer>Page 2 of 5</footer>
 </div>
 
 <!-- ── page 3 ───────────────────────────────────────────────────────────── -->
@@ -256,30 +259,88 @@ footer a{color:var(--accent)}
   </section>
 
   <section>
-    <h2>What we would send you per video</h2>
-    <p class="sub">One array alongside the video. We generate it from the script, so it arrives with the video and needs no authoring on your side.</p>
+    <h2>The endpoints</h2>
+    <p class="sub">Deployed and serving. Base URL <code>https://content-queen-production.up.railway.app</code>.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Endpoint</th><th>Auth</th><th>Returns</th></tr></thead>
+      <tbody>
+        <tr><td><code>GET&nbsp;/api/v1</code></td><td>public</td><td>The surface, machine-readable: every route, an example URL for each, and whether the server is configured.</td></tr>
+        <tr><td><code>GET&nbsp;/api/v1/videos</code></td><td>bearer</td><td>The catalogue — every video that has at least one checkpoint. <b>17 today.</b></td></tr>
+        <tr><td><code>GET&nbsp;/api/v1/videos/{videoId}/checkpoints</code></td><td>bearer</td><td>The payload for one video. <b>This is the only call you need</b> to build the feature.</td></tr>
+        <tr><td><code>POST&nbsp;/api/v1/videos/{videoId}/checkpoints/{id}/attempts</code></td><td>bearer</td><td>Optional. Reports what a learner chose. Ignore it if you are not reporting.</td></tr>
+        <tr><td><code>GET&nbsp;/demo/quiz</code></td><td>public</td><td>The interactive demo this document describes.</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>Authentication</h2>
+    <p class="sub">The payload contains <code>correctIndex</code>, so it is not public — serving it openly would hand every learner the answer key. Aroma will send you the token separately.</p>
     <div class="codewrap">
-      <div class="codebar">quiz checkpoint payload · json</div>
+      <div class="codebar">request · curl</div>
+<pre>curl -H <span class="s">"Authorization: Bearer $CONTENT_API_TOKEN"</span> \
+  https://content-queen-production.up.railway.app<span class="k">/api/v1/videos/autonomy-01-spectrum/checkpoints</span></pre>
+    </div>
+    <p class="sub" style="margin-top:9pt">Call this <b>from your server, not from the browser</b> — a page fetching it directly would ship the token to every learner. Fetch it server-side and hand your player only what it needs. Responses carry an <code>ETag</code>, so you can revalidate cheaply and get a <code>304</code> when nothing has changed.</p>
+  </section>
+
+  <footer>Page 3 of 5</footer>
+</div>
+
+<!-- ── page 4 ───────────────────────────────────────────────────────────── -->
+<div class="page">
+  <div class="rh"><span>In-Video Question Checkpoint</span><span>The payload</span></div>
+
+  <section>
+    <h2>One video's checkpoints</h2>
+    <p class="sub">The real response for <code>autonomy-01-spectrum</code>. Nothing here is hand-maintained — it is read out of the video's own script and timed from its measured beat lengths, so a re-cut video cannot silently keep a stale question time.</p>
+    <div class="codewrap">
+      <div class="codebar">GET /api/v1/videos/autonomy-01-spectrum/checkpoints · 200</div>
 <pre>{
   <span class="k">"videoId"</span>: <span class="s">"autonomy-01-spectrum"</span>,
+  <span class="k">"series"</span>:  <span class="s">"autonomy"</span>,
+  <span class="k">"deliverable"</span>: <span class="s">"autonomy-01-spectrum_final.mp4"</span>,
+  <span class="k">"timing"</span>: {
+    <span class="k">"trusted"</span>:            <span class="n">true</span>,      <span class="c">// never fire a checkpoint when this is false</span>
+    <span class="k">"relativeTo"</span>:         <span class="s">"autonomy-01-spectrum_final.mp4"</span>,
+    <span class="k">"introOffsetSeconds"</span>: <span class="n">2.6</span>,
+    <span class="k">"introOffsetSource"</span>:  <span class="s">"brand-constant"</span>,
+    <span class="k">"lessonSeconds"</span>:      <span class="n">126.26</span>
+  },
   <span class="k">"checkpoints"</span>: [
     {
-      <span class="k">"id"</span>:           <span class="s">"q1"</span>,
-      <span class="k">"atSeconds"</span>:    <span class="n">39</span>,        <span class="c">// fire here; pause playback</span>
-      <span class="k">"preamble"</span>:     <span class="s">"Let's answer a quick question, to check the concept landed."</span>,
-      <span class="k">"stem"</span>:         <span class="s">"Which could the helper safely run alone?"</span>,
+      <span class="k">"id"</span>:              <span class="s">"q1"</span>,
+      <span class="k">"atSeconds"</span>:       <span class="n">41.671</span>,   <span class="c">// fire here, in the delivered file</span>
+      <span class="k">"lessonAtSeconds"</span>: <span class="n">39.071</span>,   <span class="c">// same moment, excluding the intro</span>
+      <span class="k">"preamble"</span>:        <span class="s">"Let's answer a quick question, to check the concept landed."</span>,
+      <span class="k">"stem"</span>:            <span class="s">"Which could the helper safely run alone?"</span>,
       <span class="k">"options"</span>: [
         <span class="s">"Read an order back"</span>,
         <span class="s">"Give a cash refund"</span>,
         <span class="s">"Wire money from the till"</span>,
         <span class="s">"Approve a supplier invoice"</span>
       ],
-      <span class="k">"correctIndex"</span>: <span class="n">0</span>,
-      <span class="k">"explanation"</span>:  <span class="s">"Reading an order back is easy to undo: if the helper gets it wrong, Ali fixes it in seconds. The other three move money, and once money has moved nobody can pull it back in time."</span>
+      <span class="k">"correctIndex"</span>:    <span class="n">0</span>,
+      <span class="k">"explanation"</span>:     <span class="s">"Easy to undo, so it runs free."</span>,
+      <span class="k">"beatId"</span>:         <span class="s">"09"</span>,      <span class="c">// traceable back to the script</span>
+      <span class="k">"revealBeatId"</span>:   <span class="s">"22"</span>
     }
   ]
 }</pre>
     </div>
+  </section>
+
+  <section>
+    <h2>The timing rule that will bite you</h2>
+    <p class="sub">Two numbers describe the same moment, and picking the wrong one makes every question fire early.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><code>atSeconds</code></td><td><b>Use this one.</b> Measured from the first frame of the delivered <code>*_final.mp4</code>, which opens with a 2.6&nbsp;second brand intro.</td></tr>
+        <tr><td><code>lessonAtSeconds</code></td><td>The same moment measured from the lesson body, excluding that intro. Published for traceability only. Firing on it puts every question 2.6&nbsp;seconds early.</td></tr>
+        <tr><td><code>timing.trusted</code></td><td>False means we could not establish the timing for that video. <b>Do not fire its checkpoints</b> — show the video without them rather than interrupting at the wrong moment.</td></tr>
+      </tbody>
+    </table></div>
   </section>
 
   <section>
@@ -295,7 +356,7 @@ footer a{color:var(--accent)}
     </div>
   </section>
 
-  <footer>Page 3 of 4</footer>
+  <footer>Page 4 of 5</footer>
 </div>
 
 <!-- ── page 4 ───────────────────────────────────────────────────────────── -->
@@ -320,28 +381,28 @@ footer a{color:var(--accent)}
   </section>
 
   <section>
-    <h2>Decisions for you</h2>
-    <p class="sub">Four assumptions the demo makes. Overrule any of them — cheap now, awkward later.</p>
+    <h2>Open decisions</h2>
+    <p class="sub">Four things still to settle. The first two are ours to fix; the last two are yours to tell us.</p>
     <div class="dec">
-      <p class="q">Does a wrong answer get recorded?</p>
-      <p class="a">The demo records nothing. If you want completion or comprehension reporting, tell us what to send and where. <em>assumed: not stored</em></p>
+      <p class="q">The explanation is currently one short line.</p>
+      <p class="a"><code>explanation</code> comes from the video's REVEAL card, which was written to be read aloud in six words — for Autonomy 01 it is <b>“Easy to undo, so it runs free.”</b> That is thin for a learner who just got it wrong. We can author a longer popup-specific explanation per question; it does not change your code. <em>ours · say if you want it</em></p>
     </div>
     <div class="dec">
-      <p class="q">One explanation, or one per option?</p>
-      <p class="a">A single shared explanation for any wrong answer. Per-option feedback teaches better but triples the authoring. <em>assumed: one shared</em></p>
+      <p class="q">One explanation, or one per wrong option?</p>
+      <p class="a">Today any wrong answer gets the same explanation. Per-option feedback teaches better and would add an <code>optionFeedback</code> array to the payload — a small change for you, three times the writing for us. <em>assumed: one shared</em></p>
     </div>
     <div class="dec">
-      <p class="q">How does the payload reach you?</p>
-      <p class="a">JSON beside the video file, or an endpoint you call by <code>videoId</code> — whichever fits your ingestion. <em>assumed: JSON alongside</em></p>
+      <p class="q">Do you want answers recorded?</p>
+      <p class="a">The <code>attempts</code> endpoint exists and works, but nothing consumes what it stores and it holds no learner identity beyond an opaque <code>learnerRef</code> you choose. If you want real completion or comprehension reporting, tell us what you need and we will build to it. <em>assumed: you keep your own record</em></p>
     </div>
     <div class="dec">
       <p class="q">One question per video, or several?</p>
-      <p class="a">The payload is an array, so several works. Today every video has exactly one, about two-thirds through. <em>assumed: one, extensible</em></p>
+      <p class="a"><code>checkpoints</code> is an array, so several already work. Every video today has exactly one, about two-thirds through. Build the loop, not the single case. <em>assumed: one, extensible</em></p>
     </div>
   </section>
 
   <footer>
-    Page 4 of 4 · Drawing Room content pipeline, Taleemabad · prepared by Aroma Tahir<br>
+    Page 5 of 5 · Drawing Room content pipeline, Taleemabad · prepared by Aroma Tahir<br>
     Interactive demo: <a href="https://claude.ai/code/artifact/5d7e4bf7-fd99-43cf-b55c-da43671357ac">claude.ai/code/artifact/5d7e4bf7-fd99-43cf-b55c-da43671357ac</a>
   </footer>
 </div>

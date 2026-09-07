@@ -1,0 +1,46 @@
+# What `railway up` must not upload. The repo carries gigabytes of rendered
+# media, a virtualenv and Chrome profiles; without this the upload is enormous.
+# The image's real contents are still governed by .dockerignore.
+.git
+node_modules
+**/node_modules
+venv
+.venv
+**/__pycache__
+.pytest_cache
+*.webm
+*.mp4
+*.mov
+*.wav
+*.mp3
+*.aac
+*.pptx
+*.docx
+explainer-videos/**/frames
+explainer-videos/**/art
+explainer-videos/**/clips
+explainer-videos/**/audio
+explainer-videos/**/out
+explainer-videos/**/layers
+explainer-videos/**/.chrome-profile
+video_production
+updated
+recordings
+published
+output
+animation-frames
+course-overview-assets
+course-overview-video-output
+course-overview-test-output
+voiceovers
+voiceover-windows
+voiceover-windows-formal
+drawing-room-video
+avatar-video-kit
+fashion-tech-avatar
+fashion-tech-avatar-broll
+fashion-tech-avatar-clean
+fashion-tech-real
+blender
+.env
+.env.*
