@@ -104,3 +104,6 @@ fashion-tech-*/node_modules/
 
 # Windows shortcuts
 *.lnk
+
+# Learner answers reported by the LMS — runtime data, and it references learners.
+.beads/checkpoint_attempts.jsonl

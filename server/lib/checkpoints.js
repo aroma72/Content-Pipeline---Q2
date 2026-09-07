@@ -1,0 +1,229 @@
+'use strict';
+/**
+ * checkpoints -- derive the in-video question payload the LMS consumes.
+ *
+ * The source of truth is the video's own `beats.js`, not a hand-maintained list.
+ * Every lesson already contains a QUESTION card and a REVEAL card (the mandatory
+ * QUESTION -> REVEAL pair, SCRIPTING_STANDARDS 3b), so the data the LMS needs is
+ * already written -- it just has to be read out and timed.
+ *
+ * The timing is the part that is easy to get wrong, and it is why this module
+ * exists instead of a static JSON file:
+ *
+ *   beats.js         one QUESTION beat (quiz card, no `answer`)
+ *                    one REVEAL beat   (same options, with `answer`)
+ *   durations.json   the measured length of every beat, keyed by beat id
+ *   out/_bumpers/    intro.mp4 is CONCATENATED BEFORE the lesson
+ *
+ * The deliverable the learner watches is `<slug>_final.mp4`, which is
+ * intro + lesson + outro. So a checkpoint time measured from the lesson is
+ * WRONG for the file being played -- it fires early by the length of the intro
+ * (2.6s on the current brand bumper). `atSeconds` is therefore always relative
+ * to the delivered file, and the lesson-relative figure is reported alongside it
+ * so the two can never be silently confused.
+ */
+
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const { execFileSync } = require('child_process');
+
+const { PATHS, videoDir } = require('../../orchestrator/lib/paths');
+
+/** The house preamble. The beats' own note says "Write your answer down." --
+ *  correct for a video nobody can answer, wrong for a popup that takes input. */
+const PREAMBLE = "Let's answer a quick question, to check the concept landed.";
+
+// Probing a bumper costs an ffmpeg spawn, so memoise per file+mtime.
+const introCache = new Map();
+
+function ffmpegBin() {
+  try { return require('ffmpeg-static'); } catch { /* fall through */ }
+  try { return require('@ffmpeg-installer/ffmpeg').path; } catch { return null; }
+}
+
+/** Duration in seconds of a media file, or null if it cannot be read. */
+function probeSeconds(file) {
+  const bin = ffmpegBin();
+  if (!bin || !fs.existsSync(file)) return null;
+  try {
+    // ffmpeg writes the header to stderr and exits non-zero with no output file,
+    // which is expected -- read stderr rather than treating it as a failure.
+    execFileSync(bin, ['-i', file], { stdio: ['ignore', 'ignore', 'pipe'] });
+    return null;
+  } catch (e) {
+    const err = String((e.stderr && e.stderr.toString()) || '');
+    const m = err.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
+    if (!m) return null;
+    return Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);
+  }
+}
+
+/**
+ * How much the delivered file is shifted relative to the lesson render.
+ *
+ * Three sources, in descending trust:
+ *   probed          the video's own intro.mp4 was measured just now (local dev)
+ *   brand-constant  the committed measurement in brand-intro-outro (the deploy
+ *                   container has no .mp4 files -- they are gitignored)
+ *   assumed         neither was available; the caller must not treat it as timed
+ *
+ * Returns { seconds, source }.
+ */
+function introOffset(dir) {
+  const intro = path.join(dir, 'out', '_bumpers', 'intro.mp4');
+  const key = intro + ':' + (fs.existsSync(intro) ? fs.statSync(intro).mtimeMs : 'none');
+  if (introCache.has(key)) return introCache.get(key);
+
+  let result = null;
+  const probed = probeSeconds(intro);
+  if (probed !== null) {
+    result = { seconds: Number(probed.toFixed(3)), source: 'probed' };
+  } else {
+    const constFile = path.join(PATHS.brandBumpers, 'bumper-durations.json');
+    try {
+      const j = JSON.parse(fs.readFileSync(constFile, 'utf8'));
+      if (typeof j.introSeconds === 'number') {
+        result = { seconds: j.introSeconds, source: 'brand-constant' };
+      }
+    } catch { /* fall through */ }
+  }
+  if (!result) result = { seconds: 2.6, source: 'assumed' };
+
+  introCache.set(key, result);
+  return result;
+}
+
+function isQuiz(beat) {
+  return beat && beat.info && beat.info.tpl === 'quiz' && beat.info.data;
+}
+
+/** Load beats.js fresh, so an edited script is picked up without a restart. */
+function loadBeats(dir) {
+  const file = path.join(dir, 'beats.js');
+  if (!fs.existsSync(file)) return null;
+  delete require.cache[require.resolve(file)];
+  const mod = require(file);
+  return Array.isArray(mod) ? mod : null;
+}
+
+function loadDurations(dir) {
+  const file = path.join(dir, 'durations.json');
+  if (!fs.existsSync(file)) return null;
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
+}
+
+/**
+ * Build the checkpoint payload for one video.
+ * @returns {object|null} null when the folder is not a built video.
+ */
+function forVideo(series, slug) {
+  const dir = videoDir(series, slug);
+  const beats = loadBeats(dir);
+  if (!beats) return null;
+
+  const durations = loadDurations(dir);
+  const offset = introOffset(dir);
+
+  // Elapsed lesson time at the START of each beat, by index.
+  const startAt = [];
+  let running = 0;
+  let timed = Boolean(durations);
+  beats.forEach((b, i) => {
+    startAt[i] = running;
+    const d = durations && durations[b.id];
+    if (typeof d === 'number') running += d;
+    else timed = false; // a missing beat length makes every later time a guess
+  });
+
+  const checkpoints = [];
+  beats.forEach((q, i) => {
+    if (!isQuiz(q) || typeof q.info.data.answer === 'number') return; // reveals handled below
+
+    // The REVEAL is a later quiz beat carrying the answer index. Its `note` is
+    // the one-line explanation the script already wrote.
+    const reveal = beats.slice(i + 1).find(
+      (b) => isQuiz(b) && typeof b.info.data.answer === 'number'
+    );
+    if (!reveal) return; // a question with no reveal is a script bug, not a checkpoint
+
+    const lessonAt = Number(startAt[i].toFixed(3));
+    checkpoints.push({
+      id: `q${checkpoints.length + 1}`,
+      beatId: q.id,
+      revealBeatId: reveal.id,
+      atSeconds: Number((lessonAt + offset.seconds).toFixed(3)),
+      lessonAtSeconds: lessonAt,
+      preamble: PREAMBLE,
+      stem: q.info.data.stem,
+      options: q.info.data.options.slice(),
+      correctIndex: reveal.info.data.answer,
+      explanation: reveal.info.data.note || null,
+    });
+  });
+
+  if (!checkpoints.length) return null;
+
+  const finalName = `${slug}_final.mp4`;
+  const finalPath = path.join(dir, 'out', finalName);
+
+  return {
+    videoId: slug,
+    series,
+    deliverable: finalName,
+    // Trustworthy when every beat length was measured AND the intro length came
+    // from a real measurement (probed, or the committed brand constant).
+    // The LMS must refuse to fire a checkpoint whose timing is not trusted.
+    timing: {
+      trusted: Boolean(timed && offset.source !== 'assumed'),
+      relativeTo: finalName,
+      introOffsetSeconds: offset.seconds,
+      introOffsetSource: offset.source,
+      lessonSeconds: Number(running.toFixed(3)),
+      note: 'atSeconds is measured from the start of the delivered file, which '
+        + 'begins with the brand intro. lessonAtSeconds excludes it.',
+    },
+    // Whether the file sits on THIS server. False in the deploy container, where
+    // .mp4 files are gitignored -- it does not mean the video was never made.
+    deliverableOnServer: fs.existsSync(finalPath),
+    checkpoints,
+  };
+}
+
+/** Every video folder that yields at least one checkpoint. */
+function listVideos() {
+  const root = PATHS.explainerVideos;
+  if (!fs.existsSync(root)) return [];
+  const out = [];
+  for (const series of fs.readdirSync(root, { withFileTypes: true })) {
+    if (!series.isDirectory() || series.name === 'brand-intro-outro') continue;
+    const seriesDir = path.join(root, series.name);
+    for (const slug of fs.readdirSync(seriesDir, { withFileTypes: true })) {
+      if (!slug.isDirectory() || slug.name === 'node_modules') continue;
+      let payload = null;
+      try { payload = forVideo(series.name, slug.name); } catch { payload = null; }
+      if (!payload) continue;
+      out.push({
+        videoId: payload.videoId,
+        series: payload.series,
+        checkpoints: payload.checkpoints.length,
+        deliverableOnServer: payload.deliverableOnServer,
+        timingTrusted: payload.timing.trusted,
+      });
+    }
+  }
+  return out.sort((a, b) => (a.series + a.videoId).localeCompare(b.series + b.videoId));
+}
+
+/** Find a video by id alone, so the LMS never has to know our folder layout. */
+function findByVideoId(videoId) {
+  const hit = listVideos().find((v) => v.videoId === videoId);
+  return hit ? forVideo(hit.series, hit.videoId) : null;
+}
+
+function etagOf(payload) {
+  return '"' + crypto.createHash('sha1')
+    .update(JSON.stringify(payload)).digest('hex').slice(0, 20) + '"';
+}
+
+module.exports = { forVideo, listVideos, findByVideoId, etagOf, PREAMBLE };

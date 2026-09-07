@@ -14,6 +14,8 @@
 // there is no file, which this handles silently.
 try { require('../orchestrator/lib/env').loadDotenv(); } catch { /* not fatal */ }
 
+const fs = require('fs');
+const path = require('path');
 const express = require('express');
 const { config, readiness } = require('./lib/config');
 const slack = require('./lib/slack');
@@ -34,6 +36,32 @@ app.get('/health', (_req, res) => {
 });
 
 app.get('/', (_req, res) => res.type('text').send('Drawing Room agent. Mention me in Slack, or file a ticket in Notion.'));
+
+// ─── Checkpoint API + demo (Taleemabad University integration) ────────────────
+
+// The read API the LMS calls for a video's in-video questions. Mounted before
+// the Slack routes because it shares nothing with them: no signature check, no
+// worker, no spend. See server/lib/api.js for the auth and CORS rules.
+app.use('/api/v1', require('./lib/api').build());
+
+/**
+ * The interactive demo the LMS developer is asked to reproduce. Served from this
+ * repo so the specification and the running example can never drift apart, and
+ * so the developer needs no Claude account to see it.
+ *
+ * Self-contained on purpose: it does NOT call the API above, because doing so
+ * from a browser would mean shipping the API token to the client.
+ */
+const DEMO_FILE = path.join(__dirname, '..', 'prototypes', 'lms-quiz-popup-prototype.html');
+app.get('/demo/quiz', (_req, res) => {
+  if (!fs.existsSync(DEMO_FILE)) {
+    return res.status(404).type('text').send('Demo not built. Run: node prototypes/build.js');
+  }
+  // The page embeds its images as data URIs, so it needs no other assets.
+  res.set('Cache-Control', 'public, max-age=300');
+  res.type('html').send(fs.readFileSync(DEMO_FILE, 'utf8'));
+});
+app.get('/demo', (_req, res) => res.redirect(302, '/demo/quiz'));
 
 /**
  * Run a tick by hand. Useful for testing without waiting for the timer, and for
