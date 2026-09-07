@@ -24,6 +24,11 @@ const { parseRequest } = require('./lib/parse');
 
 const app = express();
 
+// Railway terminates TLS at its edge and forwards over http, so without this
+// req.protocol reads "http" and the self-describing API index hands the LMS
+// developer http:// example URLs for an https-only service.
+app.set('trust proxy', true);
+
 // Keep the raw body: Slack's signature is computed over the exact bytes sent, so
 // verifying against a re-serialised object never matches.
 app.use(express.json({

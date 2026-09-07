@@ -159,11 +159,11 @@ footer a{color:var(--accent)}
 </head>
 <body>
 
-<!-- ── page 1 ───────────────────────────────────────────────────────────── -->
+<!-- ── page 1 ─────────────────────────────────────────────────── -->
 <div class="page">
   <div class="rh"><span>Taleemabad University · integration request</span><span><b>Drawing Room</b> content pipeline</span></div>
 
-  <div class="eyebrow">Build spec · one screen, one behaviour</div>
+<div class="eyebrow">Build spec · one screen, one behaviour</div>
   <h1>In-Video Question<br>Checkpoint</h1>
   <p class="lede">Every Drawing Room lesson video contains a point where the narrator stops and asks the learner a question. Today that question is <em>painted into the video</em>, so nobody can answer it. This document specifies the replacement: <strong>a popup the LMS draws over the player at an exact second</strong>, which the learner must answer before the video continues.</p>
 
@@ -204,12 +204,12 @@ footer a{color:var(--accent)}
   </section>
 
   <footer>
-    Page 1 of 5 · the question content shown is the live checkpoint from Autonomy 01<br>
-    Frames captured from the rendered lesson and from the interactive demo linked above
+    Page 1 of 6 · the question content shown is the live checkpoint from Autonomy 01<br>
+    Frames captured from the rendered lesson and from the live demo linked above
   </footer>
 </div>
 
-<!-- ── page 2 ───────────────────────────────────────────────────────────── -->
+<!-- ── page 2 ─────────────────────────────────────────────────── -->
 <div class="page">
   <div class="rh"><span>In-Video Question Checkpoint</span><span>The four states</span></div>
 
@@ -240,12 +240,14 @@ footer a{color:var(--accent)}
     </div>
   </section>
 
-  <footer>Page 2 of 5</footer>
+  <footer>
+    Page 2 of 6
+  </footer>
 </div>
 
-<!-- ── page 3 ───────────────────────────────────────────────────────────── -->
+<!-- ── page 3 ─────────────────────────────────────────────────── -->
 <div class="page">
-  <div class="rh"><span>In-Video Question Checkpoint</span><span>Flow and data</span></div>
+  <div class="rh"><span>In-Video Question Checkpoint</span><span>Flow and endpoints</span></div>
 
   <section>
     <h2>What happens, in order</h2>
@@ -273,6 +275,15 @@ footer a{color:var(--accent)}
     </table></div>
   </section>
 
+  <footer>
+    Page 3 of 6
+  </footer>
+</div>
+
+<!-- ── page 4 ─────────────────────────────────────────────────── -->
+<div class="page">
+  <div class="rh"><span>In-Video Question Checkpoint</span><span>Auth and payload</span></div>
+
   <section>
     <h2>Authentication</h2>
     <p class="sub">The payload contains <code>correctIndex</code>, so it is not public — serving it openly would hand every learner the answer key. Aroma will send you the token separately.</p>
@@ -283,13 +294,6 @@ footer a{color:var(--accent)}
     </div>
     <p class="sub" style="margin-top:9pt">Call this <b>from your server, not from the browser</b> — a page fetching it directly would ship the token to every learner. Fetch it server-side and hand your player only what it needs. Responses carry an <code>ETag</code>, so you can revalidate cheaply and get a <code>304</code> when nothing has changed.</p>
   </section>
-
-  <footer>Page 3 of 5</footer>
-</div>
-
-<!-- ── page 4 ───────────────────────────────────────────────────────────── -->
-<div class="page">
-  <div class="rh"><span>In-Video Question Checkpoint</span><span>The payload</span></div>
 
   <section>
     <h2>One video's checkpoints</h2>
@@ -330,6 +334,15 @@ footer a{color:var(--accent)}
     </div>
   </section>
 
+  <footer>
+    Page 4 of 6
+  </footer>
+</div>
+
+<!-- ── page 5 ─────────────────────────────────────────────────── -->
+<div class="page">
+  <div class="rh"><span>In-Video Question Checkpoint</span><span>Timing and rules</span></div>
+
   <section>
     <h2>The timing rule that will bite you</h2>
     <p class="sub">Two numbers describe the same moment, and picking the wrong one makes every question fire early.</p>
@@ -342,26 +355,6 @@ footer a{color:var(--accent)}
       </tbody>
     </table></div>
   </section>
-
-  <section>
-    <h2>Palette</h2>
-    <p class="sub">Taken from the renderer's own stylesheet, so the popup matches the video rather than approximating it.</p>
-    <div class="sw">
-      <div><i style="background:#F5F1E8"></i>#F5F1E8 cream</div>
-      <div><i style="background:#FBF8F1"></i>#FBF8F1 card</div>
-      <div><i style="background:#6B5344"></i>#6B5344 heading</div>
-      <div><i style="background:#C08A3E"></i>#C08A3E gold</div>
-      <div><i style="background:#5C8A46"></i>#5C8A46 correct</div>
-      <div><i style="background:#C0653E"></i>#C0653E wrong</div>
-    </div>
-  </section>
-
-  <footer>Page 4 of 5</footer>
-</div>
-
-<!-- ── page 4 ───────────────────────────────────────────────────────────── -->
-<div class="page">
-  <div class="rh"><span>In-Video Question Checkpoint</span><span>Rules and decisions</span></div>
 
   <section>
     <h2>Behaviour rules</h2>
@@ -379,6 +372,15 @@ footer a{color:var(--accent)}
       </tbody>
     </table>
   </section>
+
+  <footer>
+    Page 5 of 6
+  </footer>
+</div>
+
+<!-- ── page 6 ─────────────────────────────────────────────────── -->
+<div class="page">
+  <div class="rh"><span>In-Video Question Checkpoint</span><span>Decisions</span></div>
 
   <section>
     <h2>Open decisions</h2>
@@ -401,9 +403,22 @@ footer a{color:var(--accent)}
     </div>
   </section>
 
+  <section>
+    <h2>Palette</h2>
+    <p class="sub">Taken from the renderer's own stylesheet, so the popup matches the video rather than approximating it.</p>
+    <div class="sw">
+      <div><i style="background:#F5F1E8"></i>#F5F1E8 cream</div>
+      <div><i style="background:#FBF8F1"></i>#FBF8F1 card</div>
+      <div><i style="background:#6B5344"></i>#6B5344 heading</div>
+      <div><i style="background:#C08A3E"></i>#C08A3E gold</div>
+      <div><i style="background:#5C8A46"></i>#5C8A46 correct</div>
+      <div><i style="background:#C0653E"></i>#C0653E wrong</div>
+    </div>
+  </section>
+
   <footer>
-    Page 5 of 5 · Drawing Room content pipeline, Taleemabad · prepared by Aroma Tahir<br>
-    Interactive demo: <a href="https://claude.ai/code/artifact/5d7e4bf7-fd99-43cf-b55c-da43671357ac">claude.ai/code/artifact/5d7e4bf7-fd99-43cf-b55c-da43671357ac</a>
+    Page 6 of 6 · Drawing Room content pipeline, Taleemabad · prepared by Aroma Tahir<br>
+    Live demo: <a href="https://content-queen-production.up.railway.app/demo/quiz">content-queen-production.up.railway.app/demo/quiz</a>
   </footer>
 </div>
 
