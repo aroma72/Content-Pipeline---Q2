@@ -150,6 +150,21 @@ code{font-family:var(--mono);font-size:8pt;color:var(--accent)}
 .sw div{font-family:var(--mono);font-size:7pt;color:var(--muted);text-align:center}
 .sw i{display:block;width:26mm;height:9mm;border:.5pt solid var(--line);margin-bottom:2.5pt}
 
+/* ── credential block ───────────────────────────────────────────────────── */
+.cred{border:.9pt solid var(--accent);margin-top:9pt}
+.cred .hdr{
+  font-family:var(--mono);font-size:6.8pt;letter-spacing:.09em;text-transform:uppercase;
+  color:#fff;background:var(--accent);padding:4pt 8pt;
+}
+.cred .body{padding:9pt 10pt;display:flex;flex-direction:column;gap:6pt}
+.cred .kv{display:grid;grid-template-columns:auto 1fr;gap:3pt 10pt;align-items:baseline}
+.cred .kv dt{font-family:var(--mono);font-size:7pt;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--muted)}
+.cred .kv dd{font-family:var(--mono);font-size:9.5pt;font-weight:500;color:var(--ink);
+  word-break:break-all}
+.cred .fine{font-size:8.4pt;line-height:1.45;color:var(--muted)}
+.cred .fine b{color:var(--ink);font-weight:600}
+
 footer{
   margin-top:16pt;padding-top:8pt;border-top:.6pt solid var(--line);
   font-family:var(--mono);font-size:7pt;line-height:1.75;color:var(--muted);
@@ -173,7 +188,7 @@ footer a{color:var(--accent)}
       <span style="color:var(--muted);font-size:8.4pt">Press play, let it reach the gold marker, and answer. Every screenshot in this document was captured from that page.</span></dd>
     <dt>Live API</dt>
     <dd><a href="https://content-queen-production.up.railway.app/api/v1">content-queen-production.up.railway.app/api/v1</a><br>
-      <span style="color:var(--muted);font-size:8.4pt">Deployed and serving. The index is public; the data routes need the bearer token Aroma will send you separately.</span></dd>
+      <span style="color:var(--muted);font-size:8.4pt">Deployed and serving. The index is public; the data routes need the bearer token on page 4. Because that token is in this document, <b>do not post this file publicly</b>.</span></dd>
     <dt>Example video</dt>
     <dd>Autonomy 01 — The Autonomy Spectrum · one checkpoint, firing at 41.671s</dd>
     <dt>Your scope</dt>
@@ -204,7 +219,7 @@ footer a{color:var(--accent)}
   </section>
 
   <footer>
-    Page 1 of 6 · the question content shown is the live checkpoint from Autonomy 01<br>
+    Page 1 of 7 · the question content shown is the live checkpoint from Autonomy 01<br>
     Frames captured from the rendered lesson and from the live demo linked above
   </footer>
 </div>
@@ -241,7 +256,7 @@ footer a{color:var(--accent)}
   </section>
 
   <footer>
-    Page 2 of 6
+    Page 2 of 7
   </footer>
 </div>
 
@@ -276,24 +291,49 @@ footer a{color:var(--accent)}
   </section>
 
   <footer>
-    Page 3 of 6
+    Page 3 of 7
   </footer>
 </div>
 
 <!-- ── page 4 ─────────────────────────────────────────────────── -->
 <div class="page">
-  <div class="rh"><span>In-Video Question Checkpoint</span><span>Auth and payload</span></div>
+  <div class="rh"><span>In-Video Question Checkpoint</span><span>Authentication</span></div>
 
   <section>
     <h2>Authentication</h2>
-    <p class="sub">The payload contains <code>correctIndex</code>, so it is not public — serving it openly would hand every learner the answer key. Aroma will send you the token separately.</p>
+    <p class="sub">The payload contains <code>correctIndex</code>, so it is not public — serving it openly would hand every learner the answer key. Send this token on every request to a <code>/api/v1</code> route except the index.</p>
+
+    <div class="cred">
+      <div class="hdr">your credential · treat as a password</div>
+      <div class="body">
+        <dl class="kv">
+          <dt>Header</dt>
+          <dd>Authorization: Bearer &lt;token&gt;</dd>
+          <dt>Token</dt>
+          <dd>cq_o9UjsZ6_pknF10IUZwuZHM7Hl6MpJtDF</dd>
+        </dl>
+        <p class="fine">This token is <b>read-only over lesson content</b> — it can fetch checkpoints and post an attempt. It cannot start work, change a video, or spend anything. <b>Do not put it in browser-side code</b> or commit it to a repository: anyone holding it can read the answer key. If it leaks, tell Aroma and it is replaced in one command, with no change on your side beyond the new value.</p>
+      </div>
+    </div>
     <div class="codewrap">
       <div class="codebar">request · curl</div>
-<pre>curl -H <span class="s">"Authorization: Bearer $CONTENT_API_TOKEN"</span> \
+<pre><span class="c"># paste both lines; the first is the token above</span>
+export CONTENT_API_TOKEN=<span class="s">cq_o9UjsZ6_pknF10IUZwuZHM7Hl6MpJtDF</span>
+
+curl -H <span class="s">"Authorization: Bearer $CONTENT_API_TOKEN"</span> \
   https://content-queen-production.up.railway.app<span class="k">/api/v1/videos/autonomy-01-spectrum/checkpoints</span></pre>
     </div>
     <p class="sub" style="margin-top:9pt">Call this <b>from your server, not from the browser</b> — a page fetching it directly would ship the token to every learner. Fetch it server-side and hand your player only what it needs. Responses carry an <code>ETag</code>, so you can revalidate cheaply and get a <code>304</code> when nothing has changed.</p>
   </section>
+
+  <footer>
+    Page 4 of 7
+  </footer>
+</div>
+
+<!-- ── page 5 ─────────────────────────────────────────────────── -->
+<div class="page">
+  <div class="rh"><span>In-Video Question Checkpoint</span><span>The payload</span></div>
 
   <section>
     <h2>One video's checkpoints</h2>
@@ -334,15 +374,6 @@ footer a{color:var(--accent)}
     </div>
   </section>
 
-  <footer>
-    Page 4 of 6
-  </footer>
-</div>
-
-<!-- ── page 5 ─────────────────────────────────────────────────── -->
-<div class="page">
-  <div class="rh"><span>In-Video Question Checkpoint</span><span>Timing and rules</span></div>
-
   <section>
     <h2>The timing rule that will bite you</h2>
     <p class="sub">Two numbers describe the same moment, and picking the wrong one makes every question fire early.</p>
@@ -355,6 +386,15 @@ footer a{color:var(--accent)}
       </tbody>
     </table></div>
   </section>
+
+  <footer>
+    Page 5 of 7
+  </footer>
+</div>
+
+<!-- ── page 6 ─────────────────────────────────────────────────── -->
+<div class="page">
+  <div class="rh"><span>In-Video Question Checkpoint</span><span>Behaviour</span></div>
 
   <section>
     <h2>Behaviour rules</h2>
@@ -373,12 +413,25 @@ footer a{color:var(--accent)}
     </table>
   </section>
 
+  <section>
+    <h2>Palette</h2>
+    <p class="sub">Taken from the renderer's own stylesheet, so the popup matches the video rather than approximating it.</p>
+    <div class="sw">
+      <div><i style="background:#F5F1E8"></i>#F5F1E8 cream</div>
+      <div><i style="background:#FBF8F1"></i>#FBF8F1 card</div>
+      <div><i style="background:#6B5344"></i>#6B5344 heading</div>
+      <div><i style="background:#C08A3E"></i>#C08A3E gold</div>
+      <div><i style="background:#5C8A46"></i>#5C8A46 correct</div>
+      <div><i style="background:#C0653E"></i>#C0653E wrong</div>
+    </div>
+  </section>
+
   <footer>
-    Page 5 of 6
+    Page 6 of 7
   </footer>
 </div>
 
-<!-- ── page 6 ─────────────────────────────────────────────────── -->
+<!-- ── page 7 ─────────────────────────────────────────────────── -->
 <div class="page">
   <div class="rh"><span>In-Video Question Checkpoint</span><span>Decisions</span></div>
 
@@ -403,21 +456,8 @@ footer a{color:var(--accent)}
     </div>
   </section>
 
-  <section>
-    <h2>Palette</h2>
-    <p class="sub">Taken from the renderer's own stylesheet, so the popup matches the video rather than approximating it.</p>
-    <div class="sw">
-      <div><i style="background:#F5F1E8"></i>#F5F1E8 cream</div>
-      <div><i style="background:#FBF8F1"></i>#FBF8F1 card</div>
-      <div><i style="background:#6B5344"></i>#6B5344 heading</div>
-      <div><i style="background:#C08A3E"></i>#C08A3E gold</div>
-      <div><i style="background:#5C8A46"></i>#5C8A46 correct</div>
-      <div><i style="background:#C0653E"></i>#C0653E wrong</div>
-    </div>
-  </section>
-
   <footer>
-    Page 6 of 6 · Drawing Room content pipeline, Taleemabad · prepared by Aroma Tahir<br>
+    Page 7 of 7 · Drawing Room content pipeline, Taleemabad · prepared by Aroma Tahir<br>
     Live demo: <a href="https://content-queen-production.up.railway.app/demo/quiz">content-queen-production.up.railway.app/demo/quiz</a>
   </footer>
 </div>
