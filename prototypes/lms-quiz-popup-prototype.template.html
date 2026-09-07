@@ -1,0 +1,704 @@
+<title>In-Video Question Checkpoint</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* ─────────────────────────────────────────────────────────────────────────────
+   Two type/colour worlds on purpose:
+     .doc-*   the engineering handoff document  (IBM Plex, charcoal/stone)
+     .v-*     inside the video frame            (Georgia/Segoe, Taleemabad cream)
+   Brand tokens are lifted verbatim from the renderer's own mckinsey.css and
+   info.css, so what the engineer builds matches what the renderer produces.
+   (Do not write a glob with a star-slash in here: it closes this comment early
+   and the :root block below gets parsed as garbage. That bug cost an hour.)
+   ───────────────────────────────────────────────────────────────────────────── */
+:root{
+  /* document — light */
+  --doc-bg:#E7E3DB;
+  --doc-panel:#FDFCF9;
+  --doc-panel-2:#F2EEE6;
+  --doc-ink:#26231F;
+  --doc-muted:#6D665B;
+  --doc-line:#CFC8BA;
+  --doc-accent:#8A5A2B;
+  --doc-code-bg:#211E1A;
+  --doc-code-ink:#E8E2D6;
+  --doc-code-line:#3B352E;
+
+  /* video frame — Taleemabad brand, identical in both themes (a video is a video) */
+  --bezel:#1C1A17;
+  --bezel-2:#141210;
+  --cream:#F5F1E8;
+  --ink:#2E2A24;
+  --head:#6B5344;
+  --gold:#C08A3E;
+  --muted-b:#9B8E7A;
+  --line:#DED5C4;
+  --card:#FBF8F1;
+  --good:#5C8A46;
+  --bad:#C0653E;
+  --serif:Georgia,'Times New Roman',serif;
+  --sans:'Segoe UI',Arial,sans-serif;
+
+  --plex:'IBM Plex Sans',system-ui,-apple-system,sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,'Cascadia Code',Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --doc-bg:#211E1A;
+    --doc-panel:#2C2823;
+    --doc-panel-2:#332E28;
+    --doc-ink:#E8E2D6;
+    --doc-muted:#A79C89;
+    --doc-line:#443E36;
+    --doc-accent:#D9A45E;
+    --doc-code-bg:#191713;
+    --doc-code-ink:#E8E2D6;
+    --doc-code-line:#3B352E;
+  }
+}
+:root[data-theme="dark"]{
+  --doc-bg:#211E1A;
+  --doc-panel:#2C2823;
+  --doc-panel-2:#332E28;
+  --doc-ink:#E8E2D6;
+  --doc-muted:#A79C89;
+  --doc-line:#443E36;
+  --doc-accent:#D9A45E;
+  --doc-code-bg:#191713;
+  --doc-code-ink:#E8E2D6;
+  --doc-code-line:#3B352E;
+}
+
+*{box-sizing:border-box}
+body{
+  background:var(--doc-bg);
+  color:var(--doc-ink);
+  font-family:var(--plex);
+  font-size:16px;
+  line-height:1.6;
+  padding:56px 24px 96px;
+}
+.wrap{max-width:1080px;margin:0 auto;display:flex;flex-direction:column;gap:56px}
+
+/* ── header ─────────────────────────────────────────────────────────────── */
+.eyebrow{
+  font-family:var(--mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--doc-accent);margin-bottom:14px;
+}
+h1{
+  font-family:var(--plex);font-weight:600;font-size:clamp(32px,4.4vw,46px);
+  line-height:1.1;letter-spacing:-.02em;text-wrap:balance;margin-bottom:18px;
+}
+.lede{font-size:18px;color:var(--doc-muted);max-width:62ch}
+.lede strong{color:var(--doc-ink);font-weight:500}
+
+h2{
+  font-family:var(--plex);font-weight:600;font-size:22px;letter-spacing:-.01em;
+  margin-bottom:6px;
+}
+.sub{color:var(--doc-muted);font-size:15px;max-width:66ch;margin-bottom:22px}
+
+/* ── callout ────────────────────────────────────────────────────────────── */
+.callout{
+  display:flex;gap:16px;align-items:flex-start;
+  background:var(--doc-panel);border:1px solid var(--doc-line);
+  border-left:4px solid var(--doc-accent);border-radius:4px;padding:18px 22px;
+}
+.callout .k{
+  font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--doc-accent);flex:0 0 auto;padding-top:3px;
+}
+.callout p{font-size:15px;color:var(--doc-ink);max-width:60ch}
+
+/* ── the player ─────────────────────────────────────────────────────────── */
+.player{
+  background:var(--bezel);border-radius:10px;padding:14px 14px 0;
+  box-shadow:0 18px 50px -18px rgba(0,0,0,.55);
+}
+.screen{
+  position:relative;aspect-ratio:16/9;width:100%;overflow:hidden;
+  border-radius:4px;background:var(--cream);
+  container-type:size;
+}
+
+/* The video frame: the real rendered beat, drifting the way the renderer drifts it. */
+.beat{position:absolute;inset:0;background:var(--cream);overflow:hidden}
+.beat .drift{position:absolute;inset:0;animation:drift 26s ease-in-out infinite alternate}
+@keyframes drift{from{transform:scale(1.04) translate(-.6%,.4%)}to{transform:scale(1.11) translate(.8%,-.7%)}}
+.still{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.frame-tag{
+  position:absolute;right:2.2cqw;top:2.2cqw;font-family:var(--sans);font-size:1.3cqw;
+  color:var(--head);background:rgba(251,248,241,.9);border:1px solid var(--line);
+  border-radius:.5cqw;padding:.55cqw 1cqw;
+}
+.cap{
+  position:absolute;left:0;right:0;bottom:0;padding:2.4cqw 3.2cqw;
+  background:linear-gradient(to top,rgba(46,42,36,.82),rgba(46,42,36,0));
+  font-family:var(--sans);font-size:2cqw;color:#FBF8F1;
+}
+
+/* ── the overlay: this is the thing being specified ─────────────────────── */
+.scrim{
+  position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+  background:rgba(46,42,36,.62);backdrop-filter:blur(3px);padding:1.8cqw;
+}
+.scrim.on{display:flex}
+/* Sized so the FULLY ANSWERED state — stem, four options, verdict, explanation
+   and the button — still fits inside a 16:9 frame. max-height is the backstop:
+   a longer explanation scrolls inside the card instead of bleeding out of the
+   video. */
+.qcard{
+  width:100%;max-width:74cqw;max-height:100%;overflow-y:auto;
+  background:var(--card);
+  border:.18cqw solid var(--line);border-radius:1.1cqw;
+  padding:1.7cqw 2.4cqw;display:flex;flex-direction:column;gap:.9cqw;
+  box-shadow:0 1.6cqw 4cqw -1.2cqw rgba(46,42,36,.45);
+  animation:rise .34s cubic-bezier(.2,.8,.3,1) both;
+}
+@keyframes rise{from{opacity:0;transform:translateY(2.4cqw) scale(.985)}to{opacity:1;transform:none}}
+
+.q-pre{
+  font-family:var(--sans);font-size:1.25cqw;line-height:1.35;color:var(--head);
+  display:flex;align-items:center;gap:.8cqw;
+}
+.q-pre .dot{
+  flex:0 0 auto;width:1.15cqw;height:1.15cqw;border-radius:50%;background:var(--gold);
+  animation:pulse 1.8s ease-in-out infinite;
+}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.q-stem{
+  font-family:var(--serif);font-weight:700;font-size:2.05cqw;line-height:1.16;
+  color:var(--head);text-wrap:balance;
+}
+.q-opts{display:flex;flex-direction:column;gap:.5cqw}
+.q-opt{
+  display:flex;align-items:center;gap:1.2cqw;width:100%;text-align:left;
+  background:#FFFDF8;border:.16cqw solid var(--line);border-radius:.6cqw;
+  padding:.72cqw 1.4cqw;font:inherit;cursor:pointer;
+  transition:border-color .16s,background .16s,transform .16s;
+}
+.q-opt:hover:not(:disabled){border-color:var(--gold);transform:translateX(.3cqw)}
+.q-opt:focus-visible{outline:.2cqw solid var(--gold);outline-offset:.2cqw}
+.q-opt:disabled{cursor:default}
+.q-badge{
+  flex:0 0 auto;width:2.05cqw;height:2.05cqw;border-radius:.35cqw;background:#EDE4D3;
+  color:var(--head);font-family:var(--sans);font-weight:700;font-size:1.4cqw;
+  display:flex;align-items:center;justify-content:center;
+}
+.q-text{font-family:var(--sans);font-size:1.4cqw;color:var(--ink)}
+.q-mark{margin-left:auto;font-family:var(--sans);font-weight:700;font-size:1.4cqw;opacity:0}
+
+.q-opt.correct{border-color:var(--good);background:rgba(92,138,70,.13)}
+.q-opt.correct .q-badge{background:var(--good);color:#fff}
+.q-opt.correct .q-mark{opacity:1;color:var(--good)}
+.q-opt.chosen-wrong{border-color:var(--bad);background:rgba(192,101,62,.12)}
+.q-opt.chosen-wrong .q-badge{background:var(--bad);color:#fff}
+.q-opt.chosen-wrong .q-mark{opacity:1;color:var(--bad)}
+.q-opt.faded{opacity:.5}
+
+.q-fb{display:none;flex-direction:column;gap:.7cqw;
+  border-top:.16cqw solid var(--line);padding-top:.9cqw}
+.q-fb.on{display:flex}
+.q-verdict{font-family:var(--sans);font-weight:700;font-size:1.5cqw;display:flex;align-items:center;gap:.7cqw}
+.q-verdict.right{color:var(--good)}
+.q-verdict.wrong{color:var(--bad)}
+.q-why{font-family:var(--sans);font-size:1.25cqw;line-height:1.45;color:var(--ink)}
+.q-why b{color:var(--head)}
+.q-next{
+  align-self:flex-start;font-family:var(--sans);font-weight:700;font-size:1.4cqw;
+  color:#fff;background:var(--head);border:none;border-radius:.5cqw;
+  padding:.7cqw 1.6cqw;cursor:pointer;transition:background .16s;
+}
+.q-next:hover{background:#574438}
+.q-next:focus-visible{outline:.22cqw solid var(--gold);outline-offset:.3cqw}
+
+/* ── transport ──────────────────────────────────────────────────────────── */
+.transport{display:flex;align-items:center;gap:16px;padding:14px 6px 16px}
+.tbtn{
+  flex:0 0 auto;width:38px;height:38px;border-radius:50%;border:1px solid #4A443B;
+  background:#2A2621;color:#EDE7DB;font-size:14px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;transition:background .16s;
+}
+.tbtn:hover{background:#3A342C}
+.tbtn:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.time{font-family:var(--mono);font-size:12px;color:#A79C89;flex:0 0 auto;font-variant-numeric:tabular-nums}
+.track{position:relative;flex:1;height:6px;border-radius:3px;background:#39332C;cursor:default}
+.fill{position:absolute;inset:0 auto 0 0;width:0;border-radius:3px;background:#B9AE99}
+.qmark-tick{position:absolute;top:-6px;bottom:-6px;width:3px;background:var(--gold);border-radius:2px}
+.qmark-tick::after{
+  content:"?";position:absolute;left:50%;top:-19px;transform:translateX(-50%);
+  font-family:var(--mono);font-size:11px;font-weight:500;color:var(--gold);
+}
+
+.hint{font-family:var(--mono);font-size:12px;color:var(--doc-muted);margin-top:14px;text-align:center}
+
+/* ── controls under the player ──────────────────────────────────────────── */
+.tryrow{display:flex;flex-wrap:wrap;gap:10px;margin-top:20px}
+.try{
+  font-family:var(--plex);font-size:14px;font-weight:500;color:var(--doc-ink);
+  background:var(--doc-panel);border:1px solid var(--doc-line);border-radius:4px;
+  padding:9px 15px;cursor:pointer;transition:border-color .16s,background .16s;
+}
+.try:hover{border-color:var(--doc-accent);background:var(--doc-panel-2)}
+.try:focus-visible{outline:2px solid var(--doc-accent);outline-offset:2px}
+
+/* ── before / after ─────────────────────────────────────────────────────── */
+.ba{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:24px}
+.ba figure{margin:0;display:flex;flex-direction:column;gap:12px}
+.ba .shot{
+  border:1px solid var(--doc-line);border-radius:4px;overflow:hidden;
+  background:var(--cream);line-height:0;
+}
+.ba .shot img{width:100%;height:auto;display:block}
+.ba figcaption{display:flex;flex-direction:column;gap:6px}
+.ba .tag{
+  font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+  display:inline-flex;align-self:flex-start;padding:3px 8px;border-radius:3px;
+}
+/* Semantic colour carried by the tint, text by the themed token, so both
+   themes resolve without a per-theme override. */
+.ba .tag.now{color:var(--doc-ink);background:rgba(192,101,62,.2)}
+.ba .tag.next{color:var(--doc-ink);background:rgba(92,138,70,.24)}
+.ba h3{font-family:var(--plex);font-size:16px;font-weight:600}
+.ba p{font-size:14.5px;color:var(--doc-muted);max-width:46ch}
+
+/* ── steps ──────────────────────────────────────────────────────────────── */
+ol.steps{list-style:none;counter-reset:s;display:flex;flex-direction:column;gap:2px}
+ol.steps li{
+  counter-increment:s;display:flex;gap:18px;align-items:baseline;
+  padding:16px 20px;background:var(--doc-panel);border:1px solid var(--doc-line);
+}
+ol.steps li:first-child{border-radius:4px 4px 0 0}
+ol.steps li:last-child{border-radius:0 0 4px 4px}
+ol.steps li+li{border-top:none}
+ol.steps li::before{
+  content:counter(s,decimal-leading-zero);flex:0 0 auto;
+  font-family:var(--mono);font-size:12px;color:var(--doc-accent);width:22px;
+}
+ol.steps .t{font-weight:500}
+ol.steps .d{color:var(--doc-muted);font-size:15px}
+
+/* ── code ───────────────────────────────────────────────────────────────── */
+.codewrap{border-radius:6px;overflow:hidden;border:1px solid var(--doc-code-line)}
+.codebar{
+  background:#171512;color:#8E8474;font-family:var(--mono);font-size:11.5px;
+  letter-spacing:.06em;text-transform:uppercase;padding:9px 16px;
+  border-bottom:1px solid var(--doc-code-line);
+}
+pre{
+  background:var(--doc-code-bg);color:var(--doc-code-ink);
+  font-family:var(--mono);font-size:13px;line-height:1.65;
+  padding:20px 18px;overflow-x:auto;
+}
+pre .k{color:#D9A45E}
+pre .s{color:#A8C08A}
+pre .n{color:#E0A9C0}
+pre .c{color:#7A7263;font-style:italic}
+
+/* ── table ──────────────────────────────────────────────────────────────── */
+.tablewrap{overflow-x:auto;border:1px solid var(--doc-line);border-radius:4px}
+table{border-collapse:collapse;width:100%;min-width:620px;background:var(--doc-panel)}
+th,td{text-align:left;padding:13px 18px;border-bottom:1px solid var(--doc-line);font-size:15px;vertical-align:top}
+th{
+  font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--doc-muted);font-weight:400;background:var(--doc-panel-2);
+}
+tr:last-child td{border-bottom:none}
+td:first-child{font-weight:500;white-space:nowrap}
+td code{font-family:var(--mono);font-size:13px;color:var(--doc-accent)}
+
+/* ── decisions ──────────────────────────────────────────────────────────── */
+.decisions{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:2px}
+.dec{background:var(--doc-panel);border:1px solid var(--doc-line);padding:20px}
+.dec .q{font-weight:500;margin-bottom:8px}
+.dec .a{color:var(--doc-muted);font-size:14.5px}
+.dec .a em{color:var(--doc-accent);font-style:normal;font-family:var(--mono);font-size:12.5px}
+
+footer{
+  border-top:1px solid var(--doc-line);padding-top:24px;
+  font-family:var(--mono);font-size:12px;color:var(--doc-muted);line-height:1.9;
+}
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+}
+@media (max-width:640px){
+  body{padding:36px 16px 64px}
+  .wrap{gap:40px}
+}
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Taleemabad University · integration request</div>
+    <h1>In-Video Question Checkpoint</h1>
+    <p class="lede">Every Drawing Room lesson video contains a point where the narrator stops and asks the learner a question. Today the question is <em>painted into the video</em> and the learner just watches it go by. This page specifies the replacement: <strong>a popup the LMS draws over the player at that exact second</strong>, which the learner actually answers before the video continues.</p>
+  </header>
+
+  <div class="callout">
+    <span class="k">Working<br>demo</span>
+    <p>This is not a picture of a design — it runs. Press play and let it reach the gold <b>?</b> marker at 0:42, or jump straight there. Then pick an answer, including a wrong one, and see what the learner sees.</p>
+  </div>
+
+  <section>
+    <div class="player">
+      <div class="screen" id="screen">
+
+        <div class="beat">
+          <div class="drift">
+            <img class="still" src="__SCENE_URI__" alt="Ali behind his shop counter with the AI helper beside him, from the rendered lesson.">
+          </div>
+          <div class="frame-tag">Real frame · Autonomy 01</div>
+          <div class="cap" id="cap">Low end · asks first</div>
+        </div>
+
+        <div class="scrim" id="scrim" role="dialog" aria-modal="true" aria-labelledby="qstem">
+          <div class="qcard">
+            <p class="q-pre"><span class="dot" aria-hidden="true"></span>Let's answer a quick question, to check the concept landed.</p>
+            <h3 class="q-stem" id="qstem">Which could the helper safely run alone?</h3>
+
+            <div class="q-opts" id="qopts" role="group" aria-labelledby="qstem"></div>
+
+            <div class="q-fb" id="qfb">
+              <p class="q-verdict" id="qverdict" role="status" aria-live="polite"></p>
+              <p class="q-why" id="qwhy"></p>
+              <button class="q-next" id="qnext" type="button">Continue the video</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="transport">
+        <button class="tbtn" id="play" type="button" aria-label="Play">▶</button>
+        <span class="time" id="tnow">0:00</span>
+        <div class="track" id="track">
+          <div class="fill" id="fill"></div>
+          <div class="qmark-tick" id="tick" style="left:56%"></div>
+        </div>
+        <span class="time">1:55</span>
+      </div>
+    </div>
+
+    <div class="tryrow">
+      <button class="try" id="jump" type="button">Jump to 0:35</button>
+      <button class="try" id="restart" type="button">Restart from 0:00</button>
+      <button class="try" id="reset" type="button">Reset the question</button>
+    </div>
+    <p class="hint">Keyboard: 1–4 to answer · Enter to continue · the question cannot be dismissed unanswered</p>
+  </section>
+
+  <section>
+    <h2>What this replaces</h2>
+    <p class="sub">Both frames below are from the same video, <b>Autonomy 01 — The Autonomy Spectrum</b>, at <b>0:39</b>. The left is what learners see today.</p>
+    <div class="ba">
+      <figure>
+        <div class="shot"><img src="__BAKED_URI__" alt="The current video frame: the question and its options painted into the video, with a caption reading 'Your turn — write it down'."></div>
+        <figcaption>
+          <span class="tag now">Today</span>
+          <h3>Painted into the video</h3>
+          <p>The question is part of the picture, so there is nothing to click. Note the caption we were forced to write: <b>“Your turn — write it down.”</b> The learner answers on paper, or more often not at all, and the video never knows either way.</p>
+        </figcaption>
+      </figure>
+      <figure>
+        <div class="shot"><img src="__SHOT_QUESTION__" alt="The proposed frame: the same question as an interactive popup drawn over the paused video."></div>
+        <figcaption>
+          <span class="tag next">Proposed</span>
+          <h3>Drawn over the paused video</h3>
+          <p>The same question, the same wording, the same house styling — but the LMS draws it, so the four options are real buttons. The learner answers in the player and gets told immediately whether they were right.</p>
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section>
+    <h2>What happens, in order</h2>
+    <p class="sub">This is a sequence, so the numbering is real — each step waits on the one before it.</p>
+    <ol class="steps">
+      <li><span><span class="t">Playback reaches the checkpoint.</span> <span class="d">The LMS watches <code>currentTime</code> and fires at the second we give you. The video <b>pauses itself</b> — the learner should not have to pause it.</span></span></li>
+      <li><span><span class="t">The popup opens over the paused frame.</span> <span class="d">The frame stays visible and dimmed behind it, so the learner keeps the context they were just taught.</span></span></li>
+      <li><span><span class="t">The learner picks one of four options.</span> <span class="d">One click. No submit button, no confirmation step.</span></span></li>
+      <li><span><span class="t">The system says right or wrong, immediately.</span> <span class="d">Correct: the option turns green and the video may continue. Wrong: their choice turns terracotta, <b>the correct option is revealed in green</b>, and the explanation appears.</span></span></li>
+      <li><span><span class="t">The learner continues.</span> <span class="d">One button closes the popup and resumes playback from the same second. A wrong answer does not block them and is not scored — this is a comprehension check, not a test.</span></span></li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>What we would send you per video</h2>
+    <p class="sub">One array of checkpoints alongside the video. We generate this from the script, so it arrives with the video and needs no manual authoring on your side. The example below is the real checkpoint from <b>Autonomy 01 — The Autonomy Spectrum</b>.</p>
+    <div class="codewrap">
+      <div class="codebar">quiz checkpoint payload · json</div>
+<pre>{
+  <span class="k">"videoId"</span>: <span class="s">"autonomy-01-spectrum"</span>,
+  <span class="k">"checkpoints"</span>: [
+    {
+      <span class="k">"id"</span>:          <span class="s">"q1"</span>,
+      <span class="k">"atSeconds"</span>:   <span class="n">42</span>,          <span class="c">// fire here; pause playback</span>
+      <span class="k">"preamble"</span>:    <span class="s">"Let's answer a quick question, to check the concept landed."</span>,
+      <span class="k">"stem"</span>:        <span class="s">"Which could the helper safely run alone?"</span>,
+      <span class="k">"options"</span>: [
+        <span class="s">"Read an order back"</span>,
+        <span class="s">"Give a cash refund"</span>,
+        <span class="s">"Wire money from the till"</span>,
+        <span class="s">"Approve a supplier invoice"</span>
+      ],
+      <span class="k">"correctIndex"</span>: <span class="n">0</span>,
+      <span class="k">"explanation"</span>:  <span class="s">"Reading an order back is easy to undo: if the helper gets it wrong, Ali fixes it in seconds. The other three move money, and once money has moved nobody can pull it back in time."</span>
+    }
+  ]
+}</pre>
+    </div>
+  </section>
+
+  <section>
+    <h2>Behaviour rules</h2>
+    <p class="sub">The parts that are easy to get subtly wrong, stated so nobody has to guess.</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Situation</th><th>Required behaviour</th></tr></thead>
+        <tbody>
+          <tr><td>Reaching <code>atSeconds</code></td><td>Pause playback and open the popup automatically. Never wait for the learner to notice a button.</td></tr>
+          <tr><td>Correct answer</td><td>Option turns green with a tick. Verdict reads <b>“That's right.”</b> The explanation still shows — the learner who guessed deserves the reasoning too.</td></tr>
+          <tr><td>Wrong answer</td><td>Their option turns terracotta with a cross, <b>and</b> the correct option turns green. Then the same explanation. Both must be visible at once, so they can see what they mixed up.</td></tr>
+          <tr><td>Answering twice</td><td>Not possible. All four options are disabled the moment one is chosen — no changing the answer after seeing the result.</td></tr>
+          <tr><td>Trying to skip</td><td>The popup has no close button and no click-outside-to-dismiss. The only exit is <b>Continue the video</b>, which appears only after answering.</td></tr>
+          <tr><td>Seeking past it</td><td>If a learner drags the timeline past an unanswered checkpoint, the checkpoint should still fire. Otherwise the check is trivially skippable.</td></tr>
+          <tr><td>Rewatching</td><td>Fire again. A rewatch is usually a learner who wants another go at understanding it.</td></tr>
+          <tr><td>Keyboard &amp; screen readers</td><td>Options reachable by <kbd>Tab</kbd> and answerable with <kbd>1</kbd>–<kbd>4</kbd>; focus moves into the popup on open and to Continue after answering; the verdict is announced via <code>aria-live</code>.</td></tr>
+          <tr><td>Mobile / narrow player</td><td>The popup scales with the player, never overflows it, and options stay a comfortable tap size.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Decisions for you</h2>
+    <p class="sub">Four things the demo assumes. Overrule any of them — they are cheap to change now and awkward later.</p>
+    <div class="decisions">
+      <div class="dec"><p class="q">Does a wrong answer get recorded?</p><p class="a">The demo records nothing. If you want completion or comprehension reporting, we need to know what to send and where. <em>assumed: not stored</em></p></div>
+      <div class="dec"><p class="q">One explanation, or one per option?</p><p class="a">The demo shows a single shared explanation for any wrong answer. Per-option feedback teaches better but triples the authoring. <em>assumed: one shared</em></p></div>
+      <div class="dec"><p class="q">Where does the checkpoint list come from?</p><p class="a">We can hand it over as JSON beside the video file, or expose an endpoint you call by <code>videoId</code>. Your call — whichever fits your ingestion. <em>assumed: JSON alongside</em></p></div>
+      <div class="dec"><p class="q">One question per video, or several?</p><p class="a">The payload is an array, so several works. Today every video has exactly one, placed about two-thirds through. <em>assumed: one, extensible</em></p></div>
+    </div>
+  </section>
+
+  <footer>
+    Prototype · Drawing Room content pipeline, Taleemabad<br>
+    Brand tokens taken from <span style="color:var(--doc-accent)">explainer-videos/*/animation/mckinsey.css</span> — cream #F5F1E8, brown #6B5344, gold #C08A3E, green #5C8A46, terracotta #C0653E<br>
+    Question content is the live checkpoint from Autonomy 01 · the video frame is a flat stand-in, not the rendered art
+  </footer>
+
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  // ── the checkpoint we would actually ship ────────────────────────────────
+  // Real numbers from explainer-videos/autonomy/autonomy-01-spectrum/durations.json:
+  // the baked-in quiz card (beat 09) began at 39.07s. The checkpoint fires there.
+  var DURATION = 115;
+  var CHECK = {
+    atSeconds: 39,
+    options: [
+      'Read an order back',
+      'Give a cash refund',
+      'Wire money from the till',
+      'Approve a supplier invoice'
+    ],
+    correctIndex: 0,
+    explanation: "Reading an order back is easy to undo: if the helper gets it wrong, Ali fixes it in seconds. The other three move money, and once money has moved nobody can pull it back in time."
+  };
+  // The video's real captions, at their real start times.
+  var CAPTIONS = [
+    [0,    'A dial, not a switch'],
+    [5.4,  'Ali · a new helper'],
+    [9.5,  'Hand over everything'],
+    [14.2, 'A refund that never should have happened'],
+    [18.4, 'Swing all the way back'],
+    [23.4, 'Approving every tiny thing'],
+    [29.1, 'Both ways failed'],
+    [33.8, 'the autonomy spectrum'],
+    [39,   'Low end · asks first'],
+    [50,   'High end · runs alone'],
+    [56,   'Most live in the middle'],
+    [62,   'Where to set it'],
+    [68,   'can I undo it?']
+  ];
+
+  var el = function(id){ return document.getElementById(id); };
+  var screenEl = el('screen'), scrim = el('scrim'), opts = el('qopts'),
+      fb = el('qfb'), verdict = el('qverdict'), why = el('qwhy'), next = el('qnext'),
+      playBtn = el('play'), fill = el('fill'), tnow = el('tnow'), cap = el('cap'),
+      tick = el('tick');
+
+  var t = 0, playing = false, answered = false, open = false, raf = null, last = 0;
+
+  tick.style.left = (CHECK.atSeconds / DURATION * 100) + '%';
+
+  function fmt(s){
+    s = Math.max(0, Math.floor(s));
+    return Math.floor(s/60) + ':' + String(s%60).padStart(2,'0');
+  }
+
+  function paint(){
+    fill.style.width = (t / DURATION * 100) + '%';
+    tnow.textContent = fmt(t);
+    var label = CAPTIONS[0][1];
+    for (var i=0;i<CAPTIONS.length;i++){ if (t >= CAPTIONS[i][0]) label = CAPTIONS[i][1]; }
+    if (cap.textContent !== label) cap.textContent = label;
+  }
+
+  // ── build the options ────────────────────────────────────────────────────
+  function buildOptions(){
+    opts.innerHTML = '';
+    CHECK.options.forEach(function(text, i){
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'q-opt';
+      b.dataset.i = String(i);
+      b.innerHTML =
+        '<span class="q-badge">' + 'ABCD'[i] + '</span>' +
+        '<span class="q-text"></span>' +
+        '<span class="q-mark"></span>';
+      b.querySelector('.q-text').textContent = text;
+      b.addEventListener('click', function(){ answer(i); });
+      opts.appendChild(b);
+    });
+  }
+
+  function resetQuestion(){
+    answered = false;
+    buildOptions();
+    fb.classList.remove('on');
+    verdict.className = 'q-verdict';
+    verdict.textContent = '';
+    why.textContent = '';
+  }
+
+  // ── open / close ─────────────────────────────────────────────────────────
+  function openQuiz(){
+    if (open) return;
+    open = true;
+    pause();
+    scrim.classList.add('on');
+    var first = opts.querySelector('.q-opt');
+    if (first) first.focus();
+  }
+
+  function closeQuiz(){
+    open = false;
+    scrim.classList.remove('on');
+    playBtn.focus();
+  }
+
+  // ── answering ────────────────────────────────────────────────────────────
+  function answer(i){
+    if (answered) return;
+    answered = true;
+
+    var all = opts.querySelectorAll('.q-opt');
+    var right = (i === CHECK.correctIndex);
+
+    all.forEach(function(b){
+      var idx = Number(b.dataset.i);
+      b.disabled = true;
+      if (idx === CHECK.correctIndex){
+        b.classList.add('correct');
+        b.querySelector('.q-mark').textContent = '✓';
+      } else if (idx === i){
+        b.classList.add('chosen-wrong');
+        b.querySelector('.q-mark').textContent = '✕';
+      } else {
+        b.classList.add('faded');
+      }
+    });
+
+    verdict.className = 'q-verdict ' + (right ? 'right' : 'wrong');
+    verdict.textContent = right
+      ? '✓  That’s right.'
+      : '✕  Not quite — the answer is A, read an order back.';
+    why.textContent = CHECK.explanation;
+    fb.classList.add('on');
+    next.focus();
+  }
+
+  // ── transport ────────────────────────────────────────────────────────────
+  function step(now){
+    if (!playing){ raf = null; return; }
+    var dt = (now - last) / 1000;
+    last = now;
+    t += dt;
+
+    if (!answered && t >= CHECK.atSeconds){
+      t = CHECK.atSeconds;
+      paint();
+      openQuiz();
+      return;
+    }
+    if (t >= DURATION){ t = DURATION; paint(); pause(); return; }
+
+    paint();
+    raf = requestAnimationFrame(step);
+  }
+
+  function play(){
+    if (playing || open) return;
+    if (t >= DURATION) t = 0;
+    playing = true;
+    playBtn.textContent = '❚❚';
+    playBtn.setAttribute('aria-label','Pause');
+    last = performance.now();
+    raf = requestAnimationFrame(step);
+  }
+
+  function pause(){
+    playing = false;
+    playBtn.textContent = '▶';
+    playBtn.setAttribute('aria-label','Play');
+    if (raf){ cancelAnimationFrame(raf); raf = null; }
+  }
+
+  playBtn.addEventListener('click', function(){ playing ? pause() : play(); });
+
+  next.addEventListener('click', function(){ closeQuiz(); play(); });
+
+  el('jump').addEventListener('click', function(){
+    pause(); closeQuiz(); resetQuestion(); t = 35; paint(); play();
+  });
+  el('restart').addEventListener('click', function(){
+    pause(); closeQuiz(); resetQuestion(); t = 0; paint(); play();
+  });
+  el('reset').addEventListener('click', function(){
+    resetQuestion();
+    if (open){ var f = opts.querySelector('.q-opt'); if (f) f.focus(); }
+  });
+
+  // ── keyboard ─────────────────────────────────────────────────────────────
+  document.addEventListener('keydown', function(e){
+    if (!open) return;
+    if (!answered && e.key >= '1' && e.key <= '4'){
+      e.preventDefault();
+      answer(Number(e.key) - 1);
+      return;
+    }
+    if (answered && (e.key === 'Enter' || e.key === ' ')){
+      if (document.activeElement === next) return; // let the button handle it
+      e.preventDefault();
+      closeQuiz(); play();
+      return;
+    }
+    // Deliberately no Escape handler: the checkpoint cannot be dismissed unanswered.
+    if (e.key === 'Tab'){
+      var f = scrim.querySelectorAll('button:not([disabled])');
+      if (!f.length) return;
+      var first = f[0], lastF = f[f.length-1];
+      if (e.shiftKey && document.activeElement === first){ e.preventDefault(); lastF.focus(); }
+      else if (!e.shiftKey && document.activeElement === lastF){ e.preventDefault(); first.focus(); }
+    }
+  });
+
+  resetQuestion();
+  paint();
+})();
+</script>

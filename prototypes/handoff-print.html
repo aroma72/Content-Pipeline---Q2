@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>In-Video Question Checkpoint — build spec</title>
+<style>
+/* Print-only document. Single light palette: a PDF has no theme.
+   Brand hexes match the renderer's own tokens so printed swatches are truthful. */
+@page{ size:A4; margin:15mm 16mm 14mm; }
+
+:root{
+  --ink:#26231F;
+  --muted:#615A50;
+  --line:#CFC8BA;
+  --line-soft:#E4DED2;
+  --panel:#FAF8F3;
+  --accent:#8A5A2B;
+  --good:#4A7238;
+  --bad:#B0572F;
+  --plex:'Segoe UI',Arial,sans-serif;
+  --mono:Consolas,'Courier New',monospace;
+  --serif:Georgia,'Times New Roman',serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{
+  font-family:var(--plex);font-size:9.6pt;line-height:1.55;color:var(--ink);
+  background:#fff;
+}
+.page{page-break-after:always}
+.page:last-child{page-break-after:auto}
+
+/* ── running header ─────────────────────────────────────────────────────── */
+.rh{
+  display:flex;justify-content:space-between;align-items:baseline;
+  border-bottom:.6pt solid var(--line);padding-bottom:5pt;margin-bottom:14pt;
+  font-family:var(--mono);font-size:7pt;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--muted);
+}
+.rh b{color:var(--accent);font-weight:500}
+
+/* ── cover ──────────────────────────────────────────────────────────────── */
+.eyebrow{
+  font-family:var(--mono);font-size:7.5pt;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--accent);margin-bottom:8pt;
+}
+h1{
+  font-family:var(--serif);font-weight:700;font-size:26pt;line-height:1.08;
+  letter-spacing:-.5pt;margin-bottom:9pt;
+}
+.lede{font-size:11pt;line-height:1.5;color:var(--muted);max-width:150mm}
+.lede strong{color:var(--ink);font-weight:500}
+
+.meta{
+  display:grid;grid-template-columns:auto 1fr;gap:4pt 14pt;
+  margin-top:14pt;padding-top:11pt;border-top:.6pt solid var(--line-soft);
+  font-size:9pt;
+}
+.meta dt{font-family:var(--mono);font-size:7.5pt;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--muted);padding-top:1.5pt}
+.meta dd a{color:var(--accent);word-break:break-all}
+
+h2{
+  font-family:var(--plex);font-weight:600;font-size:13pt;letter-spacing:-.2pt;
+  margin-bottom:3pt;
+}
+.sub{color:var(--muted);font-size:9.2pt;margin-bottom:10pt;max-width:150mm}
+section+section{margin-top:16pt}
+.meta+section{margin-top:18pt}
+
+/* ── before / after ─────────────────────────────────────────────────────── */
+.ba{display:grid;grid-template-columns:1fr 1fr;gap:10pt}
+figure{margin:0}
+.shot{border:.6pt solid var(--line);background:#F5F1E8;line-height:0}
+.shot img{width:100%;height:auto;display:block}
+figcaption{margin-top:6pt}
+.tag{
+  display:inline-block;font-family:var(--mono);font-size:6.8pt;letter-spacing:.1em;
+  text-transform:uppercase;padding:1.5pt 5pt;margin-bottom:4pt;
+}
+.tag.now{color:#fff;background:var(--bad)}
+.tag.next{color:#fff;background:var(--good)}
+figcaption h3{font-family:var(--plex);font-size:9.8pt;font-weight:600;margin-bottom:2pt}
+figcaption p{font-size:8.8pt;line-height:1.5;color:var(--muted)}
+figcaption p b{color:var(--ink);font-weight:500}
+
+/* ── state strip ────────────────────────────────────────────────────────── */
+.states{display:grid;grid-template-columns:1fr 1fr;gap:11pt 10pt}
+.state .n{
+  font-family:var(--mono);font-size:7pt;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--accent);margin-bottom:3pt;
+}
+.state .t{font-size:8.8pt;line-height:1.45;color:var(--muted);margin-top:5pt}
+.state .t b{color:var(--ink);font-weight:500}
+
+/* ── steps ──────────────────────────────────────────────────────────────── */
+ol.steps{list-style:none;counter-reset:s}
+ol.steps li{
+  counter-increment:s;display:grid;grid-template-columns:16pt 1fr;gap:8pt;
+  padding:6.5pt 0;border-bottom:.5pt solid var(--line-soft);
+}
+ol.steps li:last-child{border-bottom:none}
+ol.steps li::before{
+  content:counter(s,decimal-leading-zero);
+  font-family:var(--mono);font-size:7.5pt;color:var(--accent);padding-top:1.5pt;
+}
+ol.steps b{font-weight:600}
+ol.steps span{color:var(--muted)}
+
+/* ── code ───────────────────────────────────────────────────────────────── */
+.codewrap{border:.6pt solid var(--line)}
+.codebar{
+  font-family:var(--mono);font-size:6.8pt;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--muted);background:var(--panel);padding:4pt 8pt;
+  border-bottom:.6pt solid var(--line);
+}
+pre{
+  font-family:var(--mono);font-size:7.6pt;line-height:1.5;padding:9pt 8pt;
+  white-space:pre-wrap;word-break:break-word;
+}
+pre .k{color:var(--accent);font-weight:500}
+pre .s{color:#3F6630}
+pre .n{color:#8A3F5E}
+pre .c{color:#8C857A;font-style:italic}
+
+/* ── table ──────────────────────────────────────────────────────────────── */
+table{border-collapse:collapse;width:100%}
+th,td{text-align:left;padding:5.5pt 7pt;border-bottom:.5pt solid var(--line-soft);
+  font-size:8.8pt;line-height:1.45;vertical-align:top}
+th{
+  font-family:var(--mono);font-size:6.8pt;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--muted);font-weight:400;background:var(--panel);
+  border-bottom:.6pt solid var(--line);
+}
+td:first-child{width:34%;font-weight:500}
+tr:last-child td{border-bottom:none}
+td b{font-weight:600}
+code{font-family:var(--mono);font-size:8pt;color:var(--accent)}
+
+/* ── decisions ──────────────────────────────────────────────────────────── */
+.dec{border-top:.6pt solid var(--line);padding:7pt 0;display:grid;
+  grid-template-columns:1fr 1fr;gap:12pt}
+.dec:last-of-type{border-bottom:.6pt solid var(--line)}
+.dec .q{font-weight:600;font-size:9.4pt}
+.dec .a{font-size:8.8pt;color:var(--muted)}
+.dec .a em{font-family:var(--mono);font-size:7.6pt;color:var(--accent);font-style:normal}
+
+/* ── swatches ───────────────────────────────────────────────────────────── */
+.sw{display:flex;flex-wrap:wrap;gap:8pt;margin-top:4pt}
+.sw div{font-family:var(--mono);font-size:7pt;color:var(--muted);text-align:center}
+.sw i{display:block;width:26mm;height:9mm;border:.5pt solid var(--line);margin-bottom:2.5pt}
+
+footer{
+  margin-top:16pt;padding-top:8pt;border-top:.6pt solid var(--line);
+  font-family:var(--mono);font-size:7pt;line-height:1.75;color:var(--muted);
+}
+footer a{color:var(--accent)}
+</style>
+</head>
+<body>
+
+<!-- ── page 1 ───────────────────────────────────────────────────────────── -->
+<div class="page">
+  <div class="rh"><span>Taleemabad University · integration request</span><span><b>Drawing Room</b> content pipeline</span></div>
+
+  <div class="eyebrow">Build spec · one screen, one behaviour</div>
+  <h1>In-Video Question<br>Checkpoint</h1>
+  <p class="lede">Every Drawing Room lesson video contains a point where the narrator stops and asks the learner a question. Today that question is <em>painted into the video</em>, so nobody can answer it. This document specifies the replacement: <strong>a popup the LMS draws over the player at an exact second</strong>, which the learner must answer before the video continues.</p>
+
+  <dl class="meta">
+    <dt>Live demo</dt>
+    <dd><a href="https://claude.ai/code/artifact/5d7e4bf7-fd99-43cf-b55c-da43671357ac">claude.ai/code/artifact/5d7e4bf7-fd99-43cf-b55c-da43671357ac</a><br>
+      <span style="color:var(--muted);font-size:8.4pt">Clickable — press play, let it reach 0:39, and answer. Every screenshot in this document was captured from it.</span></dd>
+    <dt>Example video</dt>
+    <dd>Autonomy 01 — The Autonomy Spectrum · 1:55 · one checkpoint at 0:39</dd>
+    <dt>Scope</dt>
+    <dd>One overlay component and one JSON field. No change to how videos are stored, streamed or listed.</dd>
+  </dl>
+
+  <section>
+    <h2>What this replaces</h2>
+    <p class="sub">Both frames are the same video at <b>0:39</b>. Left is what learners get today.</p>
+    <div class="ba">
+      <figure>
+        <div class="shot"><img src="pdf-assets/baked-quiz.jpg" alt="The current frame, with the question painted into the video."></div>
+        <figcaption>
+          <span class="tag now">Today</span>
+          <h3>Painted into the video</h3>
+          <p>The question is part of the picture, so there is nothing to click. Note the caption we were forced to write: <b>“Your turn — write it down.”</b> The learner answers on paper, or more often not at all, and the video never knows either way.</p>
+        </figcaption>
+      </figure>
+      <figure>
+        <div class="shot"><img src="pdf-assets/b-question.jpg" alt="The proposed frame, with the question as an interactive popup over the paused video."></div>
+        <figcaption>
+          <span class="tag next">Proposed</span>
+          <h3>Drawn over the paused video</h3>
+          <p>Same question, same wording, same house styling — but the LMS draws it, so the four options are real buttons. The learner answers in the player and is told immediately whether they were right.</p>
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <footer>
+    Page 1 of 4 · the question content shown is the live checkpoint from Autonomy 01<br>
+    Frames captured from the rendered lesson and from the interactive demo linked above
+  </footer>
+</div>
+
+<!-- ── page 2 ───────────────────────────────────────────────────────────── -->
+<div class="page">
+  <div class="rh"><span>In-Video Question Checkpoint</span><span>The four states</span></div>
+
+  <section>
+    <h2>The four states</h2>
+    <p class="sub">Everything the component has to render. All four captured from the working demo.</p>
+    <div class="states">
+      <div class="state">
+        <div class="n">1 · playing</div>
+        <div class="shot"><img src="pdf-assets/a-playing.jpg" alt="The video playing normally, no popup."></div>
+        <p class="t"><b>Before the checkpoint.</b> Ordinary playback. The only hint is the marker on the timeline, which is optional — the learner does not need to know it is coming.</p>
+      </div>
+      <div class="state">
+        <div class="n">2 · question</div>
+        <div class="shot"><img src="pdf-assets/b-question.jpg" alt="The question popup, no answer chosen yet."></div>
+        <p class="t"><b>At 0:39 the video pauses itself</b> and the popup opens over the dimmed frame. Four options, no submit button, no close button.</p>
+      </div>
+      <div class="state">
+        <div class="n">3 · correct</div>
+        <div class="shot"><img src="pdf-assets/c-correct.jpg" alt="A correct answer, shown in green with the explanation."></div>
+        <p class="t"><b>Right answer.</b> The chosen option turns green with a tick. The explanation still shows — a learner who guessed deserves the reasoning too.</p>
+      </div>
+      <div class="state">
+        <div class="n">4 · wrong</div>
+        <div class="shot"><img src="pdf-assets/d-wrong.jpg" alt="A wrong answer in terracotta with the correct answer revealed in green."></div>
+        <p class="t"><b>Wrong answer.</b> Their choice turns terracotta with a cross <b>and</b> the correct option turns green, both visible at once, so they can see exactly what they mixed up.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>Page 2 of 4</footer>
+</div>
+
+<!-- ── page 3 ───────────────────────────────────────────────────────────── -->
+<div class="page">
+  <div class="rh"><span>In-Video Question Checkpoint</span><span>Flow and data</span></div>
+
+  <section>
+    <h2>What happens, in order</h2>
+    <ol class="steps">
+      <li><span><b>Playback reaches the checkpoint.</b> <span>The player watches <code>currentTime</code> and fires at the second we supply. The video pauses itself — the learner should not have to pause it.</span></span></li>
+      <li><span><b>The popup opens over the paused frame.</b> <span>The frame stays visible and dimmed behind it, so the learner keeps the context they were just taught.</span></span></li>
+      <li><span><b>The learner picks one of four options.</b> <span>One click. No submit step, no confirmation.</span></span></li>
+      <li><span><b>Right or wrong, immediately.</b> <span>Correct: green tick. Wrong: their choice in terracotta, the correct answer revealed in green, then the explanation.</span></span></li>
+      <li><span><b>The learner continues.</b> <span>One button closes the popup and resumes from the same second. A wrong answer does not block them and is not scored — this is a comprehension check, not a test.</span></span></li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>What we would send you per video</h2>
+    <p class="sub">One array alongside the video. We generate it from the script, so it arrives with the video and needs no authoring on your side.</p>
+    <div class="codewrap">
+      <div class="codebar">quiz checkpoint payload · json</div>
+<pre>{
+  <span class="k">"videoId"</span>: <span class="s">"autonomy-01-spectrum"</span>,
+  <span class="k">"checkpoints"</span>: [
+    {
+      <span class="k">"id"</span>:           <span class="s">"q1"</span>,
+      <span class="k">"atSeconds"</span>:    <span class="n">39</span>,        <span class="c">// fire here; pause playback</span>
+      <span class="k">"preamble"</span>:     <span class="s">"Let's answer a quick question, to check the concept landed."</span>,
+      <span class="k">"stem"</span>:         <span class="s">"Which could the helper safely run alone?"</span>,
+      <span class="k">"options"</span>: [
+        <span class="s">"Read an order back"</span>,
+        <span class="s">"Give a cash refund"</span>,
+        <span class="s">"Wire money from the till"</span>,
+        <span class="s">"Approve a supplier invoice"</span>
+      ],
+      <span class="k">"correctIndex"</span>: <span class="n">0</span>,
+      <span class="k">"explanation"</span>:  <span class="s">"Reading an order back is easy to undo: if the helper gets it wrong, Ali fixes it in seconds. The other three move money, and once money has moved nobody can pull it back in time."</span>
+    }
+  ]
+}</pre>
+    </div>
+  </section>
+
+  <section>
+    <h2>Palette</h2>
+    <p class="sub">Taken from the renderer's own stylesheet, so the popup matches the video rather than approximating it.</p>
+    <div class="sw">
+      <div><i style="background:#F5F1E8"></i>#F5F1E8 cream</div>
+      <div><i style="background:#FBF8F1"></i>#FBF8F1 card</div>
+      <div><i style="background:#6B5344"></i>#6B5344 heading</div>
+      <div><i style="background:#C08A3E"></i>#C08A3E gold</div>
+      <div><i style="background:#5C8A46"></i>#5C8A46 correct</div>
+      <div><i style="background:#C0653E"></i>#C0653E wrong</div>
+    </div>
+  </section>
+
+  <footer>Page 3 of 4</footer>
+</div>
+
+<!-- ── page 4 ───────────────────────────────────────────────────────────── -->
+<div class="page">
+  <div class="rh"><span>In-Video Question Checkpoint</span><span>Rules and decisions</span></div>
+
+  <section>
+    <h2>Behaviour rules</h2>
+    <table>
+      <thead><tr><th>Situation</th><th>Required behaviour</th></tr></thead>
+      <tbody>
+        <tr><td>Reaching <code>atSeconds</code></td><td>Pause playback and open the popup automatically. Never wait for the learner to notice a button.</td></tr>
+        <tr><td>Answering twice</td><td>Not possible. All four options are disabled the moment one is chosen.</td></tr>
+        <tr><td>Trying to skip</td><td>No close button, no click-outside-to-dismiss, no Escape. The only exit is <b>Continue the video</b>, which appears only after answering.</td></tr>
+        <tr><td>Seeking past it</td><td>If a learner drags the timeline past an unanswered checkpoint, it should still fire — otherwise the check is trivially skippable.</td></tr>
+        <tr><td>Rewatching</td><td>Fire again. A rewatch is usually someone who wants another go at understanding it.</td></tr>
+        <tr><td>Keyboard &amp; screen readers</td><td>Options reachable by Tab and answerable with keys 1–4; focus moves into the popup on open and to Continue after answering; the verdict is announced via <code>aria-live</code>.</td></tr>
+        <tr><td>Narrow player / mobile</td><td>The popup scales with the player and never overflows it. Sizes in the demo are set in container units for exactly this reason.</td></tr>
+        <tr><td>Where the checkpoint sits</td><td>Place it on a scene beat, not on one of our full-screen text cards, so the popup has a clean ground behind it.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Decisions for you</h2>
+    <p class="sub">Four assumptions the demo makes. Overrule any of them — cheap now, awkward later.</p>
+    <div class="dec">
+      <p class="q">Does a wrong answer get recorded?</p>
+      <p class="a">The demo records nothing. If you want completion or comprehension reporting, tell us what to send and where. <em>assumed: not stored</em></p>
+    </div>
+    <div class="dec">
+      <p class="q">One explanation, or one per option?</p>
+      <p class="a">A single shared explanation for any wrong answer. Per-option feedback teaches better but triples the authoring. <em>assumed: one shared</em></p>
+    </div>
+    <div class="dec">
+      <p class="q">How does the payload reach you?</p>
+      <p class="a">JSON beside the video file, or an endpoint you call by <code>videoId</code> — whichever fits your ingestion. <em>assumed: JSON alongside</em></p>
+    </div>
+    <div class="dec">
+      <p class="q">One question per video, or several?</p>
+      <p class="a">The payload is an array, so several works. Today every video has exactly one, about two-thirds through. <em>assumed: one, extensible</em></p>
+    </div>
+  </section>
+
+  <footer>
+    Page 4 of 4 · Drawing Room content pipeline, Taleemabad · prepared by Aroma Tahir<br>
+    Interactive demo: <a href="https://claude.ai/code/artifact/5d7e4bf7-fd99-43cf-b55c-da43671357ac">claude.ai/code/artifact/5d7e4bf7-fd99-43cf-b55c-da43671357ac</a>
+  </footer>
+</div>
+
+</body>
+</html>
