@@ -2,9 +2,9 @@
 /**
  * api -- the read API the LMS (Taleemabad University) calls.
  *
- * Scope is deliberately tiny: the LMS asks "what questions belong to this video,
- * and when do they fire", and optionally reports back what a learner answered.
- * Nothing here can start work, spend money, or change a video.
+ * Scope is deliberately tiny, and read-only: the LMS asks "what questions belong
+ * to this video, and when do they fire". Nothing here can start work, spend
+ * money, change a video, or store anything -- answers live in the LMS.
  *
  * Auth. Lesson answers are behind a bearer token, because the payload contains
  * `correctIndex` -- publishing it unauthenticated would hand every learner the
@@ -22,10 +22,7 @@
  */
 
 const express = require('express');
-const fs = require('fs');
 const checkpoints = require('./checkpoints');
-const { PATHS } = require('../../orchestrator/lib/paths');
-const path = require('path');
 
 const TOKEN = () => process.env.CONTENT_API_TOKEN || '';
 const ORIGINS = () => (process.env.CONTENT_API_ORIGINS || '')
@@ -112,7 +109,9 @@ function build() {
           description: 'The checkpoints for one video, with firing times.',
           example: `${base}/videos/autonomy-01-spectrum/checkpoints` },
         { method: 'POST', path: '/api/v1/videos/:videoId/checkpoints/:id/attempts',
-          auth: true, description: 'Optional. Report what a learner answered.' },
+          auth: true, implemented: false,
+          description: 'Returns 501. The LMS is the system of record for answers; '
+            + 'this service holds no learner identity.' },
       ],
       demo: `${req.protocol}://${req.get('host')}/demo/quiz`,
       notes: [
@@ -120,6 +119,7 @@ function build() {
         + 'with a 2.6s brand intro. lessonAtSeconds excludes it.',
         'Do not fire a checkpoint whose timing.trusted is false.',
         'Call this server-to-server; a browser would expose the token.',
+        'Answers are recorded by the LMS, not here.',
       ],
     });
   });
@@ -148,38 +148,33 @@ function build() {
     sendJson(req, res, payload);
   });
 
-  // ── optional: what the learner answered ─────────────────────────────────
-  // Appended to .beads/checkpoint_attempts.jsonl, matching the project's
-  // append-only convention. Storing attempts is still an open decision, so this
-  // records and returns rather than pretending to be a gradebook.
-  router.post('/videos/:videoId/checkpoints/:id/attempts', requireToken, (req, res) => {
-    const body = req.body || {};
-    if (typeof body.chosenIndex !== 'number') {
-      return res.status(400).json({
-        error: 'bad_request',
-        message: 'Send JSON: { "chosenIndex": 0, "learnerRef": "<opaque id>" }. '
-          + 'chosenIndex is required and must be a number.',
-      });
-    }
-    const row = {
-      at: new Date().toISOString(),
-      videoId: req.params.videoId,
-      checkpointId: req.params.id,
-      chosenIndex: body.chosenIndex,
-      correct: typeof body.correct === 'boolean' ? body.correct : null,
-      // Opaque by design: we do not want learner identities in this repo.
-      learnerRef: typeof body.learnerRef === 'string' ? body.learnerRef.slice(0, 64) : null,
-    };
-    try {
-      fs.mkdirSync(PATHS.beads, { recursive: true });
-      fs.appendFileSync(
-        path.join(PATHS.beads, 'checkpoint_attempts.jsonl'),
-        JSON.stringify(row) + '\n'
-      );
-    } catch (e) {
-      return res.status(500).json({ error: 'write_failed', message: e.message });
-    }
-    res.status(201).json({ recorded: true, at: row.at });
+  /**
+   * Answer recording -- deliberately NOT implemented, and loud about it.
+   *
+   * An earlier version of this route appended attempts to a JSONL file and
+   * answered `{recorded: true}`. That was false in three ways at once: the
+   * Railway service has no mounted volume, so the file died on every redeploy;
+   * no route could read it back; and nothing consumed it. A caller would have
+   * been told its data was safe while it was being dropped.
+   *
+   * Decision (2026-09-08): the LMS is the system of record. It already holds the
+   * learner, the enrolment and the gradebook; this repo holds no learner
+   * identity at all and should not start. A second copy here would be a shadow
+   * store with no reader, free to drift from the real one.
+   *
+   * This returns 501 rather than 404 so anyone who wired it up from an early
+   * draft gets a clear failure instead of silently losing every answer.
+   */
+  router.post('/videos/:videoId/checkpoints/:id/attempts', requireToken, (_req, res) => {
+    res.status(501).json({
+      error: 'not_implemented',
+      message: 'Answer recording is not implemented here, on purpose. Record '
+        + 'attempts in the LMS, which owns the learner and the gradebook; this '
+        + 'service holds no learner identity. If you need us to receive them, '
+        + 'ask Aroma Tahir and we will build a durable store rather than an '
+        + 'endpoint that drops what it is sent.',
+      systemOfRecord: 'lms',
+    });
   });
 
   return router;

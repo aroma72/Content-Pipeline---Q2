@@ -189,8 +189,9 @@ footer a{color:var(--accent)}
     <dt>Live API</dt>
     <dd><a href="https://content-queen-production.up.railway.app/api/v1">content-queen-production.up.railway.app/api/v1</a><br>
       <span style="color:var(--muted);font-size:8.4pt">Deployed and serving. The index is public; the data routes need the bearer token on page 4. Because that token is in this document, <b>do not post this file publicly</b>.</span></dd>
-    <dt>Example video</dt>
-    <dd>Autonomy 01 — The Autonomy Spectrum · one checkpoint, firing at 41.671s</dd>
+    <dt>Test video</dt>
+    <dd><b>YouTube ID <code style="font-size:9.5pt">NkWLML1Uy7U</code></b> · <a href="https://youtu.be/NkWLML1Uy7U">youtu.be/NkWLML1Uy7U</a><br>
+      <span style="color:var(--muted);font-size:8.4pt">Autonomy 01 — The Autonomy Spectrum · 2:11 · unlisted · one checkpoint, firing at <b>41.671s</b>. Its API <code>videoId</code> is <code>autonomy-01-spectrum</code>.</span></dd>
     <dt>Your scope</dt>
     <dd>One overlay component in the player, and one call to fetch its data. No change to how videos are stored, streamed or listed.</dd>
   </dl>
@@ -284,7 +285,7 @@ footer a{color:var(--accent)}
         <tr><td><code>GET&nbsp;/api/v1</code></td><td>public</td><td>The surface, machine-readable: every route, an example URL for each, and whether the server is configured.</td></tr>
         <tr><td><code>GET&nbsp;/api/v1/videos</code></td><td>bearer</td><td>The catalogue — every video that has at least one checkpoint. <b>17 today.</b></td></tr>
         <tr><td><code>GET&nbsp;/api/v1/videos/{videoId}/checkpoints</code></td><td>bearer</td><td>The payload for one video. <b>This is the only call you need</b> to build the feature.</td></tr>
-        <tr><td><code>POST&nbsp;/api/v1/videos/{videoId}/checkpoints/{id}/attempts</code></td><td>bearer</td><td>Optional. Reports what a learner chose. Ignore it if you are not reporting.</td></tr>
+        <tr><td><code>POST&nbsp;/api/v1/videos/{videoId}/checkpoints/{id}/attempts</code></td><td>bearer</td><td><b>Returns 501 — not implemented, deliberately.</b> Record answers on your side; see page 7. It answers 501 rather than 404 so a caller gets a clear failure instead of silently losing data.</td></tr>
         <tr><td><code>GET&nbsp;/demo/quiz</code></td><td>public</td><td>The interactive demo this document describes.</td></tr>
       </tbody>
     </table></div>
@@ -447,8 +448,8 @@ curl -H <span class="s">"Authorization: Bearer $CONTENT_API_TOKEN"</span> \
       <p class="a">Today any wrong answer gets the same explanation. Per-option feedback teaches better and would add an <code>optionFeedback</code> array to the payload — a small change for you, three times the writing for us. <em>assumed: one shared</em></p>
     </div>
     <div class="dec">
-      <p class="q">Do you want answers recorded?</p>
-      <p class="a">The <code>attempts</code> endpoint exists and works, but nothing consumes what it stores and it holds no learner identity beyond an opaque <code>learnerRef</code> you choose. If you want real completion or comprehension reporting, tell us what you need and we will build to it. <em>assumed: you keep your own record</em></p>
+      <p class="q">Where do right and wrong answers get recorded?</p>
+      <p class="a"><b>On your side. We store nothing.</b> This service holds no learner identity and has no database — an earlier draft of the <code>attempts</code> endpoint wrote to a file the host wipes on every deploy and answered “recorded”, which was untrue, so it now returns <b>501</b>. Your platform already owns the learner, the enrolment and the gradebook, so it is the system of record. If you later want us to receive attempts for content-quality analysis, say so and we will build a durable store rather than an endpoint that drops what it is sent. <em>settled 8 Sep · LMS is the record</em></p>
     </div>
     <div class="dec">
       <p class="q">One question per video, or several?</p>
