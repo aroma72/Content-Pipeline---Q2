@@ -158,7 +158,16 @@ function forVideo(series, slug) {
       stem: q.info.data.stem,
       options: q.info.data.options.slice(),
       correctIndex: reveal.info.data.answer,
-      explanation: reveal.info.data.note || null,
+      // `note` is the video's on-screen caption -- six words, written to be read
+      // aloud ("Easy to undo, so it runs free."). Serving it as the popup's
+      // explanation told a learner who had just answered wrong essentially
+      // nothing, and nothing at all about why THEIR choice was wrong. An
+      // authored `explain` on the REVEAL beat is preferred; the caption remains
+      // the fallback so no video is left with an empty popup.
+      explanation: reveal.info.data.explain || reveal.info.data.note || null,
+      // Named so coverage is visible rather than guessed at: 'video-note' means
+      // this question still needs a proper explanation written for it.
+      explanationSource: reveal.info.data.explain ? 'authored' : 'video-note',
     });
   });
 
@@ -208,6 +217,7 @@ function listVideos() {
         series: payload.series,
         checkpoints: payload.checkpoints.length,
         deliverableOnServer: payload.deliverableOnServer,
+        explanationsAuthored: payload.checkpoints.filter((c) => c.explanationSource === 'authored').length,
         timingTrusted: payload.timing.trusted,
       });
     }

@@ -184,6 +184,14 @@ module.exports = [
       options: ['Read an order back', 'Give a cash refund', 'Wire money from the till', 'Approve a supplier invoice'],
       answer: 0,
       note: 'Easy to undo, so it runs free.',
+      // `note` is the on-screen caption: six words, written to be read aloud.
+      // `explain` is for the LMS popup, where a learner who just answered wrong
+      // needs to know why THEIR choice was wrong, not just what the answer was.
+      // Served as `explanation` by the checkpoint API; see server/lib/checkpoints.js.
+      explain: 'Reading an order back is easy to undo: if the helper gets it wrong, '
+        + 'Ali fixes it in seconds and nothing is lost. The other three move money, '
+        + 'and once money has moved nobody can pull it back in time — those need '
+        + 'Ali to approve them first.',
     } },
   },
   {

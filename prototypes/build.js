@@ -77,9 +77,37 @@ function render(uris) {
   jpeg(['-ss', String(start + 5), '-i', path.join(VID, 'out/lesson.mp4')], baked);
   console.log('scene', kb(scene), '· baked', kb(baked));
 
+  // ── the checkpoint payload, from the module the API serves it with ──────
+  // Typed by hand once, and it drifted: the demo showed a written explanation
+  // while the API served the video's six-word caption, so the LMS reproduced
+  // this page and rendered a line that explained nothing. One source now.
+  const checkpoints = require('../server/lib/checkpoints');
+  const payload = checkpoints.forVideo('autonomy', 'autonomy-01-spectrum');
+  if (!payload) throw new Error('no checkpoint payload for autonomy/autonomy-01-spectrum');
+  const cp = payload.checkpoints[0];
+  console.log(`checkpoint ${cp.id} at ${cp.atSeconds}s · explanation `
+    + `${cp.explanationSource} (${(cp.explanation || '').length} chars)`);
+  if (cp.explanationSource !== 'authored') {
+    // The demo is the thing the LMS copies. Shipping it with a caption in place
+    // of an explanation is what caused this bug in the first place.
+    throw new Error(`checkpoint ${cp.id} has no authored explanation — add `
+      + `\`explain\` to the REVEAL beat in beats.js before rebuilding the demo`);
+  }
+
+  // Total length of the delivered file: intro + lesson + outro.
+  const bumpers = JSON.parse(fs.readFileSync(
+    path.join(VID, '../../brand-intro-outro/bumper-durations.json'), 'utf8'));
+  const duration = Number((payload.timing.introOffsetSeconds
+    + payload.timing.lessonSeconds + bumpers.outroSeconds).toFixed(2));
+
+  const injected = {
+    __CHECKPOINT_JSON__: JSON.stringify(payload, null, 2),
+    __DURATION__: String(duration),
+  };
+
   // ── pass 1: a working page, "proposed" thumbnail standing in ────────────
   const sceneUri = uri(scene);
-  render({ __SCENE_URI__: sceneUri, __BAKED_URI__: uri(baked), __SHOT_QUESTION__: sceneUri });
+  render({ ...injected, __SCENE_URI__: sceneUri, __BAKED_URI__: uri(baked), __SHOT_QUESTION__: sceneUri });
 
   // ── pass 2: capture the four states off the live page ───────────────────
   const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox'] });
@@ -174,6 +202,6 @@ function render(uris) {
   console.log('proposed thumbnail', kb(qShot));
 
   // ── final render, every placeholder real ────────────────────────────────
-  render({ __SCENE_URI__: sceneUri, __BAKED_URI__: uri(baked), __SHOT_QUESTION__: uri(qShot) });
+  render({ ...injected, __SCENE_URI__: sceneUri, __BAKED_URI__: uri(baked), __SHOT_QUESTION__: uri(qShot) });
   console.log('\nbuilt', path.basename(PAGE), kb(PAGE));
 })().catch((e) => { console.error(e); process.exit(1); });
