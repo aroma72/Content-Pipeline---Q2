@@ -435,7 +435,12 @@ async function beatChecks() {
       fs.mkdirSync(path.join(dir, 'art'));
       const beats = [{ id: '01', mode: 'scene', art: 'a' }];
       fs.writeFileSync(path.join(dir, 'art', '01.png'), 'x');
-      fs.writeFileSync(path.join(dir, 'beats.js'), 'module.exports=[]');  // newer than the art
+      fs.writeFileSync(path.join(dir, 'beats.js'), 'module.exports=[]');
+      // Backdate the art explicitly. Writing it first left the two mtimes under a
+      // millisecond apart, so on a coarse filesystem clock they could tie and the
+      // test flaked -- the assertion is about staleness, not about write order.
+      const older = Date.now() / 1000 - 10;
+      fs.utimesSync(path.join(dir, 'art', '01.png'), older, older);
       const stale = missingPerBeat(beats, dir, 'art', (i) => `${i}.png`);
       assert(stale.length === 1, 'art older than beats.js was treated as done');
 

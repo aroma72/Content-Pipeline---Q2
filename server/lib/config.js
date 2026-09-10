@@ -58,25 +58,55 @@ const config = {
   },
 };
 
+/**
+ * Is this string shaped like an Anthropic credential at all?
+ *
+ * Presence was not enough. Someone pasted the project's own `cq_...` API token
+ * into CLAUDE_CODE_OAUTH_TOKEN, /health cheerfully reported `model: true`, and
+ * every video request still died in `research` -- because the CLI rejected it.
+ * A health check that goes green on a credential that cannot possibly work is
+ * worse than one that goes red: it sends you looking in the wrong place.
+ *
+ * Deliberately a shape check, not a live call: /health must stay instant and
+ * free. It cannot tell you the token is VALID, only that it is the right kind of
+ * thing -- which is the mistake that actually happened.
+ */
+function looksLikeAnthropicCredential(v) {
+  return typeof v === 'string' && /^sk-ant-/.test(v.trim());
+}
+
 /** Which surfaces have enough credentials to actually work. */
 function readiness() {
+  // The judgement stages prefer `claude -p` under the subscription, so a
+  // long-lived CLI token counts as "we can reach a model" just as much as an
+  // API key does. Reporting only on the key made a working CLI setup look
+  // broken on /health.
+  const modelVars = {
+    CLAUDE_CODE_OAUTH_TOKEN: process.env.CLAUDE_CODE_OAUTH_TOKEN,
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+    ANTHROPIC_AUTH_TOKEN: process.env.ANTHROPIC_AUTH_TOKEN,
+  };
+  const set = Object.entries(modelVars).filter(([, v]) => Boolean(v));
+  const usable = set.filter(([, v]) => looksLikeAnthropicCredential(v));
+  const malformed = set.filter(([, v]) => !looksLikeAnthropicCredential(v)).map(([k]) => k);
+
   return {
     slackPost: Boolean(config.slack.botToken),
     slackPoll: Boolean(config.slack.userToken),
     notion: Boolean(config.notion.apiKey && config.notion.databaseId),
-    // The judgement stages prefer `claude -p` under the subscription, so a
-    // long-lived CLI token counts as "we can reach a model" just as much as an
-    // API key does. Reporting only on the key made a working CLI setup look
-    // broken on /health.
-    model: Boolean(
-      process.env.CLAUDE_CODE_OAUTH_TOKEN
-      || process.env.ANTHROPIC_API_KEY
-      || process.env.ANTHROPIC_AUTH_TOKEN
-    ),
+    model: usable.length > 0,
+    // Name the variable that is set but wrong, so the next person is not left
+    // comparing an opaque false against a variable they can see is populated.
+    modelNote: usable.length
+      ? undefined
+      : (malformed.length
+        ? `${malformed.join(', ')} is set but does not look like an Anthropic credential `
+          + `(expected it to start "sk-ant-"). The thinking stages will fail in research.`
+        : 'no model credential set; the thinking stages cannot run'),
     gemini: Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_STUDIO_API_KEY),
     budgetAuthorised: config.pipeline.budgetUsd > 0,
     dryRun: config.pipeline.dryRun,
   };
 }
 
-module.exports = { config, readiness };
+module.exports = { config, readiness, looksLikeAnthropicCredential };

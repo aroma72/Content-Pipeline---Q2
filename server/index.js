@@ -184,7 +184,7 @@ app.listen(config.port, () => {
   if (!r.slackPost) console.warn('[server] SLACK_BOT_TOKEN unset — cannot post or upload');
   if (!r.slackPoll) console.warn('[server] SLACK_USER_TOKEN unset — cannot poll for mentions (search.messages needs a user token)');
   if (!r.notion) console.warn('[server] NOTION_API_KEY / NOTION_DATABASE_ID unset — no work queue');
-  if (!r.model) console.warn('[server] no ANTHROPIC_API_KEY — the thinking stages cannot run in a container');
+  if (!r.model) console.warn(`[server] MODEL UNAVAILABLE — ${r.modelNote}`);
   if (!r.gemini) console.warn('[server] no GEMINI_API_KEY / GOOGLE_STUDIO_API_KEY — no art or voiceover');
   if (!r.budgetAuthorised) console.warn('[server] PIPELINE_BUDGET_USD is 0 — every request will refuse to spend');
   if (r.dryRun) console.log('[server] DRY RUN is on — the chain runs but nothing is spent or rendered');
