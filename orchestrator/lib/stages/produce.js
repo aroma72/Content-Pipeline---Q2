@@ -565,6 +565,17 @@ module.exports = Object.assign(module.exports, {
         && fs.statSync(finalAbs).mtimeMs >= fs.statSync(barePath).mtimeMs) {
       log(`bumpers skipped -- ${final} is newer than the bare lesson`);
     } else {
+      // stitch-brand.js shells out to brand-intro-outro/render-bumpers.js, which
+      // drives headless Chrome -- so that project needs its own dependencies.
+      // Step 1 installs them for the VIDEO folder; nothing ever did it for the
+      // brand folder, and .dockerignore excludes every node_modules, so on a
+      // fresh container the very last step of the pipeline died with a bare
+      // "Exit 1" after the whole video had already been rendered and paid for.
+      if (!fs.existsSync(path.join(PATHS.brandBumpers, 'node_modules'))) {
+        log('npm i (brand bumpers)');
+        await run('npm', ['i'], { cwd: PATHS.brandBumpers, timeoutMs: 15 * 60 * 1000 });
+      }
+
       log('wrapping in brand bumpers');
       await run('node', [
         'stitch-brand.js', '--title', title, '--lesson', bare, '--out', final,
