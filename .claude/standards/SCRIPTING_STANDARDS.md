@@ -95,27 +95,47 @@ including each structural part and the common failure mode they nearly hit.
 "So here's your move: [reflection prompt applied to the learner's own work]."
 ```
 
-### 3b. Interactive Question — QUESTION → REVEAL (Required, effective 2026-08-17)
+### 3b. Interactive Question — the CHECKPOINT beat (Required, effective 2026-09-11)
 
-> **House rule (effective 2026-08-17):** EVERY video MUST contain an in-video interactive
-> **QUESTION → REVEAL** pair, so the audience actively answers before being told, and feels engaged.
-> Established on the autonomy series ([interactive_quiz_card](../../memory/interactive_quiz_card.md)).
-> This is non-negotiable and applies to every new video and every re-cut.
+> **House rule (supersedes the in-video QUESTION → REVEAL of 2026-08-17):** EVERY video MUST contain
+> at least one **checkpoint** — one multiple-choice question the learner actually answers. It is
+> **never drawn and never spoken.** The video simply **pauses** at that point and the learner's LMS
+> shows the question as a popup. Non-negotiable for every new video and every re-cut.
 
-- **The QUESTION beat** poses one multiple-choice question about the concept just taught, with
-  3–4 plausible options, and a `note` like "Write your answer down." It uses `holdAfter` (≈6s) so the
-  video pauses long enough for the viewer to actually answer.
-- **The REVEAL beat** comes a few beats later: the same stem + options, now with the correct `answer`
-  marked and a one-line `note` explaining why.
-- Place the QUESTION at roughly the two-thirds mark (after the concept is taught, before the payoff),
-  and the REVEAL shortly after so the loop closes inside the video.
-- Mechanics (explainer pipeline): use the `info` template `quiz`.
-  - QUESTION: `{ id, mode:'info', holdAfter:6, vo, cap, info:{ tpl:'quiz', data:{ stem, options:[…], note:'Write your answer down.' } } }`
-  - REVEAL:   `{ id, mode:'info', vo, cap, info:{ tpl:'quiz', data:{ stem, options:[…], answer:<index>, note:'…why…' } } }`
-  - Requires `T.quiz` in `animation/info.js`, the `.quiz*` styles in `animation/info.css`, and the
-    `+ (b.holdAfter||0)` term in `tts-lesson.js`'s pause calc. Port these into any folder that lacks them.
-- For non-`info` formats (e.g. the Claude Code IDE-screencast assessment), pose the QUESTION and
-  REVEAL as two `card`/screen beats that carry the same "answer first, then reveal" structure.
+**Why it changed.** The cards taught the answer to a viewer who could not answer, and a video cannot
+know whether anyone got it right. Moving the question into the player makes it a real question:
+the learner answers, the LMS marks it, and the explanation is written for someone who just chose wrong.
+
+```js
+// beats.js — sits BETWEEN two spoken beats, at roughly the two-thirds mark
+{ id: '14', mode: 'checkpoint',
+  quiz: {
+    stem: 'One question about the concept just taught.',
+    options: ['…', '…', '…', '…'],          // 3–4 plausible options
+    answer: 1,                               // 0-based index
+    explain: 'Why that is right — and why the tempting wrong one is wrong.',
+  } },
+```
+
+- **It occupies zero time.** No voiceover, so no entry in `durations.json`, so no frames. Its position
+  in the array *is* the pause point.
+- **The pause is always on a sentence boundary.** Every beat is one spoken sentence followed by a short
+  trailing pause, so a checkpoint between two beats can never cut into a sentence. Never place one
+  first or last — with no sentence either side the API marks `pause.safe: false` and the LMS won't fire it.
+- **Write `explain` for the learner who got it wrong.** It is the only feedback they see; the old
+  six-word on-screen caption is not good enough and the API now reports `explanationSource: 'missing'`
+  when it is absent.
+- **Mechanics:** `lib/beats-util.js` `renderable()` filters checkpoints out; `tts-lesson.js`,
+  `compile-lesson.js` and `verify.js` all render `renderable(beats)`. Port `lib/beats-util.js` into any
+  folder that lacks it. This is format-agnostic — the same beat works in the illustrated and the
+  IDE-screencast formats.
+- **Delivery:** `server/lib/checkpoints.js` reads `beats.js` + `durations.json` and serves
+  `GET /api/v1/videos/:videoId/checkpoints` with `atSeconds` measured **from the start of the delivered
+  `_final.mp4`** (brand intro included). Committing `beats.js` and `durations.json` is what publishes a
+  question — no separate upload step.
+- **Legacy videos** built before this rule still carry their cards on screen; the API reports them as
+  `rendersInVideo: true` / `questionStyle: 'on-screen'` so the LMS can choose not to pause over a
+  question the video is already answering out loud.
 
 ---
 
@@ -255,7 +275,7 @@ Before finalizing any script, verify:
 - [ ] **No jargon without definition** — are technical terms explained when first introduced?
 - [ ] **Plain language** — can a 12-14 year old understand the core explanation?
 - [ ] **Emotional acknowledgment (2+ moments)** — does the script normalize confusion early and reassure at technical peaks?
-- [ ] **Interactive QUESTION → REVEAL present** — is there an in-video multiple-choice question (with `holdAfter` so the viewer can answer) AND a matching reveal a few beats later? (Required in EVERY video.)
+- [ ] **CHECKPOINT beat present** — one `{mode:'checkpoint', quiz:{stem, options, answer, explain}}` beat between two spoken beats (never first or last), 3–4 options, valid 0-based `answer`, and an `explain` written for the learner who chose wrong. Nothing about it is drawn or spoken. (Required in EVERY video.)
 - [ ] **No shaming language** — are words like "obviously," "as you know," "simple," or "just" avoided?
 
 ---
@@ -347,4 +367,4 @@ For video scripts, slides and voiceover must align. Learners with little AI back
 
 ---
 
-*Last verified: 2026-08-17 — added the required in-video QUESTION → REVEAL interactive beat (§3b).*
+*Last verified: 2026-09-11 — §3b replaced: the in-video QUESTION → REVEAL pair becomes a non-rendered CHECKPOINT beat; the player pauses and the LMS asks.*

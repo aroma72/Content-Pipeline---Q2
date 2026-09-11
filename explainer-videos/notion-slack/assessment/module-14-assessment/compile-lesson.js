@@ -22,8 +22,7 @@ const ffmpeg = require('ffmpeg-static');
 const { mixAudio } = require('./mix-audio');
 
 const { renderable } = require('./lib/beats-util');
-// checkpoint beats are LMS pause points, never drawn and never spoken — see lib/beats-util.js
-const beats = renderable(require('./beats.js'));
+const beats = renderable(require('./beats.js'));  // checkpoint beats are LMS pause points — never drawn, never spoken
 const CWD = process.cwd();
 const NAME = process.env.LESSON_NAME || 'lesson';
 const FPS = 30, W = 1920, H = 1080;
@@ -76,9 +75,8 @@ function launchOpts() {
   // Explicit unique userDataDir: Puppeteer only auto-deletes profiles IT created in
   // the temp dir; giving our own dir means it never runs the close-time unlink that
   // throws EBUSY on Windows (Crashpad/antivirus holds a lock on the profile files).
-  const udir = path.join(CWD, '.chrome-profile', `${NAME}-${process.pid}${launchOpts.__w != null ? '-w' + launchOpts.__w : ''}`);
+  const udir = path.join(CWD, '.chrome-profile', `${NAME}-${process.pid}`);
   fs.mkdirSync(udir, { recursive: true });
-  // A 2K-art beat can exceed the default 180s protocol timeout mid-screenshot.
   const o = { headless: 'new', userDataDir: udir, protocolTimeout: 300000,
     args: ['--no-sandbox', '--force-color-profile=srgb'] };
   const candidates = [process.env.CHROME_PATH,
@@ -89,25 +87,6 @@ function launchOpts() {
   return o;
 }
 
-
-// PARALLEL RENDER (2026-08-21): the frame loop was single-threaded — one page, one frame at a time
-// — using ~1 of 8 cores. Frames are INDEPENDENT because window.seekTo(ms) recomputes every visual
-// from time (LAW 10), so N workers each render a stripe. RENDER_WORKERS=1 restores serial.
-async function openPage(worker) {
-  launchOpts.__w = worker;            // unique Chrome profile per worker (they cannot share one)
-  const opts = launchOpts();
-  launchOpts.__w = undefined;
-  const browser = await puppeteer.launch(opts);
-  const page = await browser.newPage();
-  await page.setViewport({ width: W, height: H, deviceScaleFactor: 1 });
-  await page.evaluateOnNewDocument((data) => { window.__DATA = data; }, { beats, durations, anchors, clips, rigs });
-  const htmlRel = process.env.LESSON_HTML || 'animation/lesson.html';
-  const url = 'file://' + path.join(__dirname, htmlRel).replace(/\\/g, '/');
-  await page.goto(url, { waitUntil: 'load' });
-  await page.waitForFunction('window.ready === true', { timeout: 60000 });
-  return { browser, page };
-}
-
 async function withPage(fn) {
   const browser = await puppeteer.launch(launchOpts());
   try {
@@ -115,7 +94,8 @@ async function withPage(fn) {
     await page.setViewport({ width: W, height: H, deviceScaleFactor: 1 });
     // inject data BEFORE the page scripts run (avoids file:// fetch/CORS issues)
     await page.evaluateOnNewDocument((data) => { window.__DATA = data; }, { beats, durations, anchors, clips, rigs });
-    const url = 'file://' + path.join(__dirname, process.env.LESSON_HTML || 'animation/lesson.html').replace(/\\/g, '/');
+    const htmlRel = process.env.LESSON_HTML || 'animation/lesson.html';
+    const url = 'file://' + path.join(__dirname, htmlRel).replace(/\\/g, '/');
     await page.goto(url, { waitUntil: 'load' });
     await page.waitForFunction('window.ready === true', { timeout: 20000 });
     await fn(page);
@@ -129,28 +109,36 @@ async function renderFull() {
     console.log(`[compile] --reuse: keeping ${existing} cached frames, skipping render.`);
     return;
   }
+  // Fresh render wipes; a resume (--reuse) keeps whatever frames exist and fills the gaps.
   if (!reuse) { rmrf(framesDir); }
   fs.mkdirSync(framesDir, { recursive: true });
   console.log(`[compile] ${beats.length} beats, ${total.toFixed(1)}s, ${totalFrames} frames -> ${framesDir}`);
-  const WORKERS = Math.max(1, Math.min(parseInt(process.env.RENDER_WORKERS || '6', 10),
-    require('os').cpus().length - 2, totalFrames));
-  console.log(`[compile] rendering with ${WORKERS} parallel worker(s)`);
-  let done = 0;
-  const stripe = async (w) => {
-    const { browser, page } = await openPage(w);
+  // Render in CHUNKS, each in a FRESH browser: bounds Chrome memory so long renders don't
+  // crash with "detached Frame", and a crash only loses the current chunk. Already-written
+  // frames are skipped, so a crashed chunk is retried and resumes exactly where it stopped.
+  const CHUNK = 400;
+  const fp = (f) => path.join(framesDir, `f_${String(f).padStart(6, '0')}.png`);
+  let f = 0;
+  while (f < totalFrames) {
+    const start = f;
+    const end = Math.min(totalFrames, start + CHUNK);
     try {
-      for (let f = w; f < totalFrames; f += WORKERS) {
-        await page.evaluate((t) => window.seekTo(t), (f / FPS) * 1000);
-        await page.screenshot({ path: path.join(framesDir, `f_${String(f).padStart(6, '0')}.png`) });
-        if ((++done) % 120 === 0) process.stdout.write(`\r[compile] frame ${done}/${totalFrames}`);
-      }
-    } finally { await browser.close(); }
-  };
-  await Promise.all(Array.from({ length: WORKERS }, (_, w) => stripe(w)));
-  process.stdout.write(`\r[compile] frame ${totalFrames}/${totalFrames}\n`);
-  const written = fs.readdirSync(framesDir).filter((f) => f.endsWith('.png')).length;
-  if (written !== totalFrames) throw new Error(`render incomplete: ${written}/${totalFrames} frames`);
-  console.log(`[compile] all ${written} frames verified present`);
+      await withPage(async (page) => {
+        for (let i = start; i < end; i++) {
+          if (!fs.existsSync(fp(i))) {
+            await page.evaluate((t) => window.seekTo(t), (i / FPS) * 1000);
+            await page.screenshot({ path: fp(i) });
+          }
+          f = i + 1;
+          if (f % 30 === 0) process.stdout.write(`\r[compile] frame ${f}/${totalFrames}`);
+        }
+      });
+    } catch (e) {
+      console.log(`\n[compile] browser died near frame ${f} (${String(e.message).slice(0, 50)}); relaunching to resume…`);
+      // f holds the last frame written; loop re-enters with a fresh browser and continues.
+    }
+  }
+  process.stdout.write('\n');
 }
 
 async function renderSample() {

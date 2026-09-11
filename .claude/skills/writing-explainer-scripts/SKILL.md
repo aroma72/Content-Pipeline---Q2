@@ -49,12 +49,14 @@ underlying facts must be accurate and current. **Do not draft beats until `resea
 - **One sentence per beat.** Plain, short (≈7–14 words), read-aloud-able. If it's a mouthful, split it.
 - **One concept per video.** Define jargon on first use. One metaphor per concept.
 - **Mentor tone:** ≥2 emotional checkpoints (normalize early, reassure at the hard part); no shaming.
-- **Interactive QUESTION → REVEAL (REQUIRED in every video).** Include an in-video multiple-choice
-  question the viewer answers, then a reveal a few beats later — so they engage, not just watch. Use the
-  `quiz` info template: a QUESTION beat `{mode:'info', holdAfter:6, info:{tpl:'quiz', data:{stem, options,
-  note:'Write your answer down.'}}}` at ~⅔ through, and a REVEAL beat `{mode:'info', info:{tpl:'quiz',
-  data:{stem, options, answer:<index>, note:'…why…'}}}` shortly after. (Non-`info` formats: two card/screen
-  beats with the same answer-then-reveal structure.) See SCRIPTING_STANDARDS §3b.
+- **Interactive CHECKPOINT (REQUIRED in every video).** One multiple-choice question the learner really
+  answers — **never drawn, never spoken**. The player pauses there and the LMS pops the question. Write
+  it as a zero-time beat sitting BETWEEN two spoken beats at ~⅔ through (never first or last, or the
+  pause has no sentence to land between):
+  `{id:'14', mode:'checkpoint', quiz:{stem, options:[…3–4…], answer:<0-based index>, explain:'why that is
+  right, and why the tempting wrong one is wrong'}}`. Write `explain` for the learner who just chose
+  wrong — it is the only feedback they get. Same beat in every format, illustrated or IDE-screencast.
+  See SCRIPTING_STANDARDS §3b.
 - **The Evals-Grade Visual Standard (DEFAULT for every video — Standard §3d).** Build the visuals the
   way the evals series did, unless Aroma asks otherwise: (1) ONE concrete setting as a const, repeated
   in every `scene` prompt — never an abstract "room with soft rounded walls"; (2) the AI is a real
@@ -85,7 +87,7 @@ Then hand to `reviewing-explainer-scripts` for the gate before any art/TTS. Targ
 ## Check before handing off
 `research.md` exists and its facts are current + sourced · script is grounded in the brief (metaphor,
 failure-mode, and numbers trace to it) · every beat is one spoken sentence · protagonist consistent ·
-leads with the answer · jargon defined · 2+ emotional beats · **an interactive QUESTION → REVEAL pair is
-present (with `holdAfter` on the question)** · **`animateIds` names the 2–4 story beats to animate with
+leads with the answer · jargon defined · 2+ emotional beats · **a CHECKPOINT beat is present**
+(between two spoken beats, valid `answer` index, `explain` written for a wrong answer) · **`animateIds` names the 2–4 story beats to animate with
 omni** · no assignments · modes chosen ·
 Taleemabad (if used) is the protagonist's lived context, not a tacked-on example.

@@ -89,8 +89,8 @@ function changedVideos() {
 function validate(relPath) {
   const payload = checkpoints.forPath(relPath);
   if (!payload) {
-    return { skip: true, why: 'no QUESTION -> REVEAL pair (assessment and screencast '
-      + 'videos have none), or no durations.json yet' };
+    return { skip: true, why: 'no checkpoint beat (and no legacy QUESTION -> REVEAL '
+      + 'pair), or no durations.json yet' };
   }
   if (!payload.timing.trusted) {
     return { ok: false, why: `timing could not be established (intro offset `
@@ -99,8 +99,16 @@ function validate(relPath) {
   const weak = payload.checkpoints.filter((c) => c.explanationSource !== 'authored');
   if (weak.length) {
     return { ok: false, why: `${weak.map((c) => c.id).join(', ')} has no authored `
-      + `explanation -- the LMS would show the video's six-word caption to a learner who `
-      + `just answered wrong. Add \`explain\` to the REVEAL beat's data in beats.js.` };
+      + `explanation -- the LMS would show the video's six-word caption, or nothing at all, `
+      + `to a learner who just answered wrong. Add \`explain\` to the checkpoint beat's `
+      + `\`quiz\` (or, on a legacy video, to the REVEAL beat's data) in beats.js.` };
+  }
+  // A pause with no whole sentence on one side of it has nowhere safe to stop.
+  const unsafe = payload.checkpoints.filter((c) => c.pause && c.pause.safe === false);
+  if (unsafe.length) {
+    return { ok: false, why: `${unsafe.map((c) => c.id).join(', ')} sits first or last in `
+      + `the beat list, so the pause has no sentence boundary to land on. Move the `
+      + `checkpoint beat between two spoken beats.` };
   }
   return { ok: true, payload };
 }

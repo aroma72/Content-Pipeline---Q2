@@ -23,8 +23,7 @@ const ffmpeg = require('ffmpeg-static');
 const { geminiKey, guardSpend, MODELS, COST } = require('./lib/config');
 
 const { renderable } = require('./lib/beats-util');
-// checkpoint beats are LMS pause points, never drawn and never spoken — see lib/beats-util.js
-const beats = renderable(require('./beats.js'));
+const beats = renderable(require('./beats.js'));  // checkpoint beats are LMS pause points — never drawn, never spoken
 const AUD = path.join(process.cwd(), 'audio');
 fs.mkdirSync(AUD, { recursive: true });
 

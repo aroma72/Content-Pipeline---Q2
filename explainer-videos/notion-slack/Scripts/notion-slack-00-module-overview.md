@@ -94,6 +94,31 @@ Lives on the module page and in the video descriptions. Only the admin-approval 
 
 ---
 
+## The exercise
+
+The module's graded work is **Exercise — Ship From Slack** (`Module-14-Exercise-Ship-From-Slack.pdf`,
+with a separate facilitator key). Learners wire Slack, Notion and GitHub to their own project using the
+`Orenda-Project/orchestration-harness-v2` harness, and finish when a message they type in Slack becomes a
+Notion ticket, an agent session, a pull request, and a reply in their thread — without opening an editor.
+It takes about three hours and is done after video 8.
+
+It is deliberately error-first, like the videos: Part E makes the learner reproduce `object_not_found`,
+`not_in_channel`, `missing_scope` and a held tick lock on purpose, and Part F asks them to find three
+places where the reference repo contradicts what this module taught them.
+
+It ships in three pieces, the same shape as Module 11:
+
+| Piece | File | Format |
+|-------|------|--------|
+| The assignment | `Notion and Slack - Module 14 Assessment (assignment).docx` | Word, house styling — the graded brief |
+| The guide video | `Notion and Slack - Module 14 Assessment (guide).mp4` | Claude Code IDE-screencast (`assessment.html`), 21 beats, no illustrated art |
+| Facilitator key | `Module-14-Exercise-Facilitator-Key.pdf` | Answers, marking notes, pre-flight — **not for learners** |
+
+The docx and the video share one vocabulary: six parts, **A** through **F**, and the video's banner chip
+reads `Part A · Get the three keys` so a learner can hold both at once and never lose their place. The
+learner-facing PDF (`Module-14-Exercise-Ship-From-Slack.pdf`) is the same content as the docx, for anyone
+who wants it outside Word.
+
 ## Module close
 
 Video 6 closes the module on a go-live checklist the learner can run on their own project. The module

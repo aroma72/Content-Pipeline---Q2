@@ -32,11 +32,12 @@ apply this rubric directly.
     held/leaned-on, or any 2-object composition, MUST be `mode:'scene'`. Run `node qa-cutouts.js` — it
     fails this deterministically. (Body-only poses — three fingers, thumbs-up, open hands — are fine.)
     See memory `feedback_cutout_qa`.
-9. **No interactive QUESTION → REVEAL** (Standard §3b, REQUIRED effective 2026-08-17): every video must
-   contain an in-video multiple-choice QUESTION beat (with `holdAfter` so the viewer can answer) AND a
-   matching REVEAL beat a few beats later. Missing either → NOT READY. Confirm the QUESTION uses
-   `tpl:'quiz'` with `note`/`holdAfter` and the REVEAL uses `tpl:'quiz'` with an `answer` index (or, for
-   non-`info` formats, an equivalent answer-then-reveal card pair).
+9. **No CHECKPOINT beat** (Standard §3b, REQUIRED effective 2026-09-11): every video must contain at
+   least one `{mode:'checkpoint', quiz:{stem, options, answer, explain}}` beat. Missing → NOT READY.
+   Also NOT READY if: it is the first or last beat (the pause has no sentence either side), `answer` is
+   not a valid 0-based index into `options`, there are fewer than three options, or `explain` is missing
+   or is a six-word caption rather than feedback for someone who just chose wrong. A script that still
+   renders QUESTION/REVEAL cards on screen (`tpl:'quiz'`) → NEEDS WORK: convert it to a checkpoint.
 10. **No animation plan** (Standard §3c, REQUIRED effective 2026-08-17): `module.exports.animateIds`
     must name **2–4 beats where real motion carries the story** (emotional turn, metaphor coming alive,
     closing invite), to be generated with omni i2v. Missing, empty, or pointing at ids that don't exist

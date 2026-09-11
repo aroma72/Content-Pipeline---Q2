@@ -34,6 +34,18 @@ const { PATHS, videoDir } = require('../../orchestrator/lib/paths');
  *  correct for a video nobody can answer, wrong for a popup that takes input. */
 const PREAMBLE = "Let's answer a quick question, to check the concept landed.";
 
+/**
+ * How far BEFORE the beat boundary the player should stop, in seconds.
+ *
+ * Every beat is one spoken sentence plus a trailing pause of ~0.7s, so the
+ * boundary itself is already silent. But pausing exactly on it lands one frame
+ * into the NEXT beat -- the learner gets the question over a visual that belongs
+ * to the answer they have not reached yet. Backing off a quarter of a second
+ * keeps the previous beat's frame on screen while staying comfortably inside the
+ * silence, so the audio is never cut mid-word.
+ */
+const PAUSE_LEAD_SECONDS = 0.25;
+
 // Probing a bumper costs an ffmpeg spawn, so memoise per file+mtime.
 const introCache = new Map();
 
@@ -98,6 +110,23 @@ function isQuiz(beat) {
   return beat && beat.info && beat.info.tpl === 'quiz' && beat.info.data;
 }
 
+/**
+ * The current format: the question is a beat that is never drawn and never
+ * spoken, so nothing about it appears in the MP4. The LMS pauses the video at
+ * that point and shows the popup.
+ *
+ *   { id: '14', mode: 'checkpoint',
+ *     quiz: { stem, options: [...], answer: <0-based index>, explain } }
+ *
+ * Because it carries no voiceover it has no entry in durations.json and occupies
+ * zero time, so its start time IS the boundary between the beats either side of
+ * it. Every beat is one spoken sentence plus a trailing pause, which is what
+ * makes that boundary safe to stop on — a checkpoint can never land mid-sentence.
+ */
+function isCheckpointBeat(beat) {
+  return Boolean(beat) && beat.mode === 'checkpoint' && Boolean(beat.quiz);
+}
+
 /** Load beats.js fresh, so an edited script is picked up without a restart. */
 function loadBeats(dir) {
   const file = path.join(dir, 'beats.js');
@@ -133,12 +162,60 @@ function forPath(relPath) {
   let timed = Boolean(durations);
   beats.forEach((b, i) => {
     startAt[i] = running;
+    // A checkpoint beat is never voiced, so it has no duration BY DESIGN and must
+    // not be read as a missing measurement — treating it as one made every new
+    // video report timing.trusted:false, and the LMS is told never to fire those.
+    if (isCheckpointBeat(b)) return;
     const d = durations && durations[b.id];
     if (typeof d === 'number') running += d;
     else timed = false; // a missing beat length makes every later time a guess
   });
 
   const checkpoints = [];
+
+  // ── current format: a checkpoint beat, nothing rendered ────────────────────
+  beats.forEach((c, i) => {
+    if (!isCheckpointBeat(c)) return;
+    const q = c.quiz;
+    const spoken = (b) => b && !isCheckpointBeat(b);
+    const after = beats.slice(0, i).filter(spoken).pop() || null;
+    const before = beats.slice(i + 1).find(spoken) || null;
+
+    // The boundary is where the beat would have started; we stop just before it
+    // (PAUSE_LEAD_SECONDS) so the previous beat's frame is still on screen.
+    const boundary = startAt[i];
+    const lessonAt = Number(Math.max(0, boundary - PAUSE_LEAD_SECONDS).toFixed(3));
+    checkpoints.push({
+      id: `q${checkpoints.length + 1}`,
+      beatId: c.id,
+      atSeconds: Number((lessonAt + offset.seconds).toFixed(3)),
+      lessonAtSeconds: lessonAt,
+      preamble: PREAMBLE,
+      stem: q.stem,
+      options: q.options.slice(),
+      correctIndex: q.answer,
+      explanation: q.explain || null,
+      explanationSource: q.explain ? 'authored' : 'missing',
+      // Nothing about this question is burned into the video: the popup is the
+      // only place the learner ever sees it.
+      rendersInVideo: false,
+      pause: {
+        // The video is paused here by the player. It is a boundary between two
+        // whole spoken sentences, never a cut inside one.
+        atBeatBoundary: true,
+        afterBeatId: after && after.id,
+        beforeBeatId: before && before.id,
+        // Where the two beats actually meet, and how far before it we stop.
+        boundaryLessonSeconds: Number(boundary.toFixed(3)),
+        leadSeconds: PAUSE_LEAD_SECONDS,
+        // A checkpoint before the first spoken beat or after the last one has no
+        // sentence to land between; the LMS should not fire an untrusted pause.
+        safe: Boolean(after && before),
+      },
+    });
+  });
+
+  // ── legacy format: videos built before the popup, with the cards on screen ──
   beats.forEach((q, i) => {
     if (!isQuiz(q) || typeof q.info.data.answer === 'number') return; // reveals handled below
 
@@ -170,6 +247,16 @@ function forPath(relPath) {
       // Named so coverage is visible rather than guessed at: 'video-note' means
       // this question still needs a proper explanation written for it.
       explanationSource: reveal.info.data.explain ? 'authored' : 'video-note',
+      // These videos still show the question and the answer on screen. The popup
+      // duplicates them, so the LMS may prefer to let the cards play instead of
+      // pausing. Rebuilding one as a checkpoint beat flips this to false.
+      rendersInVideo: true,
+      pause: {
+        atBeatBoundary: true,
+        afterBeatId: (beats.slice(0, i).pop() || {}).id || null,
+        beforeBeatId: q.id,
+        safe: i > 0,
+      },
     });
   });
 
@@ -245,6 +332,9 @@ function listVideos() {
       explanationsAuthored:
         payload.checkpoints.filter((c) => c.explanationSource === 'authored').length,
       timingTrusted: payload.timing.trusted,
+      // 'popup' — nothing is on screen, the player pauses and asks.
+      // 'on-screen' — built before the popup; the cards still play in the video.
+      questionStyle: payload.checkpoints.every((c) => !c.rendersInVideo) ? 'popup' : 'on-screen',
     });
   }
   return out.sort((a, b) => a.path.localeCompare(b.path));

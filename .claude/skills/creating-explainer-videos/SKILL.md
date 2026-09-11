@@ -59,8 +59,9 @@ Pipeline: `beats.js` → `generate-lesson-art.js` (Imagen) → `segment-all.py` 
 | 9 | `node verify.js` | acceptance checklist (Section 11 of the spec) |
 
 `--yes` (or `CONFIRM_SPEND=1`) is required on steps 3, 5 and 5b — the cost guard blocks paid calls otherwise.
-Two non-negotiables the gate enforces before you reach step 3: an interactive **QUESTION → REVEAL** pair
-(§3b) and **`animateIds`** naming the 2–4 story beats to animate with omni (§3c).
+Two non-negotiables the gate enforces before you reach step 3: a **CHECKPOINT** beat — the question the
+player pauses on and the LMS pops, never drawn and never spoken (§3b) — and **`animateIds`** naming the
+2–4 story beats to animate with omni (§3c).
 
 ## Quality bar — measure EVERY video against this (see memory: explainer-video-quality-standard)
 Established on the Change Management video. A miss is a FAIL to fix, not ship:
@@ -70,7 +71,7 @@ Established on the Change Management video. A miss is a FAIL to fix, not ship:
 4. **Consistent flat-illustration visuals** — never mix photoreal with illustration; same Ali throughout.
 5. **No baked-in text in images** (prompts forbid text/letters/numbers; blank props); teaching text is crisp HTML.
 6. **Cutouts never cut an object halfway** — whole object or none; 2-person/complex beats use `scene`, not `ali`.
-7. **Movement in every beat** — push-in / parallax / Ken Burns + evolving infographics; no dead-still holds. **AND add real i2v motion on the 2–4 story-critical beats** where movement carries the story (emotional turns, a metaphor coming alive, the closing invite) — `generate-lesson-video-omni.js` (paid, kie-gated, confirm spend); compile auto-uses `clips/<id>.mp4`, falls back to Ken Burns if absent. See animation-motion-design + memory `feedback_use_animations`. Also add an interactive **QUESTION → REVEAL** quiz (SCRIPTING_STANDARDS §3b).
+7. **Movement in every beat** — push-in / parallax / Ken Burns + evolving infographics; no dead-still holds. **AND add real i2v motion on the 2–4 story-critical beats** where movement carries the story (emotional turns, a metaphor coming alive, the closing invite) — `generate-lesson-video-omni.js` (paid, kie-gated, confirm spend); compile auto-uses `clips/<id>.mp4`, falls back to Ken Burns if absent. See animation-motion-design + memory `feedback_use_animations`. Also add a **CHECKPOINT** beat — `{mode:'checkpoint', quiz:{stem, options, answer, explain}}`, zero-time, between two spoken beats; it is never rendered, the player pauses there and the LMS asks (SCRIPTING_STANDARDS §3b).
 8. **Taleemabad bumpers** intro+outro (logo+wordmark, intro title, no outro sign-off unless asked).
 9. **Subtle calm music** (School-of-Life vibe) starts at the logo, ducks under VO; prefer `brand/music.mp3`.
 

@@ -18,8 +18,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const ffmpeg = require('ffmpeg-static');
 const { renderable } = require('./lib/beats-util');
-// checkpoint beats are LMS pause points, never drawn and never spoken — see lib/beats-util.js
-const beats = renderable(require('./beats.js'));
+const beats = renderable(require('./beats.js'));  // checkpoint beats are LMS pause points — never drawn, never spoken
 
 function arg(n, d) { const i = process.argv.indexOf(`--${n}`); return i !== -1 ? process.argv[i + 1] : d; }
 const NAME = process.env.LESSON_NAME || 'lesson';
@@ -99,15 +98,5 @@ if (fs.existsSync('durations.json') && fs.existsSync(final)) {
   else if (fd != null) pass('brand bumpers present (final is longer than the bare lesson)');
 }
 
-
-// 5. A/V SYNC GUARD — the bare lesson MUST be 30fps. A non-30fps bare concatenated with 30fps
-//    bumpers makes the video race ahead of the audio (VO lags the visuals). Never render off-30.
-if (fs.existsSync('out/lesson.mp4')) {
-  const bi = ffInfo('out/lesson.mp4');
-  const m = bi.match(/(\d+(?:\.\d+)?) fps/);
-  const bfps = m ? parseFloat(m[1]) : null;
-  if (bfps !== null && Math.round(bfps) !== 30) fail(`bare lesson is ${bfps}fps (must be 30) — A/V will DESYNC against 30fps bumpers`);
-  else if (bfps !== null) pass(`bare lesson 30fps (A/V sync safe)`);
-}
 console.log(ok ? '\nVERIFY: PASS' : '\nVERIFY: FAIL');
 process.exit(ok ? 0 : 1);

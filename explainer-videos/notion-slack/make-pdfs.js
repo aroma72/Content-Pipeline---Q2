@@ -52,7 +52,16 @@ function mdToHtml(md) {
     if (para.length) { out.push(`<p>${inline(para.join(' '))}</p>`); para = []; }
   };
   const flushList = () => {
-    if (list) { out.push(`<ul>${list.map((li) => `<li>${inline(li)}</li>`).join('')}</ul>`); list = null; }
+    if (!list) return;
+    const items = list.map((li) => {
+      const cb = li.match(/^\[([ xX])\]\s+(.*)$/);   // "- [ ] do the thing" → printable checkbox
+      return cb
+        ? `<li class="cb"><span class="box">${cb[1].trim() ? '&#10003;' : ''}</span><span class="t">${inline(cb[2])}</span></li>`
+        : `<li>${inline(li)}</li>`;
+    });
+    const cls = list.every((li) => /^\[[ xX]\]\s/.test(li)) ? ' class="checks"' : '';
+    out.push(`<ul${cls}>${items.join('')}</ul>`);
+    list = null;
   };
   const flush = () => { flushPara(); flushList(); };
 
@@ -101,7 +110,19 @@ function mdToHtml(md) {
       continue;
     }
 
-    // bullets
+    // blockquote / callout
+    const bq = line.match(/^>\s?(.*)$/);
+    if (bq) {
+      flush();
+      const buf = [bq[1]];
+      while (i + 1 < lines.length && /^>\s?/.test(lines[i + 1].trim())) {
+        buf.push(lines[++i].trim().replace(/^>\s?/, ''));
+      }
+      out.push(`<blockquote>${inline(buf.join(' '))}</blockquote>`);
+      continue;
+    }
+
+    // bullets (incl. "- [ ] task" checkboxes)
     const li = line.match(/^[-*]\s+(.*)$/);
     if (li) { flushPara(); (list = list || []).push(li[1]); continue; }
 
@@ -152,6 +173,16 @@ const CSS = `
   .beat em { color: #7a6f5f; font-size: 9pt; }
   @media screen { body { padding: 14mm; } }  /* only for --png previews; print uses @page margins */
 
+  /* exercise doc: callouts + printable checkboxes */
+  blockquote { margin: 10px 0 12px; padding: 9px 13px; background: #f6f1e6; border-left: 3px solid #c9a227;
+               color: #4a4238; page-break-inside: avoid; }
+  blockquote strong { color: #7a5c00; }
+  ul.checks { list-style: none; padding-left: 2px; }
+  li.cb { display: flex; gap: 9px; align-items: flex-start; page-break-inside: avoid; }
+  li.cb .t { flex: 1; }
+  li.cb .box { flex: 0 0 13px; height: 13px; margin-top: 3px; border: 1.2px solid #9a8f7c;
+               border-radius: 2px; background: #fff; font-size: 9pt; line-height: 11px; text-align: center; color: #1c4e46; }
+
   /* cover + contents */
   .cover { page-break-after: always; padding-top: 34mm; }
   .cover .kicker { font-size: 9pt; letter-spacing: .2em; text-transform: uppercase; color: #a8977c; }
@@ -187,6 +218,9 @@ function cover(entries) {
     </ol></div>
   </div>`;
 }
+
+module.exports = { mdToHtml, esc, inline, CSS };   // reused by make-exercise-pdf.js
+if (require.main !== module) return;
 
 (async () => {
   const split = process.argv.includes('--split');
