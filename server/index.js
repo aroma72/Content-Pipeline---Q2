@@ -163,6 +163,12 @@ app.post('/demo/make-video', async (req, res) => {
       lesson: r.lesson,
       seconds: r.video.seconds,
       url: `${req.protocol}://${req.get('host')}/demo/preview/${r.video.id}.mp4`,
+      // Where the LMS can pull it from, and where it now lives publicly.
+      lms: r.slug ? {
+        videoId: r.slug,
+        checkpoints: `${req.protocol}://${req.get('host')}/api/v1/videos/${r.slug}/checkpoints`,
+      } : null,
+      youtube: r.youtube,
     });
   } catch (e) {
     console.error('[make-video]', e.message);

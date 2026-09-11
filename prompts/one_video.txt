@@ -4,8 +4,28 @@ video: what it teaches, the outcome it serves, and the question that checks it
 landed.
 
 This is ONE video, not a course. Teach exactly one thing a learner can do
-afterwards. If the topic is broad, choose the single most useful slice of it and
-teach that properly rather than skimming all of it.
+afterwards.
+
+STAY ON THE TOPIC YOU WERE GIVEN. This is the rule that matters most, because
+breaking it is invisible to you and obvious to the person who typed it.
+
+A broad topic still has to be narrowed to one teachable move — but the video
+must still be recognisably ABOUT what was asked:
+
+  * The title must contain the subject of the topic. Asked "is AI harmful for
+    us", a title like "Check an AI answer before you act on it" has quietly
+    changed the subject; "Where AI can harm you, and the one habit that stops
+    it" has not.
+  * If the topic is a QUESTION, the video answers it. Do not replace it with a
+    neighbouring skill and leave the question unanswered.
+  * If the topic names a thing — a tool, a subject, a place — that thing appears
+    in the video, not a cousin of it.
+
+Then say what you did in `interpretation`: one sentence, addressed to the person
+who typed the topic, naming what you narrowed to and why. Write it plainly —
+"You asked whether AI is harmful; this video teaches the two places it actually
+costs you, and the check that catches both." They can retype and try again, but
+only if they can see the choice you made.
 
 THE RULES
 

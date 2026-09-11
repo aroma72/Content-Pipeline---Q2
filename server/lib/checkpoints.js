@@ -88,6 +88,22 @@ function introOffset(dir) {
   if (introCache.has(key)) return introCache.get(key);
 
   let result = null;
+
+  // A video built without brand bumpers is delivered as the bare lesson, so the
+  // offset is genuinely zero -- shifting it by the brand constant would fire
+  // every checkpoint 2.6s late. Distinguishable from "the container has no mp4
+  // files": here the deliverable IS present and _bumpers is simply absent.
+  const bumperDir = path.join(dir, 'out', '_bumpers');
+  const built = (() => {
+    try { return fs.readdirSync(path.join(dir, 'out')).some((f) => f.endsWith('_final.mp4')); }
+    catch { return false; }
+  })();
+  if (built && !fs.existsSync(bumperDir)) {
+    const bare = { seconds: 0, source: 'no-bumpers' };
+    introCache.set(key, bare);
+    return bare;
+  }
+
   const probed = probeSeconds(intro);
   if (probed !== null) {
     result = { seconds: Number(probed.toFixed(3)), source: 'probed' };
@@ -278,8 +294,11 @@ function forPath(relPath) {
       introOffsetSeconds: offset.seconds,
       introOffsetSource: offset.source,
       lessonSeconds: Number(running.toFixed(3)),
-      note: 'atSeconds is measured from the start of the delivered file, which '
-        + 'begins with the brand intro. lessonAtSeconds excludes it.',
+      note: offset.seconds > 0
+        ? 'atSeconds is measured from the start of the delivered file, which '
+          + 'begins with the brand intro. lessonAtSeconds excludes it.'
+        : 'This video is delivered without brand bumpers, so atSeconds and '
+          + 'lessonAtSeconds are the same.',
     },
     // Whether the file sits on THIS server. False in the deploy container, where
     // .mp4 files are gitignored -- it does not mean the video was never made.

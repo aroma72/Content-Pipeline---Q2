@@ -92,7 +92,14 @@ button:disabled{opacity:.55;cursor:default}
 video{width:100%;border-radius:12px;border:1px solid var(--line);background:#000;display:block}
 .made{margin-top:18px}
 .made h2{font-size:19px;font-weight:700;letter-spacing:-.02em}
-.made .slo{color:var(--muted);font-size:14.5px;margin-top:5px}
+.made .slo{color:var(--muted);font-size:14.5px;margin-top:8px}
+.made .interp{background:var(--blue-soft);border-radius:9px;padding:11px 14px;margin-top:10px;
+  font-size:14px;color:var(--ink-2)}
+.made .links{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+.made .links a,.made .links span{font-size:13.5px;font-weight:600;padding:8px 14px;border-radius:8px;
+  border:1px solid var(--line);background:#fff}
+.made .links a{color:var(--blue);border-color:#C7D2FE}
+.made .links span{color:var(--muted)}
 .q{margin-top:16px;background:#F9FAFB;border:1px solid var(--line);border-radius:10px;padding:16px 18px}
 .q .stem{font-weight:600;margin-bottom:10px}
 .q ol{margin:0 0 10px 20px}
@@ -159,7 +166,9 @@ video{width:100%;border-radius:12px;border:1px solid var(--line);background:#000
           <video id="player" controls playsinline></video>
           <div class="made">
             <h2 id="r-title"></h2>
+            <div class="interp" id="r-interp"></div>
             <div class="slo" id="r-slo"></div>
+            <div class="links" id="r-links"></div>
             <div class="q">
               <div class="stem" id="r-stem"></div>
               <ol type="A" id="r-opts"></ol>
@@ -238,6 +247,18 @@ video{width:100%;border-radius:12px;border:1px solid var(--line);background:#000
 
       var l = body.lesson, q = l.question || {};
       $('r-title').textContent = l.title;
+      $('r-interp').textContent = l.interpretation || '';
+      var links = [];
+      if (body.youtube && body.youtube.url) {
+        links.push('<a href="' + esc(body.youtube.url) + '" target="_blank" rel="noopener">'
+          + 'Watch on YouTube (unlisted)</a>');
+      } else if (body.youtube && body.youtube.error) {
+        links.push('<span>Not published to YouTube: ' + esc(body.youtube.error) + '</span>');
+      }
+      if (body.lms && body.lms.videoId) {
+        links.push('<span>In the LMS catalogue as ' + esc(body.lms.videoId) + '</span>');
+      }
+      $('r-links').innerHTML = links.join('');
       $('r-slo').textContent = l.slo;
       $('r-stem').textContent = q.stem || '';
       $('r-opts').innerHTML = (q.options || []).map(function (o, i) {

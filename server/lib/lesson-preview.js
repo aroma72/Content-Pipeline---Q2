@@ -96,6 +96,10 @@ module.exports = [
       options: ${JSON.stringify(opts)},
       answer: ${Number(q.correctIndex) || 0},
       note: ${esc(fit(q.explanation || '', 110))},
+      // The card can only hold a caption, but the LMS popup shows a learner who
+      // just answered wrong the whole reason. Keep both: note is drawn,
+      // explain is what the checkpoint API serves.
+      explain: ${esc(q.explanation || '')},
     } },
   },
 ];
@@ -202,4 +206,8 @@ function fileFor(id) {
   return fs.existsSync(f) ? f : null;
 }
 
-module.exports = { render, fileFor, isBuilding: () => building };
+// beatsFor and the card durations are exported so a made video can be written
+// into the shape the checkpoint API reads, without a second copy of either.
+function durationsFor() { return { '01': CARD, '02': CARD, '03': CARD }; }
+
+module.exports = { render, fileFor, beatsFor, durationsFor, isBuilding: () => building };
