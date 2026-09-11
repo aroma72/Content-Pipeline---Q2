@@ -251,6 +251,48 @@ module.exports = Object.assign(module.exports, {
     // (the reviewer/redraft loop reads them) and into `sensorResults` (the QA
     // judge and the Slack report read them).
     const sensorResults = [];
+    /**
+     * Run qa-art; if it rejects specific images, regenerate just those and try
+     * again. Silent no-op when it passes, which is the usual case.
+     */
+    const repairArt = async () => {
+      if (opts.dryRun) return;
+      if (!fs.existsSync(path.join(dir, 'qa-art.js'))) return; // sensor() reports it
+
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          await run('node', ['qa-art.js'], { timeoutMs: 20 * 60 * 1000 });
+          return;                                   // passed, nothing to repair
+        } catch (e) {
+          if (!(e instanceof shell.CommandError) || e.code === null) return; // infra: let sensor deal
+          const out = `${e.stdout || ''}\n${e.stderr || ''}`;
+          const m = out.match(/ART_IDS=([0-9,\s]+?)\s+node\s+(\S+\.js)/);
+          if (!m) return;                           // not the shape we can fix
+          const ids = m[1].replace(/\s+/g, '');
+          const generator = m[2];
+          if (!fs.existsSync(path.join(dir, generator))) return;
+
+          log(`qa-art rejected art ${ids} -- regenerating just those (attempt ${attempt}/2)`);
+          try {
+            await run('node', [generator, '--yes'], {
+              timeoutMs: 20 * 60 * 1000,
+              env: { ...process.env, ART_IDS: ids },
+            });
+          } catch (regenErr) {
+            log(`regenerating art ${ids} failed: ${regenErr.message}`);
+            return;                                 // let sensor report the original verdict
+          }
+          state.recordIntervention(st, {
+            stage: 'produce',
+            kind: 'art_regenerated',
+            detail: `qa-art rejected art ${ids}; regenerated and re-judged (attempt ${attempt}).`,
+          });
+        }
+      }
+      // Two repairs did not settle it. Fall through: sensor() runs qa-art once
+      // more and reports the real verdict, so the failure is never swallowed.
+    };
+
     const sensor = async (script, what, { redraftable = false } = {}) => {
       if (opts.dryRun) { log(`${script}: skipped (dry run)`); return; }
 
@@ -384,6 +426,16 @@ module.exports = Object.assign(module.exports, {
     // catches what no text gate can see -- flipped hands, melted faces, baked-in
     // lettering. Costs a few paise and runs before TTS and the ~1h render, so a
     // defective image is caught while regenerating it is still cheap.
+    // A single bad image used to cost the whole lesson. The first real course
+    // build died here: 12 of 13 images passed and one had a letter baked into a
+    // prop, so a ~$1.50 render was thrown away over roughly three cents of art.
+    //
+    // qa-art already names the offending ids and the command that fixes them
+    // ("regenerate these: ART_IDS=18 node generate-lesson-art-gemini.js --yes"),
+    // so take it at its word: regenerate only those, then judge again. Bounded
+    // at two attempts -- art that fails twice is a prompt problem, not a dice
+    // roll, and looping on a paid generator is how a bug becomes an invoice.
+    await repairArt();
     await sensor('qa-art.js', 'anatomy/rendering defects in the generated art');
 
     // 3. cutout
