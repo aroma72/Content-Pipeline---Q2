@@ -173,6 +173,27 @@ details[open] summary::before{content:'▾ '}
 .note b{font-weight:700}
 ul.assume{margin:0;padding-left:20px;color:var(--muted);font-size:14px}
 ul.assume li{margin:4px 0}
+.build{background:#fff;border:1px solid var(--line);border-radius:12px;padding:20px 22px;margin-top:16px}
+.build h2{font-size:16.5px;font-weight:600;margin-bottom:3px}
+.build .hint{color:var(--muted);font-size:14px;margin-bottom:16px}
+.build .cost{display:flex;gap:26px;flex-wrap:wrap;margin-bottom:16px}
+.build .cost div{font-size:13.5px;color:var(--muted)}
+.build .cost b{display:block;font-size:20px;font-weight:700;color:var(--ink);letter-spacing:-.02em}
+.build .gate{display:none;gap:14px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px}
+.build .gate.on{display:flex}
+.build .gate > div{flex:1;min-width:230px}
+.prog{margin-top:16px;border-top:1px solid var(--line);padding-top:14px;display:none}
+.prog.on{display:block}
+.prog .bar{height:8px;background:#F3F4F6;border-radius:99px;overflow:hidden;margin-bottom:12px}
+.prog .fill{height:100%;width:0;background:var(--blue);border-radius:99px;transition:width .4s}
+.prog .line{display:flex;justify-content:space-between;gap:12px;align-items:center;font-size:14px;
+  padding:7px 0;border-bottom:1px solid var(--line-soft)}
+.prog .line:last-child{border-bottom:none}
+.prog .s{font-size:12px;font-weight:600;padding:3px 10px;border-radius:99px;white-space:nowrap}
+.s.done{background:#DCFCE7;color:#15803D}
+.s.failed{background:#FEE2E2;color:#B91C1C}
+.s.running{background:var(--blue-soft);color:var(--blue)}
+.s.queued{background:#F3F4F6;color:var(--muted)}
 .foot{color:var(--muted);font-size:13px;margin-top:26px;border-top:1px solid var(--line);padding-top:16px}
 
 @media (max-width:900px){
@@ -263,9 +284,29 @@ ul.assume li{margin:4px 0}
           <ul class="assume" id="c-assume"></ul>
         </div>
 
-        <div class="note" style="margin-top:16px">
-          <b>Nothing has been built yet.</b> Planning is free. Turning these lessons into
-          finished videos costs money and takes hours, so it is a separate, confirmed step.
+        <div class="build">
+          <h2>Build these lessons into videos</h2>
+          <p class="hint">Each lesson becomes a narrated, illustrated video. This spends real
+            money and runs for hours, so it needs the API key and an explicit confirmation.</p>
+          <div class="cost" id="b-cost"></div>
+          <div class="gate" id="b-gate">
+            <div>
+              <label for="series">File the videos under</label>
+              <input id="series" placeholder="whatsapp-orders">
+            </div>
+            <div>
+              <label for="btoken">API key</label>
+              <input id="btoken" type="password" placeholder="cq_...">
+            </div>
+          </div>
+          <div class="actions" style="margin-top:0">
+            <button class="btn-primary" id="build">Build the videos</button>
+            <span class="status" id="b-status"></span>
+          </div>
+          <div class="prog" id="b-prog">
+            <div class="bar"><div class="fill" id="b-fill"></div></div>
+            <div id="b-lines"></div>
+          </div>
         </div>
       </div>
 
@@ -345,6 +386,12 @@ ul.assume li{margin:4px 0}
     $('c-assume-wrap').style.display = a.length ? 'block' : 'none';
     $('c-assume').innerHTML = a.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('');
 
+    plan = p;
+    showCost(p);
+    $('b-gate').classList.remove('on');
+    $('b-prog').classList.remove('on');
+    $('build').disabled = false;
+    $('b-status').textContent = '';
     $('out').classList.add('on');
     $('out').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -388,6 +435,92 @@ ul.assume li{margin:4px 0}
 
   $('topic').addEventListener('keydown', function (e) {
     if (e.key === 'Enter') $('go').click();
+  });
+
+  // ── building ────────────────────────────────────────────────────────────
+  // Planning is open to anyone with the link; building is not. It spends real
+  // money, so it asks for the key the API requires anyway, and makes the user
+  // press the button twice with the cost on screen in between.
+  var plan = null, poll = null;
+
+  function showCost(p) {
+    var e = p.estimate || {};
+    var money = '$' + e.estimatedCostUsd;
+    $('b-cost').innerHTML =
+      '<div><b>' + e.lessons + '</b>videos</div>' +
+      '<div><b>' + money + '</b>estimated cost</div>' +
+      '<div><b>' + Math.round((e.estimatedBuildMinutes || 0) / 60) + ' hrs</b>to finish</div>';
+  }
+
+  function slugify(t) {
+    return String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '').slice(0, 40);
+  }
+
+  function renderProgress(d) {
+    $('b-prog').classList.add('on');
+    var pct = d.lessons ? Math.round((d.done / d.lessons) * 100) : 0;
+    $('b-fill').style.width = pct + '%';
+    var buildingId = d.worker && d.worker.building && d.worker.building.id;
+    $('b-lines').innerHTML = (d.items || []).map(function (i) {
+      var st = i.status === 'done' ? 'done'
+        : i.status === 'failed' ? 'failed'
+        : (i.id === buildingId ? 'running' : 'queued');
+      return '<div class="line"><span>' + esc(i.topic) + '</span>' +
+        '<span class="s ' + st + '">' + (st === 'running' ? 'rendering' : st) + '</span></div>';
+    }).join('');
+    $('b-status').textContent = d.done + ' of ' + d.lessons + ' done'
+      + (d.failed ? ' - ' + d.failed + ' failed' : '');
+  }
+
+  async function startPolling(courseId, token) {
+    if (poll) clearInterval(poll);
+    var tick = async function () {
+      try {
+        var r = await fetch('/api/v1/courses/' + encodeURIComponent(courseId),
+          { headers: { Authorization: 'Bearer ' + token } });
+        if (!r.ok) return;
+        var d = await r.json();
+        renderProgress(d);
+        if (d.done + d.failed >= d.lessons) { clearInterval(poll); poll = null; }
+      } catch (e) { /* a dropped poll is not a failed build */ }
+    };
+    await tick();
+    poll = setInterval(tick, 20000);
+  }
+
+  $('build').addEventListener('click', async function () {
+    if (!plan) { $('b-status').textContent = 'Plan a course first.'; return; }
+    var gate = $('b-gate');
+    if (!gate.classList.contains('on')) {
+      gate.classList.add('on');
+      $('series').value = slugify(plan.title);
+      $('b-status').textContent = 'Check the cost above, then press Build again to start.';
+      $('btoken').focus();
+      return;
+    }
+    var token = $('btoken').value.trim();
+    var series = $('series').value.trim();
+    if (!token) { $('b-status').textContent = 'The API key is required to spend money.'; return; }
+    if (!series) { $('b-status').textContent = 'Choose a folder name for the videos.'; return; }
+
+    $('build').disabled = true;
+    $('b-status').innerHTML = '<span class="spin"></span>Starting the build...';
+    try {
+      var res = await fetch('/api/v1/courses/build', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify({ plan: plan, series: series,
+          confirmLessons: plan.estimate.lessons }),
+      });
+      var body = await res.json();
+      if (!res.ok) throw new Error(body.message || ('HTTP ' + res.status));
+      $('b-status').textContent = 'Building ' + body.queued + ' videos...';
+      startPolling(body.courseId, token);
+    } catch (err) {
+      $('b-status').textContent = err.message;
+      $('build').disabled = false;
+    }
   });
 })();
 </script>

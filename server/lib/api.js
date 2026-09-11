@@ -256,6 +256,11 @@ function build() {
       }
     }
 
+    // Start building. Without this the lessons sat queued forever: the only
+    // thing that dispatched work in this service was the Notion tick, so a
+    // course build looked like it "stopped at planning".
+    if (queued.length) require('./course-worker').kick();
+
     res.status(202).json({
       courseId,
       series,
@@ -263,8 +268,9 @@ function build() {
       rejected,
       items: queued,
       status: `${req.protocol}://${req.get('host')}/api/v1/courses/${courseId}`,
-      note: 'Queued only. Videos are produced one at a time by the pipeline worker; '
-        + 'poll the status URL. Nothing is charged until each video reaches its paid stage.',
+      note: 'Building has started. Videos are rendered one at a time, about 30 minutes '
+        + 'each; poll the status URL. Each finished lesson is scored and waits for a human '
+        + 'to promote it before any learner sees it.',
     });
   });
 
@@ -280,12 +286,16 @@ function build() {
           + 'deploys on this service — see the technical handoff.' });
     }
     const by = (s) => items.filter((i) => i.status === s).length;
+    const worker = require('./course-worker').status();
     res.json({
       courseId: req.params.courseId,
       lessons: items.length,
       done: by('done'),
       failed: by('failed'),
       inProgress: items.length - by('done') - by('failed'),
+      // What the machine is doing this second, so a stalled build is visible
+      // rather than looking identical to a slow one.
+      worker: { building: worker.current, pendingAcrossAllCourses: worker.pending },
       items,
     });
   });

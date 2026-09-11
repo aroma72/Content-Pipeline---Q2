@@ -51,10 +51,21 @@ function clientCredentials() {
 }
 
 function loadToken() {
+  // The deploy container has no .credentials directory: that path is gitignored
+  // and .dockerignore excludes it, so a token authorised on a laptop grants the
+  // running service nothing. Without this, every upload from production fails
+  // as "not authorised" while working perfectly in local dev.
+  const fromEnv = (process.env.YOUTUBE_REFRESH_TOKEN || '').trim();
+  if (fromEnv) {
+    return { refresh_token: fromEnv, obtained_at: 'env:YOUTUBE_REFRESH_TOKEN' };
+  }
+
   if (!fs.existsSync(TOKEN_PATH)) {
     throw new YouTubeAuthError(
-      `Not authorised yet -- no token at ${path.relative(PATHS.repoRoot, TOKEN_PATH)}.\n` +
-      '  Run once:  node orchestrator/youtube-auth.js'
+      `Not authorised yet -- no token at ${path.relative(PATHS.repoRoot, TOKEN_PATH)}, ` +
+      'and YOUTUBE_REFRESH_TOKEN is not set.\n' +
+      '  Run once:  node orchestrator/youtube-auth.js\n' +
+      '  On a server, set YOUTUBE_REFRESH_TOKEN instead.'
     );
   }
   const t = JSON.parse(fs.readFileSync(TOKEN_PATH, 'utf8'));
