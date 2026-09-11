@@ -184,7 +184,8 @@ video{width:100%;border-radius:12px;border:1px solid var(--line);background:#000
             <span class="verdict" id="r-verdict"></span>
             <h2 id="r-title" style="margin-top:10px"></h2>
             <div class="slo" id="r-slo"></div>
-            <div class="interp" id="r-scenario"></div>
+            <div class="interp" id="r-interp"></div>
+            <div class="slo" id="r-scenario"></div>
             <div class="meta" id="r-meta"></div>
           </div>
 
@@ -316,6 +317,7 @@ video{width:100%;border-radius:12px;border:1px solid var(--line);background:#000
     $('r-verdict').textContent = sc.gate === 'READY' ? 'Passed the script gate' : String(sc.gate || '');
     $('r-title').textContent = sc.title || '';
     $('r-slo').textContent = sc.slo || '';
+    $('r-interp').textContent = sc.interpretation || '';
     $('r-scenario').textContent = sc.scenario || '';
     $('r-meta').textContent = sc.beats.length + ' beats'
       + (sc.redrafts ? ' \u00b7 redrafted ' + sc.redrafts + ' time' + (sc.redrafts > 1 ? 's' : '') + ' after review' : '')

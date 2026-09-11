@@ -1325,6 +1325,80 @@ async function redraftChecks() {
     console.log(`  FAIL  redraft behind --from\n          ${e.message}`);
   }
 
+  // One reviewer must not be able to spend another reviewer's budget.
+  //
+  // The gate and the produce-stage sensors are two loops that rewind to the same
+  // place. Sharing a single count of 8 meant the art sensors could burn six rounds
+  // and leave the gate to hit the cap on its ninth -- which is exactly how a
+  // 25-minute paid run died holding one specific, fixable blocker ("beat 19
+  // describes no physical act") that nothing was allowed to act on.
+  try {
+    let produceCalls = 0, gateCalls = 0, drafts = 0;
+    const st = await spine.execute(testItem(), {
+      quiet: true, stopAfter: 'produce',
+      stageOverrides: {
+        research: stub('research', async () => ({ ok: 1 })),
+        script: stub('script', async () => { drafts++; return { title: 't', beats: [] }; }),
+        gate: stub('gate', async () => {
+          gateCalls++;
+          // Two gate rounds early, then produce spends seven of its own: nine
+          // requests in total, so a SHARED budget of 8 would reject the ninth.
+          if (gateCalls === 2 || gateCalls === 3) {
+            throw new RedraftError('gate wants a fix', {
+              fromStage: 'script', feedback: ['beat 19 has no physical act'], verdict: 'NEEDS WORK',
+            });
+          }
+          return { verdict: 'READY' };
+        }),
+        produce: stub('produce', async () => {
+          produceCalls++;
+          if (produceCalls <= 7) {
+            throw new RedraftError('a sensor failed', {
+              fromStage: 'script', feedback: [`art defect ${produceCalls}`], verdict: 'NEEDS WORK',
+            });
+          }
+          return { ok: true };
+        }),
+      },
+    });
+    // Under one shared budget of 8 the gate's 7th and 8th requests would have hit
+    // the cap and failed the run. Per reviewer, both are well inside their own.
+    assert(st.status === 'done', `run ended ${st.status}: the gate was starved by produce`);
+    assert(produceCalls === 8, `produce ran ${produceCalls} times, expected 8`);
+    assert(st.redraftsBy && st.redraftsBy.produce === 7 && st.redraftsBy.gate === 2,
+      `budgets not tracked per reviewer: ${JSON.stringify(st.redraftsBy)}`);
+    assert(st.redrafts === 9, `total was ${st.redrafts}, expected 9 -- one more than a shared cap allows`);
+    pass++; console.log('  PASS  each reviewer gets its own redraft budget  (produce 7, gate 2 = 9 > a shared cap of 8)');
+  } catch (e) {
+    failures.push({ name: 'per-reviewer redraft budget', message: e.message });
+    console.log(`  FAIL  per-reviewer redraft budget\n          ${e.message}`);
+  }
+
+  // ...but not an unbounded one: two reviewers handing work back and forth still stops.
+  try {
+    let calls = 0;
+    const st = await spine.execute(testItem(), {
+      quiet: true, stopAfter: 'produce',
+      stageOverrides: {
+        research: stub('research', async () => ({ ok: 1 })),
+        script: stub('script', async () => ({ title: 't', beats: [] })),
+        gate: stub('gate', async () => {
+          calls++;
+          throw new RedraftError('never happy', {
+            fromStage: 'script', feedback: ['again'], verdict: 'NEEDS WORK',
+          });
+        }),
+        produce: stub('produce', async () => ({ ok: true })),
+      },
+    });
+    assert(st.status === 'failed', `an unresolvable critique ended ${st.status}`);
+    assert(calls <= 9, `gate ran ${calls} times; its own cap should have stopped it`);
+    pass++; console.log(`  PASS  a reviewer that is never happy still stops  (${calls} rounds, then failed)`);
+  } catch (e) {
+    failures.push({ name: 'redraft budget still bounded', message: e.message });
+    console.log(`  FAIL  redraft budget still bounded\n          ${e.message}`);
+  }
+
   // The critique must actually reach the redrafting stage, or the loop is theatre.
   try {
     let received = null;

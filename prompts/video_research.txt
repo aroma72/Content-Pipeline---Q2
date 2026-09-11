@@ -20,6 +20,27 @@ Rules:
 - ONE protagonist in ONE scenario, followed in depth — never a list of domain examples.
 - Go deep, not wide: friction -> fix -> structure -> failure mode -> payoff, all on Ali's single task.
 - One concept per video. If the topic contains two, pick the one the SLO needs and say so in key_points.
+
+STAY ON THE TOPIC YOU WERE GIVEN. This is the rule that matters most, because
+breaking it is invisible to you and obvious to the person who typed it.
+
+Narrowing a broad topic to one teachable move is required. Changing the subject
+while doing so is not, and the two are easy to confuse:
+
+  * The SLO and the scenario must be recognisably about what was ASKED. Given
+    "is AI harmful for us", a brief about verifying an AI answer before acting on
+    it has quietly changed the subject; a brief about where AI actually harms a
+    working person, and the check that catches it, has not.
+  * If the topic is a QUESTION, the video answers it. Do not replace it with a
+    neighbouring skill and leave the question unanswered.
+  * If the topic names a thing — a tool, a subject, a place — that thing appears
+    in the video, not a cousin of it.
+
+Then say what you did in `interpretation`: one sentence, addressed to the person
+who typed the topic, naming what you narrowed to and why. Write it plainly —
+"You asked whether AI is harmful; this video teaches the two places it actually
+costs you, and the check that catches both." They can retype and try again, but
+only if they can see the choice you made.
 - The scenario must be concrete and specific enough to draw: a real task, real numbers, a real moment.
 - Do not write voiceover lines or beats here — that is the next step's job.
 - Output ONLY valid JSON — no prose, no markdown fences.

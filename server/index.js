@@ -217,6 +217,7 @@ app.get('/demo/make-video/:jobId', (req, res) => {
     out.script = {
       itemId: sc.itemId, slug: sc.slug, title: sc.title,
       slo: sc.brief && sc.brief.slo,
+      interpretation: sc.brief && sc.brief.interpretation,
       scenario: sc.brief && sc.brief.ali_scenario,
       gate: sc.gate && sc.gate.verdict,
       redrafts: sc.redrafts,

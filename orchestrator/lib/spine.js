@@ -30,12 +30,23 @@ const { PATHS } = require('./paths');
 // cycle with this file (see spine-errors.js).
 const { BlockedError, RejectedError, RedraftError } = require('./spine-errors');
 
-// How many times a reviewer may send work back before the run is called failed.
+// How many times EACH reviewer may send work back before the run is called failed.
+//
+// Per reviewer, not per run. The gate and the produce-stage sensors are two
+// different loops that happen to rewind to the same place, and sharing one budget
+// meant whichever ran first could starve the other. Measured: the art sensors
+// spent six of eight rounds, and the gate then hit its ninth with exactly one
+// blocker left -- a specific, fixable, named defect ("beat 19 describes no
+// physical act") that nothing was allowed to fix. The run died one edit short.
 // The plan said 3; measurement says otherwise. With the patch mechanism the critique
 // shrinks steadily (22->21->18->19->15) and round 5 ended with the gate saying
 // "three line-level defects... these are edits, not a redraft" -- i.e. it was one
 // round short, twice. Still bounded, because a loop that cannot converge must stop.
 const MAX_REDRAFTS = 8;
+
+// And a ceiling across all of them, so two reviewers cannot hand the same script
+// back and forth indefinitely just because neither has spent its own budget.
+const MAX_REDRAFTS_TOTAL = 14;
 
 // Waits before the 2nd, 3rd and later stage attempts.
 const RETRY_BACKOFF_MS = [5000, 15000, 30000];
@@ -164,6 +175,8 @@ async function execute(item, opts = {}) {
   // Counted across the whole run, not per stage pair, so a script/gate argument
   // cannot ping-pong indefinitely.
   let redrafts = (st.redrafts && Number(st.redrafts)) || 0;
+  // Per requesting stage, so one reviewer cannot spend another reviewer's budget.
+  const redraftsBy = { ...(st.redraftsBy || {}) };
 
   for (let idx = 0; idx < STAGE_ORDER.length; idx++) {
     const name = STAGE_ORDER[idx];
@@ -237,26 +250,31 @@ async function execute(item, opts = {}) {
         // (ILHAM 3.3). Bounded, because an unbounded loop between a writer and a
         // critic that never agree would burn tokens forever.
         if (err instanceof RedraftError) {
-          if (redrafts >= MAX_REDRAFTS) {
+          const mine = redraftsBy[name] || 0;
+          const spent = mine >= MAX_REDRAFTS ? `${name} has used all ${MAX_REDRAFTS} of its redrafts`
+            : `${redrafts} redrafts across all reviewers (ceiling ${MAX_REDRAFTS_TOTAL})`;
+          if (mine >= MAX_REDRAFTS || redrafts >= MAX_REDRAFTS_TOTAL) {
             const giveUp = new RejectedError(
-              `${err.message}\n  Gave up after ${MAX_REDRAFTS} redraft(s) -- the critique was not resolved.`,
+              `${err.message}\n  Gave up: ${spent} -- the critique was not resolved.`,
               { verdict: err.verdict, details: err.feedback }
             );
             state.finishStage(st, name, { status: state.STATUS.FAILED, error: giveUp });
             recordFailure(st, name, giveUp);
-            log.always(name, `REJECTED after ${MAX_REDRAFTS} redraft(s): ${err.message}`);
+            log.always(name, `REJECTED: ${spent}: ${err.message}`);
             state.finish(st, state.STATUS.FAILED);
             settleQueue(log, () => queue.fail(item.id, st.runId, giveUp.message), 'fail', item.id);
             return st;
           }
 
           redrafts++;
+          redraftsBy[name] = (redraftsBy[name] || 0) + 1;
           const target = STAGE_ORDER.indexOf(err.fromStage);
           if (target === -1) throw new Error(`RedraftError names unknown stage '${err.fromStage}'`);
 
           // Hand the critique to the redrafting stage, and keep every round so a
           // third draft can see it is repeating a mistake the critic already named.
           st.redrafts = redrafts;
+          st.redraftsBy = redraftsBy;
           st.artifacts.redraftFeedback = {
             round: redrafts,
             fromStage: err.fromStage,
@@ -276,10 +294,10 @@ async function execute(item, opts = {}) {
           state.recordIntervention(st, {
             stage: name,
             kind: 'redraft_requested',
-            detail: `${name} sent it back to ${err.fromStage} (round ${redrafts}/${MAX_REDRAFTS}).`,
+            detail: `${name} sent it back to ${err.fromStage} (${name} round ${redraftsBy[name]}/${MAX_REDRAFTS}).`,
           });
           state.save(st);
-          log.always(name, `NEEDS WORK -> redrafting from '${err.fromStage}' (round ${redrafts}/${MAX_REDRAFTS})`);
+          log.always(name, `NEEDS WORK -> redrafting from '${err.fromStage}' (${name} round ${redraftsBy[name]}/${MAX_REDRAFTS})`);
 
           // A rewind can name a stage this run was seeded PAST (--from produce, with
           // an already-written script on disk). Leaving skipUntil where it is means
