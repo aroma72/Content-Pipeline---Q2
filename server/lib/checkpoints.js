@@ -117,8 +117,10 @@ function loadDurations(dir) {
  * Build the checkpoint payload for one video.
  * @returns {object|null} null when the folder is not a built video.
  */
-function forVideo(series, slug) {
-  const dir = videoDir(series, slug);
+function forPath(relPath) {
+  const series = relPath.split('/')[0];
+  const slug = relPath.split('/').pop();
+  const dir = path.join(PATHS.explainerVideos, ...relPath.split('/'));
   const beats = loadBeats(dir);
   if (!beats) return null;
 
@@ -199,36 +201,59 @@ function forVideo(series, slug) {
   };
 }
 
+/**
+ * Every directory under explainer-videos/ that holds a beats.js.
+ *
+ * Walked rather than assumed two levels deep: assessment videos live at
+ * <series>/assessment/<slug>, and a two-level scan silently omitted three of
+ * them -- their questions could never have reached the LMS, with nothing
+ * reporting a problem.
+ */
+function videoDirs(dir = PATHS.explainerVideos, depth = 0) {
+  if (depth > 3 || !fs.existsSync(dir)) return [];
+  const found = [];
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (!e.isDirectory()) continue;
+    // Per-video working state and dependencies never contain another video.
+    if (['node_modules', 'out', 'art', 'frames', 'clips', 'audio', 'layers',
+      'animation', 'lib', '__pycache__', '.chrome-profile'].includes(e.name)) continue;
+    const sub = path.join(dir, e.name);
+    if (fs.existsSync(path.join(sub, 'beats.js'))) found.push(sub);
+    found.push(...videoDirs(sub, depth + 1));
+  }
+  return found;
+}
+
 /** Every video folder that yields at least one checkpoint. */
 function listVideos() {
   const root = PATHS.explainerVideos;
   if (!fs.existsSync(root)) return [];
   const out = [];
-  for (const series of fs.readdirSync(root, { withFileTypes: true })) {
-    if (!series.isDirectory() || series.name === 'brand-intro-outro') continue;
-    const seriesDir = path.join(root, series.name);
-    for (const slug of fs.readdirSync(seriesDir, { withFileTypes: true })) {
-      if (!slug.isDirectory() || slug.name === 'node_modules') continue;
-      let payload = null;
-      try { payload = forVideo(series.name, slug.name); } catch { payload = null; }
-      if (!payload) continue;
-      out.push({
-        videoId: payload.videoId,
-        series: payload.series,
-        checkpoints: payload.checkpoints.length,
-        deliverableOnServer: payload.deliverableOnServer,
-        explanationsAuthored: payload.checkpoints.filter((c) => c.explanationSource === 'authored').length,
-        timingTrusted: payload.timing.trusted,
-      });
-    }
+  for (const dir of videoDirs()) {
+    const rel = path.relative(root, dir).split(path.sep).join('/');
+    let payload = null;
+    try { payload = forPath(rel); } catch { payload = null; }
+    if (!payload) continue;
+    out.push({
+      videoId: payload.videoId,
+      series: payload.series,
+      // The folder path, because videoId is only the last segment and an
+      // assessment video can sit at <series>/assessment/<slug>.
+      path: rel,
+      checkpoints: payload.checkpoints.length,
+      deliverableOnServer: payload.deliverableOnServer,
+      explanationsAuthored:
+        payload.checkpoints.filter((c) => c.explanationSource === 'authored').length,
+      timingTrusted: payload.timing.trusted,
+    });
   }
-  return out.sort((a, b) => (a.series + a.videoId).localeCompare(b.series + b.videoId));
+  return out.sort((a, b) => a.path.localeCompare(b.path));
 }
 
 /** Find a video by id alone, so the LMS never has to know our folder layout. */
 function findByVideoId(videoId) {
   const hit = listVideos().find((v) => v.videoId === videoId);
-  return hit ? forVideo(hit.series, hit.videoId) : null;
+  return hit ? forPath(hit.path) : null;
 }
 
 function etagOf(payload) {
@@ -236,4 +261,9 @@ function etagOf(payload) {
     .update(JSON.stringify(payload)).digest('hex').slice(0, 20) + '"';
 }
 
-module.exports = { forVideo, listVideos, findByVideoId, etagOf, PREAMBLE };
+/** Back-compat wrapper for the common two-level <series>/<slug> layout. */
+function forVideo(series, slug) {
+  return forPath(`${series}/${slug}`);
+}
+
+module.exports = { forPath, forVideo, listVideos, findByVideoId, videoDirs, etagOf, PREAMBLE };

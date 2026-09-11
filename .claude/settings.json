@@ -66,6 +66,19 @@
         "script": ".claude/hooks/session-end.sh",
         "description": "Warn about open beads and unstaged changes"
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/publish-checkpoints.sh",
+            "async": true,
+            "timeout": 900,
+            "statusMessage": "Publishing quiz checkpoints to the LMS API..."
+          }
+        ]
+      }
     ]
   },
   "harness_config": {
