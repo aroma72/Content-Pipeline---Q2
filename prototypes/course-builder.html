@@ -295,18 +295,15 @@ ul.assume li{margin:4px 0}
 
         <div class="build">
           <h2>Build these lessons into videos</h2>
-          <p class="hint">Each lesson becomes a narrated, illustrated video. This spends real
-            money and runs for hours, so it needs the API key and an explicit confirmation.</p>
+          <p class="hint">Each lesson becomes a narrated, illustrated video. This spends real money
+            and runs for hours, so you are asked to confirm before anything starts.</p>
           <div class="cost" id="b-cost"></div>
           <div class="gate" id="b-gate">
             <div>
               <label for="series">File the videos under</label>
               <input id="series" placeholder="whatsapp-orders">
             </div>
-            <div>
-              <label for="btoken">API key</label>
-              <input id="btoken" type="password" placeholder="cq_...">
-            </div>
+
           </div>
           <div class="actions" style="margin-top:0">
             <button class="btn-primary" id="build">Build the videos</button>
@@ -526,12 +523,11 @@ ul.assume li{margin:4px 0}
       + (d.failed ? ' - ' + d.failed + ' failed' : '');
   }
 
-  async function startPolling(courseId, token) {
+  async function startPolling(courseId) {
     if (poll) clearInterval(poll);
     var tick = async function () {
       try {
-        var r = await fetch('/api/v1/courses/' + encodeURIComponent(courseId),
-          { headers: { Authorization: 'Bearer ' + token } });
+        var r = await fetch('/demo/course-builder/status/' + encodeURIComponent(courseId));
         if (!r.ok) return;
         var d = await r.json();
         renderProgress(d);
@@ -549,27 +545,25 @@ ul.assume li{margin:4px 0}
       gate.classList.add('on');
       $('series').value = slugify(plan.title);
       $('b-status').textContent = 'Check the cost above, then press Build again to start.';
-      $('btoken').focus();
+      $('series').focus();
       return;
     }
-    var token = $('btoken').value.trim();
     var series = $('series').value.trim();
-    if (!token) { $('b-status').textContent = 'The API key is required to spend money.'; return; }
     if (!series) { $('b-status').textContent = 'Choose a folder name for the videos.'; return; }
 
     $('build').disabled = true;
     $('b-status').innerHTML = '<span class="spin"></span>Starting the build...';
     try {
-      var res = await fetch('/api/v1/courses/build', {
+      var res = await fetch('/demo/course-builder/build', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plan: plan, series: series,
           confirmLessons: plan.estimate.lessons }),
       });
       var body = await res.json();
       if (!res.ok) throw new Error(body.message || ('HTTP ' + res.status));
       $('b-status').textContent = 'Building ' + body.queued + ' videos...';
-      startPolling(body.courseId, token);
+      startPolling(body.courseId);
     } catch (err) {
       $('b-status').textContent = err.message;
       $('build').disabled = false;

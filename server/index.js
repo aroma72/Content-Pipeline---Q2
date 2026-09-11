@@ -47,7 +47,8 @@ app.get('/', (_req, res) => res.type('text').send('Drawing Room agent. Mention m
 // The read API the LMS calls for a video's in-video questions. Mounted before
 // the Slack routes because it shares nothing with them: no signature check, no
 // worker, no spend. See server/lib/api.js for the auth and CORS rules.
-app.use('/api/v1', require('./lib/api').build());
+const apiRouter = require('./lib/api').build();
+app.use('/api/v1', apiRouter);
 
 /**
  * The interactive demo the LMS developer is asked to reproduce. Served from this
@@ -142,6 +143,47 @@ app.post('/demo/course-builder/preview', async (req, res) => {
     console.error('[preview]', e.message);
     res.status(e.status || 500).json({ error: 'preview_failed', message: e.message });
   }
+});
+
+/**
+ * Start a build from the demo page, using the server's own credential.
+ *
+ * The page used to ask the operator to paste CONTENT_API_TOKEN. It is already
+ * configured on this service, so asking for it again was friction with no
+ * security value -- anyone holding the link can reach this route regardless.
+ *
+ * But building SPENDS REAL MONEY (~$1.50 a lesson), so removing the key removes
+ * the only thing that made a stray click expensive. Two guards replace it:
+ * the page still makes a human press Build twice with the cost on screen, and
+ * this route allows one build an hour. The authenticated API at
+ * /api/v1/courses/build stays unlimited for machine callers.
+ */
+const demoBuilds = [];
+app.post('/demo/course-builder/build', (req, res) => {
+  const hourAgo = Date.now() - 3600_000;
+  while (demoBuilds.length && demoBuilds[0] < hourAgo) demoBuilds.shift();
+  if (demoBuilds.length >= 1) {
+    return res.status(429).json({
+      error: 'rate_limited',
+      message: 'The demo starts one build an hour, because each one spends real money. '
+        + 'Use the API with a token to build without that limit.',
+    });
+  }
+
+  // Reuse the authenticated route itself rather than a second copy of its
+  // logic: supply the credential the service already holds, rewrite the path to
+  // the one the API router expects, and hand the request straight to it.
+  req.headers.authorization = `Bearer ${process.env.CONTENT_API_TOKEN || ''}`;
+  req.url = '/courses/build';
+  demoBuilds.push(Date.now());
+  apiRouter(req, res, () => res.status(404).end());
+});
+
+/** Build progress for the demo page, again using the server's own credential. */
+app.get('/demo/course-builder/status/:courseId', (req, res) => {
+  req.headers.authorization = `Bearer ${process.env.CONTENT_API_TOKEN || ''}`;
+  req.url = '/courses/' + encodeURIComponent(req.params.courseId);
+  apiRouter(req, res, () => res.status(404).end());
 });
 
 app.get('/demo/preview/:id.mp4', (req, res) => {
