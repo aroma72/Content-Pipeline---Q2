@@ -44,6 +44,17 @@ WORKDIR /app
 # CLAUDE_CODE_OAUTH_TOKEN rather than an interactive login.
 RUN npm install -g @anthropic-ai/claude-code --no-audit --no-fund
 
+# Claude Code REFUSES `--permission-mode bypassPermissions` when the process is
+# running as root -- and this image has no USER directive, so it is. The refusal
+# is exit 1 before any model call, which is why every Slack video died in
+# `research` while the same command worked on a developer laptop.
+#
+# IS_SANDBOX is the documented acknowledgement that the process is already inside
+# an isolation boundary, which a single-tenant container is. The alternative, a
+# non-root USER, would mean auditing write access for chromium, the frame cache
+# and ffmpeg output; this is the smaller, honest change.
+ENV IS_SANDBOX=1
+
 # Dependencies first: this layer is cached and only rebuilt when the manifests
 # change, so ordinary code edits redeploy in seconds instead of minutes.
 COPY package.json package-lock.json* ./

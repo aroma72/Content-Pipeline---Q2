@@ -165,15 +165,57 @@ async function searchMentions({ limit = 20 } = {}) {
 }
 
 /** Replies in one thread — used to look for an approval after we asked. */
+/**
+ * Channels the token cannot read, and when we last said so.
+ *
+ * `channel_not_found` is a permission fact, not a transient error: the token sees
+ * DMs and channels the bot was never invited to, and polling them again in two
+ * minutes cannot change that. Every open ticket in such a channel was retried on
+ * every tick, so the Railway log filled with hundreds of identical lines and
+ * buried everything worth reading -- including, for two days, the reason videos
+ * were failing.
+ *
+ * Remembered rather than permanently banned: someone may invite the bot, so the
+ * channel is retried after the cool-off and recovers on its own.
+ */
+const unreachableChannels = new Map();   // channel -> epoch ms of the last complaint
+const UNREACHABLE_COOLOFF_MS = 30 * 60 * 1000;
+
+function isPermissionError(e) {
+  return /channel_not_found|not_in_channel|missing_scope|channel_is_archived/i.test(String(e && e.message));
+}
+
 async function threadReplies({ channel, threadTs, limit = 50 }) {
   if (!client) return [];
+
+  const since = unreachableChannels.get(channel);
+  if (since !== undefined && Date.now() - since < UNREACHABLE_COOLOFF_MS) {
+    // Known unreadable and still inside the cool-off: skip the call entirely.
+    // Silent on purpose -- saying so every tick is the noise being fixed.
+    return [];
+  }
+
   try {
     const r = await client.conversations.replies({ channel, ts: threadTs, limit });
+    if (unreachableChannels.delete(channel)) {
+      console.log(`[slack] ${channel} is readable again`);
+    }
     return (r.messages || []).map((m) => ({
       text: m.text || '', ts: m.ts, user: m.user || '', botId: m.bot_id || null,
     }));
   } catch (e) {
-    console.error('[slack] conversations.replies failed:', e.message);
+    if (isPermissionError(e)) {
+      const first = !unreachableChannels.has(channel);
+      unreachableChannels.set(channel, Date.now());
+      // Once per channel per cool-off, and say what a human would have to do.
+      console.warn(
+        `[slack] cannot read thread history in ${channel} (${e.message})`
+        + (first ? ' — invite the bot to that channel, or ignore if it is a DM.' : '')
+        + ` Not retrying for ${UNREACHABLE_COOLOFF_MS / 60000} min.`
+      );
+    } else {
+      console.error('[slack] conversations.replies failed:', e.message);
+    }
     return [];
   }
 }
@@ -181,4 +223,6 @@ async function threadReplies({ channel, threadTs, limit = 50 }) {
 module.exports = {
   verifySlackRequest, postMessage, uploadVideo, searchMentions, threadReplies,
   isConfigured: () => Boolean(client),
+  // Exposed for the tests: the flood came back twice before it was understood.
+  _internals: { unreachableChannels, isPermissionError, UNREACHABLE_COOLOFF_MS },
 };

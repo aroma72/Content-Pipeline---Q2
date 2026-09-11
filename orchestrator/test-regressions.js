@@ -532,6 +532,150 @@ async function beatChecks() {
     }
   });
 
+  // --- 4e4. A production failure has to leave a trace ---------------------
+  // For two days every Slack video died in `research` and the Railway log said
+  // nothing at all, because the server runs the spine with quiet:true. Diagnosing
+  // it meant inspecting a credential's shape instead of reading an error.
+  console.log('\n3e4. production observability (was: quiet:true silenced the reason for every failure)');
+
+  await checkAsync('a quiet run still logs WHY it failed', async () => {
+    const spine = require('./lib/spine');
+    const item = { id: 'testing/obs-proof', series: 'testing', slug: 'obs-proof', topic: 'obs' };
+    const boom = {
+      name: 'research', maxAttempts: 1,
+      async run() { throw new Error('DISTINCTIVE-CAUSE-42'); },
+    };
+    const lines = [];
+    const write = process.stdout.write.bind(process.stdout);
+    process.stdout.write = (chunk, ...rest) => { lines.push(String(chunk)); return write(chunk, ...rest); };
+    try {
+      await spine.execute(item, { quiet: true, stopAfter: 'research', stageOverrides: { research: boom } });
+    } finally { process.stdout.write = write; }
+    const out = lines.join('');
+    assert(/DISTINCTIVE-CAUSE-42/.test(out), 'the failure reason was swallowed by quiet');
+    assert(/FAILED at research/.test(out), 'the run outcome was swallowed by quiet');
+    return 'reason + outcome survive quiet';
+  });
+
+  check('stage chatter is still suppressed, so the log stays readable', () => {
+    // The point of quiet was ffmpeg/npm/puppeteer spam; promoting EVERYTHING
+    // would trade one unreadable log for another.
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'spine.js'), 'utf8');
+    assert(/log: \(msg\) => log\(name, msg\)/.test(src),
+      'per-stage messages are no longer routed through the quiet-able logger');
+    assert(/const log = \(stage, msg\) => \{ if \(!quiet\) emit\(stage, msg\); \}/.test(src),
+      'quiet no longer suppresses anything');
+    return 'chatter still quiet';
+  });
+
+  await checkAsync('queue bookkeeping cannot replace the real cause of death', async () => {
+    // queue.jsonl lives on the container filesystem, which Railway wipes on
+    // redeploy. A missing item made queue.fail() throw from INSIDE the failure
+    // handler, so the run died with "No queue item" instead of the real reason.
+    const spine = require('./lib/spine');
+    const item = { id: 'testing/not-in-queue-' + Date.now(), series: 'testing', slug: 'nq', topic: 'nq' };
+    const boom = {
+      name: 'research', maxAttempts: 1,
+      async run() { throw new Error('REAL-CAUSE-99'); },
+    };
+    let st;
+    try {
+      st = await spine.execute(item, { quiet: true, stopAfter: 'research', stageOverrides: { research: boom } });
+    } catch (e) {
+      throw new Error(`the run threw instead of reporting: ${e.message}`);
+    }
+    assert(st && st.status === 'failed', `expected status failed, got ${st && st.status}`);
+    assert(/REAL-CAUSE-99/.test(JSON.stringify(st.stages.research || {})),
+      'the real error is not on the run state');
+    return 'real cause preserved';
+  });
+
+  // --- 4e5. The log flood -------------------------------------------------
+  console.log('\n3e5. slack log flood (was: channel_not_found every tick, per ticket, forever)');
+
+  await checkAsync('an unreadable channel is polled once, not every tick', async () => {
+    const sp = require.resolve('@slack/web-api');
+    const saved = require.cache[sp];
+    const slackPath = require.resolve('../server/lib/slack');
+    const savedSlack = require.cache[slackPath];
+    const hadToken = process.env.SLACK_BOT_TOKEN;
+    let apiCalls = 0;
+    try {
+      require.cache[sp] = { id: sp, filename: sp, loaded: true, exports: { WebClient: class {
+        constructor() {
+          this.conversations = { replies: async () => {
+            apiCalls++; throw new Error('An API error occurred: channel_not_found');
+          } };
+        }
+      } } };
+      process.env.SLACK_BOT_TOKEN = 'xoxb-test';
+      delete require.cache[slackPath];
+      const slack = require('../server/lib/slack');
+
+      const warn = console.warn, err = console.error;
+      const lines = [];
+      console.warn = (...a) => lines.push(a.join(' '));
+      console.error = (...a) => lines.push(a.join(' '));
+      try {
+        for (let tick = 0; tick < 6; tick++) {
+          for (let t = 0; t < 5; t++) await slack.threadReplies({ channel: 'C0DEAD', threadTs: '171' + t });
+        }
+      } finally { console.warn = warn; console.error = err; }
+
+      assert(apiCalls === 1, `hit the Slack API ${apiCalls} times for a known-unreadable channel`);
+      assert(lines.length === 1, `wrote ${lines.length} log lines for one unreadable channel`);
+      assert(/invite the bot/.test(lines[0]), 'the one line does not say what a human should do');
+      return `30 attempts -> ${apiCalls} call, ${lines.length} line`;
+    } finally {
+      if (saved) require.cache[sp] = saved; else delete require.cache[sp];
+      if (savedSlack) require.cache[slackPath] = savedSlack; else delete require.cache[slackPath];
+      if (hadToken) process.env.SLACK_BOT_TOKEN = hadToken; else delete process.env.SLACK_BOT_TOKEN;
+    }
+  });
+
+  check('the block is a cool-off, not a permanent ban', () => {
+    // Someone may invite the bot; the channel must recover without a redeploy.
+    const src = fs.readFileSync(path.join(__dirname, '..', 'server', 'lib', 'slack.js'), 'utf8');
+    assert(/UNREACHABLE_COOLOFF_MS/.test(src), 'no cool-off, so a fixed channel stays blocked forever');
+    assert(/is readable again/.test(src), 'recovery is not reported');
+    return 'recovers after the cool-off';
+  });
+
+  // --- 4e6. Root refuses bypassPermissions --------------------------------
+  // Confirmed in the shipped CLI binary: it carries "cannot be used with root"
+  // and names --permission-mode bypassPermissions as one of the refused forms.
+  // The container has no USER directive, so every Slack video died in research
+  // with exit 1 while the identical command worked on a laptop.
+  console.log('\n3e6. root vs bypassPermissions (was: exit 1 before any model call, only in the container)');
+
+  check('the image tells Claude Code it is already sandboxed', () => {
+    const df = fs.readFileSync(path.join(__dirname, '..', 'Dockerfile'), 'utf8');
+    assert(/^ENV IS_SANDBOX=1$/m.test(df), 'IS_SANDBOX is not set, so root will be refused again');
+    return 'IS_SANDBOX=1';
+  });
+
+  check('a root refusal falls back instead of failing the run', () => {
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'llm-cli.js'), 'utf8');
+    assert(/ROOT_PERMISSION_REFUSAL_RE/.test(src), 'no detection of the root refusal');
+    assert(/argsFor\('default'\)/.test(src), 'no retry with a usable permission mode');
+    // Safe only because no tools are permitted in the first place.
+    assert(/'--allowed-tools', ''/.test(src), 'tools are allowed, so dropping the bypass could prompt');
+    return 'detects + retries';
+  });
+
+  check('a command error leads with the cause, not 1500 chars of prompt', () => {
+    // claude -p carries the system prompt in argv; echoing it first pushed the
+    // real stderr past the end of the Slack message.
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'shell.js'), 'utf8');
+    assert(src.includes('while running:'), 'the command is no longer demoted below the cause');
+    assert(src.includes('full.length > 220'), 'the command echo is not truncated');
+    // Behavioural, not just textual: a huge argv must not push the cause out.
+    const fn = (src.match(/const tail = [\s\S]*?\n      \}/) || [])[0];
+    assert(fn && fn.indexOf('${tail}') < fn.indexOf('while running'),
+      'the cause does not come before the command in the message');
+    return 'cause first, command truncated';
+  });
+
   // --- 4f. Human review before YouTube -------------------------------------
   console.log('\n3f. the human review gate (was: QA pass -> straight to YouTube)');
 

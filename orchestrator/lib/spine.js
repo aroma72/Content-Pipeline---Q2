@@ -66,12 +66,47 @@ function loadStages(overrides = {}) {
   return { ...stages, ...overrides };
 }
 
+/**
+ * Two levels, because `quiet` was doing too much.
+ *
+ * The server runs the spine with quiet:true to keep ffmpeg/npm/puppeteer chatter
+ * out of the Railway log -- but that also silenced WHY a run failed, so a
+ * production failure left no trace at all. Diagnosing one meant inspecting a
+ * credential's shape instead of reading an error message.
+ *
+ *   log(stage, msg)         progress and child-process chatter; silenced by quiet
+ *   log.always(stage, msg)  lifecycle and failures; printed no matter what
+ *
+ * The always-lines are a couple of dozen per run, which is the difference between
+ * an operator being able to answer "what happened?" and not.
+ */
+/**
+ * Record the queue outcome without letting bookkeeping destroy the diagnosis.
+ *
+ * queue.jsonl lives on the container filesystem, which Railway wipes on redeploy.
+ * If the item is gone, queue.fail() throws `No queue item '<id>'` -- from INSIDE
+ * the failure handler -- and that replaces the real error with a bogus one. The
+ * run's actual cause of death disappears at exactly the moment it matters.
+ *
+ * The queue is a convenience index; the run state is the record of truth. So a
+ * bookkeeping failure is logged and stepped over, never propagated.
+ */
+function settleQueue(log, fn, what, id) {
+  try {
+    fn();
+  } catch (e) {
+    log.always('spine', `queue bookkeeping failed (${what} ${id}): ${e.message} -- run outcome stands`);
+  }
+}
+
 function makeLogger(runId, quiet) {
-  return (stage, msg) => {
-    if (quiet) return;
+  const emit = (stage, msg) => {
     const t = new Date().toISOString().slice(11, 19);
-    process.stdout.write(`[${t}] ${runId} ${stage.padEnd(8)} ${msg}\n`);
+    process.stdout.write(`[${t}] ${runId} ${String(stage).padEnd(8)} ${msg}\n`);
   };
+  const log = (stage, msg) => { if (!quiet) emit(stage, msg); };
+  log.always = emit;
+  return log;
 }
 
 /**
@@ -123,7 +158,7 @@ async function execute(item, opts = {}) {
     });
   }
 
-  log('spine', `${resumeState ? 'resuming' : 'starting'} "${item.topic}" (${item.id})`);
+  log.always('spine', `${resumeState ? 'resuming' : 'starting'} "${item.topic}" (${item.id})`);
   if (dryRun) log('spine', 'DRY RUN -- no external calls, no spend, no files written by stages');
 
   // Counted across the whole run, not per stage pair, so a script/gate argument
@@ -164,7 +199,7 @@ async function execute(item, opts = {}) {
         // retry exists for. A real transient (process pressure, a momentary lock,
         // a rate limit) needs seconds, not milliseconds.
         const waitMs = RETRY_BACKOFF_MS[Math.min(attempt - 2, RETRY_BACKOFF_MS.length - 1)];
-        log(name, `retry ${attempt}/${maxAttempts} in ${Math.round(waitMs / 1000)}s`);
+        log.always(name, `retry ${attempt}/${maxAttempts} in ${Math.round(waitMs / 1000)}s`);
         await new Promise((r) => setTimeout(r, waitMs));
       }
 
@@ -192,9 +227,9 @@ async function execute(item, opts = {}) {
             kind: 'blocked',
             detail: `${err.message}${err.planItem ? ` (needs plan item ${err.planItem})` : ''}`,
           });
-          log(name, `BLOCKED: ${err.message}`);
+          log.always(name, `BLOCKED: ${err.message}`);
           state.finish(st, state.STATUS.BLOCKED);
-          queue.block(item.id, st.runId, err.message);
+          settleQueue(log, () => queue.block(item.id, st.runId, err.message), 'block', item.id);
           return st;
         }
 
@@ -209,9 +244,9 @@ async function execute(item, opts = {}) {
             );
             state.finishStage(st, name, { status: state.STATUS.FAILED, error: giveUp });
             recordFailure(st, name, giveUp);
-            log(name, `REJECTED after ${MAX_REDRAFTS} redraft(s): ${err.message}`);
+            log.always(name, `REJECTED after ${MAX_REDRAFTS} redraft(s): ${err.message}`);
             state.finish(st, state.STATUS.FAILED);
-            queue.fail(item.id, st.runId, giveUp.message);
+            settleQueue(log, () => queue.fail(item.id, st.runId, giveUp.message), 'fail', item.id);
             return st;
           }
 
@@ -244,7 +279,7 @@ async function execute(item, opts = {}) {
             detail: `${name} sent it back to ${err.fromStage} (round ${redrafts}/${MAX_REDRAFTS}).`,
           });
           state.save(st);
-          log(name, `NEEDS WORK -> redrafting from '${err.fromStage}' (round ${redrafts}/${MAX_REDRAFTS})`);
+          log.always(name, `NEEDS WORK -> redrafting from '${err.fromStage}' (round ${redrafts}/${MAX_REDRAFTS})`);
 
           idx = target - 1;   // the for-loop's idx++ lands on `target`
           rewound = true;
@@ -257,13 +292,13 @@ async function execute(item, opts = {}) {
         if (err instanceof RejectedError) {
           state.finishStage(st, name, { status: state.STATUS.FAILED, error: err });
           recordFailure(st, name, err);
-          log(name, `REJECTED: ${err.message}`);
+          log.always(name, `REJECTED: ${err.message}`);
           state.finish(st, state.STATUS.FAILED);
-          queue.fail(item.id, st.runId, err.message);
+          settleQueue(log, () => queue.fail(item.id, st.runId, err.message), 'fail', item.id);
           return st;
         }
 
-        log(name, `error (attempt ${attempt}/${maxAttempts}): ${err.message}`);
+        log.always(name, `error (attempt ${attempt}/${maxAttempts}): ${err.message}`);
         if (attempt === maxAttempts) {
           state.finishStage(st, name, { status: state.STATUS.FAILED, error: err });
         }
@@ -276,22 +311,22 @@ async function execute(item, opts = {}) {
     if (!succeeded) {
       recordFailure(st, name, lastErr);
       state.finish(st, state.STATUS.FAILED);
-      queue.fail(item.id, st.runId, lastErr ? lastErr.message : 'unknown error');
-      log('spine', `FAILED at ${name} after ${maxAttempts} attempt(s)`);
+      settleQueue(log, () => queue.fail(item.id, st.runId, lastErr ? lastErr.message : 'unknown error'), 'fail', item.id);
+      log.always('spine', `FAILED at ${name} after ${maxAttempts} attempt(s)`);
       return st;
     }
 
     if (stopAfter && name === stopAfter) {
-      log('spine', `stopping after '${stopAfter}' as requested`);
+      log.always('spine', `stopping after '${stopAfter}' as requested`);
       state.finish(st, state.STATUS.DONE);
-      queue.done(item.id, st.runId, st.artifacts);
+      settleQueue(log, () => queue.done(item.id, st.runId, st.artifacts), 'done', item.id);
       return st;
     }
   }
 
   state.finish(st, state.STATUS.DONE);
-  queue.done(item.id, st.runId, st.artifacts);
-  log('spine', 'complete');
+  settleQueue(log, () => queue.done(item.id, st.runId, st.artifacts), 'done', item.id);
+  log.always('spine', 'complete');
   return st;
 }
 

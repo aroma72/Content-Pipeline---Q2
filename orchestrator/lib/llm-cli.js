@@ -38,6 +38,19 @@ class LlmUnavailableError extends Error {
   constructor(message) { super(message); this.name = 'LlmUnavailableError'; }
 }
 
+/**
+ * The CLI's refusal to bypass permissions while running as root.
+ *
+ * Confirmed against the shipped binary, which carries the strings
+ * "cannot be used with root", "running as root", and names all three ways of
+ * asking: --dangerously-skip-permissions / --permission-mode bypassPermissions /
+ * a settings defaultMode of bypassPermissions.
+ */
+const ROOT_PERMISSION_REFUSAL_RE = new RegExp([
+  'cannot be used with root', 'running as root', 'root/sudo',
+  'bypassPermissions[^\\n]{0,80}root', 'root[^\\n]{0,80}bypassPermissions',
+].join('|'), 'i');
+
 /** How an unauthenticated or credential-less `claude` CLI announces itself. */
 const AUTH_FAILURE_RE = new RegExp([
   'invalid api key', 'authentication_error', 'not logged ?in', 'please run .?/login',
@@ -180,7 +193,7 @@ async function askJson({
     // the brief plus several rounds of critique reached that ceiling and failed
     // with `spawn ENAMETOOLONG` -- deterministically, so all three retries burned
     // on it. stdin has no such limit, so prompt size stops being a failure mode.
-    res = await shell.run('claude', [
+    const argsFor = (permissionMode) => ([
       '-p',                             // no positional prompt: it is read from stdin
       '--model', MODEL,
       '--append-system-prompt', system,
@@ -188,9 +201,27 @@ async function askJson({
       // 3, not 1: if the model does reach for a tool despite NO_TOOLS, one wasted
       // turn should not kill the run -- it gets a chance to recover and answer.
       '--max-turns', '3',
-      '--permission-mode', 'bypassPermissions',
+      '--permission-mode', permissionMode,
       '--output-format', 'json',
-    ], { timeoutMs, input: prompt });
+    ]);
+
+    try {
+      res = await shell.run('claude', argsFor('bypassPermissions'), { timeoutMs, input: prompt });
+    } catch (e) {
+      // Claude Code refuses bypassPermissions when running as root, and exits 1
+      // before reaching a model. Containers commonly run as root, so the same
+      // command that works on a laptop fails in deployment -- which is exactly
+      // how every Slack video came to die in `research`.
+      //
+      // Dropping to the default mode is safe HERE specifically because
+      // `--allowed-tools ''` already permits no tools: there is nothing left for
+      // a permission prompt to ask about. The right fix is IS_SANDBOX=1 (set in
+      // the Dockerfile); this is the belt to that pair of braces, so the same
+      // deployment mistake degrades instead of failing.
+      if (!ROOT_PERMISSION_REFUSAL_RE.test(e.message)) throw e;
+      if (log) log('claude CLI refused bypassPermissions (running as root?) -- retrying with the default permission mode');
+      res = await shell.run('claude', argsFor('default'), { timeoutMs, input: prompt });
+    }
   } catch (e) {
     // Only claim "not installed" if it genuinely is not there. A transient spawn
     // failure (process pressure, antivirus, a momentary lock) also surfaces as

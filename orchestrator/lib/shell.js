@@ -95,10 +95,15 @@ function run(cmd, args, opts = {}) {
     input = null,                 // written to the child's stdin, which is then closed
   } = opts;
 
-  const printable = `${cmd} ${args.join(' ')}`;
+  const full = `${cmd} ${args.join(' ')}`;
+  // What goes in an ERROR message. `claude -p` carries a ~1500-char system prompt
+  // in argv, so echoing the whole command pushed the actual stderr past the end of
+  // a Slack message -- the failure was reported as an unreadable wall of prompt
+  // text with the cause invisible. The command is context; the error is the point.
+  const printable = full.length > 220 ? `${full.slice(0, 200)}… (+${full.length - 200} chars)` : full;
 
   if (dryRun) {
-    return Promise.resolve({ code: 0, stdout: '', stderr: '', cmd: printable, skipped: true });
+    return Promise.resolve({ code: 0, stdout: '', stderr: '', cmd: full, skipped: true });
   }
 
   const exe = resolveCommand(cmd);
@@ -180,9 +185,11 @@ function run(cmd, args, opts = {}) {
       if (code !== 0) {
         // Tail the stderr into the message: the stage log is often the only
         // thing a later reader has, and "exit 1" alone is not diagnosable.
+        // The CAUSE leads, because this message gets truncated downstream (Slack
+        // posts a 600-char slice) and the tail is the half worth keeping.
         const tail = (stderr || stdout).trim().split(/\r?\n/).slice(-8).join('\n');
         return reject(new CommandError(
-          `Exit ${code}: ${printable}\n${tail}`,
+          `Exit ${code}${tail ? `: ${tail}` : ''}\n  while running: ${printable}`,
           { code, stdout, stderr, cmd: printable }
         ));
       }
