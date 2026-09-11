@@ -250,8 +250,10 @@ function forPath(relPath) {
       atSeconds: Number((lessonAt + offset.seconds).toFixed(3)),
       lessonAtSeconds: lessonAt,
       preamble: PREAMBLE,
-      stem: q.info.data.stem,
-      options: q.info.data.options.slice(),
+      // The drawn card trims a long stem or option to fit 1080 lines. The popup
+      // has no such limit, so prefer the untrimmed text when the script kept it.
+      stem: q.info.data.stemFull || q.info.data.stem,
+      options: (q.info.data.optionsFull || q.info.data.options).slice(),
       correctIndex: reveal.info.data.answer,
       // `note` is the video's on-screen caption -- six words, written to be read
       // aloud ("Easy to undo, so it runs free."). Serving it as the popup's

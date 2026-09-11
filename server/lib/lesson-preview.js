@@ -63,6 +63,9 @@ function beatsFor(lesson) {
   };
 
   const opts = (q.options || []).slice(0, 4).map((o) => fit(o, 58));
+  // What the card can draw is not what the learner should read in the popup.
+  // Carry the untrimmed text alongside so the checkpoint API can serve it.
+  const optsFull = (q.options || []).slice(0, 4).map((o) => String(o == null ? '' : o).trim());
   const esc = (s) => JSON.stringify(String(s == null ? '' : s));
 
   return `'use strict';
@@ -84,6 +87,8 @@ module.exports = [
     info: { tpl: 'quiz', data: {
       stem: ${esc(fit(q.stem || '', 95))},
       options: ${JSON.stringify(opts)},
+      stemFull: ${esc(q.stem || '')},
+      optionsFull: ${JSON.stringify(optsFull)},
       note: 'Write your answer down.',
     } },
   },
@@ -94,6 +99,7 @@ module.exports = [
     info: { tpl: 'quiz', data: {
       stem: 'The answer',
       options: ${JSON.stringify(opts)},
+      optionsFull: ${JSON.stringify(optsFull)},
       answer: ${Number(q.correctIndex) || 0},
       note: ${esc(fit(q.explanation || '', 110))},
       // The card can only hold a caption, but the LMS popup shows a learner who
