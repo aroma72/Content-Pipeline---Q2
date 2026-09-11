@@ -120,7 +120,14 @@ function build() {
           description: 'Queues every lesson in a plan as a video. Refuses without '
             + '`confirmLessons` matching the plan, because this spends real money.' },
         { method: 'GET', path: '/api/v1/courses/:courseId', auth: true,
-          description: 'Build progress for a queued course.' },
+          description: 'Build progress, and which lesson is waiting for approval.' },
+        { method: 'POST', path: '/api/v1/courses/:courseId/lessons/:lessonId/approve',
+          auth: true,
+          description: 'Publish a built lesson and release the next one. Courses build '
+            + 'ONE lesson at a time and pause until approved.' },
+        { method: 'POST', path: '/api/v1/courses/:courseId/lessons/:lessonId/reject',
+          auth: true,
+          description: 'Reject a built lesson. The course stops; nothing after it is built.' },
       ],
       demo: `${req.protocol}://${req.get('host')}/demo/quiz`,
       notes: [
@@ -268,9 +275,10 @@ function build() {
       rejected,
       items: queued,
       status: `${req.protocol}://${req.get('host')}/api/v1/courses/${courseId}`,
-      note: 'Building has started. Videos are rendered one at a time, about 30 minutes '
-        + 'each; poll the status URL. Each finished lesson is scored and waits for a human '
-        + 'to promote it before any learner sees it.',
+      note: 'Building has started, ONE LESSON AT A TIME. The first video takes about 30 '
+        + 'minutes, then the course pauses: approve that lesson and the next one begins. '
+        + 'Nothing after an unapproved lesson is built, so a wrong format costs one video '
+        + 'rather than the whole course.',
     });
   });
 
@@ -286,7 +294,9 @@ function build() {
           + 'deploys on this service — see the technical handoff.' });
     }
     const by = (s) => items.filter((i) => i.status === s).length;
-    const worker = require('./course-worker').status();
+    const cw = require('./course-worker');
+    const worker = cw.status();
+    const waiting = cw.awaitingApproval(req.params.courseId);
     res.json({
       courseId: req.params.courseId,
       lessons: items.length,
@@ -295,8 +305,41 @@ function build() {
       inProgress: items.length - by('done') - by('failed'),
       // What the machine is doing this second, so a stalled build is visible
       // rather than looking identical to a slow one.
-      worker: { building: worker.current, pendingAcrossAllCourses: worker.pending },
+      // One lesson is built at a time and then waits. This is the field the UI
+      // acts on: while it is non-empty, nothing else is being built or spent.
+      awaitingApproval: waiting,
+      worker: { building: worker.current, queuedAcrossAllCourses: worker.queued },
       items,
+    });
+  });
+
+  /**
+   * Approve a built lesson: publish it, and release the next one.
+   *
+   * Courses are built one lesson at a time on purpose -- rendering eight videos
+   * before a human sees the first one spends the whole budget on a format that
+   * might be wrong. So nothing after this lesson is built until it is approved.
+   */
+  router.post('/courses/:courseId/lessons/:lessonId(*)/approve', requireToken, (req, res) => {
+    const by = (req.body && req.body.by) || 'Aroma';
+    const r = require('./course-worker').approve(req.params.lessonId, by);
+    if (!r.ok) return res.status(409).json({ error: 'cannot_approve', message: r.why });
+    res.status(202).json({
+      approved: req.params.lessonId,
+      by,
+      note: 'Publishing this lesson, then building the next one. The render is not '
+        + 'repeated -- the run resumes from where it stopped.',
+    });
+  });
+
+  /** Reject a built lesson. The course stops here; nothing after it is built. */
+  router.post('/courses/:courseId/lessons/:lessonId(*)/reject', requireToken, (req, res) => {
+    const why = (req.body && req.body.why) || '';
+    const r = require('./course-worker').reject(req.params.lessonId, why);
+    if (!r.ok) return res.status(409).json({ error: 'cannot_reject', message: r.why });
+    res.status(202).json({
+      rejected: req.params.lessonId,
+      note: 'Nothing further will be built for this course. The video was not published.',
     });
   });
 
