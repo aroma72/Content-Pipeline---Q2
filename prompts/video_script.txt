@@ -45,15 +45,31 @@ REAL NUMBERS ON SCREEN: use at least three DIFFERENT data templates across the v
 them. A video whose only info cards are `statement` text slabs is rejected by the
 visual gate. At most two `statement` cards in the whole video.
 
-THE INTERACTIVE QUESTION — MANDATORY, EVERY VIDEO:
-Exactly one beat must be a QUESTION the viewer answers before you reveal anything:
-  * that beat is mode "info" with info.tpl "quiz"
-  * it carries `holdAfter: 2` — two seconds of silence so the viewer can actually think
-  * its `vo` asks the question out loud ("Here is your question: which of these...")
-  * the NEXT beat gives the answer and says why
-Place it about three-quarters of the way through, on the idea the video most wants to
-stick. A video without a quiz beat is rejected before any art is bought, so this is not
-optional. `answer` must be a valid index into `options`, and `options` needs at least two.
+THE CHECKPOINT — MANDATORY, EVERY VIDEO:
+Exactly one beat must be the learner's question, and it is NEVER DRAWN AND NEVER SPOKEN:
+
+  { "id": "14", "mode": "checkpoint",
+    "quiz": { "stem": "...", "options": ["...","...","...","..."], "answer": 1,
+              "explain": "..." } }
+
+  * no `vo`, no `art`, no `info` — it is not a shot, it takes zero time, and it must
+    not appear anywhere in the finished film
+  * put it BETWEEN two spoken beats, about two-thirds through, on the idea the video
+    most wants to stick. Never first, never last
+  * `answer` is a 0-based index into `options`; give 4 options
+  * the three wrong options are mistakes a real learner makes — never obviously silly,
+    never a definition recall
+
+The video PAUSES there and the learner's LMS shows the question as a popup they
+actually answer. So do not write a beat that asks the question out loud, and do not
+write a beat that gives the answer away — a learner who has already heard both has
+nothing left to answer. This replaced the old on-screen QUESTION/REVEAL cards.
+
+`explain` is written for the learner who just chose WRONG. It is the only feedback
+they ever see. Say why the tempting wrong option is wrong, not merely what the right
+answer was. Two sentences minimum.
+
+A script without a checkpoint beat is rejected before any art is bought.
 
 EVERY SCENE SHOWS AN ACTION:
 A `scene` art prompt must describe something being DONE — held, written, set down,

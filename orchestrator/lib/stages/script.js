@@ -27,8 +27,8 @@ const SCHEMA = {
         type: 'object',
         properties: {
           id: { type: 'string', description: 'two-digit, e.g. "01"' },
-          vo: { type: 'string', description: 'exactly one spoken sentence' },
-          mode: { type: 'string', enum: ['ali', 'scene', 'info'] },
+          vo: { type: 'string', description: 'exactly one spoken sentence; OMIT on a checkpoint beat, which is never spoken' },
+          mode: { type: 'string', enum: ['ali', 'scene', 'info', 'checkpoint'] },
           art: { type: 'string', description: 'art prompt; forbid text/letters/numbers' },
           overlay: { type: 'string', description: 'optional HTML overlay text' },
           // Seconds of extra silence AFTER this beat. tts-lesson.js adds it to the
@@ -58,8 +58,27 @@ const SCHEMA = {
             required: ['tpl', 'data'],
             additionalProperties: false,
           },
+          // The mandatory CHECKPOINT (SCRIPTING_STANDARDS 3b). Present ONLY on a beat
+          // whose mode is 'checkpoint'. Without this field in the schema the writer
+          // could not emit one even when told to, so every autonomous video shipped
+          // the superseded on-screen card and the LMS received no question at all.
+          quiz: {
+            type: 'object',
+            properties: {
+              stem: { type: 'string', description: 'one question about the concept just taught' },
+              options: { type: 'array', items: { type: 'string' }, minItems: 3, maxItems: 4 },
+              answer: { type: 'integer', description: '0-based index of the correct option' },
+              explain: {
+                type: 'string',
+                description: 'written for the learner who just chose WRONG: why the tempting '
+                  + 'option is wrong, not only what the right one is. Two sentences minimum.',
+              },
+            },
+            required: ['stem', 'options', 'answer', 'explain'],
+            additionalProperties: false,
+          },
         },
-        required: ['id', 'vo', 'mode'],
+        required: ['id', 'mode'],
         additionalProperties: false,
       },
     },
@@ -80,9 +99,10 @@ function renderBeatsFile(script) {
     const fields = [
       `    id: ${JSON.stringify(b.id)}`,
       `    mode: ${JSON.stringify(b.mode)}`,
-      `    vo: ${JSON.stringify(b.vo)}`,
+      b.mode === 'checkpoint' ? null : `    vo: ${JSON.stringify(b.vo)}`,
       b.art ? `    art: ${JSON.stringify(b.art)}` : null,
       b.info ? `    info: ${JSON.stringify(b.info)}` : null,
+      b.quiz ? `    quiz: ${JSON.stringify(b.quiz)}` : null,
       b.overlay ? `    overlay: ${JSON.stringify(b.overlay)}` : null,
       // Must be written out, or the quiz beat's thinking pause is silently lost:
       // tts-lesson.js reads holdAfter off the beat in beats.js, and this function
@@ -116,7 +136,7 @@ const EDIT_SCHEMA = {
         properties: {
           id: { type: 'string', description: 'the id of an EXISTING beat' },
           vo: { type: 'string' },
-          mode: { type: 'string', enum: ['ali', 'scene', 'info'] },
+          mode: { type: 'string', enum: ['ali', 'scene', 'info', 'checkpoint'] },
           art: { type: 'string' },
           overlay: { type: 'string' },
           // Seconds of extra silence AFTER this beat. tts-lesson.js adds it to the
@@ -138,6 +158,25 @@ const EDIT_SCHEMA = {
             required: ['tpl', 'data'],
             additionalProperties: false,
           },
+          // The mandatory CHECKPOINT (SCRIPTING_STANDARDS 3b). Present ONLY on a beat
+          // whose mode is 'checkpoint'. Without this field in the schema the writer
+          // could not emit one even when told to, so every autonomous video shipped
+          // the superseded on-screen card and the LMS received no question at all.
+          quiz: {
+            type: 'object',
+            properties: {
+              stem: { type: 'string', description: 'one question about the concept just taught' },
+              options: { type: 'array', items: { type: 'string' }, minItems: 3, maxItems: 4 },
+              answer: { type: 'integer', description: '0-based index of the correct option' },
+              explain: {
+                type: 'string',
+                description: 'written for the learner who just chose WRONG: why the tempting '
+                  + 'option is wrong, not only what the right one is. Two sentences minimum.',
+              },
+            },
+            required: ['stem', 'options', 'answer', 'explain'],
+            additionalProperties: false,
+          },
         },
         required: ['id'],
         additionalProperties: false,
@@ -151,7 +190,7 @@ const EDIT_SCHEMA = {
         properties: {
           after_id: { type: 'string', description: 'insert after this existing beat id' },
           vo: { type: 'string' },
-          mode: { type: 'string', enum: ['ali', 'scene', 'info'] },
+          mode: { type: 'string', enum: ['ali', 'scene', 'info', 'checkpoint'] },
           art: { type: 'string' },
           overlay: { type: 'string' },
           // Seconds of extra silence AFTER this beat. tts-lesson.js adds it to the
@@ -163,8 +202,27 @@ const EDIT_SCHEMA = {
           // the previous video's story with nothing failing.
           motion: { type: 'string', description: 'optional; on 2-4 story-critical beats only, describe the small in-character movement' },
           info: { type: 'object', additionalProperties: true },
+          // The mandatory CHECKPOINT (SCRIPTING_STANDARDS 3b). Present ONLY on a beat
+          // whose mode is 'checkpoint'. Without this field in the schema the writer
+          // could not emit one even when told to, so every autonomous video shipped
+          // the superseded on-screen card and the LMS received no question at all.
+          quiz: {
+            type: 'object',
+            properties: {
+              stem: { type: 'string', description: 'one question about the concept just taught' },
+              options: { type: 'array', items: { type: 'string' }, minItems: 3, maxItems: 4 },
+              answer: { type: 'integer', description: '0-based index of the correct option' },
+              explain: {
+                type: 'string',
+                description: 'written for the learner who just chose WRONG: why the tempting '
+                  + 'option is wrong, not only what the right one is. Two sentences minimum.',
+              },
+            },
+            required: ['stem', 'options', 'answer', 'explain'],
+            additionalProperties: false,
+          },
         },
-        required: ['after_id', 'vo', 'mode'],
+        required: ['after_id', 'mode'],
         additionalProperties: false,
       },
     },

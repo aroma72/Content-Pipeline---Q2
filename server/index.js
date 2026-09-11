@@ -156,24 +156,134 @@ app.post('/demo/make-video', async (req, res) => {
     for (const [k, v] of makeByIp) if (!v.some((t) => t >= hourAgo)) makeByIp.delete(k);
   }
 
-  try {
-    const r = await require('./lib/one-video')
-      .make(req.body || {}, { log: (m) => console.log('[make-video]', m) });
-    res.json({
-      lesson: r.lesson,
-      seconds: r.video.seconds,
-      url: `${req.protocol}://${req.get('host')}/demo/preview/${r.video.id}.mp4`,
-      // Where the LMS can pull it from, and where it now lives publicly.
-      lms: r.slug ? {
-        videoId: r.slug,
-        checkpoints: `${req.protocol}://${req.get('host')}/api/v1/videos/${r.slug}/checkpoints`,
-      } : null,
-      youtube: r.youtube,
-    });
-  } catch (e) {
-    console.error('[make-video]', e.message);
-    res.status(e.status || 500).json({ error: 'make_failed', message: e.message });
+  // Writing a house-standard script is research + a draft + a gate, and a gate
+  // that says NEEDS WORK sends it back to be redrafted. That is minutes, not
+  // seconds, so it runs as a job the page polls rather than a held-open request
+  // that an edge proxy would cut before the script was finished.
+  const job = startWrite(req.body || {});
+  res.status(202).json({ jobId: job.id, status: job.status });
+});
+
+/**
+ * Jobs for the Make a Video page.
+ *
+ * In memory, and that is deliberate rather than a shortcut: the container has no
+ * volume, so a job record written to disk would not outlive a redeploy either.
+ * What DOES survive is the script itself, in explainer-videos/<series>/<slug>/,
+ * and the YouTube link once it is published.
+ */
+const jobs = new Map();
+
+function startWrite(body) {
+  const id = require('crypto').randomBytes(6).toString('hex');
+  const job = {
+    id, status: 'running', stage: 'research', topic: String(body.topic || '').slice(0, 300),
+    startedAt: Date.now(), script: null, error: null, produce: null,
+  };
+  jobs.set(id, job);
+
+  require('./lib/one-video').write(body, {
+    log: (m) => console.log(`[make-video ${id}]`, m),
+    onStage: (st) => { job.stage = st; },
+  }).then((r) => {
+    job.status = 'written';
+    job.stage = 'gate';
+    job.script = r;
+    console.log(`[make-video ${id}] READY: ${r.title} (${r.beats.length} beats, ` +
+      `${r.redrafts} redraft(s))`);
+  }).catch((e) => {
+    job.status = 'failed';
+    job.error = e.message;
+    console.error(`[make-video ${id}] failed:`, e.message);
+  });
+
+  // A finished job is worth keeping only as long as someone might poll for it.
+  setTimeout(() => jobs.delete(id), 2 * 60 * 60 * 1000).unref();
+  return job;
+}
+
+app.get('/demo/make-video/:jobId', (req, res) => {
+  const job = jobs.get(req.params.jobId);
+  if (!job) return res.status(404).json({ error: 'not_found', message: 'No such job (or it expired).' });
+
+  const out = {
+    jobId: job.id, status: job.status, stage: job.stage, topic: job.topic,
+    elapsedSeconds: Math.round((Date.now() - job.startedAt) / 1000),
+    error: job.error,
+  };
+  if (job.script) {
+    const sc = job.script;
+    const checkpoint = sc.beats.find((b) => b.mode === 'checkpoint');
+    out.script = {
+      itemId: sc.itemId, slug: sc.slug, title: sc.title,
+      slo: sc.brief && sc.brief.slo,
+      scenario: sc.brief && sc.brief.ali_scenario,
+      gate: sc.gate && sc.gate.verdict,
+      redrafts: sc.redrafts,
+      beats: sc.beats.map((b) => ({ id: b.id, mode: b.mode, vo: b.vo || null })),
+      // The question the LMS will pop. Never drawn, never spoken.
+      checkpoint: checkpoint ? checkpoint.quiz : null,
+      checkpointAfterBeat: checkpoint
+        ? (sc.beats.slice(0, sc.beats.indexOf(checkpoint)).filter((b) => b.mode !== 'checkpoint').pop() || {}).id
+        : null,
+    };
   }
+  if (job.produce) out.produce = job.produce;
+  res.json(out);
+});
+
+/**
+ * Turn a gated script into the finished, published video.
+ *
+ * SEPARATE FROM WRITING ON PURPOSE. Everything up to the gate is model calls on
+ * the service credential and buys nothing. This buys generated art and speech --
+ * about $1.50 a video -- and house rules say that is never spent without a person
+ * saying yes. Pressing the button on a script you have just read IS that yes.
+ */
+app.post('/demo/make-video/:jobId/produce', (req, res) => {
+  const job = jobs.get(req.params.jobId);
+  if (!job) return res.status(404).json({ error: 'not_found', message: 'No such job (or it expired).' });
+  if (job.status !== 'written' || !job.script) {
+    return res.status(409).json({ error: 'not_ready', message: 'This video has no gated script yet.' });
+  }
+  if (job.produce && job.produce.status === 'running') {
+    return res.status(409).json({ error: 'already_running', message: 'It is already being produced.' });
+  }
+
+  const budgetUsd = Number(process.env.PIPELINE_MAX_APPROVABLE_USD || 0);
+  if (!(budgetUsd > 0)) {
+    return res.status(503).json({
+      error: 'no_budget',
+      message: 'Producing a video buys art and speech, and this service has no approved '
+        + 'spend limit set (PIPELINE_MAX_APPROVABLE_USD).',
+    });
+  }
+
+  job.produce = { status: 'running', stage: 'produce', startedAt: Date.now() };
+  job.status = 'producing';
+
+  require('./lib/one-video').produce(
+    { itemId: job.script.itemId, budgetUsd },
+    {
+      log: (m) => console.log(`[produce ${job.id}]`, m),
+      onStage: (st) => { job.produce.stage = st; },
+    }
+  ).then((r) => {
+    job.status = 'published';
+    job.produce = {
+      status: 'done', stage: 'upload',
+      spendUsd: r.spendUsd,
+      youtube: r.youtube,
+      elapsedSeconds: Math.round((Date.now() - job.produce.startedAt) / 1000),
+    };
+    console.log(`[produce ${job.id}] published:`, JSON.stringify(r.youtube));
+  }).catch((e) => {
+    job.status = 'written';   // the script is still good; only the render failed
+    job.produce = { status: 'failed', error: e.message };
+    console.error(`[produce ${job.id}] failed:`, e.message);
+  });
+
+  res.status(202).json({ jobId: job.id, status: 'producing', budgetUsd });
 });
 
 const MAKE_FILE = path.join(__dirname, '..', 'prototypes', 'make-a-video.html');

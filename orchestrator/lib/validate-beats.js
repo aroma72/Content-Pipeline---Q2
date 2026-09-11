@@ -48,7 +48,14 @@ function validateBeats(beats, videoDir, opts = {}) {
     if (seenIds.has(b.id)) errors.push(`${at}: duplicate id`);
     seenIds.add(b.id);
 
-    if (!b.vo || !String(b.vo).trim()) errors.push(`${at}: empty vo`);
+    // A checkpoint is never spoken, so an empty vo is correct for it and a
+    // FILLED one is the bug -- a voiced checkpoint reads the question aloud to a
+    // learner who is about to be asked it in a popup.
+    if (b.mode === 'checkpoint') {
+      if (b.vo && String(b.vo).trim()) {
+        errors.push(`${at}: a checkpoint beat must not have a vo -- it is never spoken.`);
+      }
+    } else if (!b.vo || !String(b.vo).trim()) errors.push(`${at}: empty vo`);
     else {
       const sentences = String(b.vo).split(/(?<=[.!?])\s+/).filter(Boolean);
       if (sentences.length > 1) {
@@ -56,9 +63,19 @@ function validateBeats(beats, videoDir, opts = {}) {
       }
     }
 
-    if (!['ali', 'scene', 'info'].includes(b.mode)) {
-      errors.push(`${at}: mode must be ali|scene|info, got ${JSON.stringify(b.mode)}`);
+    if (!['ali', 'scene', 'info', 'checkpoint'].includes(b.mode)) {
+      errors.push(`${at}: mode must be ali|scene|info|checkpoint, got ${JSON.stringify(b.mode)}`);
       continue;
+    }
+
+    if (b.mode === 'checkpoint') {
+      checkQuiz(errors, at, b.quiz, {
+        what: 'checkpoint',
+        // The popup is the only feedback a learner who chose wrong ever sees, so
+        // unlike the old on-screen card this one cannot go out without a reason.
+        requireExplain: true,
+      });
+      continue;   // nothing else applies: it is not drawn and not spoken
     }
 
     if (b.mode === 'info') {
@@ -139,7 +156,49 @@ function validateBeats(beats, videoDir, opts = {}) {
     }
   }
 
-  // --- whole-script: the interactive QUESTION -> REVEAL ------------------------
+  // --- whole-script: the mandatory CHECKPOINT ---------------------------------
+  // SCRIPTING_STANDARDS 3b, effective 2026-09-11: the question is never drawn and
+  // never spoken. The player pauses on the beat boundary and the LMS shows it.
+  //
+  // This replaced the QUESTION -> REVEAL cards, and had the same history as every
+  // other rule in this file: mandated in prose, enforced nowhere, so the
+  // autonomous path kept emitting the superseded format -- and a lone quiz card
+  // with its answer baked in produces NO checkpoint at all from the API, so those
+  // videos reached the LMS with no question. Encode it in structure.
+  const checkpoints = beats.filter((b) => b && b.mode === 'checkpoint');
+
+  if (!checkpoints.length) {
+    errors.push(
+      `no CHECKPOINT beat: every video must ask the learner one question the LMS can ` +
+      `pop over the player. Add { id, mode: 'checkpoint', quiz: { stem, options, answer, ` +
+      `explain } } between two spoken beats, around the two-thirds mark. It is never ` +
+      `drawn and never spoken, so it needs no vo, no art and no duration.`
+    );
+  }
+
+  for (const c of checkpoints) {
+    const i = beats.indexOf(c);
+    const spokenBefore = beats.slice(0, i).some((b) => b && b.mode !== 'checkpoint');
+    const spokenAfter = beats.slice(i + 1).some((b) => b && b.mode !== 'checkpoint');
+    // With no sentence on one side there is no boundary to pause on, and the API
+    // marks pause.safe false -- the LMS is told never to fire those, so the
+    // question would simply never appear.
+    if (!spokenBefore || !spokenAfter) {
+      errors.push(
+        `beat ${c.id}: a checkpoint cannot be the first or last beat -- it needs a spoken ` +
+        `sentence either side to pause between.`
+      );
+    }
+  }
+
+  if (checkpoints.length > 1) {
+    warnings.push(
+      `${checkpoints.length} checkpoint beats -- the house format is ONE question per video ` +
+      `(beats ${checkpoints.map((c) => c.id).join(', ')})`
+    );
+  }
+
+  // --- whole-script: legacy QUESTION -> REVEAL cards ---------------------------
   // Non-negotiable for every lesson video (CLAUDE.md, SCRIPTING_STANDARDS §3b):
   // the viewer is asked something and answers before the reveal. It was mandated
   // in prose for months and enforced nowhere, so the autonomous path simply never
@@ -147,23 +206,8 @@ function validateBeats(beats, videoDir, opts = {}) {
   // structure, do not request it.
   const quizzes = beats.filter((b) => b && b.mode === 'info' && b.info && b.info.tpl === 'quiz');
 
-  if (!quizzes.length) {
-    // A folder scaffolded from the pre-2026-08-31 templates has no quiz template
-    // at all, so "add a quiz beat" would be unactionable advice. Say which it is.
-    if (tpls && !tpls.includes('quiz')) {
-      errors.push(
-        `no QUESTION->REVEAL beat, and this folder's animation/info.js has no 'quiz' template ` +
-        `to build one with -- its animation kit is stale. Copy animation/info.js + info.css from ` +
-        `the skill templates, then add the quiz beat.`
-      );
-    } else {
-      errors.push(
-        `no QUESTION->REVEAL beat: every video must ask the viewer a question and let them ` +
-        `answer before revealing it. Add an info beat with info:{tpl:'quiz', data:{stem, options, ` +
-        `answer, note}} plus holdAfter, and a following beat that gives the answer.`
-      );
-    }
-  }
+  // Absence is now correct: the checkpoint replaced it. A card that IS present
+  // still has to be well formed, because a recut of an older video keeps it.
 
   for (const q of quizzes) {
     const at = `beat ${q.id}`;
@@ -181,18 +225,7 @@ function validateBeats(beats, videoDir, opts = {}) {
 
     // Same class as the blank info beat: a quiz card with no stem or no options
     // renders as an empty box and nothing errors.
-    if (!d.stem || !String(d.stem).trim()) {
-      errors.push(`${at}: quiz beat has no data.stem -- the question would render blank.`);
-    }
-    if (!Array.isArray(d.options) || d.options.length < 2) {
-      errors.push(`${at}: quiz beat needs at least 2 data.options to choose between.`);
-    } else if (d.answer == null || !Number.isInteger(d.answer)
-               || d.answer < 0 || d.answer >= d.options.length) {
-      errors.push(
-        `${at}: quiz data.answer must be the index of the correct option ` +
-        `(0..${d.options.length - 1}), got ${JSON.stringify(d.answer)}.`
-      );
-    }
+    checkQuiz(errors, at, d, { what: 'quiz beat' });
   }
 
   if (quizzes.length > 1) {
@@ -203,6 +236,43 @@ function validateBeats(beats, videoDir, opts = {}) {
   }
 
   return { errors, warnings };
+}
+
+/**
+ * The question itself: stem, options, a valid answer index, and (for a
+ * checkpoint) the reason a learner who chose wrong needs to read.
+ *
+ * @param {string[]} errors   collected in place
+ * @param {string}   at       "beat 14", for the message
+ * @param {object}   q        { stem, options, answer, explain }
+ * @param {{what:string, requireExplain?:boolean}} o
+ */
+function checkQuiz(errors, at, q, { what, requireExplain = false }) {
+  if (!q || typeof q !== 'object') {
+    errors.push(`${at}: ${what} beat has no quiz:{stem,options,answer,explain}.`);
+    return;
+  }
+  if (!q.stem || !String(q.stem).trim()) {
+    errors.push(`${at}: ${what} has no stem -- there would be no question to ask.`);
+  }
+  if (!Array.isArray(q.options) || q.options.length < 2) {
+    errors.push(`${at}: ${what} needs at least 2 options to choose between.`);
+  } else if (q.answer == null || !Number.isInteger(q.answer)
+             || q.answer < 0 || q.answer >= q.options.length) {
+    errors.push(
+      `${at}: ${what} answer must be the index of the correct option ` +
+      `(0..${q.options.length - 1}), got ${JSON.stringify(q.answer)}.`
+    );
+  }
+  // The popup is the whole feedback loop. Without this the learner is told only
+  // that they were wrong, which is the bug that made the old on-screen caption
+  // unusable in the first place.
+  if (requireExplain && (!q.explain || String(q.explain).trim().length < 40)) {
+    errors.push(
+      `${at}: ${what} needs an 'explain' written for the learner who just chose wrong -- ` +
+      `why their tempting answer is wrong, not only what the right one is.`
+    );
+  }
 }
 
 module.exports = { validateBeats, knownTemplates };

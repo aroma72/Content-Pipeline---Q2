@@ -1,159 +1,198 @@
 'use strict';
 /**
- * one-video -- a topic in, one finished video out.
+ * one-video -- a topic in, one house-standard video script out, then the video.
  *
- * The smallest useful thing this system can do, and the only path that works
- * end to end today with no human in the middle:
+ * WHY THIS WAS REWRITTEN
+ * The first version made one model call and drew three cards. It was fast and
+ * it was not a script: no research brief, no protagonist arc, no gate. It broke
+ * the rule that matters most here -- a video made from this page must meet the
+ * same bar as a video made by hand, or the page is a way of shipping worse work
+ * with less effort.
  *
- *     topic  ->  one model call  ->  the renderer  ->  an MP4 you can watch
+ * So it no longer has a writer of its own. It runs the ACTUAL pipeline stages,
+ * the same modules the Slack and Notion paths run:
  *
- * Everything larger has been tried and is slower and more fragile: a course is
- * nine of these plus a queue, an approval step and a build worker; a full
- * production lesson adds generated art, a paid voiceover, animation, brand
- * bumpers and an upload, which is eight external dependencies and about
- * $1.50 and half an hour per video.
+ *     research -> script -> gate        the script, reviewed and redrafted
+ *     produce  -> qa -> review -> upload    art, voice, render, publish
  *
- * This is one model call and a render. Roughly ninety seconds, and nothing is
- * bought -- the renderer draws cards, so no image or audio is generated.
+ * The two halves are separated deliberately. Everything up to the gate is model
+ * calls on the CLI credential and costs no money, so it can run on a typed
+ * topic with nobody watching. Everything after it buys generated art and speech
+ * -- about $1.50 a video -- which house rules say is never spent without a
+ * person saying yes first. `produce()` is therefore a second, explicit call
+ * with a budget, not something `write()` falls through into.
  */
 
 const fs = require('fs');
 const path = require('path');
-const { PATHS } = require('../../orchestrator/lib/paths');
-const { askJson } = require('../../orchestrator/lib/llm-router');
-const preview = require('./lesson-preview');
 
-const SCHEMA = {
-  type: 'object',
-  properties: {
-    title: { type: 'string', description: 'what the video teaches, plainly, under ~60 chars. MUST contain the subject of the topic that was asked.' },
-    interpretation: { type: 'string', description: 'one sentence to the person who typed the topic: what you narrowed to, and why' },
-    slo: { type: 'string', description: 'Given X, the learner can do Y -- observable' },
-    scenario: { type: 'string', description: "the concrete situation Ali is in" },
-    question: {
-      type: 'object',
-      properties: {
-        stem: { type: 'string' },
-        options: { type: 'array', items: { type: 'string' }, minItems: 4, maxItems: 4 },
-        correctIndex: { type: 'integer', minimum: 0, maximum: 3 },
-        explanation: {
-          type: 'string',
-          description: 'why the common wrong choices are wrong, not just the right answer',
-        },
-      },
-      required: ['stem', 'options', 'correctIndex', 'explanation'],
-      additionalProperties: false,
-    },
-  },
-  required: ['title', 'interpretation', 'slo', 'scenario', 'question'],
-  additionalProperties: false,
-};
+const spine = require('../../orchestrator/lib/spine');
+const queue = require('../../orchestrator/lib/queue');
+const { PATHS, videoDir } = require('../../orchestrator/lib/paths');
+
+/** Videos made from a typed topic live together, apart from the hand-made series. */
+const SERIES = 'made';
+
+/** The queue's own slug rules, applied here so the id is known before enqueueing. */
+function slugify(topic) {
+  return String(topic).toLowerCase().replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '').slice(0, 48).replace(/-+$/, '') || 'video';
+}
 
 /**
- * Write one video from a topic, then render it.
- * @param {{topic:string}} req
+ * Write and gate a script for one topic.
+ *
+ * Returns when the gate says READY -- or fails loudly when it does not, because
+ * a script the gate rejected is exactly what this page existed to stop shipping.
+ *
+ * @param {{topic:string, notes?:string}} req
  * @param {{log?:Function, onStage?:Function}} opts
  */
-async function make(req, { log = () => {}, onStage = () => {} } = {}) {
+async function write(req, { log = () => {}, onStage = () => {} } = {}) {
   const topic = String((req && req.topic) || '').trim();
   if (!topic) throw Object.assign(new Error('a topic is required'), { status: 400 });
 
-  onStage('writing');
-  log(`writing: ${topic}`);
-  const lesson = await askJson({
-    log,
-    promptName: 'one_video',
-    input: `Topic: ${topic}`,
-    schema: SCHEMA,
+  const slug = `${slugify(topic)}-${Date.now().toString(36).slice(-4)}`;
+  const item = enqueue(topic, slug, req.notes);
+
+  onStage('research');
+  const st = await spine.execute(item, {
+    stopAfter: 'gate',
+    quiet: true,
+    // No budget: nothing before `produce` spends, and leaving it unset means a
+    // mistake that runs on past the gate blocks rather than buys.
+    budgetUsd: null,
+    stageOverrides: stageProgress(onStage, log),
   });
-  if (!lesson || !lesson.title) {
-    throw Object.assign(new Error('the writer did not return a video'), { status: 502 });
+
+  if (st.status !== 'done') {
+    const why = stoppedBecause(st);
+    throw Object.assign(new Error(why), { status: 502, runId: st.runId });
   }
 
-  onStage('rendering');
-  log(`rendering: ${lesson.title}`);
-  const rendered = await preview.render(lesson);
-
-  // Register it so Taleemabad University can pull it like any other video: its
-  // own folder with beats.js and durations.json is exactly what the checkpoint
-  // API reads, so GET /api/v1/videos lists it and the LMS can fetch its
-  // question with the integration it already has.
-  onStage('publishing');
-  let slug = null;
-  try { slug = register(lesson, rendered); log(`registered as ${slug}`); }
-  catch (e) { log(`could not register for the LMS: ${e.message}`); }
-
-  // Publish to YouTube, unlisted. Not fatal: a video you can watch is still a
-  // result, and failing the whole request over the upload would throw away a
-  // render that worked.
-  let youtube = null;
-  try {
-    youtube = await publish(lesson, rendered, log);
-  } catch (e) {
-    log(`youtube upload failed: ${e.message}`);
-    youtube = { error: e.message };
-  }
-
-  return { lesson, video: rendered, slug, youtube };
-}
-
-/** A filesystem-safe slug, stable enough to look up but not to collide. */
-function slugify(title) {
-  // Trim AFTER the length cut too -- slicing at 48 lands on a hyphen often
-  // enough that ids came out with a double hyphen before the suffix.
-  const base = String(title).toLowerCase().replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '').slice(0, 48).replace(/-+$/, '') || 'video';
-  return `${base}-${Date.now().toString(36).slice(-4)}`;
+  const dir = videoDir(item.series, item.slug);
+  return {
+    runId: st.runId,
+    itemId: item.id,
+    slug,
+    series: SERIES,
+    topic,
+    title: st.artifacts.script && st.artifacts.script.title,
+    brief: st.artifacts.research,
+    beats: readBeats(dir),
+    gate: st.artifacts.gate,
+    redrafts: Number(st.redrafts) || 0,
+    dir,
+  };
 }
 
 /**
- * Write the video into explainer-videos/made/<slug>/ in the shape the
- * checkpoint API already understands, so it appears in the LMS catalogue.
+ * Turn an already-gated script into the finished, published video.
  *
- * Note the same limitation as everything else on this service: the container
- * has no volume, so a registered video survives until the next deploy. Its
- * YouTube link does not -- that is the durable artefact.
+ * This is the half that spends. `budgetUsd` is the approval: produce checks its
+ * own estimate against it and blocks rather than buying when it is unset, so a
+ * caller that forgets cannot accidentally authorise anything.
+ *
+ * @param {{itemId:string, budgetUsd:number, stopAfter?:string}} req
  */
-function register(lesson, rendered) {
-  const slug = slugify(lesson.title);
-  const dir = path.join(PATHS.explainerVideos, 'made', slug);
-  fs.mkdirSync(path.join(dir, 'out'), { recursive: true });
-
-  fs.writeFileSync(path.join(dir, 'beats.js'), preview.beatsFor(lesson));
-  fs.writeFileSync(path.join(dir, 'durations.json'),
-    JSON.stringify(preview.durationsFor(), null, 2));
-  fs.copyFileSync(rendered.file, path.join(dir, 'out', `${slug}_final.mp4`));
-  return slug;
-}
-
-/** Upload unlisted and return the link. */
-async function publish(lesson, rendered, log) {
-  const yt = require('../../orchestrator/lib/youtube');
-  if (!yt.isAuthorised()) {
-    throw new Error('YouTube is not authorised on this service (no refresh token).');
+async function produce(req, { log = () => {}, onStage = () => {} } = {}) {
+  const item = queue.get(req.itemId);
+  if (!item) throw Object.assign(new Error(`no queued video '${req.itemId}'`), { status: 404 });
+  if (!(Number(req.budgetUsd) > 0)) {
+    throw Object.assign(
+      new Error('producing a video buys art and speech; pass budgetUsd to approve it'),
+      { status: 400 }
+    );
   }
-  const q = lesson.question || {};
-  const description = [
-    lesson.slo || '',
-    '',
-    lesson.scenario || '',
-    '',
-    q.stem ? `Question: ${q.stem}` : '',
-    q.explanation ? `Answer: ${(q.options || [])[q.correctIndex] || ''} — ${q.explanation}` : '',
-    '',
-    'Made by the Drawing Room content pipeline for Taleemabad University.',
-  ].filter(Boolean).join('\n').slice(0, 4900);
 
-  log('uploading to youtube (unlisted)');
-  const r = await yt.uploadVideo({
-    filePath: rendered.file,
-    title: lesson.title.slice(0, 95),
-    description,
-    tags: ['Taleemabad', 'explainer'],
-    privacyStatus: 'unlisted',
-    log: (m) => log(`  [yt] ${m}`),
+  const dir = videoDir(item.series, item.slug);
+  const beats = readBeats(dir);
+  if (!beats) {
+    throw Object.assign(new Error('this video has no gated script yet -- write it first'), { status: 409 });
+  }
+
+  const st = await spine.execute(item, {
+    fromStage: 'produce',
+    stopAfter: req.stopAfter || 'upload',
+    quiet: true,
+    budgetUsd: Number(req.budgetUsd),
+    // The stages before `produce` are not re-run; their output is already on
+    // disk. Seeding records them as skipped, never as done.
+    seedArtifacts: { script: { title: item.topic, beats } },
+    stageOverrides: stageProgress(onStage, log),
   });
-  return { videoId: r.videoId, url: r.url, privacyStatus: r.privacyStatus };
+
+  if (st.status !== 'done') {
+    const why = stoppedBecause(st);
+    throw Object.assign(new Error(why), { status: 502, runId: st.runId });
+  }
+
+  return {
+    runId: st.runId,
+    itemId: item.id,
+    slug: item.slug,
+    spendUsd: st.spend && st.spend.usd,
+    qa: st.artifacts.qa,
+    youtube: st.artifacts.upload,
+    dir,
+  };
 }
 
-module.exports = { make, SCHEMA };
+/** Put the topic on the queue the spine pops from, or reuse it if it is there. */
+function enqueue(topic, slug, notes) {
+  const id = `${SERIES}/${slug}`;
+  const existing = queue.get(id);
+  if (existing) return existing;
+  return queue.enqueue({
+    topic, series: SERIES, slug, source: 'make-a-video',
+    notes: notes ? String(notes).slice(0, 2000) : null,
+  });
+}
+
+/**
+ * Report each stage as it starts, without reimplementing the spine's loop.
+ * Wrapping every stage's `run` is the only hook that does not require the spine
+ * to know about this caller.
+ */
+function stageProgress(onStage, log) {
+  const real = spine.loadStages();
+  const overrides = {};
+  for (const [name, stage] of Object.entries(real)) {
+    overrides[name] = {
+      ...stage,
+      async run(ctx) {
+        onStage(name);
+        log(`stage ${name}`);
+        return stage.run(ctx);
+      },
+    };
+  }
+  return overrides;
+}
+
+/**
+ * Why a run ended without finishing.
+ *
+ * A run can end `blocked` as well as `failed`, and blocked carries the reason
+ * that matters most here -- the spend gate. Looking only for 'failed' reported
+ * "the run did not finish" and threw away "this video costs ~$1.77 and the
+ * budget is $0.01", which is the whole of the useful message.
+ */
+function stoppedBecause(st) {
+  for (const [name, stage] of Object.entries(st.stages || {})) {
+    if (stage.status === 'blocked' || stage.status === 'failed') {
+      return `${name} ${stage.status}: ${stage.error || 'no reason recorded'}`;
+    }
+  }
+  return `the run ended ${st.status} without finishing`;
+}
+
+function readBeats(dir) {
+  const file = path.join(dir, 'beats.js');
+  if (!fs.existsSync(file)) return null;
+  delete require.cache[require.resolve(file)];
+  const mod = require(file);
+  return Array.isArray(mod) ? mod : null;
+}
+
+module.exports = { write, produce, SERIES, slugify };

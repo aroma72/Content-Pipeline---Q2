@@ -139,12 +139,12 @@ async function beatChecks() {
   });
 
   check('every real template name is ACCEPTED', () => {
-    // Per-template check on one-beat scripts, so the whole-script quiz rule does
-    // not apply -- that rule has its own tests in 3b.
+    // Per-template check on one-beat scripts, so the whole-script checkpoint rule
+    // does not apply -- that rule has its own tests in 3b.
     const tpls = ['checks', 'fourparts', 'gauge', 'statement', 'twocard', 'quote'];
     for (const t of tpls) {
       const { errors } = validateBeats([{ id: '01', mode: 'info', vo: 'X.', info: { tpl: t, data: {} } }], realDir);
-      const structural = errors.filter((e) => !/QUESTION->REVEAL|quiz beat/.test(e));
+      const structural = errors.filter((e) => !/QUESTION->REVEAL|quiz beat|CHECKPOINT beat/.test(e));
       assert(structural.length === 0, `template '${t}' wrongly rejected: ${structural[0]}`);
     }
     return tpls.join(', ');
@@ -159,10 +159,10 @@ async function beatChecks() {
   check('the real shipped beats.js has no structural/render defects', () => {
     const beats = require(path.join(realDir, 'beats.js'));
     const { errors } = validateBeats(beats, realDir);
-    // evals-08 was published before the QUESTION->REVEAL mandate, so it trips that
-    // rule legitimately. This test is about the render-breaking defects it was
-    // written for; the quiz rule has its own tests below.
-    const structural = errors.filter((e) => !/QUESTION->REVEAL|quiz beat/.test(e));
+    // evals-08 was published before the checkpoint mandate, so it trips that rule
+    // legitimately. This test is about the render-breaking defects it was written
+    // for; the question rules have their own tests below.
+    const structural = errors.filter((e) => !/QUESTION->REVEAL|quiz beat|CHECKPOINT beat/.test(e));
     assert(structural.length === 0, `real beats.js has errors: ${structural.join('; ')}`);
     return `${beats.length} beats, 0 structural errors`;
   });
@@ -174,58 +174,107 @@ async function beatChecks() {
     return names.join(',');
   });
 
-  // --- 4b. The interactive QUESTION -> REVEAL ------------------------------
-  // Mandatory in CLAUDE.md and SCRIPTING_STANDARDS for months, enforced nowhere,
-  // so the autonomous path never produced one. Encoded in structure now.
-  console.log('\n3b. the mandatory quiz beat (was: required in prose, checked by nothing)');
+  // --- 4b. The mandatory CHECKPOINT ----------------------------------------
+  // SCRIPTING_STANDARDS 3b (2026-09-11) replaced the on-screen QUESTION -> REVEAL
+  // cards with a beat that is never drawn and never spoken: the player pauses and
+  // the LMS pops the question. It had the same history as every other rule here --
+  // mandated in prose, enforced nowhere -- so the writer's schema had no field for
+  // it and the autonomous path kept emitting the superseded cards. Worse, a lone
+  // quiz card with its answer baked in yields NO checkpoint from the API, so those
+  // videos reached the LMS with no question at all.
+  console.log('\n3b. the mandatory checkpoint beat (was: the writer had no field for it)');
 
   const tplDir = path.join(__dirname, '..', '.claude', 'skills', 'creating-explainer-videos', 'templates');
-  const okBeats = () => ([
-    { id: '01', mode: 'scene', vo: 'A sentence.', art: 'a cream room, no text' },
-    { id: '02', mode: 'info', vo: 'Which one?', holdAfter: 2,
-      info: { tpl: 'quiz', data: { stem: 'Which check survives?', options: ['A', 'B'], answer: 1 } } },
-  ]);
+  const spoken = (id) => ({ id, mode: 'scene', vo: 'A sentence.', art: 'a cream room, no text' });
+  const checkpoint = () => ({
+    id: '02', mode: 'checkpoint',
+    quiz: {
+      stem: 'Which check survives?', options: ['A', 'B', 'C', 'D'], answer: 1,
+      explain: 'The tempting option confirms the message arrived, not what it said, '
+        + 'which is where the money is actually lost.',
+    },
+  });
+  const okBeats = () => ([spoken('01'), checkpoint(), spoken('03')]);
 
-  check('a script with NO quiz beat is REJECTED', () => {
-    const { errors } = validateBeats([okBeats()[0]], tplDir);
-    assert(errors.some((e) => /QUESTION->REVEAL/.test(e)), 'a video with no question was accepted');
+  check('a script with NO checkpoint beat is REJECTED', () => {
+    const { errors } = validateBeats([spoken('01'), spoken('02')], tplDir);
+    assert(errors.some((e) => /CHECKPOINT beat/.test(e)), 'a video with no question was accepted');
     return 'rejected';
   });
 
-  check('a well-formed quiz beat is ACCEPTED', () => {
+  check('a well-formed checkpoint is ACCEPTED', () => {
     const { errors } = validateBeats(okBeats(), tplDir);
     assert(errors.length === 0, `wrongly rejected: ${errors.join('; ')}`);
     return 'accepted';
   });
 
-  check('a quiz beat with no holdAfter is REJECTED (no pause to answer in)', () => {
-    const b = okBeats(); delete b[1].holdAfter;
+  check('a checkpoint with a vo is REJECTED (it is never spoken)', () => {
+    const b = okBeats(); b[1].vo = 'Here is your question.';
     const { errors } = validateBeats(b, tplDir);
-    assert(errors.some((e) => /holdAfter/.test(e)), 'a question with no thinking pause was accepted');
+    assert(errors.some((e) => /never spoken/.test(e)), 'a spoken checkpoint was accepted');
     return 'rejected';
   });
 
-  check('a quiz beat with a blank stem or <2 options is REJECTED', () => {
-    const noStem = okBeats(); noStem[1].info.data = { options: ['A', 'B'], answer: 0 };
-    const oneOpt = okBeats(); oneOpt[1].info.data = { stem: 'Q?', options: ['A'], answer: 0 };
-    assert(validateBeats(noStem, tplDir).errors.some((e) => /data\.stem/.test(e)), 'blank stem accepted');
-    assert(validateBeats(oneOpt, tplDir).errors.some((e) => /data\.options/.test(e)), 'single option accepted');
+  check('a checkpoint first or last is REJECTED (no boundary to pause on)', () => {
+    assert(validateBeats([checkpoint(), spoken('03')], tplDir).errors.some((e) => /first or last/.test(e)),
+      'a leading checkpoint was accepted');
+    assert(validateBeats([spoken('01'), checkpoint()], tplDir).errors.some((e) => /first or last/.test(e)),
+      'a trailing checkpoint was accepted');
     return 'both rejected';
   });
 
-  check('an out-of-range quiz answer index is REJECTED', () => {
-    const b = okBeats(); b[1].info.data.answer = 5;
+  check('a checkpoint with no explain is REJECTED', () => {
+    const b = okBeats(); delete b[1].quiz.explain;
     const { errors } = validateBeats(b, tplDir);
-    assert(errors.some((e) => /data\.answer/.test(e)), 'an answer pointing at no option was accepted');
+    assert(errors.some((e) => /explain/.test(e)), 'a question with no feedback was accepted');
     return 'rejected';
   });
 
-  check('a folder with a stale animation kit says so, not "add a quiz beat"', () => {
-    // realDir predates the quiz template, so the advice must be actionable.
-    const { errors } = validateBeats([okBeats()[0]], realDir);
-    const e = errors.find((x) => /QUESTION->REVEAL/.test(x));
-    assert(e && /stale/.test(e), `unhelpful message: ${e}`);
-    return 'names the stale kit';
+  check('a blank stem, <2 options or an out-of-range answer is REJECTED', () => {
+    const noStem = okBeats(); noStem[1].quiz.stem = '';
+    const oneOpt = okBeats(); oneOpt[1].quiz.options = ['A'];
+    const badIdx = okBeats(); badIdx[1].quiz.answer = 5;
+    assert(validateBeats(noStem, tplDir).errors.some((e) => /stem/.test(e)), 'blank stem accepted');
+    assert(validateBeats(oneOpt, tplDir).errors.some((e) => /options/.test(e)), 'single option accepted');
+    assert(validateBeats(badIdx, tplDir).errors.some((e) => /answer/.test(e)), 'out-of-range answer accepted');
+    return 'all three rejected';
+  });
+
+  check('a checkpoint needs NO animation template, so a stale kit cannot block it', () => {
+    // The old rule could not be satisfied in a folder whose info.js predated the
+    // quiz template. A checkpoint is never drawn, so it has no such dependency --
+    // realDir is exactly such a folder.
+    const { errors } = validateBeats(okBeats(), realDir);
+    assert(!errors.some((e) => /CHECKPOINT|stale/.test(e)), `blocked by the kit: ${errors.join('; ')}`);
+    return 'accepted in a pre-quiz folder';
+  });
+
+  check('a legacy quiz CARD is still shape-checked when one is present', () => {
+    // Videos written before 3b keep their cards through a recut, so the old shape
+    // rules must not have been deleted along with the requirement.
+    const withCard = [spoken('01'), checkpoint(), {
+      id: '03', mode: 'info', vo: 'Which one?', holdAfter: 2,
+      info: { tpl: 'quiz', data: { stem: 'Q?', options: ['A'], answer: 0 } },
+    }];
+    const { errors } = validateBeats(withCard, tplDir);
+    assert(errors.some((e) => /options/.test(e)), 'a one-option legacy card was accepted');
+    const noHold = JSON.parse(JSON.stringify(withCard)); delete noHold[2].holdAfter;
+    noHold[2].info.data.options = ['A', 'B'];
+    assert(validateBeats(noHold, tplDir).errors.some((e) => /holdAfter/.test(e)),
+      'a legacy card with no thinking pause was accepted');
+    return 'shape rules intact';
+  });
+
+  check('the writer can actually emit a checkpoint (schema + beats.js)', () => {
+    // The rule was unsatisfiable before this: mode had no 'checkpoint' and the beat
+    // had no 'quiz', so the writer could not comply however it was prompted.
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'script.js'), 'utf8');
+    assert(/'ali', 'scene', 'info', 'checkpoint'/.test(src), "mode enum has no 'checkpoint'");
+    assert(/required: \['stem', 'options', 'answer', 'explain'\]/.test(src),
+      'no quiz field in the beat schema');
+    assert(/b\.quiz \?/.test(src), 'renderBeatsFile drops quiz, so the checkpoint never reaches beats.js');
+    assert(/mode === 'checkpoint' \? null/.test(src), 'a checkpoint would be written with a vo');
+    return 'schema + writer + renderer';
   });
 
   // --- 4c. The scaffold can actually build what is now required -------------
@@ -256,10 +305,22 @@ async function beatChecks() {
     const fn = (src.match(/function renderBeatsFile[\s\S]*?\n\}/) || [])[0];
     assert(fn, 'renderBeatsFile not found in script.js');
     const renderBeatsFile = eval('(' + fn.replace('function renderBeatsFile', 'function') + ')');
-    const out = renderBeatsFile({ title: 'T', beats: okBeats() });
+    // okBeats() is now a checkpoint script, which carries no holdAfter by design,
+    // so this builds the beat it is actually about.
+    const out = renderBeatsFile({ title: 'T', beats: [
+      { id: '01', mode: 'info', vo: 'Which one?', holdAfter: 2,
+        info: { tpl: 'quiz', data: { stem: 'Q?', options: ['A', 'B'], answer: 0 } } },
+      checkpoint(),
+    ] });
     // Dropped here, the quiz pause is silently lost: tts-lesson.js reads it off beats.js.
     assert(/holdAfter:\s*2/.test(out), 'renderBeatsFile dropped holdAfter');
-    return 'written';
+    // Same failure shape, newer field: a dropped quiz means the LMS gets no question.
+    assert(/quiz:\s*\{/.test(out) && /Which check survives\?/.test(out),
+      'renderBeatsFile dropped the checkpoint quiz');
+    // And a checkpoint must not be written with a vo -- it is never spoken.
+    const cpBlock = out.slice(out.indexOf("mode: \"checkpoint\""));
+    assert(!/vo:/.test(cpBlock.slice(0, cpBlock.indexOf('},'))), 'checkpoint written with a vo');
+    return 'holdAfter + quiz, no vo';
   });
 
   check('tts-lesson.js turns holdAfter into real silence', () => {
