@@ -49,7 +49,13 @@ const SCHEMA = {
               // data templates the visual standard requires, even when asked to.
               tpl: {
                 type: 'string',
-                enum: ['quiz', 'checks', 'fourparts', 'gauge', 'statement', 'twocard', 'quote',
+                // NOTE: 'quiz' is deliberately absent -- the checkpoint beat replaced the
+                // on-screen card. Leaving it here meant the writer kept emitting one
+                // ALONGSIDE the checkpoint, handing the learner the answer on screen;
+                // eight redraft rounds of the gate asking it to stop did not settle
+                // what deleting the option settles immediately. The renderer keeps the
+                // template, so videos written before this still build.
+                enum: ['checks', 'fourparts', 'gauge', 'statement', 'twocard', 'quote',
                   'bignum', 'tally', 'bars', 'piles', 'scoresheet', 'grid',
                   'spectrum', 'screen', 'answers', 'browser', 'promptcard'],
               },
@@ -150,7 +156,7 @@ const EDIT_SCHEMA = {
           info: {
             type: 'object',
             properties: {
-              tpl: { type: 'string', enum: ['quiz', 'checks', 'fourparts', 'gauge', 'statement', 'twocard', 'quote',
+              tpl: { type: 'string', enum: ['checks', 'fourparts', 'gauge', 'statement', 'twocard', 'quote',
                   'bignum', 'tally', 'bars', 'piles', 'scoresheet', 'grid',
                   'spectrum', 'screen', 'answers', 'browser', 'promptcard'] },
               data: { type: 'object', additionalProperties: true },

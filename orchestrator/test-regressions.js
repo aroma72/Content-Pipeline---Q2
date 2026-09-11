@@ -339,15 +339,49 @@ async function beatChecks() {
     return `${names.length} templates`;
   });
 
-  check('the script schema can emit every template the renderer defines', () => {
+  check('the script schema can emit every template the renderer defines, except quiz', () => {
+    // Read the ENUMS, not the source text. Grepping for the name passed as soon as
+    // a template was mentioned in a comment -- including a comment saying it had
+    // been deliberately removed, which is the opposite of what the test checks.
     const { knownTemplates } = require('./lib/validate-beats');
     const rendered = knownTemplates(tplDir) || [];
     const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'script.js'), 'utf8');
-    const missing = rendered.filter((t) => !new RegExp(`'${t}'`).test(src));
-    // The enum froze at six while info.js grew to eighteen, so the writer could
-    // not emit a quiz card even when told to.
-    assert(missing.length === 0, `schema cannot emit: ${missing.join(', ')}`);
-    return `${rendered.length} templates reachable`;
+    const enums = [...src.matchAll(/enum:\s*\[([^\]]*?)\]/g)]
+      .map((m) => m[1].match(/'[^']+'/g) || [])
+      .map((list) => list.map((q) => q.slice(1, -1)));
+    const tplEnums = enums.filter((e) => e.includes('gauge'));
+    assert(tplEnums.length === 2, `expected 2 template enums, found ${tplEnums.length}`);
+
+    for (const e of tplEnums) {
+      // quiz is intentionally unreachable: the checkpoint beat replaced the
+      // on-screen card, and while it stayed in the enum the writer kept emitting
+      // one alongside the checkpoint -- the question and its answer, drawn.
+      assert(!e.includes('quiz'), 'quiz is back in a template enum');
+      const missing = rendered.filter((t) => t !== 'quiz' && !e.includes(t));
+      assert(missing.length === 0, `schema cannot emit: ${missing.join(', ')}`);
+    }
+    return `${rendered.length - 1} reachable, quiz withheld`;
+  });
+
+  check('a quiz payload on a drawn beat is REJECTED', () => {
+    // The old card wearing the new field: it draws the question AND its answer.
+    const beats = [spoken('01'), checkpoint(), {
+      id: '03', mode: 'ali', vo: 'A sentence.', art: 'ali alone on plain cream, no ground, no shadow, no text',
+      quiz: { stem: 'Q?', options: ['a', 'b'], answer: 0, explain: 'because of the thing that matters here' },
+    }];
+    const { errors } = validateBeats(beats, tplDir);
+    assert(errors.some((e) => /carries a quiz payload/.test(e)), 'a drawn quiz beat was accepted');
+    return 'rejected';
+  });
+
+  check('an on-screen quiz card alongside a checkpoint is REJECTED', () => {
+    const beats = [spoken('01'), checkpoint(), {
+      id: '03', mode: 'info', vo: 'Which one?', holdAfter: 2,
+      info: { tpl: 'quiz', data: { stem: 'Q?', options: ['a', 'b'], answer: 0 } },
+    }];
+    const { errors } = validateBeats(beats, tplDir);
+    assert(errors.some((e) => /same question twice/.test(e)), 'the question was asked twice');
+    return 'rejected';
   });
 
   check('holdAfter survives the writer -> beats.js round trip', () => {

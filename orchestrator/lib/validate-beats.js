@@ -68,6 +68,17 @@ function validateBeats(beats, videoDir, opts = {}) {
       continue;
     }
 
+    // A `quiz` on a beat that IS drawn and IS spoken is the old card wearing the
+    // new field: it puts the question and its answer on screen, which is the exact
+    // thing the checkpoint replaced.
+    if (b.mode !== 'checkpoint' && b.quiz) {
+      errors.push(
+        `${at}: a ${b.mode} beat carries a quiz payload. Only a checkpoint beat may ` +
+        `have one -- this would draw the question and its answer on screen. Delete ` +
+        `the quiz from this beat; the checkpoint already asks it.`
+      );
+    }
+
     if (b.mode === 'checkpoint') {
       checkQuiz(errors, at, b.quiz, {
         what: 'checkpoint',
@@ -196,6 +207,18 @@ function validateBeats(beats, videoDir, opts = {}) {
       `${checkpoints.length} checkpoint beats -- the house format is ONE question per video ` +
       `(beats ${checkpoints.map((c) => c.id).join(', ')})`
     );
+  }
+
+  // A checkpoint AND an on-screen quiz card is the same question twice, once with
+  // the answer visible. Whichever the LMS shows, the learner has already seen it.
+  if (checkpoints.length) {
+    for (const q of beats.filter((b) => b && b.mode === 'info' && b.info && b.info.tpl === 'quiz')) {
+      errors.push(
+        `beat ${q.id}: an on-screen quiz card alongside a checkpoint asks the same ` +
+        `question twice, and this one shows the answer. The checkpoint replaced it -- ` +
+        `delete this beat or make it teach something else.`
+      );
+    }
   }
 
   // --- whole-script: legacy QUESTION -> REVEAL cards ---------------------------

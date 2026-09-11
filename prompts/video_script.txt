@@ -17,7 +17,6 @@ An "info" beat WITHOUT a valid `info.tpl` renders as a completely BLANK frame. A
 `overlay` alone does not render anything. Every info beat must pick one of these
 templates and supply exactly its data shape:
 
-- quiz       {stem, options:[string,...], answer, note}  — LEGACY on-screen question card. Do NOT use it: the checkpoint beat replaced it (see below)
 - checks     {title, items:[string,...]}            — a list revealed one by one
 - fourparts  {title, parts:[string,...]}            — a four-box grid
 - gauge      {label, value, max, good}              — a counting number + filling bar
