@@ -27,9 +27,15 @@ const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 
 const REPO = path.resolve(__dirname, '..');
+
+// Without this the token is unset when run from a hook, and every publish
+// reports FAILED because it cannot verify itself — which is what happened the
+// first time this ran for real.
+try { require(path.join(REPO, 'orchestrator/lib/env')).loadDotenv(); } catch { /* not fatal */ }
+
 const API = process.env.CONTENT_API_BASE
   || 'https://content-queen-production.up.railway.app';
-const TOKEN = process.env.CONTENT_API_TOKEN || '';
+const TOKEN = () => process.env.CONTENT_API_TOKEN || '';
 
 const checkpoints = require(path.join(REPO, 'server/lib/checkpoints'));
 
@@ -99,9 +105,9 @@ function validate(relPath) {
 }
 
 async function fetchLive(slug) {
-  if (!TOKEN) throw new Error('CONTENT_API_TOKEN is not set, so the publish cannot be verified');
+  if (!TOKEN()) throw new Error('CONTENT_API_TOKEN is not set, so the publish cannot be verified');
   const res = await fetch(`${API}/api/v1/videos/${encodeURIComponent(slug)}/checkpoints`, {
-    headers: { Authorization: `Bearer ${TOKEN}` },
+    headers: { Authorization: `Bearer ${TOKEN()}` },
   });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`API returned ${res.status} for ${slug}`);
