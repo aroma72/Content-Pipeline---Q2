@@ -62,6 +62,7 @@ explainer-videos/**/clips
 # in production while working perfectly on a dev machine.
 !prototypes/lms-quiz-popup-prototype.html
 !prototypes/course-builder.html
+!prototypes/make-a-video.html
 
 # --- never ---------------------------------------------------------------------
 .env

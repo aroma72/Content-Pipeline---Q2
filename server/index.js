@@ -121,6 +121,65 @@ function demoRateCheck(ip) {
 }
 
 /**
+ * Make ONE video from a topic. The smallest useful thing this system does, and
+ * the only path that runs end to end today with nobody in the middle.
+ *
+ * One model call writes the lesson and its question; the renderer draws it.
+ * About ninety seconds, and nothing is bought -- cards need no art or audio.
+ * A course is nine of these plus a queue and an approval step, which is why it
+ * is a separate page and not the default.
+ *
+ * No key: the service supplies its own credential. Rate limited instead,
+ * because the writing step is a real model call.
+ */
+const MAKE_LIMIT = { perIpPerHour: 6, globalPerHour: 40 };
+const makeHits = [];
+const makeByIp = new Map();
+
+app.post('/demo/make-video', async (req, res) => {
+  const ip = req.ip || 'unknown';
+  const now = Date.now();
+  const hourAgo = now - 3600_000;
+  while (makeHits.length && makeHits[0] < hourAgo) makeHits.shift();
+  const mine = (makeByIp.get(ip) || []).filter((t) => t >= hourAgo);
+
+  if (makeHits.length >= MAKE_LIMIT.globalPerHour || mine.length >= MAKE_LIMIT.perIpPerHour) {
+    return res.status(429).json({
+      error: 'rate_limited',
+      message: `This demo makes ${MAKE_LIMIT.perIpPerHour} videos an hour. Try again shortly.`,
+    });
+  }
+  mine.push(now);
+  makeByIp.set(ip, mine);
+  makeHits.push(now);
+  if (makeByIp.size > 500) {
+    for (const [k, v] of makeByIp) if (!v.some((t) => t >= hourAgo)) makeByIp.delete(k);
+  }
+
+  try {
+    const r = await require('./lib/one-video')
+      .make(req.body || {}, { log: (m) => console.log('[make-video]', m) });
+    res.json({
+      lesson: r.lesson,
+      seconds: r.video.seconds,
+      url: `${req.protocol}://${req.get('host')}/demo/preview/${r.video.id}.mp4`,
+    });
+  } catch (e) {
+    console.error('[make-video]', e.message);
+    res.status(e.status || 500).json({ error: 'make_failed', message: e.message });
+  }
+});
+
+const MAKE_FILE = path.join(__dirname, '..', 'prototypes', 'make-a-video.html');
+app.get('/demo/make-a-video', (_req, res) => {
+  if (!fs.existsSync(MAKE_FILE)) {
+    return res.status(404).type('text').send('Not deployed.');
+  }
+  res.set('Cache-Control', 'public, max-age=300');
+  res.type('html').send(fs.readFileSync(MAKE_FILE, 'utf8'));
+});
+
+/**
  * Render a real preview video for one planned lesson.
  *
  * The simplest thing that actually works end to end: the lesson's own words,

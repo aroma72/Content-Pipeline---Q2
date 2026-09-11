@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Make a Video · Taleemabad University</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+/* One job: a topic goes in, a video comes out. Same shell as the rest of
+   Taleemabad University so it reads as a page of the LMS. */
+:root{
+  --blue:#2563EB; --blue-soft:#EEF2FF; --blue-ink:#1D4ED8; --green:#22C55E;
+  --amber-bg:#FEF3C7; --amber-ink:#B45309; --red:#DC2626;
+  --page:#F7F8FA; --card:#FFFFFF; --line:#E5E7EB; --line-soft:#F1F3F5;
+  --ink:#111827; --ink-2:#374151; --muted:#6B7280;
+  --sans:'Inter',system-ui,-apple-system,'Segoe UI',Arial,sans-serif;
+  --sidebar:288px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--page);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55}
+a{color:var(--blue);text-decoration:none}
+
+.shell{display:flex;min-height:100vh}
+.side{width:var(--sidebar);flex:0 0 var(--sidebar);background:#fff;border-right:1px solid var(--line);
+  display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+.brand{display:flex;align-items:center;gap:11px;padding:22px 22px 18px}
+.mark{display:grid;grid-template-columns:repeat(2,14px);grid-template-rows:repeat(2,14px);gap:3px}
+.mark i{border-radius:4px;display:block}
+.mark i:nth-child(1),.mark i:nth-child(3){background:var(--blue)}
+.mark i:nth-child(2){background:#93B4FB}
+.mark i:nth-child(4){background:var(--green)}
+.brand .name{font-weight:700;font-size:19px;line-height:1.1;color:var(--blue);letter-spacing:-.02em}
+nav{padding:4px 12px;display:flex;flex-direction:column;gap:2px;flex:1}
+nav a{display:flex;align-items:center;gap:13px;padding:11px 14px;border-radius:9px;
+  color:var(--ink-2);font-weight:500;font-size:15.5px}
+nav a:hover{background:#F9FAFB}
+nav a.on{background:var(--blue-soft);color:var(--blue);font-weight:600}
+nav a svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.7;
+  stroke-linecap:round;stroke-linejoin:round}
+.who{border-top:1px solid var(--line);padding:16px 20px;display:flex;align-items:center;gap:12px}
+.av{width:38px;height:38px;border-radius:50%;background:var(--blue);color:#fff;display:flex;
+  align-items:center;justify-content:center;font-weight:600;font-size:13px}
+.who .n{font-weight:600;font-size:14.5px;line-height:1.25}
+.who .r{color:var(--muted);font-size:13px}
+
+.main{flex:1;min-width:0}
+.top{background:#fff;border-bottom:1px solid var(--line);padding:18px 34px;
+  display:flex;align-items:center;justify-content:space-between;gap:20px}
+.top h1{font-size:22px;font-weight:700;letter-spacing:-.02em}
+.top .sub{color:var(--muted);font-size:14.5px;margin-top:2px}
+.chip{font-size:12px;font-weight:600;color:var(--amber-ink);background:var(--amber-bg);
+  padding:4px 11px;border-radius:99px;white-space:nowrap}
+.content{padding:30px 34px 70px;max-width:860px}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:24px 26px}
+label{display:block;font-size:13.5px;font-weight:600;color:var(--ink-2);margin-bottom:7px}
+input{width:100%;font:inherit;font-size:16px;color:var(--ink);background:#fff;
+  border:1px solid #D1D5DB;border-radius:9px;padding:13px 15px}
+input::placeholder{color:#9CA3AF}
+input:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(37,99,235,.14)}
+.hint{color:var(--muted);font-size:13.5px;margin-top:8px}
+
+.actions{display:flex;align-items:center;gap:14px;margin-top:18px;flex-wrap:wrap}
+button{font:inherit;font-weight:600;font-size:15px;cursor:pointer;border-radius:9px;
+  border:1px solid transparent;padding:12px 24px;background:var(--blue);color:#fff;
+  transition:background .15s}
+button:hover:not(:disabled){background:var(--blue-ink)}
+button:disabled{opacity:.55;cursor:default}
+.status{font-size:14px;color:var(--muted)}
+.status.err{color:var(--red)}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid #C7D2FE;border-top-color:var(--blue);
+  border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px;margin-right:8px}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spin{animation:none}}
+
+/* ── steps ─────────────────────────────────────────────────────────────── */
+.steps{display:none;gap:0;margin-top:20px;border-top:1px solid var(--line-soft);padding-top:16px}
+.steps.on{display:block}
+.step{display:flex;align-items:center;gap:12px;padding:8px 0;font-size:14.5px;color:var(--muted)}
+.step .dot{width:20px;height:20px;border-radius:50%;background:#F3F4F6;flex:0 0 auto;
+  display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted)}
+.step.on{color:var(--ink);font-weight:600}
+.step.on .dot{background:var(--blue-soft);color:var(--blue)}
+.step.done{color:var(--ink-2)}
+.step.done .dot{background:#DCFCE7;color:#15803D}
+
+/* ── result ────────────────────────────────────────────────────────────── */
+#out{display:none;margin-top:20px}
+#out.on{display:block}
+video{width:100%;border-radius:12px;border:1px solid var(--line);background:#000;display:block}
+.made{margin-top:18px}
+.made h2{font-size:19px;font-weight:700;letter-spacing:-.02em}
+.made .slo{color:var(--muted);font-size:14.5px;margin-top:5px}
+.q{margin-top:16px;background:#F9FAFB;border:1px solid var(--line);border-radius:10px;padding:16px 18px}
+.q .stem{font-weight:600;margin-bottom:10px}
+.q ol{margin:0 0 10px 20px}
+.q li{margin:4px 0;color:var(--ink-2)}
+.q li.correct{color:#15803D;font-weight:600}
+.q .exp{color:var(--muted);font-size:13.5px;border-top:1px solid var(--line);padding-top:10px}
+.note{background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;padding:14px 16px;
+  font-size:14px;color:#78350F;margin-top:18px}
+.foot{color:var(--muted);font-size:13px;margin-top:28px;border-top:1px solid var(--line);padding-top:16px}
+@media (max-width:900px){.side{display:none}.content,.top{padding-left:20px;padding-right:20px}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="side">
+    <div class="brand">
+      <span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <span class="name">Taleemabad<br>University</span>
+    </div>
+    <nav>
+      <a href="#"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Overview</a>
+      <a href="#"><svg viewBox="0 0 24 24"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5z"/><path d="M20 5.5A1.5 1.5 0 0 0 18.5 4H13v16h5.5a1.5 1.5 0 0 0 1.5-1.5z"/></svg>Courses</a>
+      <a href="#" class="on" aria-current="page"><svg viewBox="0 0 24 24"><polygon points="10 8 16 12 10 16 10 8"/><rect x="3" y="4" width="18" height="16" rx="2"/></svg>Make a Video</a>
+      <a href="/demo/course-builder"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Course Builder</a>
+      <a href="#"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendar</a>
+      <a href="#"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 5.5a3.5 3.5 0 0 1 0 7M18.5 20a6.4 6.4 0 0 0-2-4.7"/></svg>Members</a>
+      <a href="#"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1v.3a2 2 0 1 1-4 0v-.2a1.6 1.6 0 0 0-2.8-1.1l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 3.5 15H3a2 2 0 1 1 0-4h.2A1.6 1.6 0 0 0 4.3 8.2l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 9.9 4.3V4a2 2 0 1 1 4 0v.2a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0 1.1 2.7h.3a2 2 0 1 1 0 4h-.2a1.6 1.6 0 0 0-1.2 1.2z"/></svg>Settings</a>
+    </nav>
+    <div class="who">
+      <div class="av">AT</div>
+      <div><div class="n">Aroma Tahir</div><div class="r">Instructor</div></div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="top">
+      <div>
+        <h1>Make a Video</h1>
+        <div class="sub">One topic in, one video out.</div>
+      </div>
+      <span class="chip">Prototype</span>
+    </div>
+
+    <div class="content">
+      <div class="card">
+        <label for="topic">What should this video teach?</label>
+        <input id="topic" placeholder="How to write a clear WhatsApp message to a parent about a missed class" autofocus>
+        <p class="hint">One sentence is plenty. No key, no settings, nothing else to fill in.</p>
+
+        <div class="actions">
+          <button id="go">Make the video</button>
+          <span class="status" id="status"></span>
+        </div>
+
+        <div class="steps" id="steps">
+          <div class="step" id="s-write"><span class="dot">1</span>Writing the lesson and its question</div>
+          <div class="step" id="s-render"><span class="dot">2</span>Rendering the video</div>
+          <div class="step" id="s-done"><span class="dot">3</span>Ready to watch</div>
+        </div>
+      </div>
+
+      <div id="out">
+        <div class="card" style="margin-top:16px">
+          <video id="player" controls playsinline></video>
+          <div class="made">
+            <h2 id="r-title"></h2>
+            <div class="slo" id="r-slo"></div>
+            <div class="q">
+              <div class="stem" id="r-stem"></div>
+              <ol type="A" id="r-opts"></ol>
+              <div class="exp" id="r-exp"></div>
+            </div>
+          </div>
+          <div class="note">
+            This is the lesson drawn as cards — no illustrations, narration or branding.
+            A finished lesson has all three; this shows the teaching, made in about a minute.
+          </div>
+        </div>
+      </div>
+
+      <div class="foot">
+        Make a Video prototype · nothing is stored on this server, and nothing is charged.
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g,
+      function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; });
+  };
+
+  function step(id, state) {
+    var el = $(id);
+    el.className = 'step' + (state ? ' ' + state : '');
+    if (state === 'done') el.querySelector('.dot').textContent = '✓';
+  }
+
+  function reset() {
+    ['s-write', 's-render', 's-done'].forEach(function (id, i) {
+      var el = $(id);
+      el.className = 'step';
+      el.querySelector('.dot').textContent = String(i + 1);
+    });
+  }
+
+  $('go').addEventListener('click', async function () {
+    var topic = $('topic').value.trim();
+    if (!topic) { $('status').textContent = 'Type what the video should teach.'; $('topic').focus(); return; }
+
+    $('go').disabled = true;
+    $('out').classList.remove('on');
+    $('steps').classList.add('on');
+    reset();
+    step('s-write', 'on');
+    $('status').className = 'status';
+    $('status').innerHTML = '<span class="spin"></span>About a minute.';
+
+    // The server does both halves in one request, so the steps here are an
+    // honest estimate of where it has got to rather than live telemetry.
+    var toRender = setTimeout(function () {
+      step('s-write', 'done');
+      step('s-render', 'on');
+    }, 22000);
+
+    try {
+      var res = await fetch('/demo/make-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic: topic }),
+      });
+      var body = await res.json();
+      if (!res.ok) throw new Error(body.message || ('Something went wrong (HTTP ' + res.status + ').'));
+
+      clearTimeout(toRender);
+      step('s-write', 'done');
+      step('s-render', 'done');
+      step('s-done', 'on');
+
+      var l = body.lesson, q = l.question || {};
+      $('r-title').textContent = l.title;
+      $('r-slo').textContent = l.slo;
+      $('r-stem').textContent = q.stem || '';
+      $('r-opts').innerHTML = (q.options || []).map(function (o, i) {
+        return '<li class="' + (i === q.correctIndex ? 'correct' : '') + '">' + esc(o) +
+          (i === q.correctIndex ? ' ✓' : '') + '</li>';
+      }).join('');
+      $('r-exp').textContent = q.explanation || '';
+      $('player').src = body.url;
+
+      $('out').classList.add('on');
+      $('status').textContent = body.seconds + ' seconds, silent.';
+      $('out').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      $('player').play().catch(function () { /* autoplay may be blocked; controls are there */ });
+    } catch (e) {
+      clearTimeout(toRender);
+      $('steps').classList.remove('on');
+      $('status').className = 'status err';
+      $('status').textContent = e.message;
+    } finally {
+      $('go').disabled = false;
+    }
+  });
+
+  $('topic').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') $('go').click();
+  });
+})();
+</script>
+</body>
+</html>
