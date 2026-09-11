@@ -99,8 +99,10 @@ async function make(req, { log = () => {}, onStage = () => {} } = {}) {
 
 /** A filesystem-safe slug, stable enough to look up but not to collide. */
 function slugify(title) {
+  // Trim AFTER the length cut too -- slicing at 48 lands on a hyphen often
+  // enough that ids came out with a double hyphen before the suffix.
   const base = String(title).toLowerCase().replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '').slice(0, 48) || 'video';
+    .replace(/^-+|-+$/g, '').slice(0, 48).replace(/-+$/, '') || 'video';
   return `${base}-${Date.now().toString(36).slice(-4)}`;
 }
 
