@@ -74,7 +74,14 @@ module.exports = [
     cap: 'The answer', info: { tpl: 'quiz', data: {
       stem: 'The answer',
       options: ['Write one rule the helper follows', 'Hire another person', 'Stop giving refunds', 'Check each one faster'],
-      answer: 0, note: 'One rule lets him step back.' } } },
+      answer: 0, note: 'One rule lets him step back.',
+      // `note` is the on-screen caption; `explain` is what the LMS popup shows a
+      // learner who just answered wrong. See server/lib/checkpoints.js.
+      explain: 'One written rule — "under five hundred, go ahead; five hundred or more, '
+        + 'ask me" — is what lets Ali walk away from the counter. The other three keep him '
+        + 'in the loop: another person is another salary and still needs deciding for, '
+        + 'stopping refunds punishes customers for Ali\'s problem, and checking faster is '
+        + 'still checking every single one.' } } },
   { id: '22', mode: 'ali', vo: 'Your turn. Take one thing your AI keeps asking you to approve.',
     cap: 'Pick one approval', art: `${ALI}, facing the viewer with a warm inviting open-handed gesture, encouraging, ${HERO}` },
   { id: '23', mode: 'info', vo: 'Write the line. Under this limit, go ahead. Over it, come to me.',
