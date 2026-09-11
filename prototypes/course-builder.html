@@ -3,164 +3,279 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Course Builder — prototype</title>
+<title>Course Builder · Taleemabad University</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
 <style>
-/* Utilitarian tool, not a brochure. Taleemabad brand tokens for anything the
-   learner would eventually see; a plain working palette for the controls. */
+/* ─────────────────────────────────────────────────────────────────────────────
+   Styled to sit INSIDE Taleemabad University rather than beside it: the same
+   white sidebar with a blue active state, grey page ground, white rounded
+   cards, pill badges and Inter. This page is shared as a link, so looking like
+   a different product would itself be the bug.
+
+   Note this is the LMS's web palette, NOT the cream/Georgia video brand — the
+   videos and the interface deliberately look nothing alike.
+   ───────────────────────────────────────────────────────────────────────────── */
 :root{
-  --bg:#F5F1E8; --ink:#2E2A24; --head:#6B5344; --gold:#C08A3E;
-  --line:#DED5C4; --card:#FBF8F1; --good:#5C8A46; --bad:#C0653E;
-  --muted:#8A8070;
-  --serif:Georgia,'Times New Roman',serif;
-  --sans:'Segoe UI',system-ui,Arial,sans-serif;
-  --mono:Consolas,'SF Mono',monospace;
+  --blue:#2563EB;
+  --blue-soft:#EEF2FF;
+  --blue-ink:#1D4ED8;
+  --green:#22C55E;
+  --amber-bg:#FEF3C7;
+  --amber-ink:#B45309;
+  --red:#DC2626;
+  --page:#F7F8FA;
+  --card:#FFFFFF;
+  --line:#E5E7EB;
+  --line-soft:#F1F3F5;
+  --ink:#111827;
+  --ink-2:#374151;
+  --muted:#6B7280;
+  --sans:'Inter',system-ui,-apple-system,'Segoe UI',Arial,sans-serif;
+  --sidebar:288px;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.55;padding:34px 20px 80px}
-.wrap{max-width:940px;margin:0 auto;display:flex;flex-direction:column;gap:26px}
+body{background:var(--page);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55}
+a{color:var(--blue);text-decoration:none}
 
-header .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.13em;
-  text-transform:uppercase;color:var(--gold);margin-bottom:8px}
-h1{font-family:var(--serif);font-size:32px;line-height:1.1;color:var(--head);margin-bottom:8px}
-.lede{color:var(--muted);max-width:62ch}
+/* ── sidebar ─────────────────────────────────────────────────────────────── */
+.shell{display:flex;min-height:100vh}
+.side{
+  width:var(--sidebar);flex:0 0 var(--sidebar);background:#fff;border-right:1px solid var(--line);
+  display:flex;flex-direction:column;position:sticky;top:0;height:100vh;
+}
+.brand{display:flex;align-items:center;gap:11px;padding:22px 22px 18px}
+.mark{display:grid;grid-template-columns:repeat(2,14px);grid-template-rows:repeat(2,14px);gap:3px;flex:0 0 auto}
+.mark i{border-radius:4px;display:block}
+.mark i:nth-child(1){background:var(--blue)}
+.mark i:nth-child(2){background:#93B4FB}
+.mark i:nth-child(3){background:var(--blue)}
+.mark i:nth-child(4){background:var(--green)}
+.brand .name{font-weight:700;font-size:19px;line-height:1.1;color:var(--blue);letter-spacing:-.02em}
 
-.panel{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:20px 22px}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-label{display:block;font-size:12px;font-family:var(--mono);letter-spacing:.06em;
-  text-transform:uppercase;color:var(--muted);margin-bottom:5px}
-input,textarea{width:100%;font:inherit;font-size:15px;color:var(--ink);background:#FFFDF8;
-  border:1px solid var(--line);border-radius:5px;padding:9px 11px}
-input:focus,textarea:focus{outline:2px solid var(--gold);outline-offset:1px;border-color:var(--gold)}
-textarea{min-height:74px;resize:vertical}
+nav{padding:4px 12px;display:flex;flex-direction:column;gap:2px;flex:1;overflow-y:auto}
+nav a{
+  display:flex;align-items:center;gap:13px;padding:11px 14px;border-radius:9px;
+  color:var(--ink-2);font-weight:500;font-size:15.5px;
+}
+nav a:hover{background:#F9FAFB}
+nav a.on{background:var(--blue-soft);color:var(--blue);font-weight:600}
+nav a svg{width:19px;height:19px;flex:0 0 auto;stroke:currentColor;fill:none;stroke-width:1.7;
+  stroke-linecap:round;stroke-linejoin:round}
+
+.who{border-top:1px solid var(--line);padding:16px 20px;display:flex;align-items:center;gap:12px}
+.av{
+  width:38px;height:38px;border-radius:50%;background:var(--blue);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-weight:600;font-size:13px;flex:0 0 auto;
+}
+.who .n{font-weight:600;font-size:14.5px;line-height:1.25}
+.who .r{color:var(--muted);font-size:13px}
+
+/* ── main ────────────────────────────────────────────────────────────────── */
+.main{flex:1;min-width:0}
+.top{
+  background:#fff;border-bottom:1px solid var(--line);padding:18px 34px;
+  display:flex;align-items:center;justify-content:space-between;gap:20px;
+}
+.top h1{font-size:22px;font-weight:700;letter-spacing:-.02em}
+.top .sub{color:var(--muted);font-size:14.5px;margin-top:2px}
+.chip{
+  font-size:12px;font-weight:600;color:var(--amber-ink);background:var(--amber-bg);
+  padding:4px 11px;border-radius:99px;white-space:nowrap;
+}
+.content{padding:26px 34px 70px;max-width:1180px}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:22px 24px}
+.card + .card{margin-top:16px}
+.card h2{font-size:16.5px;font-weight:600;margin-bottom:3px}
+.card .hint{color:var(--muted);font-size:14px;margin-bottom:18px}
+
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .full{grid-column:1/-1}
-.hint{font-size:12.5px;color:var(--muted);margin-top:4px}
+label{display:block;font-size:13.5px;font-weight:600;color:var(--ink-2);margin-bottom:6px}
+label span.opt{font-weight:400;color:var(--muted)}
+input,textarea{
+  width:100%;font:inherit;font-size:15px;color:var(--ink);background:#fff;
+  border:1px solid #D1D5DB;border-radius:9px;padding:11px 13px;
+}
+input::placeholder,textarea::placeholder{color:#9CA3AF}
+input:focus,textarea:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(37,99,235,.14)}
+textarea{min-height:84px;resize:vertical}
 
-button{font:inherit;font-weight:600;cursor:pointer;border-radius:5px;border:1px solid transparent;
-  padding:10px 20px;transition:background .15s}
-.primary{background:var(--head);color:#fff}
-.primary:hover:not(:disabled){background:#57443A}
-.primary:disabled{opacity:.5;cursor:default}
-.ghost{background:transparent;color:var(--head);border-color:var(--line)}
-.ghost:hover{border-color:var(--gold)}
-.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}
+.actions{display:flex;align-items:center;gap:14px;margin-top:20px;flex-wrap:wrap}
+button{font:inherit;font-weight:600;font-size:15px;cursor:pointer;border-radius:9px;
+  border:1px solid transparent;padding:11px 22px;transition:background .15s}
+.btn-primary{background:var(--blue);color:#fff}
+.btn-primary:hover:not(:disabled){background:var(--blue-ink)}
+.btn-primary:disabled{opacity:.55;cursor:default}
+.btn-ghost{background:#fff;color:var(--ink-2);border-color:#D1D5DB}
+.btn-ghost:hover{background:#F9FAFB}
+.status{font-size:14px;color:var(--muted)}
+.status.err{color:var(--red)}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid #C7D2FE;border-top-color:var(--blue);
+  border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px;margin-right:7px}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spin{animation:none}}
 
-.status{font-size:13.5px;color:var(--muted);font-family:var(--mono)}
-.status.err{color:var(--bad)}
+/* ── result ──────────────────────────────────────────────────────────────── */
+#out{display:none;margin-top:26px}
+#out.on{display:block}
+.course-title{font-size:24px;font-weight:700;letter-spacing:-.02em;line-height:1.2}
+.course-sum{color:var(--muted);margin-top:7px;max-width:78ch}
+.scenario{background:var(--blue-soft);border-radius:10px;padding:14px 16px;margin-top:14px;
+  font-size:14.5px;color:var(--ink-2)}
+.scenario b{color:var(--blue-ink)}
 
-/* ── the plan ─────────────────────────────────────────────────────────── */
-#out{display:none;flex-direction:column;gap:18px}
-#out.on{display:flex}
-.course-head h2{font-family:var(--serif);font-size:25px;color:var(--head);line-height:1.15}
-.course-head p{color:var(--muted);margin-top:6px;max-width:70ch}
-.scenario{background:#F1EADC;border-left:3px solid var(--gold);border-radius:0 5px 5px 0;
-  padding:11px 14px;margin-top:12px;font-size:14.5px}
-.scenario b{color:var(--head)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin:20px 0}
+.stat{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.stat .n{font-size:23px;font-weight:700;letter-spacing:-.02em}
+.stat .k{color:var(--muted);font-size:13px;margin-top:2px}
 
-.est{display:flex;gap:0;flex-wrap:wrap;border:1px solid var(--line);border-radius:8px;overflow:hidden}
-.est div{flex:1;min-width:130px;padding:13px 16px;background:var(--card);border-right:1px solid var(--line)}
-.est div:last-child{border-right:none}
-.est .n{font-family:var(--serif);font-size:22px;color:var(--head);font-weight:700}
-.est .k{font-family:var(--mono);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.mod{background:#fff;border:1px solid var(--line);border-radius:12px;margin-bottom:14px;overflow:hidden}
+.mod-h{display:flex;align-items:center;gap:15px;padding:17px 20px}
+.num{
+  width:36px;height:36px;border-radius:10px;background:var(--blue-soft);color:var(--blue);
+  display:flex;align-items:center;justify-content:center;font-weight:600;font-size:15px;flex:0 0 auto;
+}
+.mod-h .t{font-size:16.5px;font-weight:600;line-height:1.3}
+.mod-h .c{color:var(--muted);font-size:13.5px;margin-top:2px}
 
-.mod{border:1px solid var(--line);border-radius:8px;overflow:hidden}
-.mod > h3{background:#F1EADC;padding:11px 16px;font-family:var(--sans);font-size:15px;color:var(--head)}
-.lesson{padding:14px 16px;border-top:1px solid var(--line);display:grid;
-  grid-template-columns:26px 1fr;gap:12px}
-.lesson .num{font-family:var(--mono);font-size:12px;color:var(--gold);padding-top:3px}
-.lesson h4{font-size:15px;font-weight:600}
-.lesson .slo{font-size:13.5px;color:var(--muted);margin-top:3px}
-.pill{display:inline-block;font-family:var(--mono);font-size:10px;letter-spacing:.08em;
-  text-transform:uppercase;padding:2px 7px;border-radius:99px;background:#EDE4D3;color:var(--head);
-  margin-left:7px;vertical-align:2px}
-details{margin-top:8px}
-summary{font-size:12.5px;color:var(--gold);cursor:pointer;font-family:var(--mono)}
-.q{margin-top:9px;background:#FFFDF8;border:1px solid var(--line);border-radius:5px;padding:11px 13px;font-size:14px}
-.q .stem{font-family:var(--serif);font-weight:700;color:var(--head);margin-bottom:7px}
-.q ol{margin:0 0 8px 18px}
-.q li{margin:2px 0}
-.q li.correct{color:var(--good);font-weight:600}
-.q .exp{font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:7px}
+.les{display:flex;gap:15px;padding:15px 20px;border-top:1px solid var(--line-soft)}
+.les .dot{width:26px;height:26px;border-radius:50%;background:#F3F4F6;color:var(--muted);
+  display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;
+  flex:0 0 auto;margin-top:1px}
+.les .t{font-weight:600;font-size:15px}
+.les .slo{color:var(--muted);font-size:14px;margin-top:3px}
+.pill{display:inline-block;font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:99px;
+  background:var(--amber-bg);color:var(--amber-ink);margin-left:9px;vertical-align:1px;
+  text-transform:capitalize}
+.pill.novice{background:#DCFCE7;color:#15803D}
+.pill.intermediate{background:var(--amber-bg);color:var(--amber-ink)}
+.pill.advanced{background:#FFE4E6;color:#BE123C}
+.pill.expert{background:#EDE9FE;color:#6D28D9}
 
-.assume{font-size:13.5px;color:var(--muted)}
-.assume li{margin:3px 0 3px 18px}
+details{margin-top:10px}
+summary{font-size:13.5px;color:var(--blue);cursor:pointer;font-weight:500;list-style:none}
+summary::-webkit-details-marker{display:none}
+summary::before{content:'▸ ';font-size:11px}
+details[open] summary::before{content:'▾ '}
+.q{margin-top:10px;background:#F9FAFB;border:1px solid var(--line);border-radius:10px;
+  padding:14px 16px;font-size:14px}
+.q .stem{font-weight:600;margin-bottom:9px}
+.q ol{margin:0 0 10px 20px}
+.q li{margin:3px 0;color:var(--ink-2)}
+.q li.correct{color:#15803D;font-weight:600}
+.q .exp{color:var(--muted);font-size:13.5px;border-top:1px solid var(--line);padding-top:9px;margin-top:4px}
 
-.warn{background:rgba(192,101,62,.09);border:1px solid var(--bad);border-radius:6px;
-  padding:13px 15px;font-size:14px}
-.warn b{color:var(--bad)}
-footer{font-family:var(--mono);font-size:11.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:14px}
-@media (max-width:640px){.grid{grid-template-columns:1fr}}
+.note{background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;padding:15px 17px;
+  font-size:14.5px;color:#78350F}
+.note b{font-weight:700}
+ul.assume{margin:0;padding-left:20px;color:var(--muted);font-size:14px}
+ul.assume li{margin:4px 0}
+.foot{color:var(--muted);font-size:13px;margin-top:26px;border-top:1px solid var(--line);padding-top:16px}
+
+@media (max-width:900px){
+  .side{display:none}
+  .grid{grid-template-columns:1fr}
+  .content,.top{padding-left:20px;padding-right:20px}
+}
 </style>
 </head>
 <body>
-<div class="wrap">
+<div class="shell">
 
-  <header>
-    <div class="eyebrow">Content Queen · prototype</div>
-    <h1>Course Builder</h1>
-    <p class="lede">Type a topic. Add as much or as little as you like. It plans the whole
-      course — modules, lessons, a learning outcome and a check question for each — then
-      hands every lesson to the video pipeline.</p>
-  </header>
-
-  <div class="panel">
-    <div class="grid">
-      <div class="full">
-        <label for="topic">Course topic <span style="color:var(--bad)">*</span></label>
-        <input id="topic" placeholder="Using WhatsApp Business to take orders without losing any">
-      </div>
-      <div>
-        <label for="duration">Duration (optional)</label>
-        <input id="duration" placeholder="about 15 minutes">
-      </div>
-      <div>
-        <label for="audience">Audience (optional)</label>
-        <input id="audience" placeholder="shopkeepers with a smartphone">
-      </div>
-      <div class="full">
-        <label for="description">What it should cover (optional)</label>
-        <textarea id="description" placeholder="Leave blank and it will choose sensibly — and tell you what it assumed."></textarea>
-      </div>
-      <div class="full">
-        <label for="token">API token</label>
-        <input id="token" type="password" placeholder="cq_…">
-        <p class="hint">Held in this tab only, never stored. The same CONTENT_API_TOKEN the API uses.</p>
-      </div>
+  <aside class="side">
+    <div class="brand">
+      <span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <span class="name">Taleemabad<br>University</span>
     </div>
-    <div class="row">
-      <button class="primary" id="go">Plan the course</button>
-      <span class="status" id="status"></span>
+    <nav>
+      <a href="#"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Overview</a>
+      <a href="#"><svg viewBox="0 0 24 24"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5z"/><path d="M20 5.5A1.5 1.5 0 0 0 18.5 4H13v16h5.5a1.5 1.5 0 0 0 1.5-1.5z"/></svg>Courses</a>
+      <a href="#" class="on" aria-current="page"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Course Builder</a>
+      <a href="#"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendar</a>
+      <a href="#"><svg viewBox="0 0 24 24"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/></svg>Leaderboard</a>
+      <a href="#"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 5.5a3.5 3.5 0 0 1 0 7M18.5 20a6.4 6.4 0 0 0-2-4.7"/></svg>Members</a>
+      <a href="#"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1v.3a2 2 0 1 1-4 0v-.2a1.6 1.6 0 0 0-2.8-1.1l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 3.5 15H3a2 2 0 1 1 0-4h.2A1.6 1.6 0 0 0 4.3 8.2l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 9.9 4.3V4a2 2 0 1 1 4 0v.2a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0 1.1 2.7h.3a2 2 0 1 1 0 4h-.2a1.6 1.6 0 0 0-1.2 1.2z"/></svg>Settings</a>
+    </nav>
+    <div class="who">
+      <div class="av">AT</div>
+      <div><div class="n">Aroma Tahir</div><div class="r">Instructor</div></div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="top">
+      <div>
+        <h1>Course Builder</h1>
+        <div class="sub">Describe a course and it plans the whole thing.</div>
+      </div>
+      <span class="chip">Prototype</span>
+    </div>
+
+    <div class="content">
+
+      <div class="card">
+        <h2>What should this course teach?</h2>
+        <p class="hint">Only the topic is required. Fill in as much or as little of the rest as
+          you like — anything left blank is chosen for you, and you will be told what was assumed.</p>
+        <div class="grid">
+          <div class="full">
+            <label for="topic">Course topic</label>
+            <input id="topic" placeholder="Using WhatsApp Business to take orders without losing any">
+          </div>
+          <div>
+            <label for="duration">Duration <span class="opt">· optional</span></label>
+            <input id="duration" placeholder="about 15 minutes">
+          </div>
+          <div>
+            <label for="audience">Audience <span class="opt">· optional</span></label>
+            <input id="audience" placeholder="shopkeepers with a smartphone">
+          </div>
+          <div class="full">
+            <label for="description">What it should cover <span class="opt">· optional</span></label>
+            <textarea id="description" placeholder="Anything the course must include, or avoid."></textarea>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="btn-primary" id="go">Plan the course</button>
+          <button class="btn-ghost" id="clear" type="button">Clear</button>
+          <span class="status" id="status"></span>
+        </div>
+      </div>
+
+      <div id="out">
+        <div class="card">
+          <div class="course-title" id="c-title"></div>
+          <p class="course-sum" id="c-summary"></p>
+          <div class="scenario"><b>Running scenario ·</b> <span id="c-scenario"></span></div>
+        </div>
+
+        <div class="stats" id="c-stats"></div>
+
+        <div id="c-modules"></div>
+
+        <div class="card" id="c-assume-wrap" style="display:none">
+          <h2>What was assumed</h2>
+          <p class="hint">These were not specified, so they were chosen. Correct any of them in
+            the description and plan again.</p>
+          <ul class="assume" id="c-assume"></ul>
+        </div>
+
+        <div class="note" style="margin-top:16px">
+          <b>Nothing has been built yet.</b> Planning is free. Turning these lessons into
+          finished videos costs money and takes hours, so it is a separate, confirmed step.
+        </div>
+      </div>
+
+      <div class="foot">
+        Course Builder prototype · plans are generated fresh and are not stored on this server.<br>
+        The demo plans up to 5 courses an hour.
+      </div>
+
     </div>
   </div>
-
-  <div id="out">
-    <div class="course-head">
-      <h2 id="c-title"></h2>
-      <p id="c-summary"></p>
-      <div class="scenario"><b>Running scenario:</b> <span id="c-scenario"></span></div>
-    </div>
-
-    <div class="est" id="c-est"></div>
-
-    <div id="c-modules" style="display:flex;flex-direction:column;gap:14px"></div>
-
-    <div id="c-assume-wrap" class="panel" style="display:none">
-      <label>What it assumed</label>
-      <ul class="assume" id="c-assume"></ul>
-    </div>
-
-    <div class="warn">
-      <b>Building is not wired to this button.</b> Planning is free; building every lesson
-      into a finished video costs real money and hours of machine time, so it is a separate
-      API call that refuses unless the caller confirms the exact lesson count —
-      <span style="font-family:var(--mono)">POST /api/v1/courses/build</span>. See the
-      technical handoff.
-    </div>
-  </div>
-
-  <footer>
-    Prototype · Content Queen for Taleemabad University<br>
-    Plans are generated fresh each time and are not stored on this server.
-  </footer>
 </div>
 
 <script>
@@ -172,9 +287,36 @@ footer{font-family:var(--mono);font-size:11.5px;color:var(--muted);border-top:1p
       function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; });
   };
 
-  function setStatus(msg, isErr) {
-    $('status').textContent = msg;
+  function setStatus(html, isErr) {
+    $('status').innerHTML = html;
     $('status').className = 'status' + (isErr ? ' err' : '');
+  }
+
+  function stat(n, k) {
+    return '<div class="stat"><div class="n">' + esc(n) + '</div><div class="k">' + esc(k) + '</div></div>';
+  }
+
+  function lesson(l, i) {
+    var q = l.question || {};
+    var opts = (q.options || []).map(function (o, oi) {
+      return '<li class="' + (oi === q.correctIndex ? 'correct' : '') + '">' + esc(o) +
+        (oi === q.correctIndex ? ' ✓' : '') + '</li>';
+    }).join('');
+    var lvl = String(l.difficulty || '').toLowerCase();
+    return '<div class="les">' +
+      '<div class="dot">' + i + '</div>' +
+      '<div style="min-width:0">' +
+        '<div class="t">' + esc(l.title) +
+          '<span class="pill ' + esc(lvl) + '">' + esc(l.difficulty) + '</span></div>' +
+        '<div class="slo">' + esc(l.slo) + '</div>' +
+        '<details><summary>Lesson brief and check question</summary>' +
+          '<div class="q">' + esc(l.brief) + '</div>' +
+          '<div class="q"><div class="stem">' + esc(q.stem) + '</div>' +
+            '<ol type="A">' + opts + '</ol>' +
+            '<div class="exp">' + esc(q.explanation) + '</div>' +
+          '</div>' +
+        '</details>' +
+      '</div></div>';
   }
 
   function render(p) {
@@ -183,15 +325,19 @@ footer{font-family:var(--mono);font-size:11.5px;color:var(--muted);border-top:1p
     $('c-scenario').textContent = p.protagonist_scenario;
 
     var e = p.estimate || {};
-    $('c-est').innerHTML =
-      cell(e.lessons, 'lessons / videos') +
-      cell('$' + e.estimatedCostUsd, 'to build') +
-      cell(Math.round((e.estimatedBuildMinutes || 0) / 60) + 'h', 'build time') +
-      cell(e.estimatedWatchMinutes + ' min', 'watch time');
+    $('c-stats').innerHTML =
+      stat(e.lessons, 'lessons · one video each') +
+      stat(e.estimatedWatchMinutes + ' min', 'total watch time') +
+      stat('$' + e.estimatedCostUsd, 'cost to build') +
+      stat(Math.round((e.estimatedBuildMinutes || 0) / 60) + ' hrs', 'time to build');
 
     $('c-modules').innerHTML = (p.modules || []).map(function (m, mi) {
-      return '<div class="mod"><h3>' + (mi + 1) + '. ' + esc(m.title) + '</h3>' +
-        m.lessons.map(function (l, li) { return lesson(l, mi + 1, li + 1); }).join('') +
+      return '<div class="mod">' +
+        '<div class="mod-h"><div class="num">' + (mi + 1) + '</div>' +
+        '<div><div class="t">' + esc(m.title) + '</div>' +
+        '<div class="c">' + m.lessons.length + ' lesson' + (m.lessons.length === 1 ? '' : 's') + '</div>' +
+        '</div></div>' +
+        m.lessons.map(function (l, li) { return lesson(l, li + 1); }).join('') +
         '</div>';
     }).join('');
 
@@ -203,44 +349,24 @@ footer{font-family:var(--mono);font-size:11.5px;color:var(--muted);border-top:1p
     $('out').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  function cell(n, k) {
-    return '<div><div class="n">' + esc(n) + '</div><div class="k">' + esc(k) + '</div></div>';
-  }
-
-  function lesson(l, m, i) {
-    var q = l.question || {};
-    var opts = (q.options || []).map(function (o, oi) {
-      return '<li class="' + (oi === q.correctIndex ? 'correct' : '') + '">' + esc(o) +
-        (oi === q.correctIndex ? ' ✓' : '') + '</li>';
-    }).join('');
-    return '<div class="lesson">' +
-      '<div class="num">' + m + '.' + i + '</div>' +
-      '<div>' +
-        '<h4>' + esc(l.title) + '<span class="pill">' + esc(l.difficulty) + '</span></h4>' +
-        '<div class="slo">' + esc(l.slo) + '</div>' +
-        '<details><summary>brief and check question</summary>' +
-          '<div class="q"><div>' + esc(l.brief) + '</div></div>' +
-          '<div class="q"><div class="stem">' + esc(q.stem) + '</div>' +
-          '<ol type="A">' + opts + '</ol>' +
-          '<div class="exp">' + esc(q.explanation) + '</div></div>' +
-        '</details>' +
-      '</div></div>';
-  }
+  $('clear').addEventListener('click', function () {
+    ['topic', 'duration', 'audience', 'description'].forEach(function (id) { $(id).value = ''; });
+    $('out').classList.remove('on');
+    setStatus('');
+    $('topic').focus();
+  });
 
   $('go').addEventListener('click', async function () {
     var topic = $('topic').value.trim();
-    var token = $('token').value.trim();
-    if (!topic) { setStatus('A topic is required.', true); return; }
-    if (!token) { setStatus('The API token is required.', true); return; }
+    if (!topic) { setStatus('Enter a course topic to begin.', true); $('topic').focus(); return; }
 
     $('go').disabled = true;
-    // Planning is a single model call and genuinely takes over a minute; say so
-    // rather than letting it look hung.
-    setStatus('Planning… this takes about a minute.');
+    // Planning genuinely takes about a minute; say so rather than look hung.
+    setStatus('<span class="spin"></span>Planning your course — this takes about a minute.');
     try {
-      var res = await fetch('/api/v1/courses/plan', {
+      var res = await fetch('/demo/course-builder/plan', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           topic: topic,
           duration: $('duration').value.trim() || undefined,
@@ -249,14 +375,19 @@ footer{font-family:var(--mono);font-size:11.5px;color:var(--muted);border-top:1p
         }),
       });
       var body = await res.json();
-      if (!res.ok) throw new Error(body.message || ('HTTP ' + res.status));
+      if (!res.ok) throw new Error(body.message || ('Something went wrong (HTTP ' + res.status + ').'));
       render(body);
-      setStatus('Planned ' + body.estimate.lessons + ' lessons.');
+      setStatus('Planned ' + body.estimate.lessons + ' lessons across '
+        + body.modules.length + ' module' + (body.modules.length === 1 ? '' : 's') + '.');
     } catch (err) {
-      setStatus(err.message, true);
+      setStatus(esc(err.message), true);
     } finally {
       $('go').disabled = false;
     }
+  });
+
+  $('topic').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') $('go').click();
   });
 })();
 </script>

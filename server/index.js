@@ -68,8 +68,7 @@ app.get('/demo/quiz', (_req, res) => {
 });
 app.get('/demo', (_req, res) => res.redirect(302, '/demo/quiz'));
 
-/** The course-builder prototype. Calls /api/v1/courses/plan with a token the
- *  operator pastes in, so no credential is baked into the page. */
+/** The course-builder prototype. Needs no credential — see the demo planner below. */
 const COURSE_FILE = path.join(__dirname, '..', 'prototypes', 'course-builder.html');
 app.get('/demo/course-builder', (_req, res) => {
   if (!fs.existsSync(COURSE_FILE)) {
@@ -77,6 +76,62 @@ app.get('/demo/course-builder', (_req, res) => {
   }
   res.set('Cache-Control', 'public, max-age=300');
   res.type('html').send(fs.readFileSync(COURSE_FILE, 'utf8'));
+});
+
+/**
+ * Planning for the demo page, with no token required.
+ *
+ * The token was removed so anyone handed the link can try it. That makes this
+ * an unauthenticated endpoint that spends real money on every call -- roughly
+ * $0.64 a plan -- so it is rate limited instead. Without a limit, one crawler
+ * or one shared link is an open tap on the model budget.
+ *
+ * Limits are per running container and reset on redeploy. That is fine for a
+ * prototype and deliberately not presented as security: the protection here is
+ * that the URL is unlisted and the cost per caller is capped, not that callers
+ * are identified. The real API at /api/v1/courses/plan still requires a token.
+ */
+const DEMO_LIMIT = { perIpPerHour: 5, globalPerHour: 40 };
+const demoHits = [];           // timestamps, newest last
+const demoByIp = new Map();    // ip -> timestamps
+
+function demoRateCheck(ip) {
+  const now = Date.now();
+  const hourAgo = now - 3600_000;
+  while (demoHits.length && demoHits[0] < hourAgo) demoHits.shift();
+  const mine = (demoByIp.get(ip) || []).filter((t) => t >= hourAgo);
+
+  if (demoHits.length >= DEMO_LIMIT.globalPerHour) {
+    return { ok: false, why: 'This demo has planned as many courses as it is allowed to '
+      + 'this hour. Try again shortly, or use the API with a token.' };
+  }
+  if (mine.length >= DEMO_LIMIT.perIpPerHour) {
+    return { ok: false, why: `The demo allows ${DEMO_LIMIT.perIpPerHour} plans an hour. `
+      + 'Try again later, or use the API with a token for unlimited planning.' };
+  }
+  mine.push(now);
+  demoByIp.set(ip, mine);
+  demoHits.push(now);
+  // Keep the per-IP map from growing without bound on a long-lived container.
+  if (demoByIp.size > 500) {
+    for (const [k, v] of demoByIp) if (!v.some((t) => t >= hourAgo)) demoByIp.delete(k);
+  }
+  return { ok: true };
+}
+
+app.post('/demo/course-builder/plan', async (req, res) => {
+  const ip = req.ip || 'unknown';
+  const gate = demoRateCheck(ip);
+  if (!gate.ok) return res.status(429).json({ error: 'rate_limited', message: gate.why });
+
+  try {
+    const plan = await require('./lib/course-planner')
+      .plan(req.body || {}, { log: (m) => console.log('[demo-course]', m) });
+    res.json(plan);
+  } catch (e) {
+    console.error('[demo-course]', e.message);
+    res.status(e.status || 500).json({ error: 'plan_failed', message: e.message });
+  }
 });
 
 /**

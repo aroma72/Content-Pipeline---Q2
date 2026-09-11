@@ -95,7 +95,7 @@ footer a{color:var(--accent)}
     <dd><a href="https://content-queen-production.up.railway.app">https://content-queen-production.up.railway.app</a></dd>
     <dt>Try it</dt>
     <dd><a href="https://content-queen-production.up.railway.app/demo/course-builder">/demo/course-builder</a>
-      — the working planner. Paste the token below and type a topic.</dd>
+      — the working planner. No credential needed: just type a topic. Rate limited to 5 plans an hour.</dd>
     <dt>Discover</dt>
     <dd><a href="https://content-queen-production.up.railway.app/api/v1">GET /api/v1</a>
       — public, machine-readable list of every route on this service.</dd>
@@ -103,8 +103,7 @@ footer a{color:var(--accent)}
 
   <section>
     <h2>Authentication</h2>
-    <p class="sub">The same bearer token as the checkpoint API. Server to server — never from
-      a browser, or you ship the token to every learner.</p>
+    <p class="sub">The same bearer token as the checkpoint API, required on every <code>/api/v1</code> route. Server to server — never from a browser, or you ship the token to every learner. (The <code>/demo</code> planner is deliberately open and rate limited, so you can try the idea before wiring anything.)</p>
     <div class="cred">
       <div class="hdr">credential · treat as a password</div>
       <div class="body">
