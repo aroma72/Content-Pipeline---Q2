@@ -444,7 +444,17 @@ module.exports = Object.assign(module.exports, {
     // at two attempts -- art that fails twice is a prompt problem, not a dice
     // roll, and looping on a paid generator is how a bug becomes an invoice.
     await repairArt();
-    await sensor('qa-art.js', 'anatomy/rendering defects in the generated art');
+    // Redraftable, unlike the other image-level checks, because repairArt has
+    // already re-rolled the rejected images twice with the SAME prompt by the time
+    // this runs. A defect that survives two re-rolls is in the prompt, not the dice:
+    // measured on one run, "stack of papers merging into the torso" and "readable
+    // numbers are present" -- a composition the wording invites, and a no-text rule
+    // the wording did not carry. Both are fixed by rewriting that beat, and its
+    // findings name the beat ids, so they are a redraft brief. Rejecting instead
+    // meant the strictest check could only ever throw a video away, never improve
+    // one. A redraft regenerates art for the beats that changed, not all of them.
+    await sensor('qa-art.js', 'anatomy/rendering defects in the generated art',
+      { redraftable: true });
 
     // 3. cutout
     log('segmenting cutouts');
