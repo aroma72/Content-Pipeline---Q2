@@ -174,6 +174,58 @@ async function beatChecks() {
     return names.join(',');
   });
 
+  // --- 4a2. Reading the model's reply --------------------------------------
+  // A script draft failed three times in production with "JSON in reply is
+  // unbalanced (truncated output?)" on replies that ended in a complete `}]}`.
+  // They were not truncated: they were complete and INVALID, and the one message
+  // covering both sent three identical retries after the wrong problem.
+  console.log('\n3a2. telling a truncated reply from an invalid one');
+
+  const extractJson = (() => {
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'llm-cli.js'), 'utf8');
+    const grab = (name) => {
+      const m = src.match(new RegExp('function ' + name + '[\\s\\S]*?\\n\\}\\n'));
+      assert(m, `${name} not found in llm-cli.js`);
+      return m[0];
+    };
+    return eval('(function(){' + grab('extractJson') + grab('escapeControlCharsInStrings')
+      + grab('nearOffset') + 'return extractJson})()');
+  })();
+
+  check('a raw newline inside a string is repaired, not retried', () => {
+    // The malformation a model actually produces: a long art prompt written across
+    // two lines. JSON forbids a literal newline in a string, the span balances, and
+    // the old message blamed truncation.
+    const reply = '{"art":"a cream room, no text\nprops floating","id":"05"}';
+    const parsed = JSON.parse(extractJson(reply));
+    assert(parsed.art.includes('\n'), 'the newline was lost rather than escaped');
+    assert(parsed.id === '05', 'the rest of the object did not survive the repair');
+    return 'escaped, content intact';
+  });
+
+  check('a genuinely truncated reply still says truncated', () => {
+    let msg = null;
+    try { extractJson('{"a":"x","b":[1,2'); } catch (e) { msg = e.message; }
+    assert(msg && /unbalanced|truncated/.test(msg), `wrong message: ${msg}`);
+    return 'unbalanced';
+  });
+
+  check('a complete but invalid reply says so, and shows where', () => {
+    let msg = null;
+    try { extractJson('{"a":1,}'); } catch (e) { msg = e.message; }
+    assert(msg && /complete but invalid/.test(msg), `wrong message: ${msg}`);
+    assert(/Near:/.test(msg), 'the message does not show the offending text');
+    assert(!/truncated/.test(msg), 'still blames truncation');
+    return 'named and located';
+  });
+
+  check('ordinary replies are unaffected', () => {
+    assert(extractJson('here you go: {"x":2} done') === '{"x":2}', 'prose-wrapped object broke');
+    assert(extractJson('```json\n{"y":3}\n```') === '{"y":3}', 'fenced object broke');
+    assert(JSON.parse(extractJson('[{"a":{"b":[1]}}]'))[0].a.b[0] === 1, 'nesting broke');
+    return 'prose, fences and nesting';
+  });
+
   // --- 4b. The mandatory CHECKPOINT ----------------------------------------
   // SCRIPTING_STANDARDS 3b (2026-09-11) replaced the on-screen QUESTION -> REVEAL
   // cards with a beat that is never drawn and never spoken: the player pauses and

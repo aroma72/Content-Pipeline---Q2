@@ -110,6 +110,7 @@ function extractJson(text) {
   // longest span that actually parses.
   let best = null;
   let sawOpening = false;
+  let balancedButInvalid = null;   // a complete span that JSON.parse rejected
   for (let i = 0; i < body.length; i++) {
     if (body[i] !== '{' && body[i] !== '[') continue;
     sawOpening = true;
@@ -118,14 +119,68 @@ function extractJson(text) {
     try {
       JSON.parse(span);
       if (!best || span.length > best.length) best = span;
-    } catch { /* not the JSON we want; keep looking */ }
+    } catch (e) {
+      // Balanced but not valid. Worth remembering: this is a DIFFERENT failure
+      // from a truncated reply and needs a different fix, and reporting it as
+      // truncation sent three identical retries after the wrong problem.
+      if (!balancedButInvalid || span.length > balancedButInvalid.span.length) {
+        balancedButInvalid = { span, error: e.message };
+      }
+    }
     // Skip past this span -- anything nested inside it is not a better candidate.
     if (span) i += span.length - 1;
   }
 
   if (best) return best;
+
+  // One repair, for the one malformation a model actually produces often: a raw
+  // newline or tab inside a string. JSON forbids literal control characters
+  // there, and a long art prompt written across two lines trips it. Escaping
+  // them changes no content, so it is safe to do silently -- unlike guessing at
+  // a missing brace, which would invent structure.
+  if (balancedButInvalid) {
+    const repaired = escapeControlCharsInStrings(balancedButInvalid.span);
+    if (repaired !== balancedButInvalid.span) {
+      try { JSON.parse(repaired); return repaired; } catch { /* report the original */ }
+    }
+    throw new Error(
+      `JSON in reply is complete but invalid: ${balancedButInvalid.error}. ` +
+      `Near: ${nearOffset(balancedButInvalid.span, balancedButInvalid.error)}`
+    );
+  }
+
   if (!sawOpening) throw new Error('no JSON object or array found in reply');
   throw new Error('JSON in reply is unbalanced (truncated output?)');
+}
+
+/**
+ * Escape raw newlines, tabs and other control characters that appear INSIDE
+ * JSON strings. Everything outside a string is left exactly as it was.
+ */
+function escapeControlCharsInStrings(json) {
+  let out = '';
+  let inStr = false;
+  let esc = false;
+  for (const ch of json) {
+    if (esc) { out += ch; esc = false; continue; }
+    if (ch === '\\') { out += ch; esc = true; continue; }
+    if (ch === '"') { out += ch; inStr = !inStr; continue; }
+    if (inStr && ch < ' ') {
+      out += ch === '\n' ? '\\n' : ch === '\r' ? '\\r' : ch === '\t' ? '\\t'
+        : '\\u' + ch.charCodeAt(0).toString(16).padStart(4, '0');
+      continue;
+    }
+    out += ch;
+  }
+  return out;
+}
+
+/** The text around the offset a JSON.parse error names, so the fault is visible. */
+function nearOffset(span, message) {
+  const m = /position (\d+)/.exec(message || '');
+  if (!m) return span.slice(0, 120) + '…';
+  const at = Number(m[1]);
+  return '…' + span.slice(Math.max(0, at - 80), at + 80).replace(/\n/g, '\\n') + '…';
 }
 
 /**
