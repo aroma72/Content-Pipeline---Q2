@@ -25,6 +25,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
+const { resolveCommand } = require('../orchestrator/lib/shell');
 
 const REPO = path.resolve(__dirname, '..');
 
@@ -132,14 +133,21 @@ async function waitForLive(slug, local, { minutes = 12 } = {}) {
     try { live = await fetchLive(slug); } catch (e) { log(`  (${e.message})`); }
     if (matches(live, local)) return true;
 
-    // Auto-deploy has been broken before. Rather than wait out the whole
-    // window on a push that will never build, nudge it once at the halfway
-    // mark and say so -- a silent 12-minute wait teaches nobody anything.
-    if (!nudged && Date.now() > deadline - (minutes / 2) * 60_000) {
+    // GitHub push-to-deploy does NOT fire on this service (verified 11 Sep:
+    // two pushes to main produced no build). So the deploy is triggered here
+    // rather than hoped for, early rather than at the halfway mark.
+    if (!nudged) {
       nudged = true;
-      log('  still not live -- triggering a deploy directly (is GitHub auto-deploy working?)');
-      spawnSync('railway', ['up', '--detach', '--service', 'content-queen'],
+      log('  triggering the Railway deploy (GitHub push-to-deploy does not fire here)');
+      // resolveCommand, not a bare name: `railway` on Windows is railway.exe and
+      // a bare spawn is ENOENT -- the trap that made this nudge a silent no-op
+      // the first time. shell:true is not the fix; the repo path has a space.
+      const r = spawnSync(resolveCommand('railway'),
+        ['up', '--detach', '--service', 'content-queen'],
         { cwd: REPO, encoding: 'utf8' });
+      if (r.error || r.status !== 0) {
+        log(`  deploy trigger failed: ${r.error ? r.error.code : 'exit ' + r.status}`);
+      }
     }
     await sleep(20_000);
   }

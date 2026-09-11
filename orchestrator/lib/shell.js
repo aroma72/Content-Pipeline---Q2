@@ -50,6 +50,14 @@ function resolveCommand(cmd) {
 const LOCALAPPDATA = process.env.LOCALAPPDATA || '';
 const APPDATA = process.env.APPDATA || '';
 const EXTRA_LOOKUP = {
+  // Same batch-wrapper problem as `claude`: `railway` on PATH is railway.CMD,
+  // and Node refuses to spawn a .cmd without shell:true. Spawning the wrapper
+  // returned status null and the deploy nudge became a silent no-op -- a publish
+  // reported FAILED with no explanation. The npm wrapper only calls this .exe.
+  railway: APPDATA ? [
+    path.join(APPDATA, 'npm', 'node_modules', '@railway', 'cli', 'bin', 'railway.exe'),
+  ] : [],
+
   python: LOCALAPPDATA ? [
     path.join(LOCALAPPDATA, 'Programs', 'Python', 'Python314', 'python.exe'),
     path.join(LOCALAPPDATA, 'Programs', 'Python', 'Python313', 'python.exe'),
