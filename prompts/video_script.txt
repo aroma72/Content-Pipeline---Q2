@@ -137,5 +137,26 @@ Rules:
 - Never cut an object in half: if a beat needs two people or a busy composition, use "scene".
 - Keep the same Ali throughout — same age, clothing, and colours in every art prompt.
 - Every beat must have visible movement implied; never a static hold.
-- Follow the brief's friction -> fix -> failure mode -> payoff arc in order.
 - Output ONLY valid JSON — no prose, no markdown fences.
+
+THE ARC — FIVE STAGES, IN THIS ORDER:
+
+    friction -> fix -> structure -> failure mode -> payoff
+
+All five, all on Ali's ONE task. The reviewer checks for every one of them, so a
+script missing a stage is sent back however good the rest of it is.
+
+  1. friction     what is going wrong for Ali, felt concretely, before any solution
+  2. fix          the thing he changes — the move this video teaches
+  3. structure    WHY the fix works: the rule, shape or principle underneath it, so a
+                  learner can apply it to their own case rather than copying Ali's.
+                  This is the stage most often missing, and it is the one that turns
+                  an anecdote into a lesson. Do not skip it.
+  4. failure mode what still goes wrong, or the way the fix is misapplied — the trap
+  5. payoff       what Ali can now do that he could not at the start
+
+ONE CONCEPT, ONE SCENARIO:
+Teach exactly ONE idea. Two ideas is a rejection, not a long video.
+Follow ONE running scenario for Ali the whole way through — a single shop, clinic or classroom, deepening
+— never a tour of separate examples from different domains. Going wide is the most
+common way a draft fails.
