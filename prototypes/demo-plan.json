@@ -1,0 +1,201 @@
+{
+  "title": "Taking Orders on WhatsApp Business Without Losing Any",
+  "summary": "A short, practical course for small shopkeepers in Pakistan who already take orders on WhatsApp but keep losing them in the chat scroll. You follow Ali, who runs a small general store in Lahore and gets forty to fifty order messages a day, as he moves from a messy chat list to a system that catches every order. You will set up a business profile that answers the questions customers ask first, use labels and the catalogue so no chat gets forgotten, write an order down in one fixed format, confirm and collect payment so nothing is disputed, and run a two-minute end-of-day check that catches the orders that still slipped through. Every lesson is one short video with one thing to do afterwards, on Ali's one shop.",
+  "audience": "Small shopkeepers in Pakistan who run a shop and take customer orders over WhatsApp on a phone. No computer skills assumed. Assumes they can already install an app and send a WhatsApp message.",
+  "protagonist_scenario": "Ali runs a small general store in a Lahore neighbourhood. He gets around forty-five WhatsApp messages a day — atta, cooking oil, milk, soap — mixed in with family chats. Last month he forgot a 2,300 rupee Ramzan order, the customer went to the shop across the road, and Ali decided to fix how he takes orders. The whole course follows Ali fixing this one problem on this one phone.",
+  "modules": [
+    {
+      "title": "Setting the shop up so orders arrive clean",
+      "summary": "Ali stops orders from getting lost before they even reach him — a separate business number, a profile that answers the usual questions, and a greeting that tells the customer how to order properly.",
+      "lessons": [
+        {
+          "title": "Separate the shop number from the personal number",
+          "slo": "Given a phone where shop orders and family chats arrive in the same WhatsApp, the learner can list the steps to put shop orders on WhatsApp Business on a second number.",
+          "difficulty": "novice",
+          "brief": "Ali's aunt's wedding photos and a customer's 2,300 rupee order sit in the same chat list, and the order scrolls away by evening. The friction is that personal chats push orders down the list, so he cannot see at a glance what is pending. The fix is installing WhatsApp Business on a second SIM number so the shop's chat list contains only customers, and telling regular customers the new number once.",
+          "question": {
+            "stem": "Ali installs WhatsApp Business. What should he do about his number?",
+            "options": [
+              "Use his existing personal number for WhatsApp Business so customers do not have to save a new one",
+              "Put WhatsApp Business on a second number and keep personal WhatsApp on the old one",
+              "Install WhatsApp Business on the same number and delete personal WhatsApp",
+              "Keep taking orders on personal WhatsApp and only use Business for his catalogue"
+            ],
+            "correctIndex": 1,
+            "explanation": "Using the old number (option 1) or deleting personal WhatsApp (option 3) puts family chats and orders back in one list, which is the exact problem — one number can hold only one WhatsApp account, so there is no way to keep both on it. Running orders on personal WhatsApp and Business only for the catalogue (option 4) means the tools that catch lost orders, like labels, never touch the actual order chats. Two numbers keeps the shop's chat list to customers only."
+          }
+        },
+        {
+          "title": "Fill the business profile so customers stop asking the same three questions",
+          "slo": "Given a blank WhatsApp Business profile, the learner can enter the shop address, opening hours, and a one-line description so customers can read them without asking.",
+          "difficulty": "novice",
+          "brief": "Ali answers \"khula hai?\" and \"kahan hai dukaan?\" roughly fifteen times a day, and while he is typing those replies a real order slides up the screen. The friction is that answering repeat questions by hand eats the attention orders need. The fix is filling in the profile — address, hours 9am to 10pm, one line on what the shop sells — so the customer taps the profile and reads it himself.",
+          "question": {
+            "stem": "Customers keep messaging Ali at 11pm asking if the shop is open. What in the profile fixes this best?",
+            "options": [
+              "Setting the business hours in the profile so the closed-now note shows on his shop's page",
+              "Changing his display name to \"Ali General Store 9am-10pm\"",
+              "Putting his hours in his About/status text",
+              "Replying to each late-night message with his timings"
+            ],
+            "correctIndex": 0,
+            "explanation": "The display name (option 2) and About text (option 3) are easy to miss and get cut off on a small screen, so customers still ask. Replying by hand (option 4) is what is stealing his attention from real orders in the first place. Business hours are a proper profile field that customers see when they open the shop's page."
+          }
+        },
+        {
+          "title": "Write a greeting message that tells the customer how to order",
+          "slo": "Given a shop that gets vague messages like \"atta hai?\", the learner can write a greeting message that asks for item, quantity, address, and delivery time in one reply.",
+          "difficulty": "intermediate",
+          "brief": "A new customer messages Ali just \"atta\", and it takes six back-and-forth messages over two hours to get the quantity and address out of him. The friction is that incomplete first messages turn into long chats that are easy to abandon halfway. The fix is a greeting message that fires automatically on the first message and asks for all four things — item, kitni, address, kab chahiye — so most customers send them in one go.",
+          "question": {
+            "stem": "Which greeting message will get Ali the most complete orders?",
+            "options": [
+              "\"Assalam o alaikum, Ali General Store mein khush amdeed. Shukriya.\"",
+              "\"Assalam o alaikum. Order ke liye message karein, hum jaldi jawab denge.\"",
+              "\"Assalam o alaikum. Order likhein is tarah: cheez, kitni, address, kab chahiye. Misal: Atta 10kg, Gulberg block C ghar 42, aaj shaam.\"",
+              "\"Assalam o alaikum. Rate list ke liye 1 likhein, order ke liye 2 likhein.\""
+            ],
+            "correctIndex": 2,
+            "explanation": "Options 1 and 2 are polite but ask for nothing, so the customer still sends \"atta hai?\" and the six-message chase starts again. Option 4 adds a menu step the customer has to get through before he can even say what he wants, which loses the impatient ones. The winning greeting names the four fields and shows one real example, so the customer can copy the shape."
+          }
+        }
+      ]
+    },
+    {
+      "title": "Catching every order in the chat list",
+      "summary": "Ali stops relying on memory. A catalogue answers price questions, labels mark which chats are still owed something, and one fixed order format makes every order readable later.",
+      "lessons": [
+        {
+          "title": "Put your top-selling items in the catalogue",
+          "slo": "Given the ten items a shop sells most, the learner can add one item to the WhatsApp Business catalogue with a name, price, and photo.",
+          "difficulty": "intermediate",
+          "brief": "Ali types \"atta 20kg — 2,400\" from memory forty times a week and once quoted 2,200 by mistake, losing 200 rupees on the bag. The friction is that price questions are slow to answer and easy to get wrong. The fix is putting his ten fastest-moving items in the catalogue with photo and price, so he sends the item card in one tap and the price is always the same.",
+          "question": {
+            "stem": "Ali's cooking oil price goes up from 560 to 620 a litre. What should he do?",
+            "options": [
+              "Edit the price on the oil item in the catalogue",
+              "Send a message to all customers saying the old catalogue price is wrong",
+              "Delete the oil item so nobody sees the old price",
+              "Leave the catalogue and just type the new price when someone asks"
+            ],
+            "correctIndex": 0,
+            "explanation": "Deleting the item (option 3) loses the photo and description he already made, and customers can no longer see he stocks oil at all. Broadcasting a correction (option 2) or typing the price by hand (option 4) leaves 560 sitting in the catalogue, so the next customer sees the wrong number and expects to pay it. The catalogue is meant to be edited — one price change fixes every future quote."
+          }
+        },
+        {
+          "title": "Label a chat the moment an order comes in",
+          "slo": "Given a chat list where pending orders look the same as finished ones, the learner can apply a label such as New Order, Paid, or Delivered to a chat and filter the list by that label.",
+          "difficulty": "intermediate",
+          "brief": "By 8pm Ali has thirty chats on his screen and cannot tell which four still owe a delivery. The friction is that a read chat and a done chat look identical, so he scrolls and guesses. The fix is tapping a label on the chat the moment the order lands — New Order, Paid, Delivered — and then filtering to New Order to see exactly what is still pending.",
+          "question": {
+            "stem": "A customer orders 5kg sugar. Ali reads the message but is serving someone at the counter. What should he do first?",
+            "options": [
+              "Reply \"ok\" so the customer knows he saw it, and label it later",
+              "Mark the chat unread so it stays bold in the list",
+              "Put the New Order label on the chat straight away",
+              "Star the customer's message so he can find it later"
+            ],
+            "correctIndex": 2,
+            "explanation": "Replying \"ok\" and starring (options 1 and 4) leave no mark on the chat list itself, so at 8pm the chat looks like every other read chat. Marking unread (option 2) helps for one chat but breaks down once six chats are bold and he cannot tell which are orders and which are price questions. Labelling immediately means he can filter to New Order and see every pending order in one screen."
+          }
+        },
+        {
+          "title": "Write every order in one fixed format",
+          "slo": "Given a customer's messy order message, the learner can rewrite it in the shop's fixed four-line format — item and quantity, address, delivery time, total — and send it back in the chat.",
+          "difficulty": "intermediate",
+          "brief": "A customer sends Ali six separate voice notes and messages: \"atta\", \"nahi 10kg karo\", \"ghar pe bhej dena\", \"wohi wala address\". The friction is that the real order is scattered across a chat, so Ali or his delivery boy has to rebuild it later and gets it wrong. The fix is Ali typing the whole order back in the same four lines every time, which becomes the one message he and the delivery boy read.",
+          "question": {
+            "stem": "Why should Ali retype the order in a fixed format and send it back, instead of just scrolling the chat when packing?",
+            "options": [
+              "It makes the chat look more professional to the customer",
+              "It becomes one message that holds the full order, so nothing is rebuilt from scattered messages",
+              "It stops the customer from changing the order afterwards",
+              "It saves storage on his phone"
+            ],
+            "correctIndex": 1,
+            "explanation": "Looking professional (option 1) is a side benefit, not the reason orders get lost. It does not stop changes (option 3) — a customer can still message again, but then Ali resends the corrected four lines. Storage (option 4) has nothing to do with it. The point is that one complete message replaces scrolling back through six half-messages while packing."
+          }
+        }
+      ]
+    },
+    {
+      "title": "Closing the order without disputes or leaks",
+      "summary": "The order is written down — now Ali gets a clear yes, records the payment in the same chat, and runs a short daily check that catches the few orders that still slip.",
+      "lessons": [
+        {
+          "title": "Get a clear yes before you pack the order",
+          "slo": "Given a written order sent back to the customer, the learner can write a confirmation line that asks for a one-word yes and can decide when an order counts as confirmed.",
+          "difficulty": "intermediate",
+          "brief": "Ali packs a 1,800 rupee order, sends the delivery boy, and the customer says \"maine to sirf pooch raha tha\" — the goods come back and the milk is spoiled. The friction is that Ali treats a quote as an order. The fix is ending the four-line order with \"Confirm karne ke liye HAAN likhein\" and only moving the chat to Confirmed when that word arrives.",
+          "question": {
+            "stem": "Ali sends the order summary. The customer replies with a thumbs-up emoji only. What should Ali do?",
+            "options": [
+              "Treat the thumbs-up as confirmation and pack the order",
+              "Pack it, but note in the chat that the customer did not say haan",
+              "Ask once: \"Order confirm hai? HAAN likh dein\" and wait before packing",
+              "Call the customer instead, as messages are not reliable"
+            ],
+            "correctIndex": 2,
+            "explanation": "Treating a thumbs-up as a yes (options 1 and 2) is exactly the gap that sent spoiled milk back — an emoji can mean \"got it\" rather than \"send it\", and it gives Ali nothing clear to point at later. Calling every customer (option 4) costs time and leaves no written record in the chat at all. One short ask keeps the confirmation in writing where the order already lives."
+          }
+        },
+        {
+          "title": "Record the payment in the chat before you mark it delivered",
+          "slo": "Given a delivered order, the learner can record the amount, payment method, and date as a message in the customer's chat and move the chat's label to Paid.",
+          "difficulty": "advanced",
+          "brief": "Ali's delivery boy brings back 1,400 rupees from three drops but one customer had paid 600 by Easypaisa earlier, and by night nobody can say which. The friction is that money is tracked in Ali's head while orders are tracked in chats. The fix is one line typed in the same chat — \"Received 1,200 cash, 11 Sept\" or \"Received 600 Easypaisa, 11 Sept\" — then moving the label to Paid, so the chat itself is the record.",
+          "question": {
+            "stem": "A customer pays 900 by Easypaisa and sends a screenshot. What is the safest way for Ali to record it?",
+            "options": [
+              "Keep the screenshot in his gallery and mark the chat Paid",
+              "Type \"Received 900 Easypaisa, 11 Sept\" in that customer's chat and move the label to Paid",
+              "Write 900 in his register and move the label to Paid",
+              "Mark the chat Delivered, since delivered means paid"
+            ],
+            "correctIndex": 1,
+            "explanation": "A screenshot in the gallery or a line in a paper register (options 1 and 3) sits away from the chat, so at night Ali is again matching money to customers from memory. Treating Delivered as Paid (option 4) is how a cash-on-delivery amount goes uncollected without anyone noticing. Typing the amount, method, and date inside that customer's chat keeps the money and the order in one place."
+          }
+        },
+        {
+          "title": "Run a two-minute end-of-day check for orders that slipped",
+          "slo": "Given a day's chat list, the learner can filter by label and identify which chats still have an order that was never delivered or never paid.",
+          "difficulty": "advanced",
+          "brief": "Even with labels, Ali finds one chat a week still sitting on New Order from three days ago because he got busy at Maghrib rush. The friction is that a system only works if something checks it. The fix is a two-minute check at closing: filter to New Order, then Confirmed, then Delivered-but-not-Paid, and clear or follow up on each one before he shuts the shutter.",
+          "question": {
+            "stem": "At closing, Ali filters his chats and finds one still labelled Confirmed from two days ago. What does that tell him?",
+            "options": [
+              "The customer never paid and should be called about the money",
+              "The order was confirmed but never delivered, so it needs to go out or be cancelled with the customer",
+              "The label was applied by mistake and should be removed",
+              "The chat is old and can be cleared to tidy the list"
+            ],
+            "correctIndex": 1,
+            "explanation": "Chasing payment (option 1) skips a step — money is only due once the goods have gone out, and these have not. Removing the label or clearing the chat (options 3 and 4) makes the screen tidy while the customer is still waiting, which is precisely how the 2,300 rupee order was lost. Confirmed but not Delivered means goods are owed, so it goes out today or Ali messages the customer to cancel."
+          }
+        }
+      ]
+    }
+  ],
+  "assumptions": [
+    "Twelve minutes at about 2.5 minutes per lesson gives five lessons; nine were planned instead at roughly 2.5 minutes each, because the request said 'about 12 minutes' and the topic needs the full order-to-payment loop. If 12 minutes is a hard cap, drop the catalogue lesson and the greeting-message lesson to land at seven lessons, roughly 17 minutes — say so and the plan will be cut to exactly five.",
+    "Assumed the shopkeeper has an Android smartphone with WhatsApp Business available, and a second SIM or spare number. iPhone-only shopkeepers have the same features but different menu paths.",
+    "Assumed orders are mostly cash on delivery with some Easypaisa/JazzCash, which is the common mix for neighbourhood shops.",
+    "Assumed Urdu-English mixed messaging is normal for these shopkeepers, so example messages are written the way customers actually type.",
+    "Assumed the shop is a general/kiryana store — it is the most common case. If the intended audience is cloth, cosmetics, or food shops, only the example items change, not the lesson structure.",
+    "Assumed no LMS or accounting software is in use; the chat itself is the record."
+  ],
+  "request": {
+    "topic": "Using WhatsApp Business to take orders without losing any",
+    "duration": "about 12 minutes",
+    "audience": "small shopkeepers in Pakistan",
+    "description": null
+  },
+  "estimate": {
+    "lessons": 9,
+    "estimatedCostUsd": 13.5,
+    "estimatedBuildMinutes": 270,
+    "estimatedWatchMinutes": 22.5,
+    "note": "Cost is art and text-to-speech per video at the pipeline's measured rate. Build time is wall-clock, one video at a time. Neither is spent until a build is explicitly started."
+  },
+  "plannedAt": "2026-09-11T14:16:53.683Z"
+}

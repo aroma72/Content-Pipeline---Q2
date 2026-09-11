@@ -119,6 +119,39 @@ function demoRateCheck(ip) {
   return { ok: true };
 }
 
+/**
+ * Render a real preview video for one planned lesson.
+ *
+ * The simplest thing that actually works end to end: the lesson's own words,
+ * drawn by the real renderer, in under a minute, for nothing. No art, no
+ * voiceover, no branding -- those are the parts that break, and none of them is
+ * needed to show that a plan becomes a video.
+ */
+app.post('/demo/course-builder/preview', async (req, res) => {
+  const preview = require('./lib/lesson-preview');
+  try {
+    const r = await preview.render((req.body || {}).lesson);
+    res.json({
+      id: r.id,
+      seconds: r.seconds,
+      url: `${req.protocol}://${req.get('host')}/demo/preview/${r.id}.mp4`,
+      note: 'Cards only -- no illustration, narration or branding. A preview of the '
+        + 'content, not a sample of the finished lesson.',
+    });
+  } catch (e) {
+    console.error('[preview]', e.message);
+    res.status(e.status || 500).json({ error: 'preview_failed', message: e.message });
+  }
+});
+
+app.get('/demo/preview/:id.mp4', (req, res) => {
+  const file = require('./lib/lesson-preview').fileFor(req.params.id);
+  if (!file) return res.status(404).type('text').send('No such preview.');
+  res.type('video/mp4');
+  res.set('Cache-Control', 'public, max-age=3600');
+  require('fs').createReadStream(file).pipe(res);
+});
+
 app.post('/demo/course-builder/plan', async (req, res) => {
   const ip = req.ip || 'unknown';
   const gate = demoRateCheck(ip);

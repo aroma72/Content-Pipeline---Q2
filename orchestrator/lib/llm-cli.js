@@ -154,6 +154,23 @@ function schemaInstruction(schema) {
   ].join('\n');
 }
 
+/**
+ * Undo the one wrapper the model reliably adds by mistake.
+ *
+ * Asked for an object, it intermittently replies `[ {...} ]` -- the content
+ * correct, the wrapper wrong. checkShape then rejected it as "expected an
+ * object, got array" and an entire paid call was thrown away. Unwrapping a
+ * single-element array costs nothing and cannot hide a real shape error: a
+ * genuinely wrong reply still fails the checks below.
+ */
+function unwrapAccidentalArray(value, schema) {
+  if (!schema || schema.type !== 'object') return value;
+  if (!Array.isArray(value) || value.length !== 1) return value;
+  const inner = value[0];
+  if (!inner || typeof inner !== 'object' || Array.isArray(inner)) return value;
+  return inner;
+}
+
 /** Reject a reply that parsed but is the wrong shape, before a stage trusts it. */
 function checkShape(value, schema) {
   if (!schema || !schema.type) return;
@@ -321,6 +338,7 @@ async function askJson({
       `${dumped} Starts: ${head} ... Ends: ${tail}`
     );
   }
+  parsed = unwrapAccidentalArray(parsed, schema);
   checkShape(parsed, schema);
   return parsed;
 }

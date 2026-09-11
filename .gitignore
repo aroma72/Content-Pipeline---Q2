@@ -105,3 +105,8 @@ fashion-tech-*/node_modules/
 # Windows shortcuts
 *.lnk
 
+
+# Rendered lesson previews — regenerated on demand, never source.
+.previews/
+explainer-videos/testing/lesson-preview/
+explainer-videos/testing/render-smoke/

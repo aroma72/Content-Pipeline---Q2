@@ -168,6 +168,15 @@ details[open] summary::before{content:'▾ '}
 .q li.correct{color:#15803D;font-weight:600}
 .q .exp{color:var(--muted);font-size:13.5px;border-top:1px solid var(--line);padding-top:9px;margin-top:4px}
 
+.pv{margin-top:10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.pv button{font-size:13.5px;padding:7px 14px;border-radius:8px;background:#fff;
+  color:var(--blue);border:1px solid #C7D2FE;font-weight:600}
+.pv button:hover:not(:disabled){background:var(--blue-soft)}
+.pv button:disabled{opacity:.55;cursor:default}
+.pv .msg{font-size:13px;color:var(--muted)}
+.pv .msg.err{color:var(--red)}
+video.preview{width:100%;max-width:620px;margin-top:10px;border-radius:10px;
+  border:1px solid var(--line);display:block;background:#000}
 .note{background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;padding:15px 17px;
   font-size:14.5px;color:#78350F}
 .note b{font-weight:700}
@@ -337,7 +346,7 @@ ul.assume li{margin:4px 0}
     return '<div class="stat"><div class="n">' + esc(n) + '</div><div class="k">' + esc(k) + '</div></div>';
   }
 
-  function lesson(l, i) {
+  function lesson(l, i, mi, li) {
     var q = l.question || {};
     var opts = (q.options || []).map(function (o, oi) {
       return '<li class="' + (oi === q.correctIndex ? 'correct' : '') + '">' + esc(o) +
@@ -352,6 +361,10 @@ ul.assume li{margin:4px 0}
         '<div class="slo">' + esc(l.slo) + '</div>' +
         '<details><summary>Lesson brief and check question</summary>' +
           '<div class="q">' + esc(l.brief) + '</div>' +
+          '<div class="pv" data-m="' + mi + '" data-l="' + li + '">' +
+            '<button class="pv-go">Render a preview video</button>' +
+            '<span class="msg">About a minute. Cards only — no art, voice or branding.</span>' +
+          '</div>' +
           '<div class="q"><div class="stem">' + esc(q.stem) + '</div>' +
             '<ol type="A">' + opts + '</ol>' +
             '<div class="exp">' + esc(q.explanation) + '</div>' +
@@ -378,7 +391,7 @@ ul.assume li{margin:4px 0}
         '<div><div class="t">' + esc(m.title) + '</div>' +
         '<div class="c">' + m.lessons.length + ' lesson' + (m.lessons.length === 1 ? '' : 's') + '</div>' +
         '</div></div>' +
-        m.lessons.map(function (l, li) { return lesson(l, li + 1); }).join('') +
+        m.lessons.map(function (l, li) { return lesson(l, li + 1, mi, li); }).join('') +
         '</div>';
     }).join('');
 
@@ -395,6 +408,46 @@ ul.assume li{margin:4px 0}
     $('out').classList.add('on');
     $('out').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
+
+  // Render a real preview for one lesson. This is the whole chain that works
+  // today: a planned lesson in, an actual video out, nothing bought.
+  document.addEventListener('click', async function (ev) {
+    var btn = ev.target.closest && ev.target.closest('.pv-go');
+    if (!btn) return;
+    var box = btn.parentElement;
+    var msg = box.querySelector('.msg');
+    var mi = Number(box.dataset.m), li = Number(box.dataset.l);
+    var lesson = plan && plan.modules[mi] && plan.modules[mi].lessons[li];
+    if (!lesson) { msg.textContent = 'Plan a course first.'; return; }
+
+    btn.disabled = true;
+    msg.className = 'msg';
+    msg.innerHTML = '<span class="spin"></span>Rendering — about a minute.';
+    var old = box.parentElement.querySelector('video.preview');
+    if (old) old.remove();
+
+    try {
+      var res = await fetch('/demo/course-builder/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lesson: lesson }),
+      });
+      var body = await res.json();
+      if (!res.ok) throw new Error(body.message || ('HTTP ' + res.status));
+      var v = document.createElement('video');
+      v.className = 'preview';
+      v.controls = true;
+      v.src = body.url;
+      box.parentElement.appendChild(v);
+      msg.textContent = body.seconds + ' seconds, silent. Press play.';
+      v.play().catch(function () { /* autoplay may be blocked; the control is there */ });
+    } catch (e) {
+      msg.className = 'msg err';
+      msg.textContent = e.message;
+    } finally {
+      btn.disabled = false;
+    }
+  });
 
   $('clear').addEventListener('click', function () {
     ['topic', 'duration', 'audience', 'description'].forEach(function (id) { $(id).value = ''; });

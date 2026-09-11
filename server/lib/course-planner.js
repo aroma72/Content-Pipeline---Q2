@@ -128,7 +128,22 @@ async function plan(req, { log = () => {} } = {}) {
   ].filter(Boolean).join('\n');
 
   log(`planning course: ${req.topic}`);
-  const draft = await askJson({ log, promptName: 'course_planner', input, schema: SCHEMA });
+  let draft = await askJson({ log, promptName: 'course_planner', input, schema: SCHEMA });
+
+  // The model intermittently returns the plan wrapped in a one-element array,
+  // which failed validation with "expected an object, got array" and lost a
+  // whole paid call. The content was correct; only the wrapper was wrong, so
+  // unwrap it rather than making the user pay for the same plan twice.
+  if (Array.isArray(draft) && draft.length === 1 && draft[0] && draft[0].modules) {
+    log('plan came back wrapped in an array -- unwrapping');
+    draft = draft[0];
+  }
+  if (!draft || !Array.isArray(draft.modules)) {
+    throw Object.assign(
+      new Error('the planner did not return a course (no modules). Try again.'),
+      { status: 502 }
+    );
+  }
 
   return {
     ...draft,
