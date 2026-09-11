@@ -136,7 +136,7 @@ async function execute(item, opts = {}) {
   // would have produced (e.g. an already-written beats.js). Recorded as
   // `skipped`, never `done`, so the run log cannot later be read as evidence
   // that those stages ran and passed.
-  const skipUntil = fromStage ? STAGE_ORDER.indexOf(fromStage) : 0;
+  let skipUntil = fromStage ? STAGE_ORDER.indexOf(fromStage) : 0;
   if (fromStage && skipUntil === -1) {
     throw new Error(`Unknown --from stage '${fromStage}'. Valid: ${STAGE_ORDER.join(', ')}`);
   }
@@ -280,6 +280,25 @@ async function execute(item, opts = {}) {
           });
           state.save(st);
           log.always(name, `NEEDS WORK -> redrafting from '${err.fromStage}' (round ${redrafts}/${MAX_REDRAFTS})`);
+
+          // A rewind can name a stage this run was seeded PAST (--from produce, with
+          // an already-written script on disk). Leaving skipUntil where it is means
+          // the loop below skips that stage again and lands straight back on the
+          // stage that just failed -- which fails identically, because the thing it
+          // asked to have changed was never given the chance to change. Measured on
+          // a real run: eight redraft rounds in one second, then REJECTED, with the
+          // critique never once reaching a writer.
+          if (target < skipUntil) {
+            log.always(name, `redraft reaches behind --from '${fromStage}'; running ` +
+              `'${err.fromStage}' onward for real`);
+            state.recordIntervention(st, {
+              stage: err.fromStage,
+              kind: 'rewound_behind_start',
+              detail: `A redraft from '${name}' needed '${err.fromStage}', which this run `
+                + 'started past. It now runs rather than being skipped again.',
+            });
+            skipUntil = target;
+          }
 
           idx = target - 1;   // the for-loop's idx++ lands on `target`
           rewound = true;

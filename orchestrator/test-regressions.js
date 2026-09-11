@@ -1224,6 +1224,43 @@ async function redraftChecks() {
     console.log(`  FAIL  redraft loop\n          ${e.message}`);
   }
 
+  // A redraft that reaches BEHIND where the run started.
+  //
+  // The Make a Video page writes and gates a script, then produces it as a second,
+  // separately-approved call -- so that run starts at `produce` with the script
+  // seeded from disk. When a produce sensor sent the script back, the rewind landed
+  // on a stage the run was told to skip, so it was skipped again and control fell
+  // straight back onto the stage that had just failed. Measured in production: eight
+  // redraft rounds inside one second, then REJECTED, and the critique never once
+  // reached a writer.
+  try {
+    let drafts = 0, produces = 0;
+    const st = await spine.execute(testItem(), {
+      quiet: true, fromStage: 'produce', stopAfter: 'produce',
+      seedArtifacts: { script: { title: 't', beats: [] } },
+      stageOverrides: {
+        script: stub('script', async () => { drafts++; return { title: 't', beats: [] }; }),
+        gate: stub('gate', async () => ({ verdict: 'READY' })),
+        produce: stub('produce', async () => {
+          produces++;
+          if (produces === 1) {
+            throw new RedraftError('a sensor failed', {
+              fromStage: 'script', feedback: ['half-cut prop on beat 03'], verdict: 'NEEDS WORK',
+            });
+          }
+          return { ok: true };
+        }),
+      },
+    });
+    assert(drafts === 1, `the rewind did not run the writer (drafts: ${drafts})`);
+    assert(produces === 2, `produce ran ${produces} times, expected 2`);
+    assert(st.status === 'done', `run ended ${st.status}, expected done`);
+    pass++; console.log('  PASS  a redraft behind --from runs that stage instead of spinning  (1 redraft, then done)');
+  } catch (e) {
+    failures.push({ name: 'redraft behind --from', message: e.message });
+    console.log(`  FAIL  redraft behind --from\n          ${e.message}`);
+  }
+
   // The critique must actually reach the redrafting stage, or the loop is theatre.
   try {
     let received = null;

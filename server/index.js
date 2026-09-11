@@ -263,7 +263,7 @@ app.post('/demo/make-video/:jobId/produce', (req, res) => {
   job.status = 'producing';
 
   require('./lib/one-video').produce(
-    { itemId: job.script.itemId, budgetUsd },
+    { itemId: job.script.itemId, budgetUsd, brief: job.script.brief },
     {
       log: (m) => console.log(`[produce ${job.id}]`, m),
       onStage: (st) => { job.produce.stage = st; },

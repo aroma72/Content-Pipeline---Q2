@@ -118,7 +118,12 @@ async function produce(req, { log = () => {}, onStage = () => {} } = {}) {
     budgetUsd: Number(req.budgetUsd),
     // The stages before `produce` are not re-run; their output is already on
     // disk. Seeding records them as skipped, never as done.
-    seedArtifacts: { script: { title: item.topic, beats } },
+    seedArtifacts: {
+      script: { title: item.topic, beats },
+      // A produce-stage sensor can send the script back to be redrafted, and the
+      // writer redrafts far worse without the brief it drew the story from.
+      ...(req.brief ? { research: req.brief } : {}),
+    },
     stageOverrides: stageProgress(onStage, log),
   });
 
