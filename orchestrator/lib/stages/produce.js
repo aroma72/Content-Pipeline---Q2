@@ -349,6 +349,14 @@ module.exports = Object.assign(module.exports, {
     // a script that would produce a bad video costs nothing to reject here.
     await sensor('qa-visuals.js', 'the Evals-Grade Visual Standard', { redraftable: true });
     await sensor('qa-cutouts.js', 'half-cut props on cutout beats', { redraftable: true });
+    // Grammar and clarity read beats.js and nothing else, so there is no reason to
+    // learn about them only after paying for art and a voice. Measured: a run got
+    // all the way through art, TTS and the render before failing on "he names the
+    // fear out loud, in her own words, with his son's name in it" -- a mixed-up
+    // pronoun, caught after the spend, with the whole video thrown away for it.
+    // Here the same finding is a redraft brief instead of a write-off.
+    await sensor('eval-text.js', 'grammar and clarity of the spoken and on-screen text',
+      { redraftable: true });
 
     // --- spend gate (ILHAM plan 3.2) -------------------------------------
     // Priced from this video's own beats, and from what is already on disk, so
@@ -599,12 +607,11 @@ module.exports = Object.assign(module.exports, {
       .filter((l) => /^[✅❌]/.test(l))
       .map((l) => ({ ok: l.startsWith('✅'), what: l.slice(1).trim() }));
 
-    // 8. grammar/clarity over every human-readable string -- narration and the
-    // on-screen cards. Last because it reads beats.js, which nothing after the
-    // render changes, and because its findings are line edits: cheap to act on,
-    // and embarrassing to ship.
-    // NOT redraftable: this runs after the render, and rewinding to script here
-    // would discard a finished video over a comma. The findings go to a human.
+    // 8. grammar/clarity, again, over the script as it actually went out. The
+    // first run (before the spend) is where a finding can still be redrafted; this
+    // one catches an edit made between then and here, and is deliberately NOT
+    // redraftable -- rewinding after the render would throw a finished video away
+    // over a comma. Anything it reports goes to a human.
     await sensor('eval-text.js', 'grammar and clarity of the spoken and on-screen text');
 
     const finalPath = path.join(dir, final);

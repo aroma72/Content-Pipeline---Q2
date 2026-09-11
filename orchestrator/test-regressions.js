@@ -474,13 +474,25 @@ async function beatChecks() {
     return 'redraftable';
   });
 
-  check('eval-text stays terminal -- it runs after the render', () => {
+  check('eval-text runs twice: redraftable before the spend, terminal after', () => {
+    // It reads beats.js and nothing else, so learning about a mixed-up pronoun only
+    // AFTER paying for art and a voice threw the whole video away for a line edit --
+    // measured on a real run. Early it is a redraft brief; late it stays terminal,
+    // because rewinding past a finished render would discard it over a comma.
     const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'produce.js'), 'utf8');
-    const at = src.indexOf("sensor('eval-text.js'");
-    const line = src.slice(at, at + 200);
-    // Rewinding to script here would discard a finished video over a comma.
-    assert(!/redraftable/.test(line), 'eval-text would throw away a finished render');
-    return 'terminal by design';
+    const calls = [];
+    let at = -1;
+    while ((at = src.indexOf("sensor('eval-text.js'", at + 1)) !== -1) {
+      calls.push({ at, line: src.slice(at, at + 220) });
+    }
+    assert(calls.length === 2, `expected 2 eval-text calls, found ${calls.length}`);
+    assert(/redraftable/.test(calls[0].line), 'the pre-spend eval-text is not redraftable');
+    assert(!/redraftable/.test(calls[1].line), 'the post-render eval-text would discard a finished video');
+    // The first must genuinely sit before the money, not merely earlier in the file.
+    const gate = src.indexOf('Paid art/TTS not approved');
+    assert(gate > 0 && calls[0].at < gate, 'the redraftable eval-text runs after the spend gate');
+    assert(calls[1].at > gate, 'the terminal eval-text runs before the render');
+    return 'early redraftable, late terminal';
   });
 
   check('a redrafted beat does not reuse the art from the sentence it replaced', () => {
