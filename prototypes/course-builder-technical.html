@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Course Builder — technical handoff</title>
+<style>
+@page{ size:A4; margin:14mm 15mm 13mm; }
+:root{
+  --ink:#26231F; --muted:#615A50; --line:#CFC8BA; --line-soft:#E4DED2;
+  --panel:#FAF8F3; --accent:#8A5A2B; --good:#4A7238; --bad:#B0572F;
+  --sans:'Segoe UI',Arial,sans-serif; --mono:Consolas,'Courier New',monospace;
+  --serif:Georgia,'Times New Roman',serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{font-family:var(--sans);font-size:9.4pt;line-height:1.5;color:var(--ink);background:#fff}
+.page{page-break-after:always}
+.page:last-child{page-break-after:auto}
+.rh{display:flex;justify-content:space-between;align-items:baseline;
+  border-bottom:.6pt solid var(--line);padding-bottom:5pt;margin-bottom:14pt;
+  font-family:var(--mono);font-size:7pt;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.rh b{color:var(--accent);font-weight:500}
+.eyebrow{font-family:var(--mono);font-size:7.5pt;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--accent);margin-bottom:8pt}
+h1{font-family:var(--serif);font-weight:700;font-size:25pt;line-height:1.07;margin-bottom:9pt}
+.lede{font-size:11pt;line-height:1.5;color:var(--muted);max-width:150mm}
+.lede strong{color:var(--ink);font-weight:500}
+h2{font-size:12.5pt;font-weight:600;margin-bottom:4pt;letter-spacing:-.2pt}
+h3{font-size:10pt;font-weight:600;margin:11pt 0 4pt}
+.sub{color:var(--muted);font-size:9pt;margin-bottom:10pt;max-width:155mm}
+section+section{margin-top:15pt}
+
+.meta{display:grid;grid-template-columns:auto 1fr;gap:4pt 14pt;margin-top:13pt;
+  padding-top:10pt;border-top:.6pt solid var(--line-soft);font-size:9pt}
+.meta dt{font-family:var(--mono);font-size:7.5pt;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--muted);padding-top:1.5pt}
+.meta dd a{color:var(--accent);word-break:break-all}
+
+.codewrap{border:.6pt solid var(--line);margin-top:7pt}
+.codebar{font-family:var(--mono);font-size:6.8pt;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--muted);background:var(--panel);padding:4pt 8pt;border-bottom:.6pt solid var(--line)}
+pre{font-family:var(--mono);font-size:7.4pt;line-height:1.5;padding:8pt;white-space:pre-wrap;word-break:break-word}
+pre .k{color:var(--accent);font-weight:500}
+pre .s{color:#3F6630}
+pre .n{color:#8A3F5E}
+pre .c{color:#8C857A;font-style:italic}
+
+table{border-collapse:collapse;width:100%;margin-top:6pt}
+th,td{text-align:left;padding:5pt 7pt;border-bottom:.5pt solid var(--line-soft);
+  font-size:8.7pt;line-height:1.45;vertical-align:top}
+th{font-family:var(--mono);font-size:6.6pt;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--muted);font-weight:400;background:var(--panel);border-bottom:.6pt solid var(--line)}
+tr:last-child td{border-bottom:none}
+td:first-child{width:26%;font-weight:500}
+code{font-family:var(--mono);font-size:8.2pt;color:var(--accent)}
+td b{font-weight:600}
+
+.cred{border:.9pt solid var(--accent);margin-top:8pt}
+.cred .hdr{font-family:var(--mono);font-size:6.8pt;letter-spacing:.09em;text-transform:uppercase;
+  color:#fff;background:var(--accent);padding:4pt 8pt}
+.cred .body{padding:8pt 10pt;display:flex;flex-direction:column;gap:5pt}
+.cred .kv{display:grid;grid-template-columns:auto 1fr;gap:3pt 10pt;align-items:baseline}
+.cred .kv dt{font-family:var(--mono);font-size:7pt;text-transform:uppercase;color:var(--muted)}
+.cred .kv dd{font-family:var(--mono);font-size:9.5pt;font-weight:500;word-break:break-all}
+.cred .fine{font-size:8.2pt;color:var(--muted);line-height:1.45}
+.cred .fine b{color:var(--ink);font-weight:600}
+
+.callout{border:.6pt solid var(--line);border-left:3pt solid var(--bad);background:var(--panel);
+  padding:9pt 11pt;margin-top:9pt}
+.callout .k{font-family:var(--mono);font-size:6.8pt;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--bad);margin-bottom:4pt}
+.callout p{font-size:8.8pt;line-height:1.5;max-width:152mm}
+.callout p+p{margin-top:5pt}
+
+footer{margin-top:14pt;padding-top:7pt;border-top:.6pt solid var(--line);
+  font-family:var(--mono);font-size:7pt;line-height:1.8;color:var(--muted)}
+footer a{color:var(--accent)}
+</style>
+</head>
+<body>
+
+<!-- page 1 -->
+<div class="page">
+  <div class="rh"><span>Taleemabad University · technical handoff</span><span><b>Drawing Room</b> content pipeline</span></div>
+
+  <div class="eyebrow">API contract · deployed and serving</div>
+  <h1>Course Builder</h1>
+  <p class="lede">Three endpoints. <strong>Plan</strong> turns a topic into a course.
+    <strong>Build</strong> queues every lesson as a video. <strong>Status</strong> reports
+    progress. Everything is read-only from your side except <code>build</code>, which starts
+    work but writes nothing into your system.</p>
+
+  <dl class="meta">
+    <dt>Base URL</dt>
+    <dd><a href="https://content-queen-production.up.railway.app">https://content-queen-production.up.railway.app</a></dd>
+    <dt>Try it</dt>
+    <dd><a href="https://content-queen-production.up.railway.app/demo/course-builder">/demo/course-builder</a>
+      — the working planner. Paste the token below and type a topic.</dd>
+    <dt>Discover</dt>
+    <dd><a href="https://content-queen-production.up.railway.app/api/v1">GET /api/v1</a>
+      — public, machine-readable list of every route on this service.</dd>
+  </dl>
+
+  <section>
+    <h2>Authentication</h2>
+    <p class="sub">The same bearer token as the checkpoint API. Server to server — never from
+      a browser, or you ship the token to every learner.</p>
+    <div class="cred">
+      <div class="hdr">credential · treat as a password</div>
+      <div class="body">
+        <dl class="kv">
+          <dt>Header</dt><dd>Authorization: Bearer &lt;token&gt;</dd>
+          <dt>Token</dt><dd>cq_o9UjsZ6_pknF10IUZwuZHM7Hl6MpJtDF</dd>
+        </dl>
+        <p class="fine">Same token, same service as the in-video question API. <b>Do not put
+        it in browser code</b> or commit it. If it leaks, tell Aroma; replacing it is one
+        command and changes nothing else.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>The three endpoints</h2>
+    <table>
+      <thead><tr><th>Endpoint</th><th>Does</th><th>Costs</th></tr></thead>
+      <tbody>
+        <tr><td><code>POST /api/v1/courses/plan</code></td>
+          <td>Topic in, full course plan out. Idempotent in the sense that it never changes
+            anything — call it as often as you like.</td>
+          <td><b>~60–90s.</b> One model call. No video spend.</td></tr>
+        <tr><td><code>POST /api/v1/courses/build</code></td>
+          <td>Queues every lesson in a plan as a video. Returns immediately with a
+            <code>courseId</code>; the work happens over hours.</td>
+          <td><b>~$1.50 and ~30 min PER LESSON.</b></td></tr>
+        <tr><td><code>GET /api/v1/courses/{courseId}</code></td>
+          <td>Progress of a queued course.</td>
+          <td>Free. Poll every 30–60s.</td></tr>
+      </tbody>
+    </table>
+    <div class="callout">
+      <div class="k">The mistake this design exists to prevent</div>
+      <p>Planning is free and takes a minute. Building costs real money and takes hours.
+      <b>Never chain plan straight into build.</b> A human must see the cost and approve it.
+      Our API enforces this — <code>build</code> refuses unless you echo back the exact lesson
+      count — but the meaningful guard is the screen you put in front of the user.</p>
+    </div>
+  </section>
+
+  <footer>Page 1 of 5 · Course Builder technical handoff</footer>
+</div>
+
+<!-- page 2 -->
+<div class="page">
+  <div class="rh"><span>Course Builder</span><span>Plan</span></div>
+
+  <section>
+    <h2>POST /api/v1/courses/plan</h2>
+    <p class="sub">One required field. Everything else is optional — and if omitted, the
+      planner picks defaults and lists them in <code>assumptions</code>.</p>
+
+    <div class="codewrap">
+      <div class="codebar">request</div>
+<pre>curl -X POST https://content-queen-production.up.railway.app<span class="k">/api/v1/courses/plan</span> \
+  -H <span class="s">"Authorization: Bearer $CONTENT_API_TOKEN"</span> \
+  -H <span class="s">"Content-Type: application/json"</span> \
+  -d '{
+    <span class="k">"topic"</span>:       <span class="s">"Using WhatsApp Business to take orders without losing any"</span>,  <span class="c">// required</span>
+    <span class="k">"duration"</span>:    <span class="s">"about 15 minutes"</span>,     <span class="c">// optional, free text</span>
+    <span class="k">"audience"</span>:    <span class="s">"shopkeepers with a smartphone"</span>,  <span class="c">// optional</span>
+    <span class="k">"description"</span>: <span class="s">"focus on catalogue and labels"</span>   <span class="c">// optional</span>
+  }'</pre>
+    </div>
+
+    <h3>Response (200) — trimmed to one lesson; a real plan has 4–8</h3>
+    <div class="codewrap">
+      <div class="codebar">response · application/json</div>
+<pre>{
+  <span class="k">"title"</span>:   <span class="s">"WhatsApp Business: Take Orders Without Losing Any"</span>,
+  <span class="k">"summary"</span>: <span class="s">"One paragraph for your course catalogue."</span>,
+  <span class="k">"audience"</span>: <span class="s">"Small shopkeepers in Pakistan who already take orders on WhatsApp"</span>,
+  <span class="k">"protagonist_scenario"</span>: <span class="s">"Ali runs a dairy shop in Gujranwala… lost eleven orders last month"</span>,
+  <span class="k">"modules"</span>: [
+    {
+      <span class="k">"title"</span>:   <span class="s">"Seeing where the orders leak"</span>,
+      <span class="k">"summary"</span>: <span class="s">"…"</span>,
+      <span class="k">"lessons"</span>: [
+        {
+          <span class="k">"title"</span>:      <span class="s">"Spot the three places an order goes missing"</span>,
+          <span class="k">"slo"</span>:        <span class="s">"Given a chat thread where an order was lost, the learner can name which leak caused it"</span>,
+          <span class="k">"difficulty"</span>: <span class="s">"novice"</span>,        <span class="c">// novice | intermediate | advanced | expert</span>
+          <span class="k">"brief"</span>:      <span class="s">"The step of Ali's story this lesson covers — becomes the script brief"</span>,
+          <span class="k">"question"</span>: {
+            <span class="k">"stem"</span>:         <span class="s">"A customer messages at 9pm… Which leak is this?"</span>,
+            <span class="k">"options"</span>:      [<span class="s">"Read but not recorded"</span>, <span class="s">"Incomplete details"</span>, <span class="s">"No update sent"</span>, <span class="s">"Cancelled"</span>],
+            <span class="k">"correctIndex"</span>: <span class="n">0</span>,
+            <span class="k">"explanation"</span>:  <span class="s">"Why the common wrong choices are wrong, not just the right answer"</span>
+          }
+        }
+      ]
+    }
+  ],
+  <span class="k">"assumptions"</span>: [<span class="s">"No audience was given, so…"</span>],   <span class="c">// SHOW THESE TO THE USER</span>
+  <span class="k">"request"</span>:    { <span class="c">/* what you sent, echoed back */</span> },
+  <span class="k">"estimate"</span>: {
+    <span class="k">"lessons"</span>:              <span class="n">8</span>,
+    <span class="k">"estimatedCostUsd"</span>:     <span class="n">12</span>,      <span class="c">// show this before any build button</span>
+    <span class="k">"estimatedBuildMinutes"</span>: <span class="n">240</span>,
+    <span class="k">"estimatedWatchMinutes"</span>: <span class="n">20</span>
+  },
+  <span class="k">"plannedAt"</span>: <span class="s">"2026-09-11T12:04:11.902Z"</span>
+}</pre>
+    </div>
+
+    </section>
+  <footer>Page 2 of 5</footer>
+</div>
+
+<div class="page">
+  <div class="rh"><span>Course Builder</span><span>Plan fields · build</span></div>
+  <section>
+    <table>
+      <thead><tr><th>Field</th><th>Use it for</th></tr></thead>
+      <tbody>
+        <tr><td><code>modules[].lessons[]</code></td><td><b>One lesson = one video.</b> This is
+          the unit everything else counts in. Build your course structure from it directly.</td></tr>
+        <tr><td><code>lesson.question</code></td><td>The in-video question for that lesson.
+          Same shape as the checkpoint API you already render — you can show it in the course
+          outline before the video exists.</td></tr>
+        <tr><td><code>assumptions</code></td><td><b>Show these.</b> They are how a user learns
+          the planner guessed something, and the cheapest way to get a better plan is to let
+          them correct one and re-plan.</td></tr>
+        <tr><td><code>estimate</code></td><td>Put on screen before any build control. It is
+          the only thing standing between a curious click and $12.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+
+  <section>
+    <h2>POST /api/v1/courses/build</h2>
+    <p class="sub">Send back the plan you got, the series it belongs to, and a confirmation
+      of the lesson count.</p>
+    <div class="codewrap">
+      <div class="codebar">request</div>
+<pre>{
+  <span class="k">"plan"</span>:           { <span class="c">/* the whole object from /courses/plan, unmodified */</span> },
+  <span class="k">"series"</span>:         <span class="s">"whatsapp-orders"</span>,   <span class="c">// required; lowercase a-z 0-9 . _ -</span>
+  <span class="k">"confirmLessons"</span>: <span class="n">8</span>                    <span class="c">// must equal plan's lesson count</span>
+}</pre>
+    </div>
+
+    <h3>Response (202 Accepted)</h3>
+    <div class="codewrap">
+      <div class="codebar">response</div>
+<pre>{
+  <span class="k">"courseId"</span>: <span class="s">"course-m1k2j3h4"</span>,   <span class="c">// store this; it is how you poll</span>
+  <span class="k">"series"</span>:   <span class="s">"whatsapp-orders"</span>,
+  <span class="k">"queued"</span>:   <span class="n">8</span>,
+  <span class="k">"rejected"</span>: [],                  <span class="c">// lessons that could not queue, with reasons</span>
+  <span class="k">"items"</span>:    [<span class="s">"whatsapp-orders/spot-the-three-places-an-order-goes-missing"</span>, <span class="s">"…"</span>],
+  <span class="k">"status"</span>:   <span class="s">"https://…/api/v1/courses/course-m1k2j3h4"</span>
+}</pre>
+    </div>
+
+    </section>
+  <footer>Page 3 of 5</footer>
+</div>
+
+<div class="page">
+  <div class="rh"><span>Course Builder</span><span>Errors · status</span></div>
+  <section>
+    <h3>Errors you must handle</h3>
+    <table>
+      <thead><tr><th>Status</th><th>Meaning and what to do</th></tr></thead>
+      <tbody>
+        <tr><td><code>409 confirmation_required</code></td><td><b>Not an error — the guard
+          working.</b> The body carries the real lesson count and the estimate. Show them,
+          get a human yes, then resend with <code>confirmLessons</code> set to that number.</td></tr>
+        <tr><td><code>400 bad_request</code></td><td>Missing <code>plan</code>, or a
+          <code>series</code> that is absent or not lowercase-slug shaped. The series is never
+          guessed: a wrong one files an entire course in the wrong place and is only noticed
+          after the money is spent.</td></tr>
+        <tr><td><code>401 unauthorized</code></td><td>Bad or missing bearer token.</td></tr>
+        <tr><td><code>503 api_not_configured</code></td><td>The service has no token
+          configured and is failing closed. Ours to fix — retry later.</td></tr>
+        <tr><td><code>500 plan_failed</code></td><td>Planning failed upstream. Safe to retry
+          once; nothing was spent.</td></tr>
+        <tr><td>Partial queue</td><td>A 202 with a non-empty <code>rejected</code> array means
+          some lessons queued and some did not — usually a duplicate slug. Surface it; do not
+          treat the course as fully started.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>GET /api/v1/courses/{courseId}</h2>
+    <div class="codewrap">
+      <div class="codebar">response</div>
+<pre>{
+  <span class="k">"courseId"</span>: <span class="s">"course-m1k2j3h4"</span>,
+  <span class="k">"lessons"</span>: <span class="n">8</span>, <span class="k">"done"</span>: <span class="n">3</span>, <span class="k">"failed"</span>: <span class="n">0</span>, <span class="k">"inProgress"</span>: <span class="n">5</span>,
+  <span class="k">"items"</span>: [
+    { <span class="k">"id"</span>: <span class="s">"whatsapp-orders/spot-the-three-places…"</span>, <span class="k">"topic"</span>: <span class="s">"…"</span>,
+      <span class="k">"status"</span>: <span class="s">"done"</span>, <span class="k">"module"</span>: <span class="n">1</span> }
+  ]
+}</pre>
+    </div>
+    <p class="sub" style="margin-top:8pt">Poll every 30–60 seconds. A finished lesson's video
+      and its in-video question then come from the checkpoint API you already use:
+      <code>GET /api/v1/videos/{videoId}/checkpoints</code>, where <code>videoId</code> is the
+      part of the item id after the slash.</p>
+  </section>
+
+  <footer>Page 4 of 5</footer>
+</div>
+
+<!-- page 4 -->
+<div class="page">
+  <div class="rh"><span>Course Builder</span><span>Limits and integration</span></div>
+
+  <section>
+    <h2>Limits that will affect your UI</h2>
+    <table>
+      <thead><tr><th>Limit</th><th>Design around it by</th></tr></thead>
+      <tbody>
+        <tr><td>Planning takes 60–90 seconds</td><td>A real progress state, not a spinner that
+          looks hung. Our own prototype says "this takes about a minute".</td></tr>
+        <tr><td>Building takes hours</td><td>Treat a course build as a background job with a
+          progress list. Never block a request on it.</td></tr>
+        <tr><td>We store no plans</td><td><b>Persist the plan on your side as soon as you show
+          it.</b> If the user navigates away, it is gone — we kept nothing.</td></tr>
+        <tr><td>Our build queue is not durable</td><td>If our service redeploys mid-build, the
+          remaining lessons are lost and the course must be restarted. Show per-lesson status
+          rather than a single percentage, so a stall is visible.</td></tr>
+        <tr><td>Videos render one at a time</td><td>Two courses started together take twice as
+          long. Consider allowing one build at a time per user.</td></tr>
+        <tr><td>Lessons can fail QA and be remade</td><td><code>failed</code> in the status
+          response is real. Decide whether a course appears when partly ready.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>How it fits what you have already built</h2>
+    <table>
+      <thead><tr><th>You already have</th><th>It works unchanged</th></tr></thead>
+      <tbody>
+        <tr><td>The in-video question popup</td><td>Courses built this way produce videos with
+          the same checkpoints, from the same endpoint. Nothing to change.</td></tr>
+        <tr><td>The bearer token</td><td>Same token, same service, same header.</td></tr>
+        <tr><td>Your course/lesson tables</td><td>Map <code>modules[].lessons[]</code> onto
+          them. We deliberately do not impose a schema — tell us yours and we will shape the
+          plan to fit rather than the other way round.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <div class="callout">
+      <div class="k">Two things that are genuinely unfinished</div>
+      <p><b>Plans cannot be edited.</b> A user accepts a plan or re-plans with a better
+      description. If editing matters to you, tell us — it changes the contract, because an
+      edited plan has to come back to us.</p>
+      <p><b>Build durability.</b> Our queue does not survive a redeploy of our service. This
+      is on our list; until it is fixed, a long course build is best run when nobody is
+      shipping changes to the pipeline.</p>
+    </div>
+  </section>
+
+  <footer>
+    Page 5 of 5 · Drawing Room content pipeline, Taleemabad · prepared by Aroma Tahir<br>
+    Prototype: <a href="https://content-queen-production.up.railway.app/demo/course-builder">content-queen-production.up.railway.app/demo/course-builder</a> ·
+    API index: <a href="https://content-queen-production.up.railway.app/api/v1">/api/v1</a><br>
+    This document contains a live credential — send it directly, not into a shared channel.
+  </footer>
+</div>
+
+</body>
+</html>

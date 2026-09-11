@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Course Builder — what it is and why</title>
+<style>
+@page{ size:A4; margin:15mm 16mm 14mm; }
+:root{
+  --ink:#26231F; --muted:#615A50; --line:#CFC8BA; --line-soft:#E4DED2;
+  --panel:#FAF8F3; --accent:#8A5A2B; --good:#4A7238; --bad:#B0572F;
+  --sans:'Segoe UI',Arial,sans-serif; --mono:Consolas,'Courier New',monospace;
+  --serif:Georgia,'Times New Roman',serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{font-family:var(--sans);font-size:9.8pt;line-height:1.55;color:var(--ink);background:#fff}
+.page{page-break-after:always}
+.page:last-child{page-break-after:auto}
+.rh{display:flex;justify-content:space-between;align-items:baseline;
+  border-bottom:.6pt solid var(--line);padding-bottom:5pt;margin-bottom:15pt;
+  font-family:var(--mono);font-size:7pt;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.rh b{color:var(--accent);font-weight:500}
+.eyebrow{font-family:var(--mono);font-size:7.5pt;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--accent);margin-bottom:8pt}
+h1{font-family:var(--serif);font-weight:700;font-size:27pt;line-height:1.06;margin-bottom:10pt}
+.lede{font-size:11.5pt;line-height:1.5;color:var(--muted);max-width:150mm}
+.lede strong{color:var(--ink);font-weight:500}
+h2{font-size:13pt;font-weight:600;margin-bottom:4pt;letter-spacing:-.2pt}
+.sub{color:var(--muted);font-size:9.4pt;margin-bottom:11pt;max-width:155mm}
+section+section{margin-top:17pt}
+p+p{margin-top:7pt}
+.body{max-width:158mm}
+.body p{margin-bottom:7pt}
+b,strong{font-weight:600}
+
+.flow{display:flex;align-items:stretch;gap:0;margin:10pt 0}
+.flow .step{flex:1;border:.6pt solid var(--line);background:var(--panel);padding:9pt 10pt;position:relative}
+.flow .step+.step{border-left:none}
+.flow .n{font-family:var(--mono);font-size:6.8pt;letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
+.flow .t{font-weight:600;font-size:9.6pt;margin:3pt 0}
+.flow .d{font-size:8.4pt;color:var(--muted);line-height:1.4}
+.flow .who{font-family:var(--mono);font-size:6.8pt;color:var(--muted);margin-top:5pt;
+  border-top:.5pt solid var(--line-soft);padding-top:4pt}
+
+table{border-collapse:collapse;width:100%}
+th,td{text-align:left;padding:6pt 8pt;border-bottom:.5pt solid var(--line-soft);
+  font-size:9pt;line-height:1.45;vertical-align:top}
+th{font-family:var(--mono);font-size:6.8pt;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--muted);font-weight:400;background:var(--panel);border-bottom:.6pt solid var(--line)}
+tr:last-child td{border-bottom:none}
+td:first-child{width:30%;font-weight:500}
+code{font-family:var(--mono);font-size:8.4pt;color:var(--accent)}
+
+.callout{border:.6pt solid var(--line);border-left:3pt solid var(--accent);background:var(--panel);
+  padding:10pt 12pt;margin-top:10pt}
+.callout.warn{border-left-color:var(--bad)}
+.callout .k{font-family:var(--mono);font-size:6.8pt;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--accent);margin-bottom:4pt}
+.callout.warn .k{color:var(--bad)}
+.callout p{font-size:9pt;line-height:1.5;max-width:150mm}
+
+ol.steps{list-style:none;counter-reset:s}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:16pt 1fr;gap:9pt;
+  padding:7pt 0;border-bottom:.5pt solid var(--line-soft)}
+ol.steps li:last-child{border-bottom:none}
+ol.steps li::before{content:counter(s,decimal-leading-zero);font-family:var(--mono);
+  font-size:7.5pt;color:var(--accent);padding-top:2pt}
+ol.steps b{font-weight:600}
+ol.steps span{color:var(--muted)}
+
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14pt}
+.card{border:.6pt solid var(--line);padding:10pt 12pt}
+.card h3{font-size:10pt;font-weight:600;margin-bottom:4pt}
+.card p{font-size:8.8pt;color:var(--muted);line-height:1.45}
+.card .tag{display:inline-block;font-family:var(--mono);font-size:6.5pt;letter-spacing:.09em;
+  text-transform:uppercase;padding:1.5pt 5pt;color:#fff;margin-bottom:5pt}
+.tag.yes{background:var(--good)} .tag.no{background:var(--bad)}
+
+footer{margin-top:17pt;padding-top:8pt;border-top:.6pt solid var(--line);
+  font-family:var(--mono);font-size:7pt;line-height:1.8;color:var(--muted)}
+footer a{color:var(--accent)}
+</style>
+</head>
+<body>
+
+<!-- page 1 -->
+<div class="page">
+  <div class="rh"><span>Taleemabad University · concept note</span><span><b>Drawing Room</b> content pipeline</span></div>
+
+  <div class="eyebrow">What we want to build, and why</div>
+  <h1>Course Builder</h1>
+  <p class="lede">Someone types a course topic — and as much or as little else as they feel
+    like — and a complete course comes out the other end: <strong>planned, scripted, filmed,
+    and in the LMS</strong>. This note explains the idea and what it asks of you. The
+    companion technical document has the contracts.</p>
+
+  <section>
+    <h2>The problem it solves</h2>
+    <div class="body">
+      <p>Making one lesson video today takes a person: decide the topic, research it, write a
+      script, get the script reviewed, generate the art and the voiceover, render, check the
+      quality, upload, and finally tell the LMS it exists. Most of those steps are already
+      automated individually. What is missing is anything that turns <b>“we should teach
+      X”</b> into <b>a course</b> without a human carrying each lesson through by hand.</p>
+
+      <p>So a course that should take an afternoon to specify takes weeks to appear, and
+      courses that would be genuinely useful never get made at all — not because the machine
+      cannot make them, but because nobody has time to shepherd twelve lessons through nine
+      steps each.</p>
+
+      <p>The course builder is the missing front end: one box, one button, a whole course.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>What happens when someone presses the button</h2>
+    <p class="sub">Only the first step is new. Everything after it is the pipeline that
+      already produces the videos in your LMS today.</p>
+    <div class="flow">
+      <div class="step">
+        <div class="n">step 1 · new</div>
+        <div class="t">Plan</div>
+        <div class="d">Topic in. Out comes modules, lessons, a learning outcome for each, and
+          the check question each lesson needs.</div>
+        <div class="who">seconds · free</div>
+      </div>
+      <div class="step">
+        <div class="n">step 2 · exists</div>
+        <div class="t">Write</div>
+        <div class="d">Each lesson is researched and scripted, then put through a gate that
+          rejects weak scripts before any money is spent.</div>
+        <div class="who">~5 min each</div>
+      </div>
+      <div class="step">
+        <div class="n">step 3 · exists</div>
+        <div class="t">Produce</div>
+        <div class="d">Illustrations, voiceover, animation, brand bumpers. This is the part
+          that costs money.</div>
+        <div class="who">~25 min each</div>
+      </div>
+      <div class="step">
+        <div class="n">step 4 · exists</div>
+        <div class="t">Check &amp; publish</div>
+        <div class="d">Scored against a seven-factor quality bar, uploaded unlisted, and its
+          in-video question exposed to you.</div>
+        <div class="who">automatic</div>
+      </div>
+    </div>
+    <div class="callout">
+      <div class="k">The one thing to take from this diagram</div>
+      <p>The course builder is <b>not a new content system</b>. It is a planner bolted to the
+      front of the pipeline that already makes the videos you are embedding questions into.
+      Everything you have already built against — the checkpoint API, the question popup —
+      works unchanged on courses made this way.</p>
+    </div>
+  </section>
+
+  <footer>Page 1 of 3 · Course Builder concept note</footer>
+</div>
+
+<!-- page 2 -->
+<div class="page">
+  <div class="rh"><span>Course Builder</span><span>What it asks of the LMS</span></div>
+
+  <section>
+    <h2>What your side has to do</h2>
+    <p class="sub">Deliberately small, and deliberately the same shape as the quiz
+      integration you have already built.</p>
+    <ol class="steps">
+      <li><span><b>A form.</b> <span>One required field — the topic. Three optional ones:
+        duration, audience, and a free-text description. Nothing else. If a user fills in
+        only the topic, the planner chooses sensible defaults and tells you what it
+        assumed.</span></span></li>
+      <li><span><b>Call plan, show the result, and wait for a human.</b> <span>Planning takes
+        about a minute and returns the whole course as JSON. Render it and let someone read
+        it. <b>Do not chain straight into building.</b></span></span></li>
+      <li><span><b>Get an explicit approval.</b> <span>Building a course spends real money and
+        hours of machine time. The screen must show the cost and the time before anyone can
+        start it, and our API refuses to start unless your call echoes back the exact number
+        of lessons being approved.</span></span></li>
+      <li><span><b>Poll for progress.</b> <span>Videos are produced one at a time. A course
+        is not ready in a request — it is ready over hours. Show a progress list, not a
+        spinner.</span></span></li>
+      <li><span><b>Create the course from the plan.</b> <span>You own the course, its modules
+        and its lessons in your database. We hold none of it. As each video finishes you get
+        a YouTube link and its question checkpoint, through the API you already use.</span></span></li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Who owns what</h2>
+    <p class="sub">The same division that settled the quiz question: your platform owns the
+      learner and the course; we own the making of the content.</p>
+    <div class="two">
+      <div class="card">
+        <span class="tag yes">You own</span>
+        <h3>The course, and everyone in it</h3>
+        <p>The course record, module and lesson structure, enrolments, progress, completion,
+        answers, grades, and the learner's identity. We hold no learner data at all and have
+        no database of your courses — a plan we generate is handed to you and forgotten.</p>
+      </div>
+      <div class="card">
+        <span class="tag no">We own</span>
+        <h3>Making and hosting the content</h3>
+        <p>Planning, scripting, illustration, voiceover, rendering, quality scoring, the
+        video files, and the in-video question data. You pull what you need; we never write
+        into your system.</p>
+      </div>
+    </div>
+    <div class="callout">
+      <div class="k">Why it is pull, not push</div>
+      <p>We have no write access to Taleemabad University and are not asking for any. Every
+      integration so far — the videos, the question checkpoints, and now courses — works by
+      us exposing a read API that you call. That keeps your database under your control and
+      means nothing we do can corrupt your data.</p>
+    </div>
+  </section>
+
+  <footer>Page 2 of 3 · Course Builder concept note</footer>
+</div>
+
+<!-- page 3 -->
+<div class="page">
+  <div class="rh"><span>Course Builder</span><span>Limits and decisions</span></div>
+
+  <section>
+    <h2>What this prototype does not do yet</h2>
+    <p class="sub">Stated plainly so nothing here is a surprise later.</p>
+    <table>
+      <thead><tr><th>Not yet</th><th>What that means for you</th></tr></thead>
+      <tbody>
+        <tr><td>No editing of a plan</td><td>A plan is accepted or re-generated, not edited
+          lesson by lesson. If a user wants a different course they change the description
+          and plan again. Editing is the obvious next feature.</td></tr>
+        <tr><td>Plans are not stored</td><td>We generate and return; we keep nothing. If your
+          user closes the tab, the plan is gone. <b>Store the plan on your side</b> when it is
+          shown, or you will lose it.</td></tr>
+        <tr><td>Build progress is not durable</td><td>Our queue does not survive a redeploy of
+          our service. A course build interrupted that way has to be restarted. This is a
+          known gap on our side, not yours.</td></tr>
+        <tr><td>One course at a time, realistically</td><td>Videos render one after another.
+          Two courses started together take twice as long, not the same time.</td></tr>
+        <tr><td>No images or slides for the course itself</td><td>Lesson videos are produced;
+          a course thumbnail, blurb art or downloadable material are not.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>What we need from you</h2>
+    <table>
+      <thead><tr><th>We need</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td>Your course data model</td><td>What a course, module and lesson look like in
+          your database, and which fields are required. We shape the plan to fit you rather
+          than asking you to fit us.</td></tr>
+        <tr><td>Who may press the button</td><td>Building a course spends money. Tell us which
+          role in your platform is allowed to, and we will discuss whether the limit belongs
+          on your side, ours, or both.</td></tr>
+        <tr><td>Where a built course should appear</td><td>Draft, unpublished, in a particular
+          category? A course that appears live in front of learners the moment the machine
+          finishes is not what anyone wants.</td></tr>
+        <tr><td>Your appetite for failure</td><td>Individual lessons can fail quality checks
+          and get remade. Do you want a course to appear when the first lesson is ready, or
+          only when all of them are?</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <div class="callout warn">
+      <div class="k">The honest caveat</div>
+      <p>This is a prototype, and the planning half is the half that is real: it produces
+      genuinely good course plans today, and you can try it yourself at the link below. The
+      building half runs on a pipeline that works but was built to make one video at a time
+      with a person watching. Running it unattended across a whole course is new, and the
+      first few courses should be watched closely rather than trusted.</p>
+    </div>
+  </section>
+
+  <footer>
+    Page 3 of 3 · Drawing Room content pipeline, Taleemabad · prepared by Aroma Tahir<br>
+    Try the planner: <a href="https://content-queen-production.up.railway.app/demo/course-builder">content-queen-production.up.railway.app/demo/course-builder</a><br>
+    Contracts, schemas and error handling are in the companion technical document.
+  </footer>
+</div>
+
+</body>
+</html>
