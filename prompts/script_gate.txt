@@ -54,11 +54,23 @@ Check every one of these:
 11. Beat count is 16-22. At a measured 6.2 seconds per beat that is 1.7-2.3 minutes,
     which is the house range. Do NOT ask for more beats than 22, and do not treat a
     script inside 16-22 as thin on beat count alone -- say which MOMENT is missing.
-12. THE INTERACTIVE QUESTION — exactly one beat is mode "info" with info.tpl "quiz",
-    carrying holdAfter (2 seconds) and a `vo` that asks the question out loud, with the
-    NEXT beat giving the answer. This is mandatory in every video and its absence is
-    always a BLOCKER. Check the question is worth asking: it must have a defensible
-    answer the video has earned, not a guess or a definition recall.
+12. THE CHECKPOINT — exactly one beat is mode "checkpoint", carrying
+    quiz: { stem, options, answer, explain }. It is NEVER DRAWN AND NEVER SPOKEN: it
+    has no vo, no art and no info, it takes zero time, and the learner answers it as a
+    popup in the LMS while the video is paused. Its absence is always a BLOCKER.
+
+    This REPLACED the old on-screen "info"/"quiz" card, which taught the answer to a
+    viewer who could not answer. Never ask for that card back, and never ask for a beat
+    that speaks the question or gives the answer away — a learner who has already heard
+    both has nothing left to answer. A script whose only question is an on-screen quiz
+    card is a BLOCKER for the opposite reason: the LMS gets no question from it at all.
+
+    Check the question is worth asking: a defensible answer the video has earned, not a
+    guess or a definition recall, and three wrong options a real learner would pick.
+    Check `explain` is written for the learner who just chose WRONG — why the tempting
+    option is wrong, not merely what the right one was. It is the only feedback they see.
+    Check it sits between two spoken beats, around two-thirds through; first or last
+    leaves no boundary to pause on.
 13. REAL NUMBERS ON SCREEN — at least three different data templates across the video
     (gauge, bignum, tally, bars, scoresheet, piles) carrying actual numbers, and at
     most two `statement` text cards. A deck of text slabs is a blocker: the automated
