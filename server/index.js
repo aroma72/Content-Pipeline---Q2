@@ -68,6 +68,17 @@ app.get('/demo/quiz', (_req, res) => {
 });
 app.get('/demo', (_req, res) => res.redirect(302, '/demo/quiz'));
 
+/** The course-builder prototype. Calls /api/v1/courses/plan with a token the
+ *  operator pastes in, so no credential is baked into the page. */
+const COURSE_FILE = path.join(__dirname, '..', 'prototypes', 'course-builder.html');
+app.get('/demo/course-builder', (_req, res) => {
+  if (!fs.existsSync(COURSE_FILE)) {
+    return res.status(404).type('text').send('Course builder prototype not deployed.');
+  }
+  res.set('Cache-Control', 'public, max-age=300');
+  res.type('html').send(fs.readFileSync(COURSE_FILE, 'utf8'));
+});
+
 /**
  * Run a tick by hand. Useful for testing without waiting for the timer, and for
  * driving the loop from an external scheduler instead of the in-process one.

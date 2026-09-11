@@ -112,6 +112,15 @@ function build() {
           auth: true, implemented: false,
           description: 'Returns 501. The LMS is the system of record for answers; '
             + 'this service holds no learner identity.' },
+        { method: 'POST', path: '/api/v1/courses/plan', auth: true,
+          description: 'Topic in, full course plan out: modules, lessons, an SLO and a '
+            + 'question per lesson, plus a cost and time estimate. Spends one model call '
+            + 'and nothing else.' },
+        { method: 'POST', path: '/api/v1/courses/build', auth: true,
+          description: 'Queues every lesson in a plan as a video. Refuses without '
+            + '`confirmLessons` matching the plan, because this spends real money.' },
+        { method: 'GET', path: '/api/v1/courses/:courseId', auth: true,
+          description: 'Build progress for a queued course.' },
       ],
       demo: `${req.protocol}://${req.get('host')}/demo/quiz`,
       notes: [
@@ -174,6 +183,110 @@ function build() {
         + 'ask Aroma Tahir and we will build a durable store rather than an '
         + 'endpoint that drops what it is sent.',
       systemOfRecord: 'lms',
+    });
+  });
+
+  // ── course builder ──────────────────────────────────────────────────────
+  // Planning and building are separate calls on purpose. Planning is one model
+  // call and spends nothing else; building is ~$1.50 and ~30 minutes PER LESSON,
+  // so an eight-lesson course is ~$12 and most of a working day. Nobody should
+  // find that out by clicking a button, so `build` refuses without an explicit
+  // confirmation carrying the lesson count the caller believes it is approving.
+
+  router.post('/courses/plan', requireToken, async (req, res) => {
+    try {
+      const plan = await require('./course-planner')
+        .plan(req.body || {}, { log: (m) => console.log('[course]', m) });
+      res.json(plan);
+    } catch (e) {
+      res.status(e.status || 500).json({ error: 'plan_failed', message: e.message });
+    }
+  });
+
+  router.post('/courses/build', requireToken, (req, res) => {
+    const body = req.body || {};
+    const planner = require('./course-planner');
+    const queue = require('../../orchestrator/lib/queue');
+
+    if (!body.plan || !Array.isArray(body.plan.modules)) {
+      return res.status(400).json({ error: 'bad_request',
+        message: 'Send the plan you got from POST /api/v1/courses/plan as `plan`.' });
+    }
+    const lessons = planner.lessonsOf(body.plan);
+
+    // The count must be echoed back, so a caller cannot approve "a course" and
+    // be charged for whatever the plan happened to grow into.
+    if (body.confirmLessons !== lessons.length) {
+      return res.status(409).json({
+        error: 'confirmation_required',
+        message: `This will build ${lessons.length} videos, costing about `
+          + `$${planner.estimate(body.plan).estimatedCostUsd} and taking about `
+          + `${planner.estimate(body.plan).estimatedBuildMinutes} minutes. Re-send with `
+          + `"confirmLessons": ${lessons.length} to start it.`,
+        lessons: lessons.length,
+        estimate: planner.estimate(body.plan),
+      });
+    }
+
+    const series = String(body.series || '').trim();
+    if (!/^[a-z0-9][a-z0-9._-]*$/.test(series)) {
+      return res.status(400).json({ error: 'bad_request',
+        message: 'A `series` is required: the explainer-videos subfolder the videos are '
+          + 'filed under, lowercase, e.g. "whatsapp-orders". It is never guessed — a wrong '
+          + 'one files a whole course in the wrong place and is only noticed after the spend.' });
+    }
+
+    const courseId = `course-${Date.now().toString(36)}`;
+    const queued = [];
+    const rejected = [];
+    for (const l of lessons) {
+      try {
+        const item = queue.enqueue({
+          topic: l.title,
+          series,
+          notes: `[${courseId}] ${l.brief}\nSLO: ${l.slo}`,
+          module: l.module,
+          moduleTopic: l.moduleTitle,
+          source: 'course-builder',
+        });
+        queued.push(item.id);
+      } catch (e) {
+        // Usually "already in the queue" — report it rather than aborting the rest.
+        rejected.push({ title: l.title, reason: e.message });
+      }
+    }
+
+    res.status(202).json({
+      courseId,
+      series,
+      queued: queued.length,
+      rejected,
+      items: queued,
+      status: `${req.protocol}://${req.get('host')}/api/v1/courses/${courseId}`,
+      note: 'Queued only. Videos are produced one at a time by the pipeline worker; '
+        + 'poll the status URL. Nothing is charged until each video reaches its paid stage.',
+    });
+  });
+
+  router.get('/courses/:courseId', requireToken, (req, res) => {
+    const queue = require('../../orchestrator/lib/queue');
+    const tag = `[${req.params.courseId}]`;
+    const items = queue.currentItems()
+      .filter((i) => (i.notes || '').includes(tag))
+      .map((i) => ({ id: i.id, topic: i.topic, status: i.status, module: i.module }));
+    if (!items.length) {
+      return res.status(404).json({ error: 'not_found',
+        message: `No queued lessons tagged ${tag}. Note the queue is not durable across `
+          + 'deploys on this service — see the technical handoff.' });
+    }
+    const by = (s) => items.filter((i) => i.status === s).length;
+    res.json({
+      courseId: req.params.courseId,
+      lessons: items.length,
+      done: by('done'),
+      failed: by('failed'),
+      inProgress: items.length - by('done') - by('failed'),
+      items,
     });
   });
 

@@ -61,6 +61,7 @@ explainer-videos/**/clips
 # the single built file is all the image needs. Without this admit the route 404s
 # in production while working perfectly on a dev machine.
 !prototypes/lms-quiz-popup-prototype.html
+!prototypes/course-builder.html
 
 # --- never ---------------------------------------------------------------------
 .env
