@@ -205,13 +205,23 @@ async function followUpThreads(report) {
     const newest = fresh[fresh.length - 1];
     let notes = `${t.notes} `.replace(/\[seen:[^\]]+\]/, '') + MARK.seen(newest.ts);
 
-    // Later replies win — someone correcting themselves means the last word.
-    const merged = {};
-    for (const r of fresh) Object.assign(merged, parseFollowUp(r.text));
-
-    const series = merged.series || t.series;
     // A clarification stub carries a placeholder title, never a real topic.
     const stub = /^Needs detail:/i.test(t.title);
+
+    // Tell the parser what was actually asked for. A one-word reply is ambiguous
+    // on its own -- "evals" is a series, "checklists" is a topic -- and guessing
+    // "series" meant a short TOPIC became a folder name and the video was never
+    // about what the person asked for.
+    const needs = [];
+    if (!t.series) needs.push('series');
+    if (stub) needs.push('topic');
+    if (!needs.length) needs.push('series');
+
+    // Later replies win — someone correcting themselves means the last word.
+    const merged = {};
+    for (const r of fresh) Object.assign(merged, parseFollowUp(r.text, { needs }));
+
+    const series = merged.series || t.series;
     const topic = merged.topic || (stub ? '' : t.title);
 
     if (!series || !topic) {

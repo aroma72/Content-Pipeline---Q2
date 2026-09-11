@@ -676,6 +676,66 @@ async function beatChecks() {
     return 'cause first, command truncated';
   });
 
+  // --- 4e7. The topic the human asked for is the topic that gets made -----
+  console.log('\n3e7. request parsing (was: a one-word topic silently became a folder name)');
+
+  check('a question ABOUT the series is not an answer to it', () => {
+    const { parseFollowUp } = require('../server/lib/parse');
+    // Seen in production: "follow-up accepted: 'ai in 2030' / name" -- a video
+    // filed under a series literally called `name`.
+    const out = parseFollowUp('what should the series name be?');
+    assert(!out.series, `parsed a series from a question: ${JSON.stringify(out)}`);
+    for (const q of ['which series should it be?', 'what series do we use?', 'is the series evals or fol?']) {
+      const r = parseFollowUp(q);
+      assert(!r.series || r.series === 'evals' || r.series === 'fol',
+        `question "${q}" produced a bogus series ${JSON.stringify(r)}`);
+    }
+    return 'questions are not answers';
+  });
+
+  check('a bare reply answers the question that was ASKED, not always "series"', () => {
+    const { parseFollowUp } = require('../server/lib/parse');
+    // "checklists" is a topic when a topic was asked for, and a series when a
+    // series was. Guessing meant a short topic became a folder and the video was
+    // never about what the person wanted.
+    assert(parseFollowUp('checklists', { needs: ['topic'] }).topic === 'checklists',
+      'a one-word TOPIC was not accepted as a topic');
+    assert(parseFollowUp('checklists', { needs: ['series'] }).series === 'checklists',
+      'a one-word SERIES was not accepted as a series');
+    assert(parseFollowUp('how agents use memory', { needs: ['topic'] }).topic === 'how agents use memory',
+      'a multi-word topic reply was dropped');
+    return 'context decides';
+  });
+
+  check('tick tells the parser which field it actually asked for', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'server', 'lib', 'tick.js'), 'utf8');
+    assert(/parseFollowUp\(r\.text, \{ needs \}\)/.test(src),
+      'the follow-up parser is still called without context');
+    assert(/if \(!t\.series\) needs\.push\('series'\)/.test(src), 'missing series is not requested');
+    assert(/if \(stub\) needs\.push\('topic'\)/.test(src), 'missing topic is not requested');
+    return 'context passed';
+  });
+
+  check('a fully specified request still parses exactly as asked', () => {
+    const { parseRequest } = require('../server/lib/parse');
+    const cases = [
+      ['<@U1> make a video about why a checklist beats a careful reader, series: evals',
+       'why a checklist beats a careful reader', 'evals'],
+      ['<@U1> make a video on prompt injection, series evals', 'prompt injection', 'evals'],
+      ['<@U1> create an explainer about how agents use memory, series: memory',
+       'how agents use memory', 'memory'],
+      ['<@U1> build a lesson on what a rubric actually does series evals',
+       'what a rubric actually does', 'evals'],
+    ];
+    for (const [text, topic, series] of cases) {
+      const r = parseRequest(text);
+      assert(r.ok, `refused a valid request: ${text}`);
+      assert(r.topic === topic, `topic came out as "${r.topic}", asked for "${topic}"`);
+      assert(r.series === series, `series came out as "${r.series}", asked for "${series}"`);
+    }
+    return `${cases.length} phrasings exact`;
+  });
+
   // --- 4f. Human review before YouTube -------------------------------------
   console.log('\n3f. the human review gate (was: QA pass -> straight to YouTube)');
 
