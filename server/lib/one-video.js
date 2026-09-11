@@ -127,7 +127,11 @@ async function produce(req, { log = () => {}, onStage = () => {} } = {}) {
     stageOverrides: stageProgress(onStage, log),
   });
 
-  if (st.status !== 'done') {
+  // Stopping at `review` is the pipeline working, not failing: a person watches
+  // the video before it reaches YouTube. Reporting it as an error was telling the
+  // caller the video did not get made, when in fact it is finished and waiting.
+  const waiting = st.stages.review && st.stages.review.status === 'blocked';
+  if (st.status !== 'done' && !waiting) {
     const why = stoppedBecause(st);
     throw Object.assign(new Error(why), { status: 502, runId: st.runId });
   }
@@ -139,8 +143,54 @@ async function produce(req, { log = () => {}, onStage = () => {} } = {}) {
     spendUsd: st.spend && st.spend.usd,
     qa: st.artifacts.qa,
     youtube: st.artifacts.upload,
+    awaitingReview: Boolean(waiting),
+    // Carried so approve() can resume without re-running anything that was paid for.
+    artifacts: waiting ? { produce: st.artifacts.produce, qa: st.artifacts.qa } : null,
+    finalPath: finishedFile(dir, item.slug),
     dir,
   };
+}
+
+/**
+ * Publish a video a person has just watched and approved.
+ *
+ * Resumes at `review` with the approval the stage waits for, so nothing that was
+ * paid for is made again -- the art, the speech and the render are already on disk.
+ *
+ * @param {{itemId:string, by:string, artifacts?:object}} req
+ */
+async function approve(req, { log = () => {}, onStage = () => {} } = {}) {
+  const item = queue.get(req.itemId);
+  if (!item) throw Object.assign(new Error(`no queued video '${req.itemId}'`), { status: 404 });
+
+  const dir = videoDir(item.series, item.slug);
+  if (!finishedFile(dir, item.slug)) {
+    throw Object.assign(new Error('there is no finished video here to approve'), { status: 409 });
+  }
+
+  const st = await spine.execute(item, {
+    fromStage: 'review',
+    stopAfter: 'upload',
+    quiet: true,
+    reviewApproved: req.by || 'Aroma',
+    seedArtifacts: req.artifacts || {},
+    stageOverrides: stageProgress(onStage, log),
+  });
+
+  if (st.status !== 'done') {
+    throw Object.assign(new Error(stoppedBecause(st)), { status: 502, runId: st.runId });
+  }
+  return { runId: st.runId, youtube: st.artifacts.upload, slug: item.slug };
+}
+
+/** The delivered file, if the render actually produced one. */
+function finishedFile(dir, slug) {
+  const out = path.join(dir, 'out');
+  try {
+    const f = fs.readdirSync(out).find((n) => n.endsWith('_final.mp4'))
+      || fs.readdirSync(out).find((n) => n === 'lesson.mp4');
+    return f ? path.join(out, f) : null;
+  } catch { return null; }
 }
 
 /** Put the topic on the queue the spine pops from, or reuse it if it is there. */
@@ -200,4 +250,4 @@ function readBeats(dir) {
   return Array.isArray(mod) ? mod : null;
 }
 
-module.exports = { write, produce, SERIES, slugify };
+module.exports = { write, produce, approve, finishedFile, SERIES, slugify };

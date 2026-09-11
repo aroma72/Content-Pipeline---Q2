@@ -210,6 +210,18 @@ video{width:100%;border-radius:12px;border:1px solid var(--line);background:#000
             <button id="produce">Make the video and publish it</button>
             <span class="status" id="p-status"></span>
           </div>
+          <div id="watch" style="display:none;margin-top:18px">
+            <video id="player" controls playsinline
+              style="width:100%;border-radius:12px;border:1px solid var(--line);background:#000;display:block"></video>
+            <div class="note" style="margin-top:14px">
+              <strong>Finished, and not published.</strong>
+              Nothing reaches YouTube until you have watched it and said so.
+            </div>
+            <div class="actions">
+              <button id="approve">Approve and publish</button>
+              <span class="status" id="a-status"></span>
+            </div>
+          </div>
           <div class="links" id="p-links"></div>
         </div>
       </div>
@@ -382,6 +394,20 @@ video{width:100%;border-radius:12px;border:1px solid var(--line);background:#000
         + ' \u2014 art, voice and render take about half an hour.';
       return;
     }
+    if (p.status === 'awaiting_review') {
+      $('produce').disabled = true;
+      $('produce').textContent = 'Made';
+      $('p-status').textContent = p.spendUsd ? ('$' + p.spendUsd + ' spent') : '';
+      var w = $('watch');
+      if (w.style.display !== 'block') {
+        w.style.display = 'block';
+        $('player').src = '/demo/make-video/' + jobId + '/video';
+      }
+      $('a-status').className = 'status' + (p.error ? ' err' : '');
+      $('a-status').textContent = p.error || '';
+      $('approve').disabled = false;
+      return;
+    }
     if (p.status === 'failed') {
       $('p-status').className = 'status err';
       $('p-status').textContent = p.error || 'It did not finish.';
@@ -397,6 +423,29 @@ video{width:100%;border-radius:12px;border:1px solid var(--line);background:#000
     }
     $('p-links').innerHTML = links.join('');
   }
+  $('approve').addEventListener('click', async function () {
+    if (!jobId) return;
+    $('approve').disabled = true;
+    $('a-status').className = 'status';
+    $('a-status').innerHTML = '<span class="spin"></span>Uploading\u2026';
+    try {
+      var res = await fetch('/demo/make-video/' + jobId + '/approve', { method: 'POST' });
+      if (!res.ok) {
+        var r = await res.json();
+        $('a-status').className = 'status err';
+        $('a-status').textContent = r.message || 'Could not publish.';
+        $('approve').disabled = false;
+        return;
+      }
+    } catch (e) {
+      $('a-status').className = 'status err';
+      $('a-status').textContent = 'Could not reach the server.';
+      $('approve').disabled = false;
+      return;
+    }
+    poll();
+  });
+
 }());</script>
 </body>
 </html>

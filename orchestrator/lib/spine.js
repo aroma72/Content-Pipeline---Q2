@@ -137,6 +137,7 @@ async function execute(item, opts = {}) {
     stageOverrides = {},
     quiet = false,
     budgetUsd = null,
+    reviewApproved = null,   // a person watched it and said publish
   } = opts;
 
   const stages = loadStages(stageOverrides);
@@ -221,7 +222,7 @@ async function execute(item, opts = {}) {
           item,
           state: st,
           artifacts: st.artifacts,
-          opts: { dryRun, budgetUsd },
+          opts: { dryRun, budgetUsd, reviewApproved },
           log: (msg) => log(name, msg),
         });
         state.finishStage(st, name, { status: state.STATUS.DONE, output });

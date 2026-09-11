@@ -270,12 +270,24 @@ app.post('/demo/make-video/:jobId/produce', (req, res) => {
       onStage: (st) => { job.produce.stage = st; },
     }
   ).then((r) => {
+    const elapsed = Math.round((Date.now() - job.produce.startedAt) / 1000);
+    if (r.awaitingReview) {
+      // The pipeline working as designed: a person watches it before it goes out.
+      job.status = 'awaiting_review';
+      job.review = { itemId: r.itemId, artifacts: r.artifacts, qa: r.qa, finalPath: r.finalPath };
+      job.produce = {
+        status: 'awaiting_review', stage: 'review',
+        spendUsd: r.spendUsd, qa: r.qa, elapsedSeconds: elapsed,
+      };
+      console.log(`[produce ${job.id}] finished, waiting for a human to approve it`);
+      return;
+    }
     job.status = 'published';
     job.produce = {
       status: 'done', stage: 'upload',
       spendUsd: r.spendUsd,
       youtube: r.youtube,
-      elapsedSeconds: Math.round((Date.now() - job.produce.startedAt) / 1000),
+      elapsedSeconds: elapsed,
     };
     console.log(`[produce ${job.id}] published:`, JSON.stringify(r.youtube));
   }).catch((e) => {
@@ -285,6 +297,64 @@ app.post('/demo/make-video/:jobId/produce', (req, res) => {
   });
 
   res.status(202).json({ jobId: job.id, status: 'producing', budgetUsd });
+});
+
+/**
+ * Stream the finished video so it can be watched before it is published.
+ *
+ * Without this the approval gate is unusable: the stage waits for a person to
+ * say the video is good, and the person had no way to see it. Range requests are
+ * honoured so the browser can scrub.
+ */
+app.get('/demo/make-video/:jobId/video', (req, res) => {
+  const job = jobs.get(req.params.jobId);
+  const file = job && job.review && job.review.finalPath;
+  if (!file || !fs.existsSync(file)) {
+    return res.status(404).type('text').send('No finished video for this job.');
+  }
+  const size = fs.statSync(file).size;
+  const range = req.headers.range;
+  res.set('Content-Type', 'video/mp4');
+  if (!range) {
+    res.set('Content-Length', size);
+    return fs.createReadStream(file).pipe(res);
+  }
+  const m = /bytes=(\d*)-(\d*)/.exec(range) || [];
+  const start = Number(m[1] || 0);
+  const end = m[2] ? Number(m[2]) : size - 1;
+  res.status(206).set({
+    'Content-Range': `bytes ${start}-${end}/${size}`,
+    'Accept-Ranges': 'bytes',
+    'Content-Length': end - start + 1,
+  });
+  fs.createReadStream(file, { start, end }).pipe(res);
+});
+
+/** Publish a video a person has just watched. Nothing paid for is made again. */
+app.post('/demo/make-video/:jobId/approve', (req, res) => {
+  const job = jobs.get(req.params.jobId);
+  if (!job) return res.status(404).json({ error: 'not_found', message: 'No such job (or it expired).' });
+  if (job.status !== 'awaiting_review' || !job.review) {
+    return res.status(409).json({ error: 'not_ready', message: 'There is no finished video waiting here.' });
+  }
+
+  job.status = 'publishing';
+  job.produce = { ...job.produce, status: 'running', stage: 'upload' };
+
+  require('./lib/one-video').approve(
+    { itemId: job.review.itemId, by: (req.body && req.body.by) || 'Aroma', artifacts: job.review.artifacts },
+    { log: (m) => console.log(`[approve ${job.id}]`, m), onStage: (st) => { job.produce.stage = st; } }
+  ).then((r) => {
+    job.status = 'published';
+    job.produce = { ...job.produce, status: 'done', stage: 'upload', youtube: r.youtube };
+    console.log(`[approve ${job.id}] published:`, JSON.stringify(r.youtube));
+  }).catch((e) => {
+    job.status = 'awaiting_review';
+    job.produce = { ...job.produce, status: 'awaiting_review', stage: 'review', error: e.message };
+    console.error(`[approve ${job.id}] failed:`, e.message);
+  });
+
+  res.status(202).json({ jobId: job.id, status: 'publishing' });
 });
 
 const MAKE_FILE = path.join(__dirname, '..', 'prototypes', 'make-a-video.html');
