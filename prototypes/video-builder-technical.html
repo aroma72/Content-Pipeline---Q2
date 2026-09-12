@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Make a Video — technical reference</title>
+<style>
+@page{ size:A4; margin:14mm 15mm 13mm; }
+:root{
+  --ink:#26231F; --muted:#615A50; --line:#CFC8BA; --line-soft:#E4DED2;
+  --panel:#FAF8F3; --accent:#8A5A2B; --good:#4A7238; --bad:#B0572F;
+  --sans:'Segoe UI',Arial,sans-serif; --mono:Consolas,'Courier New',monospace;
+  --serif:Georgia,'Times New Roman',serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{font-family:var(--sans);font-size:9.3pt;line-height:1.5;color:var(--ink);background:#fff}
+.page{page-break-after:always}
+.page:last-child{page-break-after:auto}
+/* A continuation sheet carries the running head and nothing else: repeating the
+   title block on every page cost ~60mm a sheet and doubled the document. */
+.page.cont .eyebrow,.page.cont h1,.page.cont .lede{display:none}
+.page.cont section:first-of-type{margin-top:0}
+.rh{display:flex;justify-content:space-between;align-items:baseline;
+  border-bottom:.6pt solid var(--line);padding-bottom:5pt;margin-bottom:13pt;
+  font-family:var(--mono);font-size:7pt;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.rh b{color:var(--accent);font-weight:500}
+.eyebrow{font-family:var(--mono);font-size:7.5pt;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--accent);margin-bottom:7pt}
+h1{font-family:var(--serif);font-weight:700;font-size:24pt;line-height:1.07;margin-bottom:9pt}
+.lede{font-size:10.6pt;line-height:1.48;color:var(--muted);max-width:150mm}
+.lede strong{color:var(--ink);font-weight:500}
+h2{font-size:12pt;font-weight:600;margin-bottom:4pt;letter-spacing:-.2pt}
+h3{font-size:9.8pt;font-weight:600;margin-bottom:3pt}
+.sub{color:var(--muted);font-size:8.9pt;margin-bottom:9pt;max-width:155mm}
+section+section{margin-top:14pt}
+.body{max-width:158mm}
+.body p{margin-bottom:6pt}
+b,strong{font-weight:600}
+em{font-style:italic;color:var(--muted)}
+
+pre{font-family:var(--mono);font-size:7.7pt;line-height:1.42;background:#F7F4ED;
+  border:.5pt solid var(--line-soft);border-left:2pt solid var(--accent);
+  padding:7pt 9pt;margin:7pt 0;white-space:pre-wrap;word-break:break-word}
+pre .c{color:var(--muted)}
+code{font-family:var(--mono);font-size:8.3pt;background:#F3EFE7;padding:.5pt 2.5pt}
+
+table{border-collapse:collapse;width:100%;margin-top:6pt}
+th,td{text-align:left;vertical-align:top;padding:4.5pt 7pt 4.5pt 0;
+  border-bottom:.5pt solid var(--line-soft);font-size:8.7pt;line-height:1.42}
+th{font-family:var(--mono);font-size:6.8pt;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--muted);border-bottom:.6pt solid var(--line);padding-bottom:4pt}
+td.m{font-family:var(--mono);font-size:7.6pt;width:14mm;color:var(--accent);font-weight:600}
+td.p{font-family:var(--mono);font-size:7.6pt;width:62mm;word-break:break-all}
+td.k{font-family:var(--mono);font-size:7.8pt;width:38mm;word-break:break-all}
+td.t{font-family:var(--mono);font-size:7.4pt;width:20mm;color:var(--muted)}
+
+.panel{border:.6pt solid var(--line);background:var(--panel);padding:9pt 10pt;margin-top:8pt}
+.panel h3{margin-bottom:3pt}
+.panel p{font-size:8.6pt;color:var(--muted)}
+.warn{border-left:2pt solid var(--bad);background:#FDF4F0;padding:8pt 10pt;margin:8pt 0}
+.warn .t{font-weight:600;font-size:9.3pt;margin-bottom:2pt;color:#8C3F1D}
+.warn .d{font-size:8.5pt;color:var(--muted);line-height:1.42}
+.ok{border-left:2pt solid var(--good);background:#F3F7F0;padding:8pt 10pt;margin:8pt 0}
+.ok .t{font-weight:600;font-size:9.3pt;margin-bottom:2pt;color:#3D6130}
+.ok .d{font-size:8.5pt;color:var(--muted);line-height:1.42}
+
+ul{list-style:none;margin:5pt 0}
+li{position:relative;padding-left:10pt;margin-bottom:4pt;font-size:8.8pt;line-height:1.42}
+li:before{content:'';position:absolute;left:0;top:4pt;width:3.2pt;height:3.2pt;border:.7pt solid var(--accent)}
+ol{margin:5pt 0 5pt 14pt}
+ol li{padding-left:0;list-style:decimal}
+ol li:before{display:none}
+
+.foot{margin-top:12pt;border-top:.5pt solid var(--line-soft);padding-top:5pt;
+  font-family:var(--mono);font-size:6.8pt;letter-spacing:.07em;color:var(--muted);
+  display:flex;justify-content:space-between}
+</style>
+</head>
+<body>
+
+<!-- ══ 1 ══════════════════════════════════════════════════════ -->
+<div class="page">
+  <div class="rh"><span>Taleemabad University · <b>Make a Video</b></span><span>Technical reference · v2</span></div>
+<div class="eyebrow">Endpoints, payloads, failure modes</div>
+  <h1>Technical reference</h1>
+  <p class="lede">Everything needed to drive video creation from the LMS and to render the in-video
+  checkpoint. <strong>Base URL</strong>
+  <code>https://content-queen-production.up.railway.app</code>. Two separate APIs: an unauthenticated
+  job API for creating a video, and a token-gated read API for consuming its checkpoint.</p>
+
+  <div class="warn">
+    <div class="t">Supersedes the course-builder reference of September 2026.</div>
+    <div class="d">The <code>/api/v1/courses/*</code> endpoints still answer, but nothing has been
+    built on them and they are not the supported path. Build against the endpoints in this document.
+    The unit of work is <b>one video</b>, created and approved individually.</div>
+  </div>
+<section>
+    <h2>1 · Authentication</h2>
+    <p class="sub">Two different rules, because the two APIs carry different risk.</p>
+    <table>
+      <tr><th>API</th><th>Auth</th><th>Why</th></tr>
+      <tr><td class="k">/api/v1/*</td><td>Bearer token, required</td><td>Reads content metadata. Fails closed with <code>503</code> if the server has no token configured, rather than serving openly.</td></tr>
+      <tr><td class="k">/demo/make-video/*</td><td>None; rate limited</td><td>Creation is behind an unlisted URL and capped at 6 videos/hour/IP. It spends money, so the cap is the control, not the secrecy.</td></tr>
+    </table>
+    <pre>Authorization: Bearer &lt;CONTENT_API_TOKEN&gt;
+
+<span class="c"># The token is a shared secret. Never put it in browser-side code — call
+# our API from your server, and serve the checkpoint to the player yourself.
+# Ask Aroma Tahir for the value; it is not printed in this document.</span></pre>
+    <div class="ok">
+      <div class="t">Check you are wired up correctly: <code>GET /api/v1</code></div>
+      <div class="d">Public, no token. Returns a machine-readable index of every endpoint with example
+      URLs, and <code>"configured": true</code> when the server holds a token. If that says false, the
+      read API will refuse everything and the problem is on our side.</div>
+    </div>
+  </section>
+  <div class="foot"><span>Make a Video · Technical reference</span><span>Page 1 of 7</span></div>
+</div>
+
+<!-- ══ 2 ══════════════════════════════════════════════════════ -->
+<div class="page cont">
+  <div class="rh"><span>Taleemabad University · <b>Make a Video</b></span><span>Technical reference · v2</span></div>
+<section>
+    <h2>2 · Creating a video — the job API</h2>
+    <p class="sub">Four calls. Writing is free and fast; producing costs money and takes half an hour;
+    publishing needs a human. Each is a separate request so each is a separate decision.</p>
+    <table>
+      <tr><th>&nbsp;</th><th>Endpoint</th><th>Returns</th></tr>
+      <tr><td class="m">POST</td><td class="p">/demo/make-video</td><td><code>202</code> + <code>{jobId, status}</code>. Body: <code>{"topic": "..."}</code>. Starts research → script → gate.</td></tr>
+      <tr><td class="m">GET</td><td class="p">/demo/make-video/:jobId</td><td>Job state. Poll every 4–5s. Carries the script once written.</td></tr>
+      <tr><td class="m">POST</td><td class="p">/demo/make-video/:jobId/produce</td><td><code>202</code>. <b>Spends money.</b> Art, voice, render, QA.</td></tr>
+      <tr><td class="m">GET</td><td class="p">/demo/make-video/:jobId/video</td><td>The finished MP4. Honours <code>Range</code>, so it scrubs in a player.</td></tr>
+      <tr><td class="m">POST</td><td class="p">/demo/make-video/:jobId/approve</td><td><code>202</code>. Publishes to YouTube. Body: <code>{"by": "name"}</code>.</td></tr>
+    </table>
+    <pre>POST /demo/make-video          <span class="c">// free, returns immediately</span>
+Content-Type: application/json
+{ "topic": "how do I handle an angry parent on the phone" }
+
+→ 202 { "jobId": "8fb136e2012c", "status": "running" }</pre>
+    <p style="font-size:8.7pt;color:var(--muted)">The job is created and the request returns at once.
+    Writing a gated script takes three to seven minutes, which is far too long to hold a connection
+    open — an edge proxy will cut it. Poll instead.</p>
+  </section>
+
+<section>
+    <h2>3 · The job lifecycle</h2>
+    <p class="sub"><code>status</code> is what to branch on. <code>stage</code> is for showing progress
+    and will move backwards during a redraft, which is normal.</p>
+    <table>
+      <tr><th>status</th><th>Meaning</th><th>What the UI should do</th></tr>
+      <tr><td class="k">running</td><td>Researching, writing or gating.</td><td>Show <code>stage</code>. Keep polling.</td></tr>
+      <tr><td class="k">written</td><td>Script done and passed the gate.</td><td>Render <code>script</code>. Offer the produce button.</td></tr>
+      <tr><td class="k">producing</td><td>Art, voice, render, QA.</td><td>Keep polling. ~25 minutes.</td></tr>
+      <tr><td class="k">awaiting_review</td><td><b>The video is finished.</b> Not published.</td><td>Play <code>/video</code>. Offer the approve button.</td></tr>
+      <tr><td class="k">publishing</td><td>Uploading to YouTube.</td><td>Keep polling.</td></tr>
+      <tr><td class="k">published</td><td>Live, unlisted.</td><td>Show <code>produce.youtube.url</code>.</td></tr>
+      <tr><td class="k">failed</td><td>The run stopped. <code>error</code> says where and why.</td><td>Show the error. The topic can be retried.</td></tr>
+    </table>
+    <div class="panel">
+      <h3>awaiting_review is a success state, not a failure</h3>
+      <p>The video exists and passed QA. Treating it as an error is the most likely integration
+      mistake — it is the state the pipeline is designed to end in, and only a person moves it on.
+      <code>produce.status</code> mirrors it, and <code>produce.spendUsd</code> says what it cost.</p>
+    </div>
+  </section>
+  <div class="foot"><span>Make a Video · Technical reference</span><span>Page 2 of 7</span></div>
+</div>
+
+<!-- ══ 3 ══════════════════════════════════════════════════════ -->
+<div class="page cont">
+  <div class="rh"><span>Taleemabad University · <b>Make a Video</b></span><span>Technical reference · v2</span></div>
+<section>
+    <h2>4 · The script, once written</h2>
+    <pre>GET /demo/make-video/8fb136e2012c
+
+{
+  "jobId": "8fb136e2012c",
+  "status": "written",
+  "stage": "gate",
+  "topic": "how do I handle an angry parent on the phone",
+  "elapsedSeconds": 201,
+  "error": null,
+  "script": {
+    "itemId": "made/how-do-i-handle-an-angry-parent-on-the-phone-nhl1",
+    "slug":   "how-do-i-handle-an-angry-parent-on-the-phone-nhl1",
+    "title":  "Handling an Angry Parent Phone Call",
+    "interpretation": "You asked how to handle an angry parent on the phone; this
+                       video narrows to the first ninety seconds of that call …",
+    "slo":      "Given an angry parent on the phone, the teacher can …",
+    "scenario": "Ali is alone in the staff room at twenty to five …",
+    "gate":     "READY",
+    "redrafts": 1,
+    "beats": [
+      { "id": "01", "mode": "scene",      "vo": "It is twenty to five, and …" },
+      { "id": "13", "mode": "info",       "vo": "Confirmation is the hinge …" },
+      { "id": "14", "mode": "checkpoint", "vo": null },
+      { "id": "15", "mode": "ali",        "vo": "Reflect once, then explain." }
+    ],
+    "checkpoint": {
+      "stem":    "A parent opens the call shouting …",
+      "options": ["…", "…", "…", "…"],
+      "answer":  1,
+      "explain": "The tempting options all sound reasonable and all escalate …"
+    },
+    "checkpointAfterBeat": "13"
+  }
+}</pre>
+    <table>
+      <tr><th>Field</th><th>Type</th><th>Notes</th></tr>
+      <tr><td class="k">interpretation</td><td class="t">string</td><td><b>Show this.</b> One sentence saying what the system narrowed the typed topic to, and why. It is how a user sees a wrong interpretation before paying to render it.</td></tr>
+      <tr><td class="k">itemId</td><td class="t">string</td><td>Opaque. Pass it back if you drive produce/approve from your own server.</td></tr>
+      <tr><td class="k">beats[].mode</td><td class="t">enum</td><td><code>scene</code> · <code>ali</code> · <code>info</code> · <code>checkpoint</code>. The first three are drawn; a checkpoint never is.</td></tr>
+      <tr><td class="k">beats[].vo</td><td class="t">string|null</td><td>Exactly one spoken sentence. <b>null on a checkpoint beat</b> — it is never spoken.</td></tr>
+      <tr><td class="k">checkpoint</td><td class="t">object</td><td>The question. <code>answer</code> is a 0-based index into <code>options</code>.</td></tr>
+      <tr><td class="k">redrafts</td><td class="t">integer</td><td>How many times the gate sent it back. Worth showing; it is a quality signal, not a fault.</td></tr>
+    </table>
+  </section>
+  <div class="foot"><span>Make a Video · Technical reference</span><span>Page 3 of 7</span></div>
+</div>
+
+<!-- ══ 4 ══════════════════════════════════════════════════════ -->
+<div class="page cont">
+  <div class="rh"><span>Taleemabad University · <b>Make a Video</b></span><span>Technical reference · v2</span></div>
+<section>
+    <h2>5 · The finished video, awaiting approval</h2>
+    <pre>{
+  "status": "awaiting_review",
+  "produce": {
+    "status": "awaiting_review",
+    "stage":  "review",
+    "spendUsd": 0.52,
+    "qa": {
+      "factors": { "accuracy": 0.9, "objectives_coverage": 1, "post_production": 0.88,
+                   "visuals": 0.95, "storytelling": 0.95, "voiceover_quality": 0.9,
+                   "qa_at_each_step": 0.9 },
+      "combined_score": 6.48,
+      "weakest_factor": "post_production"
+    },
+    "elapsedSeconds": 1503
+  }
+}
+
+<span class="c"># then, after POST …/approve</span>
+{ "status": "published",
+  "produce": { "status": "done",
+               "youtube": { "videoId": "2_IUH0sb6gY",
+                            "url": "https://youtu.be/2_IUH0sb6gY",
+                            "privacyStatus": "unlisted" } } }</pre>
+    <p style="font-size:8.7pt;color:var(--muted)">Seven QA factors, each 0–1, combined out of 7. The
+    publication threshold is 4.9; a video scoring below it does not reach this state at all. Store
+    <code>combined_score</code> against the content record — it is the only quality number that exists.</p>
+  </section>
+
+<section>
+    <h2>6 · Reading a video's checkpoints</h2>
+    <pre>GET /api/v1/videos/:videoId/checkpoints
+Authorization: Bearer &lt;CONTENT_API_TOKEN&gt;
+
+{
+  "videoId": "how-do-i-handle-an-angry-parent-on-the-phone-nhl1",
+  "timing": { "trusted": true, "relativeTo": "…-nhl1_final.mp4",
+              "introOffsetSeconds": 2.6, "introOffsetSource": "probed",
+              "lessonSeconds": 137.3, "note": "atSeconds is measured from the
+              start of the delivered file, which begins with the brand intro." },
+  "checkpoints": [{
+    "id": "q1",
+    "beatId": "14",
+    "atSeconds": 86.55,          <span class="c">// ← fire on this. Includes the intro.</span>
+    "lessonAtSeconds": 83.95,    <span class="c">//   same point, intro excluded</span>
+    "preamble": "Let's answer a quick question, to check the concept landed.",
+    "stem": "A parent opens the call shouting that you humiliated her daughter …",
+    "options": ["…", "…", "…", "…"],
+    "correctIndex": 1,
+    "explanation": "The tempting options all sound reasonable and all escalate …",
+    "explanationSource": "authored",
+    "rendersInVideo": false,
+    "pause": { "atBeatBoundary": true, "safe": true,
+               "afterBeatId": "13", "beforeBeatId": "15",
+               "boundaryLessonSeconds": 84.2, "leadSeconds": 0.25 }
+  }]
+}</pre>
+  </section>
+  <div class="foot"><span>Make a Video · Technical reference</span><span>Page 4 of 7</span></div>
+</div>
+
+<!-- ══ 5 ══════════════════════════════════════════════════════ -->
+<div class="page cont">
+  <div class="rh"><span>Taleemabad University · <b>Make a Video</b></span><span>Technical reference · v2</span></div>
+<section>
+    <h2>7 · Five fields to respect</h2>
+    <table>
+      <tr><th>Field</th><th>Rule</th></tr>
+      <tr><td class="k">atSeconds</td><td>Fire here. Measured from the start of the <b>delivered file</b>, brand intro included. Using <code>lessonAtSeconds</code> instead fires ~2.6s early.</td></tr>
+      <tr><td class="k">timing.trusted</td><td><b>If false, do not fire.</b> A beat length was not measured, so every time after it is a guess.</td></tr>
+      <tr><td class="k">pause.safe</td><td><b>If false, do not fire.</b> The checkpoint has no spoken sentence on one side, so there is no boundary to pause on.</td></tr>
+      <tr><td class="k">rendersInVideo</td><td>Older videos (<code>true</code>) also draw the question on screen, so the popup duplicates it — you may prefer to let those play. New videos are always <code>false</code>.</td></tr>
+      <tr><td class="k">explanationSource</td><td><code>authored</code> = written for a learner who chose wrong. <code>video-note</code> = a short on-screen caption, thin as feedback. <code>missing</code> = show nothing but the correct answer.</td></tr>
+    </table>
+    <div class="warn">
+      <div class="t">Two guards, and both must pass.</div>
+      <div class="d"><code>timing.trusted &amp;&amp; pause.safe</code>. Either being false means the
+      firing time is not dependable, and a popup landing mid-sentence is worse than no popup. Fail
+      closed: play the video straight through.</div>
+    </div>
+  </section>
+
+<section>
+    <h2>8 · Listing what is available</h2>
+    <pre>GET /api/v1/videos        <span class="c">// every video with at least one checkpoint</span>
+
+{ "count": 20,
+  "videos": [
+    { "videoId": "autonomy-01-spectrum", "series": "autonomy",
+      "path": "autonomy/autonomy-01-spectrum", "checkpoints": 1,
+      "deliverableOnServer": false, "explanationsAuthored": 1,
+      "timingTrusted": true, "questionStyle": "on-screen" }
+  ] }</pre>
+    <p style="font-size:8.7pt;color:var(--muted)"><code>questionStyle</code> is
+    <code>"checkpoint"</code> for videos built the current way and <code>"on-screen"</code> for the
+    older ones. <code>deliverableOnServer: false</code> is normal and expected — see overleaf.</p>
+  </section>
+  <div class="foot"><span>Make a Video · Technical reference</span><span>Page 5 of 7</span></div>
+</div>
+
+<!-- ══ 6 ══════════════════════════════════════════════════════ -->
+<div class="page cont">
+  <div class="rh"><span>Taleemabad University · <b>Make a Video</b></span><span>Technical reference · v2</span></div>
+<section>
+    <h2>9 · Firing the popup</h2>
+    <pre><span class="c">// Fetch server-side; the token must never reach the browser.</span>
+const { timing, checkpoints } = await api.checkpointsFor(videoId);
+
+<span class="c">// Fail closed. An untrusted time is worse than no popup.</span>
+const live = timing.trusted
+  ? checkpoints.filter(c =&gt; c.pause.safe).sort((a, b) =&gt; a.atSeconds - b.atSeconds)
+  : [];
+
+let next = 0;
+player.on('timeupdate', () =&gt; {
+  const c = live[next];
+  if (!c || player.currentTime &lt; c.atSeconds) return;
+  next++;                       <span class="c">// before showing, so a re-entrant tick cannot double-fire</span>
+  player.pause();
+  showCheckpoint(c);            <span class="c">// preamble, stem, options — your own UI</span>
+});
+
+function onAnswer(c, chosen) {
+  const right = chosen === c.correctIndex;
+  record({ videoId, checkpointId: c.id, chosen, right });   <span class="c">// YOUR store</span>
+  if (right) return resumeAfterBrieflyConfirming();
+  <span class="c">// Wrong: the explanation is the whole point. Show it with the correct
+  // option marked, and let them continue — never block progress on it.</span>
+  showExplanation(c.explanation, c.options[c.correctIndex]);
+}</pre>
+    <ul>
+      <li><b>Seeking.</b> A learner who scrubs past a checkpoint should not have it fire retroactively. Recompute <code>next</code> from <code>currentTime</code> on <code>seeked</code>.</li>
+      <li><b>Once per view.</b> Do not re-fire a checkpoint the learner has already answered in this sitting.</li>
+      <li><b>Never a dead end.</b> A wrong answer shows the explanation and continues. Gating progress on a formative check turns a teaching moment into an exam.</li>
+    </ul>
+  </section>
+
+<section>
+    <h2>10 · What to store on your side</h2>
+    <p class="sub">Our service holds no learner identity and no durable disk. The division is deliberate.</p>
+    <table>
+      <tr><th>Ours</th><th>Yours</th></tr>
+      <tr><td>The question, its options, the correct index, the explanation, and the second to fire at.</td><td>Who answered, what they chose, when, how many attempts, and everything built on that.</td></tr>
+      <tr><td>The YouTube link and the QA score at publication.</td><td>The content record those attach to, and the course a video belongs to.</td></tr>
+    </table>
+    <pre>POST /api/v1/videos/:videoId/checkpoints/:id/attempts
+
+→ 501 Not Implemented
+   "The LMS is the system of record for answers; this service holds no
+    learner identity."</pre>
+    <p style="font-size:8.7pt;color:var(--muted)">This endpoint exists so that the answer to "where do
+    attempts go?" is in the API itself rather than in a conversation. It returns 501 rather than
+    accepting and discarding, which an earlier version did.</p>
+  </section>
+  <div class="foot"><span>Make a Video · Technical reference</span><span>Page 6 of 7</span></div>
+</div>
+
+<!-- ══ 7 ══════════════════════════════════════════════════════ -->
+<div class="page cont">
+  <div class="rh"><span>Taleemabad University · <b>Make a Video</b></span><span>Technical reference · v2</span></div>
+<section>
+    <h2>11 · Failure modes worth handling</h2>
+    <table>
+      <tr><th>Symptom</th><th>Cause and response</th></tr>
+      <tr><td class="k">503 on any /api/v1 route</td><td>The server has no token configured. It fails closed rather than serving openly. Ours to fix; check <code>GET /api/v1</code> for <code>configured</code>.</td></tr>
+      <tr><td class="k">404 on a videoId that worked</td><td>We keep no disk between releases. A video registered at runtime is gone after a deploy. <b>Persist the checkpoint payload when you first read it.</b></td></tr>
+      <tr><td class="k">deliverableOnServer: false</td><td>Expected, not an error. Video files are not committed to our repository. The YouTube link is the durable copy.</td></tr>
+      <tr><td class="k">429 on make-video</td><td>Six videos per hour per IP. Creation spends real money.</td></tr>
+      <tr><td class="k">status: failed mid-produce</td><td>A quality sensor rejected the work and the redraft budget ran out. The topic can be retried; the error names the stage and the finding.</td></tr>
+      <tr><td class="k">Stuck in awaiting_review</td><td>Not stuck. It is waiting for a person, indefinitely and by design.</td></tr>
+    </table>
+    <div class="warn">
+      <div class="t">The single most important line in this document.</div>
+      <div class="d">Our container has no persistent volume. <b>Read the checkpoint payload once and
+      store it with your content record.</b> Do not call our API at playback time for every learner —
+      cache it at publication, and treat our service as the source of truth at authoring time only.</div>
+    </div>
+  </section>
+  <div class="foot"><span>Make a Video · Technical reference · questions to Aroma Tahir</span><span>Page 7 of 7</span></div>
+</div>
+
+</body>
+</html>

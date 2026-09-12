@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Make a Video — what it is and why</title>
+<style>
+@page{ size:A4; margin:15mm 16mm 14mm; }
+:root{
+  --ink:#26231F; --muted:#615A50; --line:#CFC8BA; --line-soft:#E4DED2;
+  --panel:#FAF8F3; --accent:#8A5A2B; --good:#4A7238; --bad:#B0572F;
+  --sans:'Segoe UI',Arial,sans-serif; --mono:Consolas,'Courier New',monospace;
+  --serif:Georgia,'Times New Roman',serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{font-family:var(--sans);font-size:9.8pt;line-height:1.55;color:var(--ink);background:#fff}
+.page{page-break-after:always}
+.page:last-child{page-break-after:auto}
+/* A continuation sheet carries the running head and nothing else: repeating the
+   title block on every page cost ~60mm a sheet and doubled the document. */
+.page.cont .eyebrow,.page.cont h1,.page.cont .lede{display:none}
+.page.cont section:first-of-type{margin-top:0}
+.rh{display:flex;justify-content:space-between;align-items:baseline;
+  border-bottom:.6pt solid var(--line);padding-bottom:5pt;margin-bottom:15pt;
+  font-family:var(--mono);font-size:7pt;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.rh b{color:var(--accent);font-weight:500}
+.eyebrow{font-family:var(--mono);font-size:7.5pt;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--accent);margin-bottom:8pt}
+h1{font-family:var(--serif);font-weight:700;font-size:27pt;line-height:1.06;margin-bottom:10pt}
+.lede{font-size:11.5pt;line-height:1.5;color:var(--muted);max-width:150mm}
+.lede strong{color:var(--ink);font-weight:500}
+h2{font-size:13pt;font-weight:600;margin-bottom:4pt;letter-spacing:-.2pt}
+h3{font-size:10.4pt;font-weight:600;margin-bottom:3pt}
+.sub{color:var(--muted);font-size:9.4pt;margin-bottom:11pt;max-width:155mm}
+section+section{margin-top:17pt}
+p+p{margin-top:7pt}
+.body{max-width:158mm}
+.body p{margin-bottom:7pt}
+b,strong{font-weight:600}
+em{font-style:italic;color:var(--muted)}
+
+.flow{display:flex;align-items:stretch;gap:0;margin:10pt 0}
+.flow .step{flex:1;border:.6pt solid var(--line);background:var(--panel);padding:9pt 9pt}
+.flow .step+.step{border-left:none}
+.flow .step.paid{background:#FBF4EC;border-color:#D8BC9A}
+.flow .step.gate{background:#F2F6EE;border-color:#B7CBA8}
+.flow .n{font-family:var(--mono);font-size:6.8pt;letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
+.flow .t{font-weight:600;font-size:9.4pt;margin:3pt 0}
+.flow .d{font-size:8.2pt;color:var(--muted);line-height:1.4}
+.flow .who{font-family:var(--mono);font-size:6.6pt;color:var(--muted);margin-top:5pt;
+  border-top:.5pt solid var(--line-soft);padding-top:4pt}
+
+table{border-collapse:collapse;width:100%}
+th,td{text-align:left;vertical-align:top;padding:5pt 8pt 5pt 0;border-bottom:.5pt solid var(--line-soft);
+  font-size:9pt;line-height:1.45}
+th{font-family:var(--mono);font-size:6.9pt;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--muted);border-bottom:.6pt solid var(--line);padding-bottom:4pt}
+td.k{font-weight:600;width:34mm}
+td.n{font-family:var(--mono);font-variant-numeric:tabular-nums;width:22mm}
+
+.panel{border:.6pt solid var(--line);background:var(--panel);padding:10pt 11pt;margin-top:10pt}
+.panel h3{margin-bottom:4pt}
+.panel p{font-size:9pt;color:var(--muted)}
+.rule{border-left:2pt solid var(--accent);background:#FBF7F1;padding:8pt 11pt;margin:9pt 0}
+.rule .t{font-weight:600;font-size:9.6pt;margin-bottom:2pt}
+.rule .d{font-size:8.8pt;color:var(--muted);line-height:1.45}
+
+ul{list-style:none;margin:6pt 0}
+li{position:relative;padding-left:11pt;margin-bottom:4.5pt;font-size:9.2pt;line-height:1.45}
+li:before{content:'';position:absolute;left:0;top:4.5pt;width:3.5pt;height:3.5pt;
+  border:.7pt solid var(--accent)}
+li.y:before{background:var(--good);border-color:var(--good)}
+li.n:before{background:var(--bad);border-color:var(--bad)}
+
+.two{display:flex;gap:11pt;margin-top:10pt}
+.two>div{flex:1}
+.quote{font-family:var(--serif);font-size:10.4pt;font-style:italic;line-height:1.45;
+  color:var(--ink);border-left:2pt solid var(--line);padding-left:10pt;margin:9pt 0}
+.ft{position:running(f)}
+.foot{margin-top:14pt;border-top:.5pt solid var(--line-soft);padding-top:5pt;
+  font-family:var(--mono);font-size:6.8pt;letter-spacing:.07em;color:var(--muted);
+  display:flex;justify-content:space-between}
+code{font-family:var(--mono);font-size:8.6pt;background:#F3EFE7;padding:.5pt 2.5pt}
+</style>
+</head>
+<body>
+
+<!-- ══ 1 ══════════════════════════════════════════════════════ -->
+<div class="page">
+  <div class="rh"><span>Taleemabad University · <b>Make a Video</b></span><span>Concept · for the LMS team</span></div>
+<div class="eyebrow">What we built</div>
+  <h1>Type a topic.<br>Get a teaching video.</h1>
+  <p class="lede">Someone types one line — <em>"how do I handle an angry parent on the phone"</em> — and
+  the system researches it, writes a twenty-beat script, reviews that script against our own standard,
+  redrafts it until it passes, then draws it, narrates it, renders it, scores it, and stops to let a
+  person watch it before anything is published. <strong>One video at a time, and a human decides
+  whether it ships.</strong></p>
+<section>
+    <h2>Why one video, not a course</h2>
+    <p class="sub">The earlier version of this document described a course builder: type a subject, get
+    nine lessons. That is not what exists, and the reason is worth stating plainly.</p>
+    <div class="body">
+      <p>Three real course builds were attempted. They cost money, took hours, and produced no finished
+      lesson — every one died somewhere in the middle, and because nine lessons were in flight at once,
+      each failure was expensive and hard to read. A course is not one feature; it is this feature nine
+      times plus a queue, an ordering, and an approval step per lesson.</p>
+      <p>So the unit is one video. It runs in about forty minutes, costs roughly half a dollar, and when
+      it fails it fails once, legibly. A course is then a list of these, built one at a time, each
+      approved before the next — which is how the content actually gets reviewed in practice anyway.</p>
+    </div>
+  </section>
+  <div class="foot"><span>Make a Video · Concept</span><span>Page 1 of 5</span></div>
+</div>
+
+<!-- ══ 2 ══════════════════════════════════════════════════════ -->
+<div class="page cont">
+  <div class="rh"><span>Taleemabad University · <b>Make a Video</b></span><span>Concept · for the LMS team</span></div>
+<section>
+    <h2>The seven stages</h2>
+    <p class="sub">These are not new. They are the same stages our hand-made videos have always gone
+    through — the same code that runs when a video is ordered in Slack. The page is a new door onto an
+    existing building.</p>
+    <div class="flow">
+      <div class="step"><div class="n">01</div><div class="t">Research</div>
+        <div class="d">Turns the typed line into a brief: the outcome, the audience, the one scenario Ali is followed through.</div>
+        <div class="who">free · ~30s</div></div>
+      <div class="step"><div class="n">02</div><div class="t">Script</div>
+        <div class="d">Writes ~20 beats. One beat is one spoken sentence plus the picture shown while it is spoken.</div>
+        <div class="who">free · ~2min</div></div>
+      <div class="step gate"><div class="n">03</div><div class="t">Gate</div>
+        <div class="d">Reviews the script against the house standard and sends it back with line-level fixes until it passes.</div>
+        <div class="who">free · loops</div></div>
+    </div>
+    <div class="flow">
+      <div class="step paid"><div class="n">04</div><div class="t">Produce</div>
+        <div class="d">Generates the illustrations, the voice, the motion, and renders the film with brand bumpers.</div>
+        <div class="who">PAID · ~25min</div></div>
+      <div class="step"><div class="n">05</div><div class="t">QA</div>
+        <div class="d">Scores it on seven factors. Below our threshold and it does not proceed.</div>
+        <div class="who">free · ~1min</div></div>
+      <div class="step gate"><div class="n">06</div><div class="t">Review</div>
+        <div class="d">Stops. A person watches the finished video and decides.</div>
+        <div class="who">HUMAN</div></div>
+      <div class="step"><div class="n">07</div><div class="t">Upload</div>
+        <div class="d">Publishes to YouTube, unlisted, and registers it for the LMS to pull.</div>
+        <div class="who">on approval</div></div>
+    </div>
+  </section>
+
+<section>
+    <h2>Two decisions, not one</h2>
+    <div class="two">
+      <div>
+        <h3>Writing is free</h3>
+        <p style="font-size:9.2pt;color:var(--muted)">Stages 1–3 are model calls on a credential we
+        already pay for. Nothing is bought. So a person can type a topic, read the script, and throw it
+        away at no cost — which means they will actually try things.</p>
+      </div>
+      <div>
+        <h3>Making it costs money</h3>
+        <p style="font-size:9.2pt;color:var(--muted)">Stage 4 buys generated art and generated speech.
+        Measured at <b>$0.52</b> for a finished 20-beat video, against a $1.77 estimate. It does not
+        start until someone presses a second button, having read the script.</p>
+      </div>
+    </div>
+    <div class="rule">
+      <div class="t">Nothing is spent by accident, and nothing is published by accident.</div>
+      <div class="d">Two separate presses, with something real to read before each. The first shows you
+      a script; the second shows you a video. Neither happens on its own.</div>
+    </div>
+  </section>
+  <div class="foot"><span>Make a Video · Concept</span><span>Page 2 of 5</span></div>
+</div>
+
+<!-- ══ 3 ══════════════════════════════════════════════════════ -->
+<div class="page cont">
+  <div class="rh"><span>Taleemabad University · <b>Make a Video</b></span><span>Concept · for the LMS team</span></div>
+<section>
+    <h2>Six things every script must do</h2>
+    <table>
+      <tr><th>Rule</th><th>What it means in the script</th></tr>
+      <tr><td class="k">One concept</td><td>One thing a learner can do afterwards, written as an observable action. Not "understand"; nobody can check that.</td></tr>
+      <tr><td class="k">One protagonist</td><td>Ali, always Ali, in one running situation followed all the way through — not a list of examples. A shopkeeper, a teacher, a clinic receptionist, whoever fits.</td></tr>
+      <tr><td class="k">The five-part arc</td><td>Friction, then the fix, then the structure behind it, then how it breaks, then the payoff. In that order, on the same task.</td></tr>
+      <tr><td class="k">Real numbers</td><td>"A five hundred rupee refund", not "a financial transaction". At least three data cards carrying actual figures.</td></tr>
+      <tr><td class="k">One checkpoint</td><td>A question the learner answers — see overleaf. Exactly one, two-thirds of the way through.</td></tr>
+      <tr><td class="k">Nothing written on screen</td><td>Illustrations carry no text, letters or numbers. Text is drawn by the renderer, where it can be spelled correctly and translated.</td></tr>
+    </table>
+  </section>
+
+<section>
+    <h2>The gate sends work back; it does not just refuse it</h2>
+    <div class="body">
+      <p>A reviewer that can only say no is of limited use. When the gate finds a problem it returns
+      line-level fixes naming the beat, and the writer produces a patch — only the beats that change,
+      applied in code, so a redraft cannot quietly damage a beat nobody complained about.</p>
+      <p>The same is true of the automated checks inside stage 4. If the art judge rejects an
+      illustration twice in a row, the defect is in the wording rather than the dice, so it asks for the
+      beat to be rewritten instead of ending the run. Each reviewer gets its own budget of rounds.</p>
+    </div>
+    <div class="quote">"One blocker: beat 19 is a scene whose art prompt describes no physical act — it
+    states both hands rest open and empty, which is a portrait."</div>
+    <p style="font-size:8.8pt;color:var(--muted)">A real gate finding. Specific enough to fix in one
+    edit, which is the standard every reviewer in this system is held to.</p>
+  </section>
+
+<section>
+    <h2>What the reviewer at stage 6 is actually for</h2>
+    <div class="body">
+      <p>Everything before stage 6 is a machine checking a machine. Those checks are good — the QA
+      score on our last video was 6.48 out of 7 — but they cannot tell whether a video is one
+      Taleemabad would want to put its name on. That judgement is not automatable and we have not tried
+      to automate it.</p>
+      <p>So the pipeline stops, hands over a finished video, and waits. Approve and it publishes.
+      Do nothing and nothing happens.</p>
+    </div>
+  </section>
+  <div class="foot"><span>Make a Video · Concept</span><span>Page 3 of 5</span></div>
+</div>
+
+<!-- ══ 4 ══════════════════════════════════════════════════════ -->
+<div class="page cont">
+  <div class="rh"><span>Taleemabad University · <b>Make a Video</b></span><span>Concept · for the LMS team</span></div>
+<section>
+    <h2>The question is not in the video</h2>
+    <div class="body">
+      <p>Every script carries one multiple-choice question that is <b>never drawn and never spoken</b>.
+      It occupies no time in the film. Its position in the script is a pause point: the player stops
+      there, the LMS shows the question as a popup, the learner answers, and the video resumes.</p>
+      <p>This replaced an earlier design where the question was drawn on a card. That version taught the
+      answer to a viewer who had no way to answer, and the platform learned nothing about whether anyone
+      got it right. Moving it into the player makes it a real question — the learner answers, the LMS
+      marks it, and the explanation is written for someone who has just chosen wrong.</p>
+    </div>
+    <div class="panel">
+      <h3>The pause always lands between sentences</h3>
+      <p>Each beat is one spoken sentence followed by a short silence, so a checkpoint sitting between
+      two beats can never cut into a word. The API gives the exact second, measured from the start of
+      the delivered file — including the brand intro, which is a common source of a two-second error.</p>
+    </div>
+  </section>
+
+<section>
+    <h2>What a learner sees</h2>
+    <ul>
+      <li>The video plays normally and pauses on its own at the checkpoint.</li>
+      <li>A panel appears: <em>"Let's answer a quick question, to check the concept landed."</em></li>
+      <li>The question, and four options. Three of them are mistakes a real learner makes.</li>
+      <li class="y">Right answer — a brief confirmation, and the video continues.</li>
+      <li class="n">Wrong answer — the explanation, which says why <b>their</b> choice was wrong and
+      what the right one was. Then they continue.</li>
+    </ul>
+    <div class="rule">
+      <div class="t">The LMS is the system of record for attempts.</div>
+      <div class="d">We serve the question; we do not store who answered what. Our service has no
+      durable database, and scores belong with the learner's record, not with the content pipeline. The
+      attempts endpoint deliberately returns "not implemented" rather than pretending to save.</div>
+    </div>
+  </section>
+  <div class="foot"><span>Make a Video · Concept</span><span>Page 4 of 5</span></div>
+</div>
+
+<!-- ══ 5 ══════════════════════════════════════════════════════ -->
+<div class="page cont">
+  <div class="rh"><span>Taleemabad University · <b>Make a Video</b></span><span>Concept · for the LMS team</span></div>
+<section>
+    <h2>What to expect, in numbers</h2>
+    <table>
+      <tr><th>&nbsp;</th><th>Measured</th><th>Note</th></tr>
+      <tr><td class="k">Script written &amp; passed</td><td class="n">3–7 min</td><td>Longer when the gate asks for redrafts, which is normal and visible on the page.</td></tr>
+      <tr><td class="k">Video produced</td><td class="n">~25 min</td><td>Art, voice, motion, render, bumpers, then seven QA factors.</td></tr>
+      <tr><td class="k">Cost per video</td><td class="n">$0.52</td><td>Generated art and speech. Writing and reviewing add nothing.</td></tr>
+      <tr><td class="k">Finished length</td><td class="n">1.5–2.5 min</td><td>20 beats at roughly six seconds of speech each.</td></tr>
+      <tr><td class="k">QA score</td><td class="n">6.48 / 7</td><td>Our publication threshold is 4.9. Seven factors, all rated.</td></tr>
+      <tr><td class="k">Checkpoints per video</td><td class="n">1</td><td>Exactly one, and it is mandatory.</td></tr>
+    </table>
+  </section>
+
+<section>
+    <h2>One limitation to design around</h2>
+    <div class="body">
+      <p>Our service keeps no disk between deployments. A finished video survives until the next
+      release, and its YouTube link survives permanently. <b>Treat the YouTube link and the checkpoint
+      payload as the durable artefacts</b>, and store both on your side when a video is published. Do
+      not rely on being able to fetch a video file back from us later.</p>
+    </div>
+  </section>
+  <div class="foot"><span>Make a Video · Concept · the technical companion has the endpoints</span><span>Page 5 of 5</span></div>
+</div>
+
+</body>
+</html>
