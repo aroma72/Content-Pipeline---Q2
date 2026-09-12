@@ -264,7 +264,11 @@ app.post('/demo/make-video/:jobId/produce', (req, res) => {
   job.status = 'producing';
 
   require('./lib/one-video').produce(
-    { itemId: job.script.itemId, budgetUsd, brief: job.script.brief },
+    {
+      itemId: job.script.itemId, budgetUsd, brief: job.script.brief,
+      // Only when the request says so. Default is still to stop and wait.
+      publishAs: (req.body && req.body.publish) ? ((req.body && req.body.by) || 'Aroma') : null,
+    },
     {
       log: (m) => console.log(`[produce ${job.id}]`, m),
       onStage: (st) => { job.produce.stage = st; },
@@ -355,6 +359,44 @@ app.post('/demo/make-video/:jobId/approve', (req, res) => {
   });
 
   res.status(202).json({ jobId: job.id, status: 'publishing' });
+});
+
+/**
+ * The videos this container actually holds, newest first.
+ *
+ * The page had no memory: jobId lived in a page variable, so a reload lost it,
+ * and the in-memory job record expired after two hours anyway. A finished video
+ * then had no route at all -- the page showed an empty form while the file sat on
+ * disk. This reads the disk, so what exists is always reachable.
+ */
+app.get('/demo/videos', (_req, res) => {
+  const list = require('./lib/one-video').finished();
+  res.json({
+    count: list.length,
+    videos: list,
+    note: list.length
+      ? 'These live on the container and do not survive a redeploy. A published '
+        + 'YouTube link is the durable copy.'
+      : 'Nothing made on this container yet.',
+  });
+});
+
+app.get('/demo/videos/:slug/file', (req, res) => {
+  const file = require('./lib/one-video').fileForSlug(req.params.slug);
+  if (!file) return res.status(404).type('text').send('No finished video by that name.');
+  const size = fs.statSync(file).size;
+  const range = req.headers.range;
+  res.set('Content-Type', 'video/mp4');
+  if (!range) {
+    res.set({ 'Content-Length': size, 'Accept-Ranges': 'bytes' });
+    return fs.createReadStream(file).pipe(res);
+  }
+  const m = /bytes=(\d*)-(\d*)/.exec(range) || [];
+  const start = Number(m[1] || 0);
+  const end = m[2] ? Number(m[2]) : size - 1;
+  res.status(206).set({ 'Content-Range': `bytes ${start}-${end}/${size}`,
+    'Accept-Ranges': 'bytes', 'Content-Length': end - start + 1 });
+  fs.createReadStream(file, { start, end }).pipe(res);
 });
 
 const MAKE_FILE = path.join(__dirname, '..', 'prototypes', 'make-a-video.html');

@@ -116,6 +116,10 @@ async function produce(req, { log = () => {}, onStage = () => {} } = {}) {
     stopAfter: req.stopAfter || 'upload',
     quiet: true,
     budgetUsd: Number(req.budgetUsd),
+    // A caller who has already said "make this and publish it" supplies the
+    // approval up front. Absent, the run stops at review and waits, which is
+    // still the default: silence is never consent.
+    reviewApproved: req.publishAs || null,
     // The stages before `produce` are not re-run; their output is already on
     // disk. Seeding records them as skipped, never as done.
     seedArtifacts: {
@@ -250,4 +254,45 @@ function readBeats(dir) {
   return Array.isArray(mod) ? mod : null;
 }
 
-module.exports = { write, produce, approve, finishedFile, SERIES, slugify };
+/**
+ * Every finished video on this container, newest first.
+ *
+ * Read off the disk rather than out of a job record. A job record is held in
+ * memory and expires after two hours, and when one did, the only route to a
+ * finished video expired with it -- the page showed a blank form while the
+ * video sat on the server, unreachable. The files are the truth.
+ */
+function finished() {
+  const root = path.join(PATHS.explainerVideos, SERIES);
+  let dirs = [];
+  try { dirs = fs.readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory()); }
+  catch { return []; }
+
+  return dirs.map((e) => {
+    const dir = path.join(root, e.name);
+    const file = finishedFile(dir, e.name);
+    if (!file) return null;
+    const st = fs.statSync(file);
+    let title = e.name;
+    try {
+      const beats = fs.readFileSync(path.join(dir, 'beats.js'), 'utf8');
+      const m = beats.match(/^\/\/ Title: (.+)$/m);
+      if (m) title = m[1].trim();
+    } catch { /* the slug will do */ }
+    return {
+      slug: e.name,
+      itemId: `${SERIES}/${e.name}`,
+      title,
+      bytes: st.size,
+      madeAt: st.mtime.toISOString(),
+    };
+  }).filter(Boolean).sort((a, b) => b.madeAt.localeCompare(a.madeAt));
+}
+
+/** The finished file for one slug, or null. */
+function fileForSlug(slug) {
+  if (!/^[a-z0-9-]{1,80}$/.test(String(slug))) return null;
+  return finishedFile(path.join(PATHS.explainerVideos, SERIES, slug), slug);
+}
+
+module.exports = { write, produce, approve, finished, fileForSlug, finishedFile, SERIES, slugify };

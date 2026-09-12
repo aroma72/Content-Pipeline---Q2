@@ -117,6 +117,17 @@ video{width:100%;border-radius:12px;border:1px solid var(--line);background:#000
 .beat.checkpoint{background:var(--blue-soft);border-radius:8px;padding:10px 12px;margin:6px 0}
 .beat.checkpoint .m{color:var(--blue-ink)}
 .beat.checkpoint .t{color:var(--ink-2);font-style:italic}
+.made-list{background:var(--card);border:1px solid var(--line);border-radius:12px;
+  padding:20px 22px;margin-bottom:16px}
+.made-list h2{font-size:15px;font-weight:700;letter-spacing:-.01em;margin-bottom:3px}
+.made-list .n{color:var(--muted);font-size:13.5px;margin-bottom:12px}
+.vrow{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--line-soft)}
+.vrow .vt{flex:1;min-width:0;font-weight:600;font-size:14.5px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.vrow .vm{color:var(--muted);font-size:12.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.vrow button{padding:7px 15px;font-size:13.5px}
+.made-list video{width:100%;border-radius:10px;border:1px solid var(--line);
+  background:#000;display:block;margin-top:12px}
 .q{margin-top:16px;background:#F9FAFB;border:1px solid var(--line);border-radius:10px;padding:16px 18px}
 .q .stem{font-weight:600;margin-bottom:10px}
 .q ol{margin:0 0 10px 20px}
@@ -161,6 +172,13 @@ video{width:100%;border-radius:12px;border:1px solid var(--line);background:#000
     </div>
 
     <div class="content">
+      <div class="made-list" id="made-list" style="display:none">
+        <h2>Videos made on this server</h2>
+        <div class="n" id="made-note"></div>
+        <div id="made-rows"></div>
+        <video id="made-player" controls playsinline style="display:none"></video>
+      </div>
+
       <div class="card">
         <label for="topic">What should this video teach?</label>
         <input id="topic" placeholder="How to write a clear WhatsApp message to a parent about a missed class" autofocus>
@@ -273,6 +291,34 @@ video{width:100%;border-radius:12px;border:1px solid var(--line);background:#000
     $('status').textContent = msg;
     $('go').disabled = false;
   }
+
+  // ── what already exists ──────────────────────────────────────────────────
+  // The page used to keep the job id in a variable and nothing else, so a reload
+  // lost it -- and the job record expired after two hours anyway. A finished video
+  // then had no route at all: a blank form, with the video sitting on the server.
+  // This asks the server what it actually holds, every time the page opens.
+  (async function listMade() {
+    var data;
+    try { data = await (await fetch('/demo/videos')).json(); } catch (e) { return; }
+    if (!data || !data.count) return;
+    $('made-note').textContent = data.note || '';
+    $('made-rows').innerHTML = data.videos.map(function (v) {
+      return '<div class="vrow">'
+        + '<span class="vt">' + esc(v.title) + '</span>'
+        + '<span class="vm">' + (v.bytes / 1048576).toFixed(1) + ' MB</span>'
+        + '<button data-slug="' + esc(v.slug) + '">Watch</button>'
+        + '</div>';
+    }).join('');
+    $('made-rows').addEventListener('click', function (ev) {
+      var slug = ev.target && ev.target.getAttribute('data-slug');
+      if (!slug) return;
+      var p = $('made-player');
+      p.style.display = 'block';
+      p.src = '/demo/videos/' + slug + '/file';
+      p.play().catch(function () { /* the controls are there */ });
+    });
+    $('made-list').style.display = 'block';
+  }());
 
   // ── write ────────────────────────────────────────────────────────────────
   $('go').addEventListener('click', async function () {
