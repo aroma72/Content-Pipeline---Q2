@@ -181,7 +181,15 @@ window.seekTo = async function (ms) {
     }));
     Promise.all([...imgs, ...vids])
       .then(() => window.seekTo(0))
-      .then(() => { window.ready = true; }); };
+      .then(() => { window.ready = true; })
+      // Without this, a failure in seekTo(0) left window.ready false forever and
+      // the renderer sat on its 60s timeout before reporting a timeout -- naming
+      // the symptom, never the cause. Record it where the renderer can read it.
+      .catch((e) => {
+        window.__readyError = (e && (e.message || e.type)) || String(e);
+        console.error('lesson init failed:', window.__readyError);
+        window.ready = true;   // let the renderer proceed and fail with a real message
+      }); };
   if (data) { go(data); }
   else { fetch('./data.json').then(r => r.json()).then(go).catch(e => { document.title = 'no data'; window.ready = true; }); }
 })();

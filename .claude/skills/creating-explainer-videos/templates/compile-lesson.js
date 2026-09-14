@@ -93,18 +93,62 @@ function launchOpts() {
 // PARALLEL RENDER (2026-08-21): the frame loop was single-threaded — one page, one frame at a time
 // — using ~1 of 8 cores. Frames are INDEPENDENT because window.seekTo(ms) recomputes every visual
 // from time (LAW 10), so N workers each render a stripe. RENDER_WORKERS=1 restores serial.
+/**
+ * What the page said before it died.
+ *
+ * A render failure surfaced as 'UnhandledPromiseRejection ... "#<ErrorEvent>"'
+ * and nothing else. An ErrorEvent is what the browser fires for a FAILED
+ * RESOURCE -- an <img> that 404s, most often a missing art PNG -- and it carries
+ * no message and no stack, so Node printed the constructor name and that was the
+ * entire diagnosis. These listeners keep the last few real events so the thrown
+ * error can name the file that was actually missing.
+ */
+const pageTrouble = [];
+function watchPage(page, who) {
+  const note = (kind, detail) => {
+    pageTrouble.push(`[${who}] ${kind}: ${detail}`);
+    if (pageTrouble.length > 12) pageTrouble.shift();
+  };
+  page.on('pageerror', (e) => note('page error', (e && e.message) || String(e)));
+  page.on('requestfailed', (r) => {
+    const url = r.url();
+    // data: URIs are inlined art and fail noisily on abort during teardown.
+    if (!url.startsWith('data:')) note('failed to load', `${url.split('/').pop()} (${(r.failure() || {}).errorText})`);
+  });
+  page.on('console', (m) => { if (m.type() === 'error') note('console', m.text().slice(0, 200)); });
+}
+
+/**
+ * Turn whatever a page rejected with into something a person can act on.
+ * Puppeteer hands back the raw value, and an ErrorEvent stringifies to nothing.
+ */
+function explain(err) {
+  const e = err || {};
+  let msg = e.message || e.text || (typeof e === 'string' ? e : '');
+  if (!msg && e.constructor && e.constructor.name) msg = `the page threw a ${e.constructor.name}`;
+  if (!msg) msg = String(err);
+  if (e.filename || e.lineno) msg += ` (at ${e.filename || 'page'}:${e.lineno || '?'})`;
+  const out = new Error(msg);
+  if (pageTrouble.length) out.message += '\n  the page reported:\n    ' + pageTrouble.join('\n    ');
+  return out;
+}
+
 async function openPage(worker) {
   launchOpts.__w = worker;            // unique Chrome profile per worker (they cannot share one)
   const opts = launchOpts();
   launchOpts.__w = undefined;
   const browser = await puppeteer.launch(opts);
   const page = await browser.newPage();
+  watchPage(page, worker);
   await page.setViewport({ width: W, height: H, deviceScaleFactor: 1 });
   await page.evaluateOnNewDocument((data) => { window.__DATA = data; }, { beats, durations, anchors, clips, rigs });
   const htmlRel = process.env.LESSON_HTML || 'animation/lesson.html';
   const url = 'file://' + path.join(__dirname, htmlRel).replace(/\\/g, '/');
   await page.goto(url, { waitUntil: 'load' });
   await page.waitForFunction('window.ready === true', { timeout: 60000 });
+  // The page sets this instead of hanging when its own setup fails.
+  const readyError = await page.evaluate(() => window.__readyError || null);
+  if (readyError) throw new Error(`the lesson page failed to initialise: ${readyError}`);
   return { browser, page };
 }
 
@@ -112,6 +156,7 @@ async function withPage(fn) {
   const browser = await puppeteer.launch(launchOpts());
   try {
     const page = await browser.newPage();
+    watchPage(page, 'sample');
     await page.setViewport({ width: W, height: H, deviceScaleFactor: 1 });
     // inject data BEFORE the page scripts run (avoids file:// fetch/CORS issues)
     await page.evaluateOnNewDocument((data) => { window.__DATA = data; }, { beats, durations, anchors, clips, rigs });
@@ -132,8 +177,23 @@ async function renderFull() {
   if (!reuse) { rmrf(framesDir); }
   fs.mkdirSync(framesDir, { recursive: true });
   console.log(`[compile] ${beats.length} beats, ${total.toFixed(1)}s, ${totalFrames} frames -> ${framesDir}`);
-  const WORKERS = Math.max(1, Math.min(parseInt(process.env.RENDER_WORKERS || '6', 10),
-    require('os').cpus().length - 2, totalFrames));
+  // Six headless Chromes at 1920x1080 is ~500MB each, which a build container does
+  // not have. When Chrome is killed the puppeteer websocket rejects the pending
+  // screenshot with an ErrorEvent -- no message, no stack -- which is how a render
+  // failure arrived as 'UnhandledPromiseRejection ... "#<ErrorEvent>"'. So the
+  // worker count is bounded by MEMORY as well as cores: a core with no RAM behind
+  // it cannot render a frame.
+  const os = require('os');
+  const gb = os.totalmem() / 1073741824;
+  const byMemory = Math.max(1, Math.floor(gb / 1.2));   // ~1.2GB per Chrome, measured
+  const WORKERS = Math.max(1, Math.min(
+    parseInt(process.env.RENDER_WORKERS || '6', 10),
+    os.cpus().length - 2,
+    byMemory,
+    totalFrames));
+  if (WORKERS < Math.min(6, os.cpus().length - 2)) {
+    console.log(`[compile] ${gb.toFixed(1)}GB RAM -> capping at ${WORKERS} worker(s)`);
+  }
   console.log(`[compile] rendering with ${WORKERS} parallel worker(s)`);
   let done = 0;
   const stripe = async (w) => {
@@ -146,7 +206,13 @@ async function renderFull() {
       }
     } finally { await browser.close(); }
   };
-  await Promise.all(Array.from({ length: WORKERS }, (_, w) => stripe(w)));
+  // allSettled, not all: with Promise.all a second worker's rejection arrives
+  // after the first has already rejected the combined promise, and becomes an
+  // unhandled rejection of its own -- which is how one missing PNG killed the
+  // process with a message naming no file.
+  const results = await Promise.allSettled(Array.from({ length: WORKERS }, (_, w) => stripe(w)));
+  const failure = results.find((r) => r.status === 'rejected');
+  if (failure) throw explain(failure.reason);
   process.stdout.write(`\r[compile] frame ${totalFrames}/${totalFrames}\n`);
   const written = fs.readdirSync(framesDir).filter((f) => f.endsWith('.png')).length;
   if (written !== totalFrames) throw new Error(`render incomplete: ${written}/${totalFrames} frames`);
@@ -189,8 +255,17 @@ function encode() {
   console.log(`\n[compile] BARE lesson -> out/${NAME}.mp4  (NOT the deliverable — run stitch-brand.js)`);
 }
 
+// Without this catch, any rejection above reaches Node's unhandled-rejection
+// handler, which in Node 22 kills the process and prints the raw reason. That is
+// how a render failure came back as 'Exit 1: UnhandledPromiseRejection ...
+// "#<ErrorEvent>"' with no indication of what was wrong or where.
 (async () => {
   if (isSample) { await renderSample(); return; }
   await renderFull();
   encode();
-})();
+})().catch((err) => {
+  const e = explain(err);
+  console.error(`\n[compile] FAILED: ${e.message}`);
+  if (err && err.stack && err.stack !== e.stack) console.error(err.stack.split('\n').slice(0, 4).join('\n'));
+  process.exit(1);
+});

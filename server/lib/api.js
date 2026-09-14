@@ -148,6 +148,13 @@ function build() {
 
   // ── one video's checkpoints ─────────────────────────────────────────────
   router.get('/videos/:videoId/checkpoints', requireToken, (req, res) => {
+    // The fixed example, so the popup can be built and demonstrated without
+    // producing a video first. Identical in shape to a real one, so anything
+    // built against it works unchanged against a real video.
+    if (req.params.videoId === 'sample') {
+      res.set('Cache-Control', 'public, max-age=3600');
+      return res.json(checkpoints.SAMPLE);
+    }
     let payload = null;
     try {
       payload = checkpoints.findByVideoId(req.params.videoId);
