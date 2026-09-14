@@ -153,7 +153,14 @@ function build() {
     // built against it works unchanged against a real video.
     if (req.params.videoId === 'sample') {
       res.set('Cache-Control', 'public, max-age=3600');
-      return res.json(checkpoints.SAMPLE);
+      const sample = checkpoints.sampleCheckpoints();
+      if (!sample) {
+        return res.status(503).json({
+          error: 'no_sample',
+          message: 'The worked example has not been generated yet. Run a demo video and capture it with scripts/refresh-demo-sample.js.',
+        });
+      }
+      return res.json(sample);
     }
     let payload = null;
     try {

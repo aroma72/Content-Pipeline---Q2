@@ -369,6 +369,35 @@ app.post('/demo/make-video/:jobId/approve', (req, res) => {
  * then had no route at all -- the page showed an empty form while the file sat on
  * disk. This reads the disk, so what exists is always reachable.
  */
+/**
+ * The pinned demo topic and its finished example.
+ *
+ * One topic, one video, one question, all from the same run. The page shows
+ * this before anything has been made, so the flow can be understood without
+ * waiting half an hour -- and it survives a redeploy, which a video on the
+ * container does not.
+ */
+app.get('/demo/sample', (_req, res) => {
+  const demo = require('./lib/demo-sample');
+  const s = demo.sample();
+  res.set('Cache-Control', 'public, max-age=300');
+  res.json({
+    topic: demo.TOPIC,
+    example: s && {
+      title: s.title,
+      interpretation: s.interpretation,
+      slo: s.slo,
+      gate: s.gate,
+      redrafts: s.redrafts,
+      qaScore: s.qa && s.qa.combined_score,
+      spendUsd: s.spendUsd,
+      youtube: s.youtube,
+      beats: s.beats,
+      checkpoint: s.checkpoint,
+    },
+  });
+});
+
 app.get('/demo/videos', (_req, res) => {
   const list = require('./lib/one-video').finished();
   res.json({

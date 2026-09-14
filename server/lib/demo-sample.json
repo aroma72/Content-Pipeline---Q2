@@ -1,0 +1,140 @@
+{
+  "generatedAt": "2026-09-14T11:19:29.983Z",
+  "jobId": "0f7ca1ae0421",
+  "topic": "how do I handle an angry parent on the phone",
+  "slug": "how-do-i-handle-an-angry-parent-on-the-phone-s51g",
+  "title": "Handling an Angry Parent Phone Call",
+  "interpretation": "You asked how to handle an angry parent on the phone; this video narrows to the first ninety seconds of that call — the one move that decides whether it de-escalates or explodes: naming the parent's specific complaint back to them before you explain anything — because everything else you'd say only lands after that.",
+  "slo": "After watching, the learner can de-escalate the opening of a hostile parent phone call by withholding all explanation until they have said the parent's specific grievance back in the parent's own terms and had it confirmed.",
+  "scenario": "Ali teaches Year 9 science. It's 4:12pm on a Tuesday, he's still in the lab with the fume cupboard running and 26 unmarked mock papers in front of him, when the office puts through Mrs Okafor. Her son Daniel got 41% on the mock Ali returned that morning, with 'incomplete method — see me' written across the top and no marks awarded for a practical write-up Daniel says he handed in. She opens with: 'He worked every night for three weeks and you've given him a fail and two words.' Ali has the mark scheme open on the bench and knows exactly why: Daniel's write-up was submitted to the wrong folder and Ali never received it, and the 41% excludes those 18 marks.",
+  "gate": "READY",
+  "redrafts": 0,
+  "qa": null,
+  "spendUsd": 1.08,
+  "youtube": {
+    "videoId": "99OrvJzMcWo",
+    "url": "https://youtu.be/99OrvJzMcWo",
+    "privacyStatus": "unlisted"
+  },
+  "introOffsetSeconds": 2.6,
+  "lessonSeconds": 117.8,
+  "beats": [
+    {
+      "id": "01",
+      "mode": "scene",
+      "vo": "It's twelve minutes past four and Ali is still marking mock papers in the science lab when the office puts a call through."
+    },
+    {
+      "id": "02",
+      "mode": "ali",
+      "vo": "The parent is Mrs Okafor, and her son's mock paper came back this morning at forty-one percent."
+    },
+    {
+      "id": "03",
+      "mode": "info",
+      "vo": "Her first sentence is that her son worked every night for three weeks and got back a fail and two words."
+    },
+    {
+      "id": "04",
+      "mode": "scene",
+      "vo": "Ali knows exactly what happened, so he explains it straight away."
+    },
+    {
+      "id": "05",
+      "mode": "ali",
+      "vo": "The write-up was never submitted to his folder, and the forty-one percent is out of eighty-two, not a hundred."
+    },
+    {
+      "id": "06",
+      "mode": "info",
+      "vo": "Every single fact he gives her is true."
+    },
+    {
+      "id": "07",
+      "mode": "scene",
+      "vo": "She hears only that within eleven seconds he has made this her son's fault."
+    },
+    {
+      "id": "08",
+      "mode": "info",
+      "vo": "The complaint widens: first the mark, then how she says it always goes, then whether he has decided what her son is."
+    },
+    {
+      "id": "09",
+      "mode": "ali",
+      "vo": "The call ends unresolved, and a complaint email arrives at six."
+    },
+    {
+      "id": "10",
+      "mode": "scene",
+      "vo": "Here is the move that changes it: he says her complaint back to her before he explains anything at all."
+    },
+    {
+      "id": "11",
+      "mode": "ali",
+      "vo": "Three weeks of work, a practical write-up handed in, and back came forty-one percent and two words."
+    },
+    {
+      "id": "12",
+      "mode": "scene",
+      "vo": "Then he asks whether he has got that right, and he stops talking."
+    },
+    {
+      "id": "13",
+      "mode": "info",
+      "vo": "She says yes, that's exactly it, and her next sentence is quieter and longer than the one before."
+    },
+    {
+      "id": "14",
+      "mode": "scene",
+      "vo": "The reflect-back works because it answers the question she was actually asking, which was never about the mark scheme."
+    },
+    {
+      "id": "15",
+      "mode": "info",
+      "vo": "An angry caller is not asking a question yet; she is checking whether you have understood the specific thing that happened."
+    },
+    {
+      "id": "16",
+      "mode": "checkpoint",
+      "vo": null
+    },
+    {
+      "id": "17",
+      "mode": "ali",
+      "vo": "The trap is doing it as a formula, saying you hear that she's frustrated about the mark."
+    },
+    {
+      "id": "18",
+      "mode": "info",
+      "vo": "Naming the emotion is not naming the fact, and the second trap is tacking your defence onto the same breath."
+    },
+    {
+      "id": "19",
+      "mode": "scene",
+      "vo": "The word because cancels the whole reflection, because now she knows the listening was a runway."
+    },
+    {
+      "id": "20",
+      "mode": "ali",
+      "vo": "Now Ali takes hostile calls cold with no prep, and this one ends in nine minutes with the write-up resubmitted by Thursday."
+    }
+  ],
+  "checkpoint": {
+    "beatId": "16",
+    "stem": "A parent calls, furious that her daughter's coursework got a zero for late submission. You know the portal log shows it arrived four days late. What do you say first?",
+    "options": [
+      "\"I can hear how frustrated you are, and I want to help.\"",
+      "\"Chloe worked on that coursework and it came back as a zero, and you're saying that doesn't reflect what she actually did — have I got that right?\"",
+      "\"Let me check the portal log with you so we can see exactly when it arrived.\"",
+      "\"I'm sorry, that must have been a shock — the late policy is applied to everyone equally.\""
+    ],
+    "answer": 1,
+    "explain": "Naming the emotion — \"I can hear how frustrated you are\" — is the most common substitute for a reflect-back, and parents recognise it as a script; it labels how she feels instead of proving you heard what actually happened to her child. Offering to check the log sounds collaborative but it is still explanation, and any sentence about the policy is a defence however gently it is delivered. The move is to say her specific facts back in her own terms and then stop, because nothing you know can land until she has confirmed she was heard.",
+    "afterBeatId": "15",
+    "beforeBeatId": "17",
+    "lessonAtSeconds": 93,
+    "atSeconds": 95.6,
+    "timingNote": "Beat lengths are measured during TTS and not exposed on the job, so this example uses the house average of 6.2s a beat. A real video's checkpoint API returns measured times."
+  }
+}

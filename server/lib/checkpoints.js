@@ -378,55 +378,13 @@ function forVideo(series, slug) {
 }
 
 /**
- * A fixed, known checkpoint for demonstrations.
+ * The fixed worked example, in the shape this API returns.
  *
- * Identical in shape to a real one, so anything built against it works against
- * a real video unchanged -- same fields, same guards, same preamble. It exists
- * because understanding the popup previously meant producing a whole video and
- * getting a different question at the end of it.
- *
- * videoId is 'sample', which no real video can be called: a slug always carries
- * a generated suffix.
+ * It is the question from the SAME run as the video the demo links to, not a
+ * separately invented one -- a demo assembled from three different runs shows
+ * the shape of the flow while quietly lying about it. See lib/demo-sample.js.
  */
-const SAMPLE = {
-  videoId: 'sample',
-  title: 'Confirming a WhatsApp order (sample)',
-  timing: {
-    trusted: true,
-    relativeTo: 'sample_final.mp4',
-    introOffsetSeconds: 2.6,
-    introOffsetSource: 'brand-constant',
-    lessonSeconds: 124.8,
-    note: 'A fixed example. atSeconds is measured from the start of the delivered file, which begins with the brand intro.',
-  },
-  checkpoints: [{
-    id: 'q1',
-    beatId: '14',
-    atSeconds: 86.55,
-    lessonAtSeconds: 83.95,
-    preamble: PREAMBLE,
-    stem: 'A customer sends Ali a voice note: "Do dozen ande aur ek doodh ka packet bhej dein." What should he send back before he packs anything?',
-    options: [
-      'A voice note saying he will send the eggs and milk shortly',
-      'A written message: Ande 2 dozen (420/dozen) = 840, doodh 1 packet = 220. Total 1,060. Aaj bhej dun?',
-      'A thumbs-up on her voice note, so she knows it arrived',
-      'A written message: Ji theek hai, order mil gaya, thora intezar karein',
-    ],
-    correctIndex: 1,
-    explanation: 'Options 1, 3 and 4 all confirm that Ali HEARD the order, and none of them confirms WHAT the order is — which is where the money is lost. A voice note leaves no line she can read back and correct; a thumbs-up leaves no record at all; and "order mil gaya" still does not say two dozen at 420. Only the fourth option puts the quantity, the rate and the total in writing, where both of them can scroll back to the same sentence.',
-    explanationSource: 'authored',
-    rendersInVideo: false,
-    pause: {
-      atBeatBoundary: true,
-      afterBeatId: '13',
-      beforeBeatId: '15',
-      boundaryLessonSeconds: 84.2,
-      leadSeconds: PAUSE_LEAD_SECONDS,
-      safe: true,
-    },
-  }],
-  deliverableOnServer: false,
-  sample: true,
-};
-
-module.exports = { forPath, forVideo, SAMPLE, listVideos, findByVideoId, videoDirs, etagOf, PREAMBLE };
+function sampleCheckpoints() {
+  return require('./demo-sample').checkpointPayload(PREAMBLE, PAUSE_LEAD_SECONDS);
+}
+module.exports = { forPath, forVideo, sampleCheckpoints, listVideos, findByVideoId, videoDirs, etagOf, PREAMBLE };
