@@ -48,14 +48,16 @@ function geminiKey() {
       '\n[config] No Google API key found.\n' +
       '  Set GEMINI_API_KEY (or GOOGLE_STUDIO_API_KEY) in a .env at a parent of this folder.\n'
     );
-    process.exit(1);
+    // 3 = infrastructure, not a content verdict. Exiting 1 made a missing
+    // credential reach the operator as "grammar and clarity FAILED".
+    process.exit(3);
   }
   return k;
 }
 
 function omniKey() {
   const k = process.env.GEMINI_OMNI_API_KEY || process.env.KIE_API_KEY || '';
-  if (!k) { console.error('\n[config] No kie.ai key (GEMINI_OMNI_API_KEY / KIE_API_KEY) found in .env.\n'); process.exit(1); }
+  if (!k) { console.error('\n[config] No kie.ai key (GEMINI_OMNI_API_KEY / KIE_API_KEY) found in .env.\n'); process.exit(3); }
   return k;
 }
 

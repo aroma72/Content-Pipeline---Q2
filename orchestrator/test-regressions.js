@@ -326,6 +326,90 @@ async function beatChecks() {
     return 'prose, fences and nesting';
   });
 
+  // --- 4a3. What a redraft leaves behind -----------------------------------
+  // Every one of these was found by auditing rather than by a failed run, which
+  // is the point: each would have cost a 25-minute paid run to discover.
+  console.log('\n3a3. artefacts a redraft invalidates');
+
+  const produceSrc = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'produce.js'), 'utf8');
+
+  check('the spend estimate is priced per beat, not per folder', () => {
+    // hasOutput() said "art/ has a PNG" so images cost $0 from the second
+    // redraft round on, while the regeneration path bought art per beat. Eight
+    // rounds could re-buy most of the art with --budget never consulted again.
+    const est = produceSrc.slice(produceSrc.indexOf('function estimateSpend'),
+      produceSrc.indexOf('function readDuration'));
+    assert(!/hasOutput\(/.test(est), 'estimateSpend still prices from an aggregate folder check');
+    assert(/missingPerBeat\(beats, dir, 'art'/.test(est), 'art is not priced per beat');
+    assert(/staleVo\(beats, dir\)/.test(est), 'voiceover is not priced per beat');
+    return 'art, voice and motion all per beat';
+  });
+
+  check('motion clips are checked per beat, like art and voice', () => {
+    // Worse than a stale still: compile-lesson picks clips/<id>.mp4 on existence
+    // alone and plays it INSTEAD of the picture, so a redrafted beat played the
+    // old art, moving, under the new voiceover.
+    assert(!/hasOutput\(path\.join\(dir, 'clips'\)/.test(produceSrc),
+      'clips/ is still skipped on an aggregate check');
+    assert(/missingPerBeat\(motionBeats, dir, 'clips'/.test(produceSrc),
+      'clips/ has no per-beat freshness check');
+    return 'per beat';
+  });
+
+  check('the render-skip sees clips and durations', () => {
+    // A run that bought animation after an earlier run had compiled would log
+    // "out/lesson.mp4 is newer" and ship the stills -- motion paid for, never seen.
+    const fn = produceSrc.slice(produceSrc.indexOf('function isFresherThanInputs'),
+      produceSrc.indexOf('/** A directory that exists'));
+    assert(/'clips'/.test(fn), 'clips/ is not an input to the render-skip');
+    assert(/durations\.json/.test(fn), 'durations.json is not an input to the render-skip');
+    return 'both counted';
+  });
+
+  check('a removed beat leaves nothing behind', () => {
+    // A removal-only redraft changes no wording, so staleVo is empty, so
+    // tts-lesson never runs -- and it holds the only prune loop in the pipeline.
+    // The orphan durations entry then makes verify.js fail a good video for
+    // "truncation", because it sums every key while compile sums current beats.
+    assert(/function pruneOrphans/.test(produceSrc), 'nothing prunes orphans');
+    assert(/pruneOrphans\(beatsForArt, dir, log\)/.test(produceSrc), 'pruneOrphans is never called');
+    const fn = produceSrc.slice(produceSrc.indexOf('function pruneOrphans'),
+      produceSrc.indexOf('Copy the skill templates'));
+    for (const what of ['art', 'clips', 'layers', 'audio', 'durations.json']) {
+      assert(fn.includes(what), `pruneOrphans does not clean ${what}`);
+    }
+    return 'art, clips, layers, audio and durations keys';
+  });
+
+  check('a gate that could not run is not a finding against the video', () => {
+    // eval-text exited 1 on an HTTP failure, the same code as "grammar errors",
+    // and at the post-render call that is terminal -- so a Gemini 503 discarded a
+    // finished, rendered, bumper-wrapped video. qa-art counted an unjudged image
+    // as a failed one and re-bought art nobody had looked at.
+    assert(/e\.code === 3/.test(produceSrc), 'produce does not recognise an infrastructure exit');
+    const tpl = path.join(__dirname, '..', '.claude', 'skills', 'creating-explainer-videos', 'templates');
+    const evalSrc = fs.readFileSync(path.join(tpl, 'eval-text.js'), 'utf8');
+    assert(/judge HTTP[\s\S]{0,120}exitCode=3/.test(evalSrc), 'a judge outage still exits as a grammar failure');
+    const artSrc = fs.readFileSync(path.join(tpl, 'qa-art.js'), 'utf8');
+    assert(/verdict === 'FAIL'\)\.map/.test(artSrc), 'qa-art still counts an unjudged image as failed');
+    assert(/process\.exit\(3\)/.test(artSrc), 'qa-art has no infrastructure exit');
+    const cfgSrc = fs.readFileSync(path.join(tpl, 'lib', 'config.js'), 'utf8');
+    assert(!/No Google API key[\s\S]{0,240}process\.exit\(1\)/.test(cfgSrc),
+      'a missing credential still reports as a content failure');
+    return 'outage and verdict are distinguishable';
+  });
+
+  check('the container pins ffmpeg and the render worker count', () => {
+    // os.totalmem()/os.cpus() report the HOST, not the cgroup, so the memory cap
+    // computed a large number and launched six 1920x1080 Chromes on an instance
+    // that could not hold them. And ffmpeg-static downloads an ~80MB binary at
+    // render time, per video folder, because node_modules is never in the image.
+    const df = fs.readFileSync(path.join(__dirname, '..', 'Dockerfile'), 'utf8');
+    assert(/FFMPEG_BIN=\/usr\/bin\/ffmpeg/.test(df), 'ffmpeg is not pinned to the one in the image');
+    assert(/RENDER_WORKERS=\d/.test(df), 'the render worker count is not pinned');
+    return 'pinned';
+  });
+
   // --- 4b. The mandatory CHECKPOINT ----------------------------------------
   // SCRIPTING_STANDARDS 3b (2026-09-11) replaced the on-screen QUESTION -> REVEAL
   // cards with a beat that is never drawn and never spoken: the player pauses and

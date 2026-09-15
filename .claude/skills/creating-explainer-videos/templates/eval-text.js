@@ -79,11 +79,13 @@ const PROMPT =
     method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
     body: JSON.stringify({ contents: [{ parts: [{ text: PROMPT }] }], generationConfig: { temperature: 0, responseMimeType: 'application/json' } }),
   });
-  if (!res.ok) { console.error('[eval-text] judge HTTP', res.status, (await res.text()).slice(0, 160)); process.exitCode=1;return; }
+  // 3 = infrastructure. The judge never rendered a verdict, so there is no
+  // finding here -- only an outage. Exiting 1 made a 503 look like bad grammar.
+  if (!res.ok) { console.error('[eval-text] judge HTTP', res.status, (await res.text()).slice(0, 160)); process.exitCode=3;return; }
   const j = await res.json();
   const txt = (j?.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');
   let issues = [];
-  try { issues = (JSON.parse(txt).issues) || []; } catch { console.error('[eval-text] unparseable judge output:', txt.slice(0, 200)); process.exitCode=1;return; }
+  try { issues = (JSON.parse(txt).issues) || []; } catch { console.error('[eval-text] unparseable judge output:', txt.slice(0, 200)); process.exitCode=3;return; }
 
   const errors = issues.filter((i) => i.severity === 'error');
   const nits = issues.filter((i) => i.severity !== 'error');
@@ -96,4 +98,4 @@ const PROMPT =
   for (const it of nits) console.log(`  · nit  "${it.text}" — ${it.suggestion}`);
   if (errors.length) { console.log(`\n[eval-text] ${errors.length} grammar ERROR(s) — FAIL, fix before shipping (${nits.length} nits advisory).`); process.exitCode = 1; return; }
   console.log(`\n[eval-text] ${items.length} snippets — no grammar errors${nits.length ? `, ${nits.length} style nit(s) noted` : ''}. PASS`);
-})().catch((e) => { console.error('[eval-text] error:', e.message); process.exitCode = 1; });
+})().catch((e) => { console.error('[eval-text] error:', e.message); process.exitCode = 3; });

@@ -14,7 +14,20 @@ ENV NODE_ENV=production \
     # build both bloats the image and pulls a binary that misses these shared libs.
     PUPPETEER_SKIP_DOWNLOAD=1 \
     PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=1 \
-    CHROME_PATH=/usr/bin/chromium
+    CHROME_PATH=/usr/bin/chromium \
+    # Use the apt ffmpeg installed below. Without this every pipeline script
+    # resolves ffmpeg through ffmpeg-static, which DOWNLOADS an ~80MB binary at
+    # render time -- once per video folder and again for the brand bumpers --
+    # because node_modules is never copied into the image. It also closes the
+    # class where a Windows ffmpeg.exe reaches a Linux runtime and fails as
+    # EFTYPE, which until now was prevented only by a .dockerignore line.
+    FFMPEG_BIN=/usr/bin/ffmpeg \
+    # os.totalmem() and os.cpus() report the HOST, not this container's cgroup,
+    # so compile-lesson.js's memory cap computes a large number and launches six
+    # headless Chromes at 1920x1080 on an instance that cannot hold them. A
+    # killed renderer rejects the pending screenshot as an ErrorEvent -- no
+    # message, no stack. The cap cannot measure the limit, so state the limit.
+    RENDER_WORKERS=2
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       chromium \

@@ -116,6 +116,12 @@ function isFresherThanInputs(target, dir) {
   add(path.join(dir, 'art'));
   add(path.join(dir, 'audio'));
   add(path.join(dir, 'animation'));
+  // Motion clips and the measured beat lengths both change what the render
+  // produces. Omitting them meant a run that bought animation after an earlier
+  // run had already compiled would log "out/lesson.mp4 is newer" and ship the
+  // stills -- the motion paid for never reaching the video.
+  add(path.join(dir, 'clips'));
+  add(path.join(dir, 'durations.json'));
 
   return inputs.length > 0 && inputs.every((ms) => ms <= targetMs);
 }
@@ -188,6 +194,61 @@ function staleVo(beats, dir) {
       } catch { return true; }
     })
     .map((b) => b.id);
+}
+
+/**
+ * Delete artefacts belonging to beats the script no longer has.
+ *
+ * A removal-only redraft changes no wording, so staleVo finds nothing, so
+ * tts-lesson never runs -- and tts-lesson holds the only prune loop in the
+ * pipeline. The orphans then outlive the beat: art/, layers/, clips/, the wav
+ * and its sidecar, and the durations.json entry.
+ *
+ * The durations entry is the one that bites. verify.js sums EVERY key to get the
+ * expected voiceover length while compile-lesson sums only current beats, so an
+ * orphan makes the finished video look short and verify fails it for
+ * "truncation" -- a correct video rejected for a beat that no longer exists.
+ */
+function pruneOrphans(beats, dir, log) {
+  const live = new Set((beats || []).map((b) => b.id));
+  const gone = [];
+
+  const sweep = (sub, match) => {
+    const d = path.join(dir, sub);
+    let entries = [];
+    try { entries = fs.readdirSync(d); } catch { return; }
+    for (const name of entries) {
+      const id = match(name);
+      // '_ref' and other non-beat files are not orphans; only ids we once had.
+      if (!id || live.has(id) || id.startsWith('_')) continue;
+      try {
+        fs.rmSync(path.join(d, name), { recursive: true, force: true });
+        gone.push(`${sub}/${name}`);
+      } catch { /* a locked file is not worth failing the run over */ }
+    }
+  };
+
+  sweep('art', (n) => (n.endsWith('.png') ? n.slice(0, -4) : null));
+  sweep('clips', (n) => (n.endsWith('.mp4') ? n.slice(0, -4) : null));
+  sweep('layers', (n) => n);
+  sweep('audio', (n) => {
+    const m = /^vo_(.+)\.(wav|txt)$/.exec(n);
+    return m ? m[1] : null;
+  });
+
+  const durPath = path.join(dir, 'durations.json');
+  try {
+    const durations = JSON.parse(fs.readFileSync(durPath, 'utf8'));
+    const orphanKeys = Object.keys(durations).filter((k) => !live.has(k));
+    if (orphanKeys.length) {
+      for (const k of orphanKeys) delete durations[k];
+      fs.writeFileSync(durPath, JSON.stringify(durations, null, 2));
+      gone.push(...orphanKeys.map((k) => `durations.json:${k}`));
+    }
+  } catch { /* no durations yet, or unreadable -- nothing to prune */ }
+
+  if (gone.length) log(`pruned ${gone.length} orphan(s) from removed beats: ${gone.slice(0, 8).join(', ')}`);
+  return gone;
 }
 
 /**
@@ -353,6 +414,23 @@ module.exports = Object.assign(module.exports, {
         // verdict on the video -- rethrow so the stage's own retry handles it.
         if (!(e instanceof shell.CommandError) || e.code === null) throw e;
 
+      // Exit 3 means the gate could not reach a verdict -- a judge outage, a
+      // missing credential, an unparseable reply. That is not a finding, and
+      // treating it as one discarded a finished, rendered, bumper-wrapped video
+      // because Gemini returned a 503, and re-bought art that nobody had judged.
+      // Record it and carry on: an unrun gate has found nothing wrong.
+      if (e.code === 3) {
+        const why = String(e.stdout || e.stderr || '').trim().split('\n').slice(-3).join(' ').slice(0, 300);
+        log(`${script} could not run (${what}) -- continuing without its verdict. ${why}`);
+        sensorResults.push({ ok: null, sensor: script, what, detail: `did not run: ${why}` });
+        state.recordIntervention(st, {
+          stage: 'produce',
+          kind: 'sensor_unavailable',
+          detail: `${script} exited 3 (infrastructure): ${why}`,
+        });
+        return;
+      }
+
         const findings = `${e.stdout || ''}\n${e.stderr || ''}`
           .split(/\r?\n/).map((l) => l.trim())
           .filter((l) => l && !/^\[.*\] (Reviewed|Judge)/.test(l))
@@ -422,6 +500,10 @@ module.exports = Object.assign(module.exports, {
       );
     }
 
+
+    // A redraft can delete a beat. Do this before any freshness check reads the
+    // folder, so nothing downstream sees an artefact for a beat that is gone.
+    pruneOrphans(beatsForArt, dir, log);
 
     // 1. deps
     if (!fs.existsSync(path.join(dir, 'node_modules'))) {
@@ -532,8 +614,13 @@ module.exports = Object.assign(module.exports, {
 
     if (!motionBeats.length) {
       log('no beat asks for motion -- stills with the Ken Burns camera');
-    } else if (hasOutput(path.join(dir, 'clips'), '.mp4')) {
-      log(`clips/ already populated -- skipping animation (no re-spend)`);
+    } else if (!missingPerBeat(motionBeats, dir, 'clips', (id) => `${id}.mp4`).length) {
+      // Per beat, for the same reason art and voice are. A clip is worse than a
+      // stale still: compile-lesson picks clips/<id>.mp4 purely on existence and
+      // the renderer plays it INSTEAD of the picture, so a redrafted beat played
+      // the old art, moving, under the new voiceover -- and a beat switched to
+      // 'info' played its old clip instead of the card.
+      log(`clips/ matches every moving beat -- skipping animation (no re-spend)`);
       sensorResults.push({ ok: true, sensor: 'animate', what: 'i2v motion', detail: 'clips already on disk' });
     } else {
       // Re-price against the real durations now that TTS has measured them, and

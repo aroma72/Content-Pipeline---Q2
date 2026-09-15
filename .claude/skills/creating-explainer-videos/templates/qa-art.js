@@ -107,12 +107,24 @@ async function judge(b) {
     ...rows.map((r) => `| ${r.id} | ${r.mode} | ${r.verdict} | ${(r.issues || []).join('; ') || '—'} |`)].join('\n');
   fs.writeFileSync(path.join(process.cwd(), 'qa-art-results.md'), md + '\n');
 
-  const bad = rows.filter((r) => r.verdict === 'FAIL' || r.verdict === 'ERROR').map((r) => r.id);
+  // ERROR means the judge itself failed three times -- an outage, not a defect
+  // in the picture. Counting it as FAIL printed a regenerate line for perfectly
+  // good art, bought it twice, and then spent a redraft round on it.
+  const bad = rows.filter((r) => r.verdict === 'FAIL').map((r) => r.id);
+  const unjudged = rows.filter((r) => r.verdict === 'ERROR').map((r) => r.id);
   const warned = rows.filter((r) => r.verdict === 'WARN').map((r) => r.id);
   console.log('');
   if (bad.length) {
     console.log(`[qa-art] FAIL — regenerate these: ART_IDS=${bad.join(',')} node generate-lesson-art-gemini.js --yes`);
     process.exit(2);
+  }
+  if (unjudged.length) {
+    // 3 = infrastructure. The judge failed three times on these, so nothing is
+    // known about them either way. Re-buying art the judge never saw is the
+    // worst of both: it spends money and still learns nothing.
+    console.log(`[qa-art] UNJUDGED — the vision judge failed on ${unjudged.join(',')}. ` +
+      'No verdict on those images; the art itself may be fine.');
+    process.exit(3);
   }
   if (STRICT && warned.length) {
     console.log(`[qa-art] STRICT FAIL — warns: ART_IDS=${warned.join(',')}`);
