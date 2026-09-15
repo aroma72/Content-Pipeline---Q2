@@ -73,17 +73,26 @@ async function isAvailable() {
  * block. Brace-counting rather than a regex, so nested objects survive; strings
  * and escapes are tracked so a brace inside a string cannot end the scan early.
  */
-function extractJson(text) {
+function extractJson(text, { log = null } = {}) {
   const s = String(text);
 
   const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/);
   const body = fence ? fence[1] : s;
 
-  /** Balanced span starting at `start`, or null if it never closes. */
+  /**
+   * Balanced span starting at `start`, or null if it never closes.
+   *
+   * A STACK of both bracket kinds, not a count of the one kind the scan began
+   * with. Counting only `[` meant an array holding an UNCLOSED OBJECT still
+   * "balanced": the checkpoint beat -- the only beat in the schema with a nested
+   * object -- closed its quiz and never closed itself, and the beats array still
+   * ended in `]`, so a genuinely mis-nested reply was reported as "complete but
+   * invalid". That is the opposite diagnosis, and it sent the repair chain after
+   * a problem it had no repair for. A closer that does not match the innermost
+   * opener is malformed too, so that is not a balanced span either.
+   */
   const spanFrom = (start) => {
-    const open = body[start];
-    const close = open === '{' ? '}' : ']';
-    let depth = 0;
+    const stack = [];
     let inStr = false;
     let esc = false;
     for (let i = start; i < body.length; i++) {
@@ -92,10 +101,12 @@ function extractJson(text) {
       if (ch === '\\') { esc = true; continue; }
       if (ch === '"') { inStr = !inStr; continue; }
       if (inStr) continue;
-      if (ch === open) depth++;
-      else if (ch === close) {
-        depth--;
-        if (depth === 0) return body.slice(start, i + 1);
+      if (ch === '{' || ch === '[') { stack.push(ch); continue; }
+      if (ch === '}' || ch === ']') {
+        if (!stack.length) return null;
+        if (ch !== (stack[stack.length - 1] === '{' ? '}' : ']')) return null;
+        stack.pop();
+        if (stack.length === 0) return body.slice(start, i + 1);
       }
     }
     return null;
@@ -111,43 +122,77 @@ function extractJson(text) {
   let best = null;
   let sawOpening = false;
   let balancedButInvalid = null;   // a complete span that JSON.parse rejected
+  let firstUnclosed = null;        // where the first container that never closes begins
+  const unclosed = [];             // starts of containers that never close, in order
   for (let i = 0; i < body.length; i++) {
     if (body[i] !== '{' && body[i] !== '[') continue;
     sawOpening = true;
     const span = spanFrom(i);
-    if (!span) continue;
-    try {
-      JSON.parse(span);
-      if (!best || span.length > best.length) best = span;
-    } catch (e) {
-      // Balanced but not valid. Worth remembering: this is a DIFFERENT failure
-      // from a truncated reply and needs a different fix, and reporting it as
-      // truncation sent three identical retries after the wrong problem.
-      if (!balancedButInvalid || span.length > balancedButInvalid.span.length) {
-        balancedButInvalid = { span, error: e.message };
+    if (!span) {
+      // Only something that CONTINUES like JSON is a container worth repairing;
+      // a punctuation brace in prose is not, and treating it as one would hide
+      // the real JSON behind it.
+      if (looksLikeJsonStart(body, i)) {
+        if (firstUnclosed === null) firstUnclosed = i;
+        unclosed.push(i);
+      }
+      continue;
+    }
+    // A span starting INSIDE a container that never closes is a FRAGMENT of the
+    // document, not the document. The quiz object inside the beat whose brace
+    // went missing parses perfectly on its own, and so does the first complete
+    // beat of a truncated reply -- returning either hands the next stage a
+    // one-beat "script" and a clean exit code. Not a candidate, at any length.
+    if (firstUnclosed === null || i < firstUnclosed) {
+      try {
+        JSON.parse(span);
+        if (!best || span.length > best.length) best = span;
+      } catch (e) {
+        // Balanced but not valid. Worth remembering: this is a DIFFERENT failure
+        // from a truncated reply and needs a different fix, and reporting it as
+        // truncation sent three identical retries after the wrong problem.
+        if (!balancedButInvalid || span.length > balancedButInvalid.span.length) {
+          balancedButInvalid = { span, error: e.message };
+        }
       }
     }
     // Skip past this span -- anything nested inside it is not a better candidate.
-    if (span) i += span.length - 1;
+    i += span.length - 1;
   }
 
   if (best) return best;
 
-  // One repair, for the one malformation a model actually produces often: a raw
-  // newline or tab inside a string. JSON forbids literal control characters
-  // there, and a long art prompt written across two lines trips it. Escaping
-  // them changes no content, so it is safe to do silently -- unlike guessing at
-  // a missing brace, which would invent structure.
-  if (balancedButInvalid) {
-    // Applied in order and cumulatively, because a reply that has one of these
-    // defects usually has two. Each is deterministic and changes no content: the
-    // alternative is losing a 12,000-character draft to one wrong character.
-    let fixed = balancedButInvalid.span;
-    for (const repair of [escapeControlCharsInStrings, straightenStructuralQuotes, dropTrailingCommas]) {
-      const next = repair(fixed);
+  // Applied in order and cumulatively, because a reply with one of these defects
+  // usually has two. Each is deterministic and changes no CONTENT -- escaping a
+  // control character and inserting a bracket the parser itself located both
+  // leave every value exactly as written. The alternative is losing a
+  // 12,000-character draft to one wrong character.
+  //
+  // closeDroppedContainers goes LAST: a dropped brace and a trailing comma
+  // produce the same parser message, and the comma has to be gone first or the
+  // brace pass repairs into something that still will not parse.
+  const REPAIRS = [escapeControlCharsInStrings, straightenStructuralQuotes,
+    dropTrailingCommas, closeDroppedContainers];
+
+  const repair = (span) => {
+    let fixed = span;
+    for (const fn of REPAIRS) {
+      const next = fn(fixed);
       if (next === fixed) continue;
       fixed = next;
-      try { JSON.parse(fixed); return fixed; } catch { /* keep repairing */ }
+      try {
+        JSON.parse(fixed);
+        return { fixed, by: fn.name, delta: fixed.length - span.length };
+      } catch { /* keep repairing */ }
+    }
+    return null;
+  };
+
+  if (balancedButInvalid) {
+    const ok = repair(balancedButInvalid.span);
+    if (ok) {
+      if (log) log(`repaired the reply's JSON in place (${ok.by}, ${ok.delta >= 0 ? '+' : ''}${ok.delta} chars) -- no repair call needed`);
+      return ok.fixed;
     }
     throw new Error(
       `JSON in reply is complete but invalid: ${balancedButInvalid.error}. ` +
@@ -155,8 +200,45 @@ function extractJson(text) {
     );
   }
 
+  // NOTHING BALANCED -- but that is now two different things.
+  //
+  // Making spanFrom honest means the dropped-brace reply no longer registers as
+  // balancedButInvalid, so without this the repair chain would get no candidate
+  // at all and a complete 13,000-character draft would be discarded as
+  // "truncated". So an unclosed container becomes a candidate too.
+  //
+  // This is also where a genuinely truncated reply must still fail, and it does
+  // -- not by a rule about how the text ends, but because a truncated reply is a
+  // PREFIX of a valid document and a prefix can only fail AT END OF INPUT.
+  // closeDroppedContainers refuses to insert anything at the end, so there is no
+  // path by which a cut-short script is quietly closed and shipped at half length.
+  let firstError = null;
+  for (const start of unclosed.slice(0, 3)) {
+    const span = body.slice(start);
+    if (firstError === null) {
+      try { JSON.parse(span); } catch (e) { firstError = e.message; }
+    }
+    const ok = repair(span);
+    if (ok) {
+      if (log) log(`the reply's JSON never balanced; closed ${ok.delta} dropped bracket(s) where the parser pointed -- it parsed after that, no repair call needed`);
+      return ok.fixed;
+    }
+  }
+
   if (!sawOpening) throw new Error('no JSON object or array found in reply');
-  throw new Error('JSON in reply is unbalanced (truncated output?)');
+
+  // Say HOW it is unbalanced. "Unbalanced" alone cannot tell a reply that stopped
+  // mid-sentence from one that is all there but mis-nested, and those need
+  // opposite responses.
+  const ended = unclosed.length
+    ? openContainersBefore(body.slice(unclosed[0]), body.length - unclosed[0])
+    : null;
+  throw new Error(
+    'JSON in reply is unbalanced (truncated output?)'
+    + (ended ? ` -- ${ended.stack.length} container(s) still open at the end of the reply`
+      + `${ended.inStr ? ', and it ends inside a string' : ''}` : '')
+    + (firstError ? `. The parser said: ${firstError}` : '')
+  );
 }
 
 /**
@@ -224,6 +306,113 @@ function escapeControlCharsInStrings(json) {
     out += ch;
   }
   return out;
+}
+
+/** The character offset a V8 JSON.parse message names, or null. */
+function parseErrorPosition(message) {
+  const m = /position (\d+)/.exec(String(message || ''));
+  return m ? Number(m[1]) : null;
+}
+
+/**
+ * The containers still open just before `at`, innermost last -- or null if the
+ * text before `at` is itself mis-nested. Strings and escapes are tracked, so a
+ * brace inside an art prompt is content rather than structure.
+ */
+function openContainersBefore(text, at) {
+  const stack = [];
+  let inStr = false;
+  let esc = false;
+  for (let i = 0; i < at && i < text.length; i++) {
+    const ch = text[i];
+    if (esc) { esc = false; continue; }
+    if (ch === '\\') { esc = true; continue; }
+    if (ch === '"') { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (ch === '{' || ch === '[') { stack.push(ch); continue; }
+    if (ch === '}' || ch === ']') {
+      if (!stack.length) return null;
+      if (ch !== (stack[stack.length - 1] === '{' ? '}' : ']')) return null;
+      stack.pop();
+    }
+  }
+  return { stack, inStr };
+}
+
+/**
+ * Does the text after this opener continue like JSON, or like prose?
+ *
+ * Prose opens braces and never closes them ("Use {curly} braces", "Note {this"),
+ * and treating one of those as a container to repair would hide the real JSON
+ * behind it -- the exact failure the scan in extractJson exists to avoid.
+ */
+function looksLikeJsonStart(body, start) {
+  let i = start + 1;
+  while (i < body.length && /\s/.test(body[i])) i++;
+  return /^["{}[\]\-0-9]|^true|^false|^null/.test(body.slice(i, i + 5));
+}
+
+/**
+ * Close a bracket the model dropped in the MIDDLE of the reply.
+ *
+ * Not truncation, and not a guess. Production, 2026-09-15: the model wrote the
+ * mandatory checkpoint beat -- the only beat in the schema with a nested object
+ * -- closed its "quiz" and never closed the beat itself, then carried on for
+ * another 3,700 characters and ended cleanly with `"}]}` at stop_reason=end_turn.
+ * The repair chain refuses to "guess at a missing brace", and that is right for a
+ * TRUNCATED reply, where the missing structure is genuinely unknown. Here it is
+ * not unknown: the parser names the exact offset, and the containers open at that
+ * offset say which bracket is missing. No byte of content is added, removed or
+ * reordered -- only nesting.
+ *
+ * The parser drives it, so the guard against truncation is exact rather than a
+ * heuristic. A truncated reply is a PREFIX of a valid document, and a prefix can
+ * only fail AT END OF INPUT -- so an error position inside the text proves the
+ * reply is not merely cut short, and an error at the end means hands off. That is
+ * what stops a half-written script being closed into a half-length video.
+ */
+function closeDroppedContainers(json) {
+  // Four. Each pass inserts exactly one character, so this bounds the damage as
+  // well as the work: more than four dropped brackets in one reply is not a slip
+  // to patch, it is a reply not worth trusting.
+  const MAX_INSERTS = 4;
+  const closerFor = (opener) => (opener === '{' ? '}' : ']');
+  let text = json;
+
+  for (let n = 0; n < MAX_INSERTS; n++) {
+    let message = null;
+    try { JSON.parse(text); return text; } catch (e) { message = e.message; }
+
+    const at = parseErrorPosition(message);
+    // No position, or the parser ran out of input: TRUNCATION. Never insert here.
+    if (at === null || at >= text.length) return text;
+
+    const ch = text[at];
+    const state = openContainersBefore(text, at);
+    if (!state || state.inStr || !state.stack.length) return text;
+    const top = state.stack[state.stack.length - 1];
+    const parent = state.stack.length >= 2 ? state.stack[state.stack.length - 2] : null;
+    let prev = at - 1;
+    while (prev >= 0 && /\s/.test(text[prev])) prev--;
+
+    let cut = null;
+    let insert = null;
+    if (/Expected double-quoted property name/.test(message)
+        && (ch === '{' || ch === '[')      // a fresh value where a key was due
+        && top === '{'                     // ...inside an object, so the object is unclosed
+        && parent === '['                  // ...whose parent is an array, where that value IS legal
+        && text[prev] === ',') {           // ...at a member boundary, not a stray `{{`
+      cut = prev; insert = '}';            // the brace belongs BEFORE the separating comma
+    } else if (/after property value|after array element/.test(message)
+        && (ch === '}' || ch === ']')      // a closer arriving one level too early
+        && parent && ch === closerFor(parent)) {   // ...and it is the PARENT's closer
+      cut = at; insert = closerFor(top);   // so the innermost container was never closed
+    }
+    if (insert === null) return text;      // anything else: not ours to touch
+
+    text = text.slice(0, cut) + insert + text.slice(cut);
+  }
+  return text;
 }
 
 /** The text around the offset a JSON.parse error names, so the fault is visible. */
@@ -436,7 +625,7 @@ async function askJson({
   let parsed;
   let parseError = null;
   try {
-    parsed = JSON.parse(extractJson(envelope.result));
+    parsed = JSON.parse(extractJson(envelope.result, { log }));
   } catch (e) {
     parseError = e;
   }

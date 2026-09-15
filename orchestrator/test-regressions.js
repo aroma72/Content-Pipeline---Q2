@@ -191,8 +191,8 @@ async function beatChecks() {
     // Every helper extractJson calls. Naming them individually meant adding a
     // repair to the chain broke this test with 'X is not defined' rather than
     // testing the repair -- so the list is derived from the source instead.
-    const helpers = ['escapeControlCharsInStrings', 'straightenStructuralQuotes',
-      'dropTrailingCommas', 'nearOffset'].filter((n) => src.includes('function ' + n));
+    const helpers = [...src.matchAll(/^function (\w+)\(/gm)]
+      .map((m) => m[1]).filter((n) => n !== 'extractJson');
     return eval('(function(){' + grab('extractJson') + helpers.map(grab).join('')
       + 'return extractJson})()');
   })();
@@ -249,6 +249,74 @@ async function beatChecks() {
     assert(/U\+[0-9A-F]{4}/.test(msg), 'the message does not name the character');
     assert(!/truncated/.test(msg), 'still blames truncation');
     return 'named and located';
+  });
+
+  check('a brace dropped INSIDE the beats array is repaired, not discarded', () => {
+    // Production, 2026-09-15, topic "how do I handle an angry parent on the phone".
+    // The model wrote the mandatory checkpoint beat -- the only beat in the schema
+    // with a NESTED object -- closed the quiz and never closed the beat, then
+    // carried on for another 3,700 characters and ended cleanly with `"}]}` at
+    // stop_reason=end_turn. A complete 12,980-character draft was thrown away.
+    const reply = '{"beats":[{"id":"15","mode":"checkpoint","quiz":{"stem":"s",'
+      + '"options":["a","b","c","d"],"answer":1,"explain":"e"}, '
+      + '{"id":"16","mode":"ali","vo":"x"}]}';
+    const o = JSON.parse(extractJson(reply));
+    assert(o.beats.length === 2, `expected 2 beats, got ${o.beats && o.beats.length}`);
+    assert(o.beats[0].quiz.answer === 1, 'the checkpoint quiz did not survive the repair');
+    assert(o.beats[1].vo === 'x', 'the beat after the drop was swallowed');
+    return 'brace inserted, both beats intact';
+  });
+
+  check('the same drop on the LAST beat is repaired too', () => {
+    // Same slip one beat later: the `]` arrives while the beat is still open.
+    const o = JSON.parse(extractJson('{"beats":[{"id":"15","quiz":{"a":1}]}'));
+    assert(o.beats.length === 1 && o.beats[0].quiz.a === 1, 'the last beat was lost');
+    return 'closed before the array closer';
+  });
+
+  check('a dropped brace AND a trailing comma are repaired together', () => {
+    // Both produce the SAME parser message, so the order of the repair chain is
+    // load-bearing: the comma has to go first, or the brace pass repairs into
+    // something that still will not parse.
+    const o = JSON.parse(extractJson('{"beats":[{"id":"1","quiz":{"a":1}, {"id":"2"},]}'));
+    assert(o.beats.length === 2, `expected 2 beats, got ${JSON.stringify(o)}`);
+    return 'comma dropped, brace closed';
+  });
+
+  check('a repair only ever changes nesting, never content', () => {
+    const reply = '{"beats":[{"vo":"He said {yes}, then: [ok]","quiz":{"a":1}, {"id":"2"}]}';
+    const o = JSON.parse(extractJson(reply));
+    assert(o.beats[0].vo === 'He said {yes}, then: [ok]', `the voiceover was edited: ${o.beats[0].vo}`);
+    return 'brackets in prose untouched';
+  });
+
+  check('a truncated reply that ends on a COMPLETE beat still throws', () => {
+    // The dangerous one. Every beat in this text is well formed and it ends in `}`,
+    // so any rule based on "does it end in a closer" would happily close it -- and
+    // ship a half-length video with a clean exit code. It must stay a failure.
+    let msg = null;
+    try { extractJson('{"beats":[{"id":"01","vo":"x"},{"id":"02","vo":"y"}'); } catch (e) { msg = e.message; }
+    assert(msg && /unbalanced|truncated/.test(msg), `wrong message: ${msg}`);
+    return 'still truncated';
+  });
+
+  check('a FRAGMENT of a broken reply is never returned as the script', () => {
+    // When the document does not balance, the scan starts finding the perfectly
+    // valid objects INSIDE it. The first beat of a truncated reply parses on its
+    // own; returning it hands the next stage a one-beat "script" and no error.
+    let out = null;
+    try { out = extractJson('{"beats":[{"id":"01","quiz":{"a":1,"b":2,"c":3,"d":4}'); }
+    catch { out = 'THREW'; }
+    assert(out === 'THREW', `an inner fragment was returned as the document: ${out}`);
+    return 'threw instead';
+  });
+
+  check('a repair says so, so a silent rescue is still visible in the log', () => {
+    const lines = [];
+    extractJson('{"beats":[{"id":"1","quiz":{"a":1}, {"id":"2"}]}', { log: (m) => lines.push(m) });
+    assert(lines.length === 1, `expected one log line, got ${JSON.stringify(lines)}`);
+    assert(/repair|closed/i.test(lines[0]), `log did not mention the repair: ${lines[0]}`);
+    return lines[0].slice(0, 44);
   });
 
   check('ordinary replies are unaffected', () => {
