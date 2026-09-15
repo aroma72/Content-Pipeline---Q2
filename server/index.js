@@ -310,6 +310,61 @@ app.post('/demo/make-video/:jobId/produce', (req, res) => {
  * say the video is good, and the person had no way to see it. Range requests are
  * honoured so the browser can scrub.
  */
+/**
+ * The script as a file you can keep.
+ *
+ * A job record lives in memory and expires after two hours, and the container
+ * keeps no disk between releases -- so a script you liked was, until now,
+ * readable only for as long as the tab stayed open. Markdown because it is the
+ * format a person can read, edit, paste into a document and hand to someone
+ * else without a tool in between.
+ */
+app.get('/demo/make-video/:jobId/script.md', (req, res) => {
+  const job = jobs.get(req.params.jobId);
+  if (!job || !job.script) {
+    return res.status(404).type('text').send('No script for this job (or it expired).');
+  }
+  const sc = job.script;
+  const cp = sc.checkpoint;
+  const L = [];
+
+  L.push(`# ${sc.title}`, "");
+  if (sc.interpretation) L.push(`> ${sc.interpretation}`, "");
+  L.push(`**Topic asked:** ${job.topic}`);
+  if (sc.slo) L.push(`**Outcome:** ${sc.slo}`);
+  if (sc.scenario) L.push(`**Scenario:** ${sc.scenario}`);
+  L.push(`**Review:** ${sc.gate || "?"}`
+    + (sc.redrafts ? ` after ${sc.redrafts} redraft${sc.redrafts > 1 ? "s" : ""}` : " on the first pass")
+    + ` · ${sc.beats.length} beats`);
+  L.push("", "---", "", "## The script", "");
+  L.push("One beat is one spoken sentence, and the picture shown while it is spoken.", "");
+
+  for (const b of sc.beats) {
+    if (b.mode === 'checkpoint') {
+      L.push("", `**— the video pauses here (beat ${b.id}) —**`, "");
+      continue;
+    }
+    L.push(`**${b.id}** *(${b.mode})*  ${b.vo}`, "");
+  }
+
+  if (cp) {
+    L.push("---", "", "## The checkpoint", "");
+    L.push("Never drawn, never spoken. The video pauses and the LMS shows this as a popup.", "");
+    L.push(`**${cp.stem}**`, "");
+    cp.options.forEach((o, i) => {
+      L.push(`${i === cp.answer ? "- **[correct]**" : "-"} ${o}`);
+    });
+    L.push("", `**Why the others are wrong:** ${cp.explain}`, "");
+  }
+
+  L.push("---", "", `_Made by Content Queen for Taleemabad University · ${new Date().toISOString().slice(0, 10)}_`, "");
+
+  const name = (sc.slug || 'script').replace(/[^a-z0-9-]/gi, '-').slice(0, 60);
+  res.set('Content-Type', 'text/markdown; charset=utf-8');
+  res.set('Content-Disposition', `attachment; filename="${name}.md"`);
+  res.send(L.join('\n'));
+});
+
 app.get('/demo/make-video/:jobId/video', (req, res) => {
   const job = jobs.get(req.params.jobId);
   const file = job && job.review && job.review.finalPath;

@@ -99,6 +99,8 @@ video{width:100%;border-radius:12px;border:1px solid var(--line);background:#000
 .made .links a,.made .links span{font-size:13.5px;font-weight:600;padding:8px 14px;border-radius:8px;
   border:1px solid var(--line);background:#fff}
 .made .links a{color:var(--blue);border-color:#C7D2FE}
+button.ghost{background:#fff;color:var(--ink-2);border:1px solid #D1D5DB}
+button.ghost:hover:not(:disabled){background:#F9FAFB;border-color:#9CA3AF}
 .made .links span{color:var(--muted)}
 .verdict{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;
   color:#15803D;background:#DCFCE7;padding:4px 11px;border-radius:99px}
@@ -226,6 +228,7 @@ video{width:100%;border-radius:12px;border:1px solid var(--line);background:#000
           </div>
           <div class="actions">
             <button id="produce">Make the video and publish it</button>
+            <button id="save" class="ghost">Save the script</button>
             <span class="status" id="p-status"></span>
           </div>
           <div id="watch" style="display:none;margin-top:18px">
@@ -419,6 +422,13 @@ video{width:100%;border-radius:12px;border:1px solid var(--line);background:#000
   }
 
   // ── produce ──────────────────────────────────────────────────────────────
+  // Saving is a plain navigation to a file the server renders, so the browser
+  // handles it as a download rather than the page building one in memory.
+  $('save').addEventListener('click', function () {
+    if (!jobId) return;
+    window.location.href = '/demo/make-video/' + jobId + '/script.md';
+  });
+
   $('produce').addEventListener('click', async function () {
     if (!jobId) return;
     $('produce').disabled = true;
