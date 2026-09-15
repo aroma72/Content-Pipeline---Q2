@@ -306,6 +306,8 @@ async function askJson({
   input,
   schema,
   maxTokens = 8000,   // accepted for interface parity; the CLI has no output cap flag
+  // Set on the repair call itself, so a malformed repair cannot start another.
+  noRepair = false,
   dryRun = false,
   dryRunValue = null,
   timeoutMs = 5 * 60 * 1000,   // calls take 60-90s; a 15-min ceiling made one hang cost a quarter hour
@@ -432,9 +434,57 @@ async function askJson({
   // alone cannot distinguish a truncated reply from a chatty one, and those need
   // opposite fixes (shorter requested output vs. firmer formatting instruction).
   let parsed;
+  let parseError = null;
   try {
     parsed = JSON.parse(extractJson(envelope.result));
   } catch (e) {
+    parseError = e;
+  }
+
+  // ONE repair call before giving up on the draft.
+  //
+  // The deterministic repairs handle what can be fixed without guessing: control
+  // characters, curly quotes in structural positions, trailing commas. They
+  // cannot handle a MISSING BRACE and must not try -- inserting structure invents
+  // content that was never sent. But the model that dropped the brace can put it
+  // back, with the draft in front of it.
+  //
+  // Measured before this existed: three stage attempts, three fresh drafts, three
+  // different structural slips, and a run that never reached the gate. A 12,000
+  // character script is now recovered for the price of one short call rather than
+  // rewritten from nothing.
+  if (parseError && !noRepair) {
+    try {
+      if (log) log('reply was not valid JSON -- asking for it back, corrected');
+      const fixed = await askJson({
+        log: null,
+        promptName: 'json_repair',
+        input: [
+          'The JSON below is malformed. Return it corrected and nothing else.',
+          '',
+          `The parser said: ${parseError.message}`,
+          '',
+          'Change only what is required to make it parse -- do not reword any value,',
+          'do not add or remove any field, do not summarise. Return the whole',
+          'corrected JSON.',
+          '',
+          String(envelope.result || '').slice(0, 60000),
+        ].join('\n'),
+        schema,
+        maxTokens,
+        timeoutMs,
+        // No repair-of-the-repair: one call, then the original error stands.
+        noRepair: true,
+      });
+      if (log) log('the corrected reply parsed');
+      return fixed;
+    } catch (repairErr) {
+      if (log) log(`repair call did not help: ${String(repairErr.message).slice(0, 140)}`);
+    }
+  }
+
+  if (parseError) {
+    const e = parseError;
     const raw = String(envelope.result || '');
     const head = raw.slice(0, 160).replace(/\s+/g, ' ');
     const tail = raw.slice(-160).replace(/\s+/g, ' ');
@@ -452,6 +502,7 @@ async function askJson({
       `${dumped} Starts: ${head} ... Ends: ${tail}`
     );
   }
+
   parsed = unwrapAccidentalArray(parsed, schema);
   checkShape(parsed, schema);
   return parsed;
