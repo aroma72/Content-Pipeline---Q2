@@ -15,7 +15,7 @@
 const cli = require('./llm-cli');
 const api = require('./llm');
 
-const BACKENDS = { cli, api };
+
 
 function chosenName() {
   const want = (process.env.LLM_BACKEND || '').toLowerCase();

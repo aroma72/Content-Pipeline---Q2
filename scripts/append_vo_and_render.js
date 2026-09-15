@@ -25,7 +25,7 @@ function log(msg) {
 function execSafe(cmd, desc) {
   log(`Executing: ${desc}`);
   try {
-    const result = execSync(cmd, { stdio: 'inherit', shell: 'cmd.exe' });
+    execSync(cmd, { stdio: 'inherit', shell: 'cmd.exe' });
     log(`✓ ${desc} completed`);
     return true;
   } catch (error) {

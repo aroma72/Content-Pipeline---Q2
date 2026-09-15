@@ -1450,6 +1450,9 @@ async function redraftChecks() {
         }),
       },
     });
+
+    // The whole point: the rewind must actually reach the writer. Before the fix
+    // it spun eight times in one second without a single draft being made.
     assert(drafts === 1, `the rewind did not run the writer (drafts: ${drafts})`);
     assert(produces === 2, `produce ran ${produces} times, expected 2`);
     assert(st.status === 'done', `run ended ${st.status}, expected done`);
@@ -1498,6 +1501,7 @@ async function redraftChecks() {
     // Under one shared budget of 8 the gate's 7th and 8th requests would have hit
     // the cap and failed the run. Per reviewer, both are well inside their own.
     assert(st.status === 'done', `run ended ${st.status}: the gate was starved by produce`);
+    assert(drafts > 0, 'the rewind never ran the writer');
     assert(produceCalls === 8, `produce ran ${produceCalls} times, expected 8`);
     assert(st.redraftsBy && st.redraftsBy.produce === 7 && st.redraftsBy.gate === 2,
       `budgets not tracked per reviewer: ${JSON.stringify(st.redraftsBy)}`);

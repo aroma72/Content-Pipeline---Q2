@@ -21,7 +21,7 @@
  *    eventually proceeding.
  */
 
-const path = require('path');
+
 const { config } = require('./config');
 const slack = require('./slack');
 const notion = require('./notion');

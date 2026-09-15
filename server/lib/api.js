@@ -106,7 +106,7 @@ function build() {
           description: 'Every video that has at least one question checkpoint.',
           example: `${base}/videos` },
         { method: 'GET', path: '/api/v1/videos/:videoId/checkpoints', auth: true,
-          description: 'The checkpoints for one video, with firing times.',
+          description: 'The checkpoints for one video: where to pause, the question, and the feedback for each answer.',
           example: `${base}/videos/autonomy-01-spectrum/checkpoints` },
         { method: 'POST', path: '/api/v1/videos/:videoId/checkpoints/:id/attempts',
           auth: true, implemented: false,
@@ -130,10 +130,34 @@ function build() {
           description: 'Reject a built lesson. The course stops; nothing after it is built.' },
       ],
       demo: `${req.protocol}://${req.get('host')}/demo/quiz`,
+      howTheQuestionBehaves: {
+        summary: 'Nothing about the question is in the video. At atSeconds you PAUSE '
+          + 'playback, show the question, take the answer, show the feedback for that '
+          + 'answer, and then RESUME from the same instant.',
+        sequence: [
+          '1. Play until atSeconds, then pause. The stop is on a boundary between two '
+          + 'spoken sentences, never inside one — see pause.atBeatBoundary.',
+          '2. Show preamble, stem and options. correctIndex is the 0-based answer.',
+          '3. They answer. Show feedback.correct if they picked correctIndex, otherwise '
+          + 'feedback.incorrect — which says why the right answer is right and why the '
+          + 'tempting wrong one is wrong.',
+          '4. Resume at resumeAtSeconds (the same instant you paused).',
+        ],
+        rules: [
+          'atSeconds is measured from the start of <videoId>_final.mp4, which begins with '
+          + 'a 2.6s brand intro. lessonAtSeconds excludes it.',
+          'Only fire a checkpoint whose pause.safe is true. False means it has no whole '
+          + 'sentence on one side and there is nowhere clean to stop.',
+          'Do not fire a checkpoint whose timing.trusted is false.',
+          'rendersInVideo is false on every current video: the popup is the ONLY place '
+          + 'the learner ever sees the question, so if you skip it they miss it entirely.',
+          'Some older videos draw the question and the answer on screen. Those report '
+          + 'pausesVideo:false and onScreenUntilSeconds — do not pause over them, the '
+          + 'video answers itself.',
+          'The learner\'s answer is recorded by you. This service stores nothing.',
+        ],
+      },
       notes: [
-        'atSeconds is measured from the start of <videoId>_final.mp4, which begins '
-        + 'with a 2.6s brand intro. lessonAtSeconds excludes it.',
-        'Do not fire a checkpoint whose timing.trusted is false.',
         'Call this server-to-server; a browser would expose the token.',
         'Answers are recorded by the LMS, not here.',
       ],

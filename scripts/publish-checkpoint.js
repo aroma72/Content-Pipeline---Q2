@@ -24,7 +24,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execFileSync, spawnSync } = require('child_process');
+const { spawnSync } = require('child_process');
 const { resolveCommand } = require('../orchestrator/lib/shell');
 
 const REPO = path.resolve(__dirname, '..');
@@ -103,12 +103,19 @@ function validate(relPath) {
       + `to a learner who just answered wrong. Add \`explain\` to the checkpoint beat's `
       + `\`quiz\` (or, on a legacy video, to the REVEAL beat's data) in beats.js.` };
   }
-  // A pause with no whole sentence on one side of it has nowhere safe to stop.
+  // A pause with no whole sentence on one side of it has nowhere clean to stop.
   const unsafe = payload.checkpoints.filter((c) => c.pause && c.pause.safe === false);
   if (unsafe.length) {
-    return { ok: false, why: `${unsafe.map((c) => c.id).join(', ')} sits first or last in `
-      + `the beat list, so the pause has no sentence boundary to land on. Move the `
-      + `checkpoint beat between two spoken beats.` };
+    return { ok: false, why: `${unsafe.map((c) => c.id).join(', ')} sits first or last in the `
+      + `beat list, so the pause has no sentence boundary to land on. Move the checkpoint `
+      + `beat between two spoken beats.` };
+  }
+  // Getting it wrong is the moment that teaches; an empty feedback panel wastes it.
+  const noFeedback = payload.checkpoints.filter((c) => !c.feedback || !c.feedback.incorrect);
+  if (noFeedback.length) {
+    return { ok: false, why: `${noFeedback.map((c) => c.id).join(', ')} has no feedback for a `
+      + `wrong answer. Add \`explain\` (and ideally \`correctNote\`) to the checkpoint beat's `
+      + `\`quiz\` in beats.js.` };
   }
   return { ok: true, payload };
 }
@@ -154,7 +161,12 @@ async function waitForLive(slug, local, { minutes = 12 } = {}) {
         ['up', '--detach', '--service', 'content-queen'],
         { cwd: REPO, encoding: 'utf8' });
       if (r.error || r.status !== 0) {
+        // "exit 1" alone is not diagnosable, and this is the step that decides
+        // whether learners ever see the question. Print what railway actually said.
+        const said = [r.stdout, r.stderr].filter(Boolean).join('\n').trim();
         log(`  deploy trigger failed: ${r.error ? r.error.code : 'exit ' + r.status}`);
+        if (said) log('  railway said: ' + said.split('\n').slice(-6).join('\n                '));
+        log('  fix it by hand with:  railway up --detach --service content-queen');
       }
     }
     await sleep(20_000);

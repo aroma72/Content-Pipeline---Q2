@@ -28,7 +28,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 
-const { PATHS, videoDir } = require('../../orchestrator/lib/paths');
+const { PATHS } = require('../../orchestrator/lib/paths');
 
 /** The house preamble. The beats' own note says "Write your answer down." --
  *  correct for a video nobody can answer, wrong for a popup that takes input. */
@@ -127,17 +127,29 @@ function isQuiz(beat) {
 }
 
 /**
- * The current format: the question is a beat that is never drawn and never
- * spoken, so nothing about it appears in the MP4. The LMS pauses the video at
- * that point and shows the popup.
+ * The current format (2026-09-15): the question IS on screen, and the popup
+ * mirrors it. The card is a normal rendered beat carrying a `quiz` block:
+ *
+ *   { id: '14', mode: 'card', holdAfter: 6, vo: '…', card: {…},
+ *     quiz: { stem, options: [...], answer: <0-based index>, explain } }
+ *   { id: '15', mode: 'card', revealsQuiz: true, vo: '…', card: {…} }
+ *
+ * The popup opens the instant the card appears and closes the instant it leaves
+ * — `startSeconds` to `endSeconds` — and the video NEVER pauses. The window is
+ * the card's own measured length (voiceover + `holdAfter`), so the two cannot
+ * drift: both come from the same number in durations.json.
+ */
+function quizOf(beat) {
+  return beat && beat.quiz && Array.isArray(beat.quiz.options) ? beat.quiz : null;
+}
+
+/**
+ * The current format: the question is never drawn and never spoken. The player
+ * stops just before this beat, the LMS asks the question, shows feedback on the
+ * answer, and then resumes from the same instant.
  *
  *   { id: '14', mode: 'checkpoint',
- *     quiz: { stem, options: [...], answer: <0-based index>, explain } }
- *
- * Because it carries no voiceover it has no entry in durations.json and occupies
- * zero time, so its start time IS the boundary between the beats either side of
- * it. Every beat is one spoken sentence plus a trailing pause, which is what
- * makes that boundary safe to stop on — a checkpoint can never land mid-sentence.
+ *     quiz: { stem, options: [...], answer: <0-based>, explain, correctNote } }
  */
 function isCheckpointBeat(beat) {
   return Boolean(beat) && beat.mode === 'checkpoint' && Boolean(beat.quiz);
@@ -188,8 +200,63 @@ function forPath(relPath) {
   });
 
   const checkpoints = [];
+  const sec = (n) => Number(n.toFixed(3));
 
-  // ── current format: a checkpoint beat, nothing rendered ────────────────────
+  /**
+   * One entry. `lessonAt` is the lesson-relative instant the player stops;
+   * everything exposed is shifted into the delivered file by the intro offset.
+   */
+  const emit = ({ beat, lessonAt, revealBeat, quiz, explanation,
+    explanationSource, rendersInVideo, pause }) => {
+    const revealIdx = revealBeat ? beats.indexOf(revealBeat) : -1;
+    const wrong = explanation;
+    // Getting it right deserves more than a tick: the same reasoning, confirmed.
+    // Authored `correctNote` wins; otherwise the explanation does the work.
+    const right = (quiz.correctNote && String(quiz.correctNote).trim())
+      || (wrong ? `That's right. ${wrong}` : null);
+
+    checkpoints.push({
+      id: `q${checkpoints.length + 1}`,
+      beatId: beat.id,
+      revealBeatId: revealBeat ? revealBeat.id : null,
+
+      // ── where the player stops ───────────────────────────────────────────
+      atSeconds: sec(lessonAt + offset.seconds),
+      lessonAtSeconds: sec(lessonAt),
+
+      // ── how the player must behave ───────────────────────────────────────
+      // Pause here, show the question, take the answer, show the feedback,
+      // then resume from this same instant. Nothing about the question is in
+      // the video, so the popup is the only place the learner ever sees it.
+      pausesVideo: true,
+      resumeAfterFeedback: true,
+      resumeAtSeconds: sec(lessonAt + offset.seconds),
+      rendersInVideo,
+      pause,
+
+      // ── what to show ─────────────────────────────────────────────────────
+      preamble: PREAMBLE,
+      stem: quiz.stem,
+      options: quiz.options.slice(),
+      correctIndex: quiz.answer,
+      feedback: {
+        // Shown when they pick correctIndex — confirm, and say why.
+        correct: right,
+        // Shown when they pick anything else — why the right one is right, and
+        // why the tempting wrong one is wrong.
+        incorrect: wrong,
+      },
+      // The original field name, same text as feedback.incorrect. Kept so the
+      // first integration does not break.
+      explanation: wrong,
+      explanationSource,
+      // Older videos still draw the question and answer on screen; there the
+      // popup duplicates what is playing.
+      revealAtSeconds: revealIdx >= 0 ? sec(startAt[revealIdx] + offset.seconds) : null,
+    });
+  };
+
+  // ── current format: the checkpoint beat. Nothing rendered; the player stops ──
   beats.forEach((c, i) => {
     if (!isCheckpointBeat(c)) return;
     const q = c.quiz;
@@ -197,43 +264,63 @@ function forPath(relPath) {
     const after = beats.slice(0, i).filter(spoken).pop() || null;
     const before = beats.slice(i + 1).find(spoken) || null;
 
-    // The boundary is where the beat would have started; we stop just before it
-    // (PAUSE_LEAD_SECONDS) so the previous beat's frame is still on screen.
+    // The beat occupies no time, so its start IS the boundary between the two
+    // beats either side. We stop a fraction before it, inside the trailing
+    // silence, so the previous frame is still up and no word is clipped.
     const boundary = startAt[i];
-    const lessonAt = Number(Math.max(0, boundary - PAUSE_LEAD_SECONDS).toFixed(3));
-    checkpoints.push({
-      id: `q${checkpoints.length + 1}`,
-      beatId: c.id,
-      atSeconds: Number((lessonAt + offset.seconds).toFixed(3)),
-      lessonAtSeconds: lessonAt,
-      preamble: PREAMBLE,
-      stem: q.stem,
-      options: q.options.slice(),
-      correctIndex: q.answer,
+    emit({
+      beat: c,
+      lessonAt: Math.max(0, boundary - PAUSE_LEAD_SECONDS),
+      revealBeat: null,
+      quiz: q,
       explanation: q.explain || null,
       explanationSource: q.explain ? 'authored' : 'missing',
-      // Nothing about this question is burned into the video: the popup is the
-      // only place the learner ever sees it.
       rendersInVideo: false,
       pause: {
-        // The video is paused here by the player. It is a boundary between two
-        // whole spoken sentences, never a cut inside one.
         atBeatBoundary: true,
         afterBeatId: after && after.id,
         beforeBeatId: before && before.id,
-        // Where the two beats actually meet, and how far before it we stop.
-        boundaryLessonSeconds: Number(boundary.toFixed(3)),
+        boundaryLessonSeconds: sec(boundary),
         leadSeconds: PAUSE_LEAD_SECONDS,
-        // A checkpoint before the first spoken beat or after the last one has no
-        // sentence to land between; the LMS should not fire an untrusted pause.
+        // First or last in the list means no whole sentence on one side of the
+        // stop. The LMS must not fire an unsafe pause.
         safe: Boolean(after && before),
       },
     });
   });
 
-  // ── legacy format: videos built before the popup, with the cards on screen ──
+  // ── older videos: the question is drawn on screen as a card pair ───────────
+  beats.forEach((b, i) => {
+    const quiz = quizOf(b);
+    if (!quiz || isCheckpointBeat(b)) return;
+    const d = (durations && durations[b.id]) || 0;
+    emit({
+      beat: b,
+      lessonAt: startAt[i],
+      revealBeat: beats.slice(i + 1).find((x) => x.revealsQuiz) || null,
+      quiz,
+      explanation: quiz.explain || null,
+      explanationSource: quiz.explain ? 'authored' : 'missing',
+      rendersInVideo: true,
+      pause: { atBeatBoundary: true, afterBeatId: (beats[i - 1] || {}).id || null,
+        beforeBeatId: b.id, boundaryLessonSeconds: sec(startAt[i]), leadSeconds: 0,
+        safe: i > 0 },
+    });
+    // The card holds the question on screen by itself, so pausing is optional
+    // here; the window it is legible for is reported for a player that prefers
+    // to overlay rather than stop.
+    const last = checkpoints[checkpoints.length - 1];
+    last.pausesVideo = false;
+    last.onScreenUntilSeconds = sec(startAt[i] + d + offset.seconds);
+  });
+
+  // ── the `info` quiz-card pair: same rule, the window is the card's own time ──
   beats.forEach((q, i) => {
     if (!isQuiz(q) || typeof q.info.data.answer === 'number') return; // reveals handled below
+    // A current-format beat draws the quiz card AND carries `quiz` for the popup.
+    // It was already emitted above; matching it here too would serve the same
+    // question twice, and the LMS would open two popups over one card.
+    if (quizOf(q)) return;
 
     // The REVEAL is a later quiz beat carrying the answer index. Its `note` is
     // the one-line explanation the script already wrote.
@@ -242,19 +329,21 @@ function forPath(relPath) {
     );
     if (!reveal) return; // a question with no reveal is a script bug, not a checkpoint
 
-    const lessonAt = Number(startAt[i].toFixed(3));
-    checkpoints.push({
-      id: `q${checkpoints.length + 1}`,
-      beatId: q.id,
-      revealBeatId: reveal.id,
-      atSeconds: Number((lessonAt + offset.seconds).toFixed(3)),
-      lessonAtSeconds: lessonAt,
-      preamble: PREAMBLE,
-      // The drawn card trims a long stem or option to fit 1080 lines. The popup
-      // has no such limit, so prefer the untrimmed text when the script kept it.
-      stem: q.info.data.stemFull || q.info.data.stem,
-      options: (q.info.data.optionsFull || q.info.data.options).slice(),
-      correctIndex: reveal.info.data.answer,
+    const d = (durations && durations[q.id]) || 0;
+    emit({
+      beat: q,
+      lessonAt: startAt[i],
+      pause: { atBeatBoundary: true, afterBeatId: (beats[i - 1] || {}).id || null,
+        beforeBeatId: q.id, boundaryLessonSeconds: sec(startAt[i]), leadSeconds: 0,
+        safe: i > 0 },
+      revealBeat: reveal,
+      quiz: {
+        // The drawn card trims a long stem or option to fit 1080 lines. The popup
+        // has no such limit, so prefer the untrimmed text when the script kept it.
+        stem: q.info.data.stemFull || q.info.data.stem,
+        options: q.info.data.optionsFull || q.info.data.options,
+        answer: reveal.info.data.answer,
+      },
       // `note` is the video's on-screen caption -- six words, written to be read
       // aloud ("Easy to undo, so it runs free."). Serving it as the popup's
       // explanation told a learner who had just answered wrong essentially
@@ -265,17 +354,15 @@ function forPath(relPath) {
       // Named so coverage is visible rather than guessed at: 'video-note' means
       // this question still needs a proper explanation written for it.
       explanationSource: reveal.info.data.explain ? 'authored' : 'video-note',
-      // These videos still show the question and the answer on screen. The popup
-      // duplicates them, so the LMS may prefer to let the cards play instead of
-      // pausing. Rebuilding one as a checkpoint beat flips this to false.
       rendersInVideo: true,
-      pause: {
-        atBeatBoundary: true,
-        afterBeatId: (beats.slice(0, i).pop() || {}).id || null,
-        beforeBeatId: q.id,
-        safe: i > 0,
-      },
     });
+    // These videos draw the question and the answer themselves, so stopping is
+    // optional — the card already holds it on screen. Reported so the LMS can
+    // tell them apart from a video that shows nothing and must be paused.
+    const last = checkpoints[checkpoints.length - 1];
+    last.pausesVideo = false;
+    last.resumeAfterFeedback = false;
+    last.onScreenUntilSeconds = sec(startAt[i] + d + offset.seconds);
   });
 
   if (!checkpoints.length) return null;

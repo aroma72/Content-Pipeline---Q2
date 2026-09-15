@@ -7,7 +7,7 @@
 
 const { execSync } = require('child_process');
 const fs = require('fs');
-const path = require('path');
+
 
 const VIDEO_INPUT = 'c:\\Users\\Aroma Tahir\\Downloads\\Content Queen\\video_production\\consumer-to-producer-mindset\\consumer_producer_mindset_silent.mp4';
 const AUDIO_INPUT = 'c:\\Users\\Aroma Tahir\\Downloads\\Content Queen\\video_production\\consumer-to-producer-mindset\\consumer_producer_vo.mp3';

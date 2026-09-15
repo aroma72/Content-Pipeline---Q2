@@ -43,20 +43,25 @@ function i2vSeconds(secs) {
  * TTS clip. Art already on disk is not re-bought, so it is excluded too.
  */
 function estimateSpend(beats, dir) {
-  const artNeeded = (beats || []).filter((b) => b.mode !== 'info' && b.art);
-  const artAlreadyBought = hasOutput(path.join(dir, 'art'), '.png');
-  const ttsAlreadyBought = hasOutput(path.join(dir, 'audio'), '.wav');
-  const images = artAlreadyBought ? 0 : artNeeded.length;
-  const clips = ttsAlreadyBought ? 0 : (beats || []).length;
+  // PER BEAT, on the same basis the regeneration paths use.
+  //
+  // This asked "does art/ contain any PNG?" and priced every image at zero if so.
+  // On the first pass that is right. On every pass after a redraft it is not: the
+  // regeneration path uses per-beat freshness and buys art for each reworded beat,
+  // while the estimate came back $0 and the budget gate approved unconditionally.
+  // Eight redraft rounds could re-buy most of the art with --budget never
+  // consulted again. The gate can only guard a bill it is shown.
+  const images = missingPerBeat(beats, dir, 'art', (id) => `${id}.png`).length;
+  const clips = staleVo(beats, dir).length;
 
   // Animation is priced per SECOND, so a handful of moving beats can cost more than
   // every still in the video put together. It must be inside the estimate the budget
   // gate checks, or the gate is guarding the cheap half of the bill.
   const animBeats = (beats || []).filter((b) => b.mode !== 'info' && b.art && b.motion);
-  const animAlreadyBought = hasOutput(path.join(dir, 'clips'), '.mp4');
-  const animSecs = animAlreadyBought
-    ? 0
-    : animBeats.reduce((a, b) => a + i2vSeconds(readDuration(dir, b.id)), 0);
+  const animMissing = missingPerBeat(animBeats, dir, 'clips', (id) => `${id}.mp4`);
+  const animSecs = animBeats
+    .filter((b) => animMissing.includes(b.id))
+    .reduce((a, b) => a + i2vSeconds(readDuration(dir, b.id)), 0);
 
   const artUsd = images * COST.imagePerImage;
   const ttsUsd = clips * COST.ttsPerClip;
@@ -64,7 +69,7 @@ function estimateSpend(beats, dir) {
   return {
     images,
     clips,
-    animBeats: animAlreadyBought ? 0 : animBeats.length,
+    animBeats: animMissing.length,
     animSecs,
     artUsd: Number(artUsd.toFixed(2)),
     ttsUsd: Number(ttsUsd.toFixed(3)),
@@ -494,7 +499,7 @@ module.exports = Object.assign(module.exports, {
     // 4. voiceover -- paid, and skipped only when every beat's audio was made
     // from the sentence the script still holds. "Some wavs exist" is not that:
     // after a redraft the changed beats hold the previous take.
-    const needVo = staleVo(beats, dir);
+    const needVo = staleVo(beatsForArt, dir);
     if (hasOutput(path.join(dir, 'audio'), '.wav') && !needVo.length) {
       log('audio/ matches every beat -- skipping tts-lesson (no re-spend)');
     } else {

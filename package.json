@@ -6,7 +6,9 @@
   },
   "scripts": {
     "start": "node server/index.js",
-    "dev": "node server/index.js"
+    "dev": "node server/index.js",
+    "lint": "eslint orchestrator server scripts",
+    "test": "node orchestrator/test-regressions.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.97.1",
@@ -15,5 +17,8 @@
     "dotenv": "^17.4.2",
     "express": "^4.21.2",
     "ffmpeg-static": "^5.3.0"
+  },
+  "devDependencies": {
+    "eslint": "^10.10.0"
   }
 }

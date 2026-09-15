@@ -270,6 +270,30 @@ fi
 # ============================================================================
 # Results Summary
 # ============================================================================
+# Names that resolve to nothing.
+#
+# `node --check` validates syntax and says nothing about whether a name exists,
+# so `staleVo(beats, dir)` -- with `beats` bound nowhere in that function --
+# passed every check and shipped. It throws only when control reaches the line,
+# which in the pipeline is after the art has been paid for. Twice in one day.
+# ============================================================================
+echo ""
+echo "🔎 Test: Undefined names (eslint no-undef)..."
+if [ -d node_modules/eslint ]; then
+  if npx --no-install eslint orchestrator server scripts > /tmp/eslint-out.txt 2>&1; then
+    echo "  ✅ PASS: no undefined names or dead bindings"
+    PASS=$((PASS + 1))
+  else
+    echo "  ❌ FAIL: eslint found problems"
+    tail -20 /tmp/eslint-out.txt | sed "s/^/     /"
+    FAIL=$((FAIL + 1))
+  fi
+else
+  echo "  ⚠️  WARN: eslint not installed — run: npm install"
+  WARN=$((WARN + 1))
+fi
+
+# ============================================================================
 echo ""
 echo "========================================"
 echo "SMOKE TEST SUMMARY"

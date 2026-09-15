@@ -24,7 +24,7 @@ function get(url) {
       let b = '';
       r.on('data', (d) => { b += d; });
       r.on('end', () => {
-        try { res(JSON.parse(b)); } catch (e) { rej(new Error(`${url} did not return JSON: ${b.slice(0, 200)}`)); }
+        try { res(JSON.parse(b)); } catch { rej(new Error(`${url} did not return JSON: ${b.slice(0, 200)}`)); }
       });
     }).on('error', rej);
   });
