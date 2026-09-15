@@ -16,29 +16,52 @@ const key = geminiKey();
 
 // collect human-language strings; skip code (editor lines, tree, terminal), art prompts, ids.
 const SKIP_KEYS = new Set(['art', 'editor', 'tree', 'terminal', 'id', 'mode', 'tpl', 'lang', 'indent', 'tone', 'hi', 'role', 'tag', 'active', 'name']);
-const strings = new Set();
-function walk(v, key) {
+// Text the viewer HEARS and text the viewer READS are judged by different rules,
+// so which one a snippet is has to survive collection. It did not: the key was
+// passed to walk() and then dropped, leaving the judge a flat list in which
+// narration and a drawn card look identical. It duly applied page typography to
+// speech -- demanding quotation marks nobody can hear, and digits in place of
+// the spelled-out numbers the speech engine needs -- and failed a finished video
+// for it.
+const strings = new Map();   // text -> 'spoken' | 'shown'
+function walk(v, key, spoken) {
   if (v == null) return;
   if (typeof v === 'string') {
     const t = v.trim();
     // keep natural-language-ish text; drop pure code/symbols/very short tokens/numbers
-    if (t.length >= 4 && /[a-z]/i.test(t) && !/^[\w./-]+\(.*\)$/.test(t) && !/[{};]$/.test(t)) strings.add(t);
+    if (t.length >= 4 && /[a-z]/i.test(t) && !/^[\w./-]+\(.*\)$/.test(t) && !/[{};]$/.test(t)) {
+      // A line that is both spoken and drawn is judged as drawn: the stricter of
+      // the two, because it really is on screen where typography is visible.
+      if (!(spoken && strings.get(t) === 'shown')) strings.set(t, spoken ? 'spoken' : 'shown');
+    }
     return;
   }
-  if (Array.isArray(v)) { v.forEach((x) => walk(x, key)); return; }
-  if (typeof v === 'object') { for (const k of Object.keys(v)) if (!SKIP_KEYS.has(k)) walk(v[k], k); }
+  if (Array.isArray(v)) { v.forEach((x) => walk(x, key, spoken)); return; }
+  if (typeof v === 'object') { for (const k of Object.keys(v)) if (!SKIP_KEYS.has(k)) walk(v[k], k, spoken); }
 }
 for (const b of beats) {
-  walk(b.vo, 'vo'); walk(b.cap, 'cap'); walk(b.card, 'card'); walk(b.info, 'info');
-  if (b.screen && b.screen.chat) walk(b.screen.chat, 'chat');
-  if (b.overlay) walk(b.overlay, 'overlay');
+  walk(b.vo, 'vo', true);            // heard, never seen
+  walk(b.cap, 'cap', false);
+  walk(b.card, 'card', false);
+  walk(b.info, 'info', false);
+  if (b.screen && b.screen.chat) walk(b.screen.chat, 'chat', false);
+  if (b.overlay) walk(b.overlay, 'overlay', false);
 }
-const items = [...strings];
+const items = [...strings.keys()];
+const labelled = [...strings].map(([text, kind]) => ({ kind, text }));
 
 const PROMPT =
-  'You are a copy editor for a short educational video. Below is a JSON array of text snippets — ' +
-  'spoken narration, on-screen cards, captions, or chat bubbles. Classify each problem you find by ' +
-  'severity:\n' +
+  'You are a copy editor for a short educational video. Below is a JSON array of snippets, each ' +
+  'tagged "spoken" or "shown".\n\n' +
+  'THIS DISTINCTION DECIDES WHAT IS AN ERROR:\n' +
+  '  "spoken" = narration read aloud by a speech engine. The viewer HEARS it and never sees it. ' +
+  'Judge it by ear only. Punctuation is inaudible, so NEVER flag quotation marks around direct ' +
+  'speech or around a word being discussed, and never flag capitalisation. Numbers are spelled ' +
+  'out ON PURPOSE so the speech engine says them correctly: "fourteen out of twenty" and "four ' +
+  'fifteen" are CORRECT and must never be flagged, not even as a nit. Regional usage such as ' +
+  '"ring her" for "call her" is correct.\n' +
+  '  "shown" = text drawn on screen. The viewer READS it, so typography counts normally.\n\n' +
+  'Classify each problem you find by severity:\n' +
   '  "error" = a GENUINE grammatical mistake a professional editor would mark WRONG (subject–verb ' +
   'disagreement, a missing/dropped word that breaks the sentence, wrong tense, a real typo). ' +
   'Example error: "proof one change helped" (dropped "that").\n' +
@@ -47,7 +70,8 @@ const PROMPT =
   'idioms and deliberate voice (e.g. "the flow your users can\'t lose"), code, product names, or ' +
   'punctuation taste. Be conservative: when unsure, do not flag. Return STRICT JSON only: ' +
   '{"issues":[{"text":"<snippet>","severity":"error"|"nit","problem":"<one sentence>","suggestion":"<fix>"}]}. ' +
-  'Empty array if all fine.\n\nSNIPPETS:\n' + JSON.stringify(items, null, 0);
+  'Empty array if all fine. The "text" you return must be the snippet text, without its tag.' +
+  '\n\nSNIPPETS:\n' + JSON.stringify(labelled, null, 0);
 
 (async () => {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${JUDGE}:generateContent`;
