@@ -12,6 +12,7 @@ const path = require('path');
 const { askJson } = require('../llm-router');
 const { videoDir } = require('../paths');
 const { validateBeats } = require('../validate-beats');
+const { RedraftError } = require('../spine-errors');
 const { composeTitle } = require('../naming');
 const { ALI } = require('../characters');
 
@@ -404,7 +405,24 @@ module.exports = {
     // rejected while a retry is still cheap (this stage has maxAttempts 3).
     const { errors, warnings } = validateBeats(script.beats, dir, { strictCanon: true });
     for (const w of warnings) log(`warning: ${w}`);
-    if (errors.length) throw new Error(`Malformed script:\n  - ${errors.join('\n  - ')}`);
+    if (errors.length) {
+      // Hand the findings BACK, rather than retrying the same prompt blind.
+      //
+      // A plain throw retried this stage three times from scratch, and the writer
+      // never learned what was wrong -- so it made the same mistake three times
+      // and the run died. Measured on "how do I handle an angry parent on the
+      // phone": beats 02 and 08 drew the child, which Imagen silently refuses,
+      // and every retry drew the child again. The prompt has said NEVER DEPICT
+      // CHILDREN since August; on a topic that is ABOUT a child, saying it once
+      // in a system prompt is not enough. Saying it about beat 02 is.
+      //
+      // Every error this check emits is a beats.js edit, which is precisely what
+      // a redraft is for, and the redraft loop already carries a critique.
+      throw new RedraftError(
+        `Malformed script:\n  - ${errors.join('\n  - ')}`,
+        { fromStage: 'script', verdict: 'INVALID_BEATS', feedback: errors }
+      );
+    }
     const beatsPath = path.join(dir, 'beats.js');
 
     if (opts.dryRun) {

@@ -319,9 +319,13 @@ module.exports = Object.assign(module.exports, {
       const { errors, warnings } = validateBeats(artifacts.script && artifacts.script.beats, dir);
       for (const w of warnings) log(`warning: ${w}`);
       if (errors.length) {
-        throw new RejectedError(
+        // Redraftable, for the same reason as the script stage's copy: every
+        // error here is a beats.js edit. It sat BEFORE qa-visuals, which is
+        // redraftable -- so the weaker gate could improve a video while the
+        // stricter one could only throw it away.
+        throw new RedraftError(
           `beats.js will not render correctly:\n  - ${errors.join('\n  - ')}`,
-          { verdict: 'INVALID_BEATS', details: errors }
+          { fromStage: 'script', verdict: 'INVALID_BEATS', feedback: errors }
         );
       }
       log(`beats validated: ${artifacts.script.beats.length} beat(s), no blocking problems`);

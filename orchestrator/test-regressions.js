@@ -399,6 +399,30 @@ async function beatChecks() {
     return 'outage and verdict are distinguishable';
   });
 
+  check('a malformed script is sent back with the findings, not retried blind', () => {
+    // Measured on "how do I handle an angry parent on the phone": beats 02 and 08
+    // drew the child, which Imagen silently refuses. The stage threw a plain
+    // Error, the spine retried it three times from scratch, and the writer never
+    // learned what was wrong -- so it drew the child every time and the run died.
+    // Every finding this check emits is a beats.js edit, which is what a redraft
+    // is for.
+    const scriptSrc = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'script.js'), 'utf8');
+    assert(/Malformed script[\s\S]{0,80}RedraftError|RedraftError[\s\S]{0,200}Malformed script/.test(scriptSrc)
+      || /throw new RedraftError\(\s*`Malformed script/.test(scriptSrc),
+      'a malformed script is still thrown as a plain error and retried blind');
+    assert(/fromStage: 'script', verdict: 'INVALID_BEATS'/.test(scriptSrc),
+      'the findings are not carried back to the writer');
+
+    // produce holds a second copy of the same check, and it was terminal while
+    // qa-visuals five lines later was redraftable -- the weaker gate could
+    // improve a video, the stricter one could only throw it away.
+    assert(!/beats\.js will not render correctly[\s\S]{0,120}RejectedError/.test(produceSrc),
+      'produce still rejects a fixable beats.js instead of redrafting it');
+    assert(/beats\.js will not render correctly[\s\S]{0,200}fromStage: 'script'/.test(produceSrc),
+      'produce does not send validation findings back to the writer');
+    return 'both copies redraft';
+  });
+
   check('the container pins ffmpeg and the render worker count', () => {
     // os.totalmem()/os.cpus() report the HOST, not the cgroup, so the memory cap
     // computed a large number and launched six 1920x1080 Chromes on an instance
