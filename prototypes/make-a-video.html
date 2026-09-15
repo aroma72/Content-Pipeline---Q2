@@ -117,20 +117,6 @@ video{width:100%;border-radius:12px;border:1px solid var(--line);background:#000
 .beat.checkpoint{background:var(--blue-soft);border-radius:8px;padding:10px 12px;margin:6px 0}
 .beat.checkpoint .m{color:var(--blue-ink)}
 .beat.checkpoint .t{color:var(--ink-2);font-style:italic}
-.eg{background:var(--card);border:1px solid var(--line);border-radius:12px;
-  padding:22px 24px;margin-bottom:16px}
-.eg .tag{display:inline-block;font-size:11.5px;font-weight:700;letter-spacing:.07em;
-  text-transform:uppercase;color:var(--blue);background:var(--blue-soft);
-  padding:4px 10px;border-radius:99px;margin-bottom:11px}
-.eg h2{font-size:19px;font-weight:700;letter-spacing:-.02em;margin-bottom:6px}
-.eg .meta{color:var(--muted);font-size:13.5px;margin-bottom:14px}
-.eg iframe{width:100%;aspect-ratio:16/9;border:0;border-radius:10px;display:block;background:#000}
-.eg .cols{display:flex;gap:18px;margin-top:16px;flex-wrap:wrap}
-.eg .cols>div{flex:1 1 260px;min-width:0}
-.eg h3{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
-  color:var(--muted);margin-bottom:8px}
-.eg .beats{max-height:230px;overflow-y:auto;border:1px solid var(--line-soft);
-  border-radius:8px;padding:4px 10px}
 .made-list{background:var(--card);border:1px solid var(--line);border-radius:12px;
   padding:20px 22px;margin-bottom:16px}
 .made-list h2{font-size:15px;font-weight:700;letter-spacing:-.01em;margin-bottom:3px}
@@ -186,29 +172,6 @@ video{width:100%;border-radius:12px;border:1px solid var(--line);background:#000
     </div>
 
     <div class="content">
-      <div class="eg" id="eg" style="display:none">
-        <span class="tag">Worked example</span>
-        <h2 id="eg-title"></h2>
-        <div class="meta" id="eg-meta"></div>
-        <iframe id="eg-frame" allow="encrypted-media; picture-in-picture"
-          referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
-        <div class="cols">
-          <div>
-            <h3>The script</h3>
-            <div class="beats" id="eg-beats"></div>
-          </div>
-          <div>
-            <h3>What the LMS pops</h3>
-            <div class="q" style="margin-top:0">
-              <div class="stem" id="eg-stem"></div>
-              <ol type="A" id="eg-opts"></ol>
-              <div class="exp" id="eg-exp"></div>
-            </div>
-            <p class="hint" id="eg-when"></p>
-          </div>
-        </div>
-      </div>
-
       <div class="made-list" id="made-list" style="display:none">
         <h2>Videos made on this server</h2>
         <div class="n" id="made-note"></div>
@@ -329,46 +292,14 @@ video{width:100%;border-radius:12px;border:1px solid var(--line);background:#000
     $('go').disabled = false;
   }
 
-  // ── the worked example ───────────────────────────────────────────────────
-  // One topic, one video, one question, all from the same run, committed rather
-  // than made on demand -- a video on the container does not survive a redeploy,
-  // and an empty page reads as a broken system.
-  (async function showExample() {
-    var d;
-    try { d = await (await fetch('/demo/sample')).json(); } catch (e) { return; }
-    if (d && d.topic) $('topic').value = d.topic;   // pinned, still editable
-    var x = d && d.example;
-    if (!x) return;
-
-    $('eg-title').textContent = x.title;
-    $('eg-meta').textContent = [
-      x.beats.length + ' beats',
-      x.gate === 'READY' ? 'passed the script gate' : x.gate,
-      x.redrafts ? ('redrafted ' + x.redrafts + 'x') : null,
-      x.qaScore ? ('QA ' + x.qaScore + '/7') : null,
-      x.spendUsd ? ('$' + x.spendUsd) : null,
-    ].filter(Boolean).join(' \u00b7 ');
-    $('eg-frame').src = 'https://www.youtube.com/embed/' + x.youtube.videoId;
-
-    $('eg-beats').innerHTML = x.beats.map(function (b) {
-      if (b.mode === 'checkpoint') {
-        return '<div class="beat checkpoint"><span class="n"></span>'
-          + '<span class="m">pause</span><span class="t">The video stops here.</span></div>';
-      }
-      return '<div class="beat ' + esc(b.mode) + '"><span class="n">' + esc(b.id) + '</span>'
-        + '<span class="m">' + esc(b.mode) + '</span>'
-        + '<span class="t">' + esc(b.vo) + '</span></div>';
-    }).join('');
-
-    var c = x.checkpoint;
-    $('eg-stem').textContent = c.stem;
-    $('eg-opts').innerHTML = c.options.map(function (o, i) {
-      return '<li' + (i === c.answer ? ' class="correct"' : '') + '>' + esc(o) + '</li>';
-    }).join('');
-    $('eg-exp').textContent = c.explain;
-    $('eg-when').textContent = 'Never drawn, never spoken. The player pauses at '
-      + c.atSeconds + 's, after beat ' + c.afterBeatId + ', and Taleemabad University shows this as a popup.';
-    $('eg').style.display = 'block';
+  // ── the pinned topic ─────────────────────────────────────────────────────
+  // Typed for you, so a demo is one press rather than one decision. Still
+  // editable: the field is a topic box, not a button.
+  (async function pinTopic() {
+    try {
+      const d = await (await fetch('/demo/sample')).json();
+      if (d && d.topic && !$('topic').value) $('topic').value = d.topic;
+    } catch (e) { /* the placeholder will do */ }
   }());
 
   // ── what already exists ──────────────────────────────────────────────────

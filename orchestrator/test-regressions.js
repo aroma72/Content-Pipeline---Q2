@@ -188,8 +188,13 @@ async function beatChecks() {
       assert(m, `${name} not found in llm-cli.js`);
       return m[0];
     };
-    return eval('(function(){' + grab('extractJson') + grab('escapeControlCharsInStrings')
-      + grab('nearOffset') + 'return extractJson})()');
+    // Every helper extractJson calls. Naming them individually meant adding a
+    // repair to the chain broke this test with 'X is not defined' rather than
+    // testing the repair -- so the list is derived from the source instead.
+    const helpers = ['escapeControlCharsInStrings', 'straightenStructuralQuotes',
+      'dropTrailingCommas', 'nearOffset'].filter((n) => src.includes('function ' + n));
+    return eval('(function(){' + grab('extractJson') + helpers.map(grab).join('')
+      + 'return extractJson})()');
   })();
 
   check('a raw newline inside a string is repaired, not retried', () => {
@@ -203,6 +208,28 @@ async function beatChecks() {
     return 'escaped, content intact';
   });
 
+  check('a curly quote in a structural position is repaired', () => {
+    // Three script drafts in a row died on this in production: a model writes " and "
+    // in prose constantly, and one landing where a key or delimiter belongs makes a
+    // 12,000-character draft unparseable. The parser blames a beat boundary that
+    // reads perfectly, which is why it took a character-level diagnostic to see.
+    const LQ = '\u201C', RQ = '\u201D';
+    const o = JSON.parse(extractJson('{' + LQ + 'id' + RQ + ':"12","vo":"a sentence"}'));
+    assert(o.id === '12', 'a curly-quoted key was not repaired');
+    // Inside a string it is content, and must survive exactly as written.
+    const k = JSON.parse(extractJson('{"vo":"She said ' + LQ + 'no' + RQ + ' firmly."}'));
+    assert(k.vo === 'She said ' + LQ + 'no' + RQ + ' firmly.', 'prose quotes were altered');
+    return 'structural repaired, prose untouched';
+  });
+
+  check('a trailing comma is dropped, but not one inside a string', () => {
+    const o = JSON.parse(extractJson('{"beats":[{"id":"1"},{"id":"2"},],}'));
+    assert(o.beats.length === 2, 'trailing commas were not dropped');
+    const k = JSON.parse(extractJson('{"vo":"Wait, then speak."}'));
+    assert(k.vo === 'Wait, then speak.', 'a comma inside a string was dropped');
+    return 'dropped where illegal only';
+  });
+
   check('a genuinely truncated reply still says truncated', () => {
     let msg = null;
     try { extractJson('{"a":"x","b":[1,2'); } catch (e) { msg = e.message; }
@@ -212,9 +239,14 @@ async function beatChecks() {
 
   check('a complete but invalid reply says so, and shows where', () => {
     let msg = null;
-    try { extractJson('{"a":1,}'); } catch (e) { msg = e.message; }
+    // Not a trailing comma any more -- that is repaired now. A missing colon is
+    // a defect no deterministic repair should guess at.
+    try { extractJson('{"a" 1}'); } catch (e) { msg = e.message; }
     assert(msg && /complete but invalid/.test(msg), `wrong message: ${msg}`);
     assert(/Near:/.test(msg), 'the message does not show the offending text');
+    // A window of text in which every character looks ordinary is what made the
+    // production failure undiagnosable. Name the character by code point.
+    assert(/U\+[0-9A-F]{4}/.test(msg), 'the message does not name the character');
     assert(!/truncated/.test(msg), 'still blames truncation');
     return 'named and located';
   });

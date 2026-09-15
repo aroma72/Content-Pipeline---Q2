@@ -139,9 +139,15 @@ function extractJson(text) {
   // them changes no content, so it is safe to do silently -- unlike guessing at
   // a missing brace, which would invent structure.
   if (balancedButInvalid) {
-    const repaired = escapeControlCharsInStrings(balancedButInvalid.span);
-    if (repaired !== balancedButInvalid.span) {
-      try { JSON.parse(repaired); return repaired; } catch { /* report the original */ }
+    // Applied in order and cumulatively, because a reply that has one of these
+    // defects usually has two. Each is deterministic and changes no content: the
+    // alternative is losing a 12,000-character draft to one wrong character.
+    let fixed = balancedButInvalid.span;
+    for (const repair of [escapeControlCharsInStrings, straightenStructuralQuotes, dropTrailingCommas]) {
+      const next = repair(fixed);
+      if (next === fixed) continue;
+      fixed = next;
+      try { JSON.parse(fixed); return fixed; } catch { /* keep repairing */ }
     }
     throw new Error(
       `JSON in reply is complete but invalid: ${balancedButInvalid.error}. ` +
@@ -151,6 +157,51 @@ function extractJson(text) {
 
   if (!sawOpening) throw new Error('no JSON object or array found in reply');
   throw new Error('JSON in reply is unbalanced (truncated output?)');
+}
+
+/**
+ * A typographic quote where JSON needs a straight one.
+ *
+ * Models emit " and " inside prose constantly, which is harmless inside a string
+ * -- but one landing where a key or a string DELIMITER belongs makes the whole
+ * reply unparseable, and the parser reports "Expected double-quoted property
+ * name" pointing at a beat boundary that looks perfectly fine to read. Only the
+ * structural positions are touched: a curly quote inside a string stays exactly
+ * as the model wrote it, because it is content there.
+ */
+function straightenStructuralQuotes(json) {
+  // After { or , a key must start; after : or [ a value may. In those positions
+  // only, a curly quote is a mistake rather than prose.
+  return json
+    .replace(/([{,]\s*)[\u201C\u201D]/g, (m, p) => p + '"')
+    .replace(/[\u201C\u201D](\s*:)/g, (m, p) => '"' + p)
+    .replace(/(:\s*)[\u201C\u201D]/g, (m, p) => p + '"')
+    .replace(/[\u201C\u201D](\s*[,}\]])/g, (m, p) => '"' + p);
+}
+
+/**
+ * A comma before a closing brace or bracket. JSON forbids it; a model writing a
+ * long array of beats produces one often enough to be worth handling. Strings
+ * are tracked so a comma inside prose is never touched.
+ */
+function dropTrailingCommas(json) {
+  let out = '';
+  let inStr = false;
+  let esc = false;
+  for (let i = 0; i < json.length; i++) {
+    const ch = json[i];
+    if (esc) { out += ch; esc = false; continue; }
+    if (ch === '\\') { out += ch; esc = true; continue; }
+    if (ch === '"') { out += ch; inStr = !inStr; continue; }
+    if (!inStr && ch === ',') {
+      // Look ahead past whitespace: a } or ] means this comma is illegal.
+      let j = i + 1;
+      while (j < json.length && /\s/.test(json[j])) j++;
+      if (json[j] === '}' || json[j] === ']') continue;   // drop it
+    }
+    out += ch;
+  }
+  return out;
 }
 
 /**
@@ -180,7 +231,15 @@ function nearOffset(span, message) {
   const m = /position (\d+)/.exec(message || '');
   if (!m) return span.slice(0, 120) + '…';
   const at = Number(m[1]);
-  return '…' + span.slice(Math.max(0, at - 80), at + 80).replace(/\n/g, '\\n') + '…';
+  const ch = span[at];
+  // The character itself, by code point. Three failures were diagnosed by eye
+  // from a window of text in which every character looked ordinary -- which is
+  // exactly what a curly quote or a non-breaking space looks like.
+  const named = ch === undefined ? '(end of input)'
+    : `'${ch}' U+${ch.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}`;
+  const window = span.slice(Math.max(0, at - 70), at + 70)
+    .replace(/\n/g, '\\n').replace(/\t/g, '\\t');
+  return `${named} in …${window}…`;
 }
 
 /**
