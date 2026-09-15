@@ -155,6 +155,37 @@ function missingPerBeat(beats, dir, subdir, name) {
 }
 
 /**
+ * Beats whose voiceover was made from a DIFFERENT sentence than the script now
+ * holds.
+ *
+ * A redraft rewords a beat and keeps its id, so the old wav is still sitting
+ * there and "audio/ has wavs in it" reads as done. It is not done: it is the
+ * previous sentence, in the previous voice take, about to be laid under the new
+ * picture. compile-lesson refuses to build that -- "beat 06: audio sidecar !=
+ * beat.vo" -- which is correct, and was the first anyone heard of it, 25 minutes
+ * and one art spend into the run.
+ *
+ * The sidecar is the exact text that was spoken, so comparing it to beat.vo is
+ * precise where a timestamp is only a guess. It is also the same comparison
+ * compile-lesson makes, so the two cannot disagree about what is stale.
+ *
+ * @returns {string[]} ids needing a fresh take
+ */
+function staleVo(beats, dir) {
+  return (beats || [])
+    .filter((b) => b && b.mode !== 'checkpoint' && b.vo)
+    .filter((b) => {
+      const sidecar = path.join(dir, 'audio', `vo_${b.id}.txt`);
+      const wav = path.join(dir, 'audio', `vo_${b.id}.wav`);
+      try {
+        if (!fs.existsSync(wav) || fs.statSync(wav).size === 0) return true;
+        return fs.readFileSync(sidecar, 'utf8') !== b.vo;
+      } catch { return true; }
+    })
+    .map((b) => b.id);
+}
+
+/**
  * Copy the skill templates into a new video folder.
  *
  * Never overwrites: beats.js is written by the script stage before this runs,
@@ -460,11 +491,20 @@ module.exports = Object.assign(module.exports, {
     log('segmenting cutouts');
     await run('python', ['segment-all.py']);
 
-    // 4. voiceover -- paid, skipped if audio/ already populated
-    if (hasOutput(path.join(dir, 'audio'), '.wav')) {
-      log('audio/ already populated -- skipping tts-lesson (no re-spend)');
+    // 4. voiceover -- paid, and skipped only when every beat's audio was made
+    // from the sentence the script still holds. "Some wavs exist" is not that:
+    // after a redraft the changed beats hold the previous take.
+    const needVo = staleVo(beats, dir);
+    if (hasOutput(path.join(dir, 'audio'), '.wav') && !needVo.length) {
+      log('audio/ matches every beat -- skipping tts-lesson (no re-spend)');
     } else {
-      log('generating voiceover (paid)');
+      // tts-lesson.js compares each sidecar to its beat and re-synthesises only
+      // what changed, so a redraft costs those beats and not the whole video.
+      if (needVo.length && hasOutput(path.join(dir, 'audio'), '.wav')) {
+        log(`voiceover is stale for beat(s) ${needVo.join(', ')} -- re-recording just those`);
+      } else {
+        log('generating voiceover (paid)');
+      }
       await run('node', ['tts-lesson.js', '--yes'], { timeoutMs: 30 * 60 * 1000 });
       if (!opts.dryRun) {
         state.recordSpend(st, {
