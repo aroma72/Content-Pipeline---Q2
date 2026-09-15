@@ -335,15 +335,22 @@ app.get('/demo/make-video/:jobId/script.md', (req, res) => {
     return res.status(404).type('text').send('No script for this job (or it expired).');
   }
   const sc = job.script;
-  const cp = sc.checkpoint;
+  // Normalise here rather than at each use, so the shape is stated once.
+  const brief = sc.brief || {};
+  const verdict = (sc.gate && sc.gate.verdict) || sc.gate || null;
+  const cpBeat = (sc.beats || []).find((b) => b.mode === 'checkpoint');
+  const cp = (cpBeat && cpBeat.quiz) || sc.checkpoint || null;
   const L = [];
 
   L.push(`# ${sc.title}`, "");
-  if (sc.interpretation) L.push(`> ${sc.interpretation}`, "");
+  const interpretation = sc.interpretation || brief.interpretation;
+  if (interpretation) L.push(`> ${interpretation}`, "");
   L.push(`**Topic asked:** ${job.topic}`);
-  if (sc.slo) L.push(`**Outcome:** ${sc.slo}`);
-  if (sc.scenario) L.push(`**Scenario:** ${sc.scenario}`);
-  L.push(`**Review:** ${sc.gate || "?"}`
+  const slo = sc.slo || brief.slo;
+  const scenario = sc.scenario || brief.ali_scenario || brief.scenario;
+  if (slo) L.push(`**Outcome:** ${slo}`);
+  if (scenario) L.push(`**Scenario:** ${scenario}`);
+  L.push(`**Review:** ${verdict || "?"}`
     + (sc.redrafts ? ` after ${sc.redrafts} redraft${sc.redrafts > 1 ? "s" : ""}` : " on the first pass")
     + ` · ${sc.beats.length} beats`);
   L.push("", "---", "", "## The script", "");
