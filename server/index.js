@@ -194,7 +194,12 @@ function startWrite(body) {
   }).catch((e) => {
     job.status = 'failed';
     job.error = e.message;
-    console.error(`[make-video ${id}] failed:`, e.message);
+    console.error(`[make-video ${id}] failed: ${e.message}`);
+    // The stack, always. A SyntaxError names no file and no line in its message,
+    // so without this a module that fails to PARSE in the container is
+    // indistinguishable from one that throws while running -- which is exactly
+    // the hour "Invalid or unexpected token" cost with nothing else to go on.
+    if (e.stack) console.error(e.stack.split('\n').slice(0, 8).join('\n'));
   });
 
   // A finished job is worth keeping only as long as someone might poll for it.
@@ -297,7 +302,12 @@ app.post('/demo/make-video/:jobId/produce', (req, res) => {
   }).catch((e) => {
     job.status = 'written';   // the script is still good; only the render failed
     job.produce = { status: 'failed', error: e.message };
-    console.error(`[produce ${job.id}] failed:`, e.message);
+    console.error(`[produce ${job.id}] failed: ${e.message}`);
+    // The stack, always. A SyntaxError names no file and no line in its message,
+    // so without this a module that fails to PARSE in the container is
+    // indistinguishable from one that throws while running -- which is exactly
+    // the hour "Invalid or unexpected token" cost with nothing else to go on.
+    if (e.stack) console.error(e.stack.split('\n').slice(0, 8).join('\n'));
   });
 
   res.status(202).json({ jobId: job.id, status: 'producing', budgetUsd });
