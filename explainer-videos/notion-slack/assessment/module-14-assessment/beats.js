@@ -135,9 +135,11 @@ module.exports = [
       editor: { name: 'three contradictions', lines: ['keys in a tracked script', 'one person hardcoded in', 'an API version from 2022', '', 'one must be about keys'] },
       chat: [{ role: 'claude', text: 'For each one: what the repo does, which video says otherwise, and what you would change. Most real internal tooling looks like this.' }] } },
 
-  // ---- CHECKPOINT (LMS popup — nothing rendered, the player pauses here) ----
-  // Sits between beat 17 and beat 20, so the pause lands on a whole-sentence
-  // boundary. Never voiced, never drawn: the question exists only in the popup.
+  // ---- CHECKPOINT: nothing on screen, the player stops and the LMS asks ----
+  // Sits between beat 17 and beat 20. It is never drawn and never spoken, so it
+  // occupies no time and its position IS the boundary between those two beats —
+  // a whole-sentence gap, never a cut inside one. The player pauses, asks,
+  // shows the feedback for whichever answer was chosen, and resumes here.
   { id: '18', mode: 'checkpoint',
     quiz: {
       stem: 'You mention the bot in your test channel, wait three minutes, and nothing happens. What is it most likely to be?',
@@ -148,7 +150,8 @@ module.exports = [
         'The agent finished but did not reply',
       ],
       answer: 1,
-      explain: 'The poller ships with a bot id from the workspace it was written in, so search.messages matches nothing and no event is ever queued. Slack being down would fail loudly, and none of this needs a paid Notion plan. Read the code you cloned before you blame your setup.',
+      correctNote: 'Exactly. The poller ships with a bot id from the workspace it was written in, so search.messages matches nothing and no event is ever queued. That is why Part D makes you change it before anything else.',
+      explain: 'It is the bot id. The poller ships with an id from the workspace it was written in, so search.messages matches nothing and no event is ever queued — nothing fails loudly, it simply never starts. Slack being down would throw errors you could see, and none of this needs a paid Notion plan. Read the code you cloned before you blame your own setup.',
     } },
 
   // ---- submit + close ----
