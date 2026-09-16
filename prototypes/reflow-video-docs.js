@@ -39,7 +39,8 @@ const DOCS = [
     lastLabel: 'Make a Video · Technical reference · questions to Aroma Tahir',
     layout: [
       ['1 · Authentication'],
-      ['2 · Creating a video — the job API', '3 · The job lifecycle'],
+      ['2 · Creating a video — the job API'],
+      ['3 · The job lifecycle', '6b · A fixed sample to build against'],
       ['4 · The script, once written'],
       ['5 · The finished video, awaiting approval', "6 · Reading a video's checkpoints"],
       ['7 · Five fields to respect', '8 · Listing what is available'],
