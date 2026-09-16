@@ -126,6 +126,10 @@ async function i2v(imageUrl, prompt, durSecs, key) {
       process.stdout.write('generating … ');
       const { buf, duration } = await i2v(url, prompt, Math.ceil(durations[b.id] || 5), key);
       fs.writeFileSync(path.join(OUT, `${b.id}.mp4`), buf);
+      // A clip has TWO inputs: the motion text and the art it was seeded
+      // from. Recording only the motion would keep a clip animating the
+      // previous picture when the art alone was regenerated.
+      fs.writeFileSync(path.join(OUT, `${b.id}.txt`), b.motion || '');
       console.log(`ok (${duration}s, ${(buf.length / 1024 / 1024).toFixed(1)} MB) -> clips/${b.id}.mp4`);
     } catch (e) { console.log(`FAILED: ${e.message}`); process.exitCode = 1; }
   }

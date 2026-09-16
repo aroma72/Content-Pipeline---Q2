@@ -12,6 +12,35 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
+const LOCALAPPDATA = process.env.LOCALAPPDATA || '';
+const APPDATA = process.env.APPDATA || '';
+const EXTRA_LOOKUP = {
+  // Same batch-wrapper problem as `claude`: `railway` on PATH is railway.CMD,
+  // and Node refuses to spawn a .cmd without shell:true. Spawning the wrapper
+  // returned status null and the deploy nudge became a silent no-op -- a publish
+  // reported FAILED with no explanation. The npm wrapper only calls this .exe.
+  railway: APPDATA ? [
+    path.join(APPDATA, 'npm', 'node_modules', '@railway', 'cli', 'bin', 'railway.exe'),
+  ] : [],
+
+  python: LOCALAPPDATA ? [
+    path.join(LOCALAPPDATA, 'Programs', 'Python', 'Python314', 'python.exe'),
+    path.join(LOCALAPPDATA, 'Programs', 'Python', 'Python313', 'python.exe'),
+    path.join(LOCALAPPDATA, 'Programs', 'Python', 'Python312', 'python.exe'),
+    path.join(LOCALAPPDATA, 'Programs', 'Python', 'Python311', 'python.exe'),
+  ] : [],
+
+  // `claude` on PATH is claude.cmd, a batch wrapper -- and batch wrappers need
+  // shell:true, which re-splits arguments. A prompt is nothing but spaces, so
+  // that route is unusable. The .cmd merely calls this .exe, so target it
+  // directly and keep shell:false.
+  claude: [
+    process.env.CLAUDE_CLI_PATH,
+    APPDATA && path.join(APPDATA, 'npm', 'node_modules', '@anthropic-ai', 'claude-code', 'bin', 'claude.exe'),
+    LOCALAPPDATA && path.join(LOCALAPPDATA, 'npm', 'node_modules', '@anthropic-ai', 'claude-code', 'bin', 'claude.exe'),
+  ].filter(Boolean),
+};
+
 /**
  * Resolve a bare command name to a real executable on Windows.
  *
@@ -47,34 +76,6 @@ function resolveCommand(cmd) {
 }
 
 // Known off-PATH (or better-than-PATH) executable locations, checked BEFORE PATH.
-const LOCALAPPDATA = process.env.LOCALAPPDATA || '';
-const APPDATA = process.env.APPDATA || '';
-const EXTRA_LOOKUP = {
-  // Same batch-wrapper problem as `claude`: `railway` on PATH is railway.CMD,
-  // and Node refuses to spawn a .cmd without shell:true. Spawning the wrapper
-  // returned status null and the deploy nudge became a silent no-op -- a publish
-  // reported FAILED with no explanation. The npm wrapper only calls this .exe.
-  railway: APPDATA ? [
-    path.join(APPDATA, 'npm', 'node_modules', '@railway', 'cli', 'bin', 'railway.exe'),
-  ] : [],
-
-  python: LOCALAPPDATA ? [
-    path.join(LOCALAPPDATA, 'Programs', 'Python', 'Python314', 'python.exe'),
-    path.join(LOCALAPPDATA, 'Programs', 'Python', 'Python313', 'python.exe'),
-    path.join(LOCALAPPDATA, 'Programs', 'Python', 'Python312', 'python.exe'),
-    path.join(LOCALAPPDATA, 'Programs', 'Python', 'Python311', 'python.exe'),
-  ] : [],
-
-  // `claude` on PATH is claude.cmd, a batch wrapper -- and batch wrappers need
-  // shell:true, which re-splits arguments. A prompt is nothing but spaces, so
-  // that route is unusable. The .cmd merely calls this .exe, so target it
-  // directly and keep shell:false.
-  claude: [
-    process.env.CLAUDE_CLI_PATH,
-    APPDATA && path.join(APPDATA, 'npm', 'node_modules', '@anthropic-ai', 'claude-code', 'bin', 'claude.exe'),
-    LOCALAPPDATA && path.join(LOCALAPPDATA, 'npm', 'node_modules', '@anthropic-ai', 'claude-code', 'bin', 'claude.exe'),
-  ].filter(Boolean),
-};
 
 class CommandError extends Error {
   constructor(message, { code, stdout, stderr, cmd }) {

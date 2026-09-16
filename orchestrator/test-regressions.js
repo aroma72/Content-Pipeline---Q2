@@ -14,6 +14,8 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const PATHS_REPO = path.join(__dirname, '..');
+const produceInternals = require('./lib/stages/produce')._internals;
 
 let pass = 0;
 const failures = [];
@@ -332,6 +334,60 @@ async function beatChecks() {
   console.log('\n3a3. artefacts a redraft invalidates');
 
   const produceSrc = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'produce.js'), 'utf8');
+
+  check('a one-beat redraft re-buys one image, not the whole video', () => {
+    // THE root cause of "it fails somewhere different every run".
+    //
+    // A redraft rewrites the whole beats.js even when its patch changed one beat.
+    // Freshness was `file.mtime < beats.js mtime`, so every picture and every
+    // paid motion clip was marked stale and re-bought -- twenty fresh images to
+    // fix one beat, twenty fresh chances for the vision judge to object, another
+    // redraft, another twenty. Each round was a fresh sample from a 20-step
+    // chain. Voice never had this problem because staleVo compares the sidecar
+    // TEXT; this gives art and clips the same test.
+    const os = require('os');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'stale-'));
+    fs.mkdirSync(path.join(dir, 'art'));
+
+    const beats = [
+      { id: '01', mode: 'scene', art: 'a cream room, no text' },
+      { id: '02', mode: 'scene', art: 'a shop counter, no text' },
+      { id: '03', mode: 'scene', art: 'a phone on a desk, no text' },
+    ];
+    for (const b of beats) {
+      fs.writeFileSync(path.join(dir, 'art', `${b.id}.png`), 'x');
+      fs.writeFileSync(path.join(dir, 'art', `${b.id}.txt`), b.art);
+    }
+
+    // The redraft: beat 02 is reworded, and beats.js is rewritten wholesale so
+    // it is now newer than every PNG -- exactly what happens on a real redraft.
+    beats[1].art = 'a shop counter with a ledger open, no text';
+    fs.writeFileSync(path.join(dir, 'beats.js'), 'module.exports = [];');
+
+    const missing = produceInternals.missingPerBeat(beats, dir, 'art', (id) => `${id}.png`);
+    assert(JSON.stringify(missing) === JSON.stringify(['02']),
+      `expected only beat 02 to be re-bought, got ${JSON.stringify(missing)}`);
+
+    // And a redraft that touched no art prompt must buy nothing at all.
+    fs.writeFileSync(path.join(dir, 'art', '02.txt'), beats[1].art);
+    fs.writeFileSync(path.join(dir, 'beats.js'), 'module.exports = [];  // rewritten again');
+    const none = produceInternals.missingPerBeat(beats, dir, 'art', (id) => `${id}.png`);
+    assert(none.length === 0, `a redraft with no art change still re-buys ${JSON.stringify(none)}`);
+
+    // An older folder has no sidecars; there the timestamp is all we have, and
+    // reusing possibly-stale art is the worse error.
+    for (const b of beats) fs.rmSync(path.join(dir, 'art', `${b.id}.txt`));
+    // Age the PNGs explicitly. Written in the same millisecond as beats.js they
+    // compare equal, not older -- the mtime rule is only as good as the clock's
+    // resolution, which is one more reason content is the better test.
+    const old = new Date(Date.now() - 60000);
+    for (const b of beats) fs.utimesSync(path.join(dir, 'art', `${b.id}.png`), old, old);
+    const legacy = produceInternals.missingPerBeat(beats, dir, 'art', (id) => `${id}.png`);
+    assert(legacy.length === 3, `a folder with no sidecars must fall back to mtime, got ${JSON.stringify(legacy)}`);
+
+    fs.rmSync(dir, { recursive: true, force: true });
+    return 'one beat changed, one image bought';
+  });
 
   check('the spend estimate is priced per beat, not per folder', () => {
     // hasOutput() said "art/ has a PNG" so images cost $0 from the second
@@ -1392,7 +1448,6 @@ async function uploadChecks() {
   });
 }
 
-const PATHS_REPO = path.join(__dirname, '..');
 
 // --- title convention: "<module> | <module topic> | <subtopic>" ---------------
 function namingChecks() {
@@ -1588,7 +1643,7 @@ async function redraftChecks() {
           gateCalls++;
           // Two gate rounds early, then produce spends seven of its own: nine
           // requests in total, so a SHARED budget of 8 would reject the ninth.
-          if (gateCalls === 2 || gateCalls === 3) {
+          if (gateCalls === 2) {
             throw new RedraftError('gate wants a fix', {
               fromStage: 'script', feedback: ['beat 19 has no physical act'], verdict: 'NEEDS WORK',
             });
@@ -1597,7 +1652,7 @@ async function redraftChecks() {
         }),
         produce: stub('produce', async () => {
           produceCalls++;
-          if (produceCalls <= 7) {
+          if (produceCalls <= 2) {
             throw new RedraftError('a sensor failed', {
               fromStage: 'script', feedback: [`art defect ${produceCalls}`], verdict: 'NEEDS WORK',
             });
@@ -1610,11 +1665,11 @@ async function redraftChecks() {
     // the cap and failed the run. Per reviewer, both are well inside their own.
     assert(st.status === 'done', `run ended ${st.status}: the gate was starved by produce`);
     assert(drafts > 0, 'the rewind never ran the writer');
-    assert(produceCalls === 8, `produce ran ${produceCalls} times, expected 8`);
-    assert(st.redraftsBy && st.redraftsBy.produce === 7 && st.redraftsBy.gate === 2,
+    assert(produceCalls === 3, `produce ran ${produceCalls} times, expected 3`);
+    assert(st.redraftsBy && st.redraftsBy.produce === 2 && st.redraftsBy.gate === 1,
       `budgets not tracked per reviewer: ${JSON.stringify(st.redraftsBy)}`);
-    assert(st.redrafts === 9, `total was ${st.redrafts}, expected 9 -- one more than a shared cap allows`);
-    pass++; console.log('  PASS  each reviewer gets its own redraft budget  (produce 7, gate 2 = 9 > a shared cap of 8)');
+    assert(st.redrafts === 3, `total was ${st.redrafts}, expected 3 -- more than a shared cap of 2 allows`);
+    pass++; console.log('  PASS  each reviewer gets its own redraft budget  (produce 2, gate 1 = 3 > a shared cap of 2)');
   } catch (e) {
     failures.push({ name: 'per-reviewer redraft budget', message: e.message });
     console.log(`  FAIL  per-reviewer redraft budget\n          ${e.message}`);
@@ -1786,8 +1841,17 @@ async function redraftChecks() {
     // still improving when the cap stopped it. And a call that normally takes
     // 60-90s was allowed to hang for 15 minutes before a retry could help.
     const spineSrc = fs.readFileSync(path.join(__dirname, 'lib', 'spine.js'), 'utf8');
+    // The cap came DOWN to 2, and what happens at the cap changed with it.
+    // Rounds three onward almost never settled a point the first two had not,
+    // and each cost a writer call, a gate call and a slice of produce. The run
+    // no longer dies there: one lenient pass accepts the work and carries the
+    // unresolved finding to the human review step.
     const cap = Number((spineSrc.match(/MAX_REDRAFTS = (\d+)/) || [])[1]);
-    assert(cap >= 8, `redraft cap is ${cap}; two runs ended one round short of READY at 5`);
+    assert(cap >= 2 && cap <= 4, `redraft cap is ${cap}; expected a small number with a lenient pass behind it`);
+    assert(/st\.lenient = true/.test(spineSrc),
+      'there is no lenient pass -- an unsettled critique still ends the run');
+    assert(/accepted_with_warning/.test(spineSrc),
+      'accepting with a warning is not recorded as an intervention');
     assert(/RETRY_BACKOFF_MS/.test(spineSrc), 'retries have no backoff');
 
     const cliSrc = fs.readFileSync(path.join(__dirname, 'lib', 'llm-cli.js'), 'utf8');

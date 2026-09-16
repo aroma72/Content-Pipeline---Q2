@@ -88,6 +88,10 @@ async function genBeat(finalPrompt, key) {
     try {
       const { buf, seeded } = await genBeat(finalPrompt, key);
       fs.writeFileSync(path.join(OUT, `${b.id}.png`), buf);
+      // b.art, not finalPrompt: the identity-lock suffix differs between
+      // generators, and storing it would make a generator swap look like a
+      // content change and re-buy every image.
+      fs.writeFileSync(path.join(OUT, `${b.id}.txt`), b.art);
       console.log(`ok (${(buf.length / 1024).toFixed(0)} KB${seeded ? ', seeded' : ''}) -> art/${b.id}.png`);
     } catch (e) { console.log(`FAILED: ${e.message}`); process.exitCode = 1; }
     await sleep(500);

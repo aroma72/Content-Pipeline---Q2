@@ -148,9 +148,21 @@ function missingPerBeat(beats, dir, subdir, name) {
     ? (beats || []).filter((b) => b.mode !== 'info' && b.art)
     : (beats || []);
 
-  // A redraft can reword a beat's art prompt while keeping its id, and the old PNG
-  // still exists -- so "the file is there" would silently ship the picture for the
-  // sentence that was replaced. Anything older than beats.js is stale, not done.
+  // BY CONTENT, not by timestamp.
+  //
+  // A redraft rewrites the whole beats.js even when its patch changed one beat,
+  // so "older than beats.js" marked EVERY picture and EVERY motion clip stale and
+  // re-bought all of them to fix one. Twenty fresh images meant twenty fresh
+  // chances for the vision judge to object, another redraft, another twenty --
+  // which is why the run failed somewhere different every time.
+  //
+  // The generators now write <id>.txt beside each file holding the prompt it came
+  // from, so this asks the same question staleVo asks: is this artefact made from
+  // the words the script has NOW?
+  const promptFor = (b) => (subdir === 'art' ? b.art : b.motion || '');
+
+  // Older folders have no sidecars. There the timestamp is all we have, and
+  // reusing art that might be stale is the worse error, so keep the old rule.
   let beatsMs = 0;
   try { beatsMs = fs.statSync(path.join(dir, 'beats.js')).mtimeMs; } catch { /* none yet */ }
 
@@ -159,7 +171,25 @@ function missingPerBeat(beats, dir, subdir, name) {
       const p = path.join(dir, subdir, name(b.id));
       try {
         const st = fs.statSync(p);
-        return st.size === 0 || (beatsMs > 0 && st.mtimeMs < beatsMs);
+        if (st.size === 0) return true;
+
+        const sidecar = path.join(dir, subdir, `${b.id}.txt`);
+        let recorded = null;
+        try { recorded = fs.readFileSync(sidecar, 'utf8'); } catch { /* none */ }
+        if (recorded !== null) {
+          if (recorded !== promptFor(b)) return true;
+          // A motion clip is seeded from its still, so a regenerated picture
+          // makes the clip stale even when the motion text never changed.
+          if (subdir === 'clips') {
+            try {
+              const art = fs.statSync(path.join(dir, 'art', `${b.id}.png`));
+              if (art.mtimeMs > st.mtimeMs) return true;
+            } catch { /* no art yet; the art step will deal with it */ }
+          }
+          return false;
+        }
+
+        return beatsMs > 0 && st.mtimeMs < beatsMs;
       } catch { return true; }
     })
     .map((b) => b.id);
@@ -228,8 +258,8 @@ function pruneOrphans(beats, dir, log) {
     }
   };
 
-  sweep('art', (n) => (n.endsWith('.png') ? n.slice(0, -4) : null));
-  sweep('clips', (n) => (n.endsWith('.mp4') ? n.slice(0, -4) : null));
+  sweep('art', (n) => (/\.(png|txt)$/.test(n) ? n.replace(/\.(png|txt)$/, '') : null));
+  sweep('clips', (n) => (/\.(mp4|txt)$/.test(n) ? n.replace(/\.(mp4|txt)$/, '') : null));
   sweep('layers', (n) => n);
   sweep('audio', (n) => {
     const m = /^vo_(.+)\.(wav|txt)$/.exec(n);
@@ -277,7 +307,8 @@ function copyTemplates(src, dest, log) {
 }
 
 // Exported for the regression tests; not part of the stage contract.
-module.exports._internals = { estimateSpend, isFresherThanInputs, copyTemplates, i2vSeconds, COST };
+module.exports._internals = { estimateSpend, isFresherThanInputs, copyTemplates,
+  i2vSeconds, COST, missingPerBeat, staleVo, pruneOrphans };
 
 module.exports = Object.assign(module.exports, {
   name: 'produce',
@@ -446,6 +477,22 @@ module.exports = Object.assign(module.exports, {
         // Killing the run instead would mean the strictest gates could only ever
         // reject a video, never improve one, and the LLM reviewer that passed it
         // has no way to learn what the deterministic check saw.
+        if (redraftable && opts.lenient) {
+          // The lenient pass: two rounds did not settle this, so it is recorded
+          // and carried to the review step rather than ending the run. A person
+          // reads it there; it is not discarded and not hidden.
+          log(`${script}: ${what} still not satisfied after redrafting -- `
+            + 'accepted with a warning for review');
+          sensorResults.push({ ok: false, sensor: script, what, accepted: true,
+            detail: findings.slice(0, 800) });
+          state.recordIntervention(st, {
+            stage: 'produce',
+            kind: 'accepted_with_warning',
+            detail: `${script} (${what}) unresolved after redrafting: ${findings.slice(0, 300)}`,
+          });
+          return;
+        }
+
         if (redraftable) {
           throw new RedraftError(
             `${what} FAILED (${script}):\n${findings}`,
@@ -505,6 +552,11 @@ module.exports = Object.assign(module.exports, {
     }
 
 
+    // Every beat the script now has. Declared HERE because the prune below is the
+    // first thing that needs it -- it was being used twenty lines before its own
+    // const, which is a temporal-dead-zone ReferenceError on every real run.
+    const beatsForArt = (artifacts.script && artifacts.script.beats) || [];
+
     // A redraft can delete a beat. Do this before any freshness check reads the
     // folder, so nothing downstream sees an artefact for a beat that is gone.
     pruneOrphans(beatsForArt, dir, log);
@@ -517,7 +569,6 @@ module.exports = Object.assign(module.exports, {
 
     // 2. art -- paid, skipped only when EVERY art beat has its file. Checking
     // "the folder is non-empty" once let a failed image slip through to render.
-    const beatsForArt = (artifacts.script && artifacts.script.beats) || [];
     const missingArt = missingPerBeat(beatsForArt, dir, 'art', (id) => `${id}.png`);
     if (beatsForArt.length && missingArt.length === 0) {
       log(`art/ complete (${beatsForArt.filter((b) => b.mode !== 'info' && b.art).length} image(s)) -- skipping generate-lesson-art (no re-spend)`);

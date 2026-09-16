@@ -91,6 +91,9 @@ async function imagen(prompt, key, mode) {
     try {
       const png = await imagen(b.art, key, b.mode);
       fs.writeFileSync(dst, png);
+      // The prompt this picture came from, so freshness can be judged by
+      // content rather than by a timestamp the writer stage keeps moving.
+      fs.writeFileSync(path.join(OUT, `${b.id}.txt`), b.art);
       console.log(`ok (${(png.length / 1024).toFixed(0)} KB) -> art/${b.id}.png`);
     } catch (e) {
       console.log(`FAILED: ${e.message}`);

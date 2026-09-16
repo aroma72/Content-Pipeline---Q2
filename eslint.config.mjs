@@ -42,6 +42,11 @@ export default [
     rules: {
       // The one that matters: a name that resolves to nothing.
       'no-undef': 'error',
+      // A name that exists but not YET. `pruneOrphans(beatsForArt, ...)` ran
+      // twenty lines above its own const -- a temporal-dead-zone ReferenceError
+      // on every real run, and invisible to no-undef because the binding does
+      // exist. Functions are hoisted and are genuinely fine to call earlier.
+      'no-use-before-define': ['error', { functions: false, classes: false, variables: true }],
       // A variable assigned and never read is usually half of an edit that was
       // not finished -- which is how `animAlreadyBought` survived as a
       // reference after the thing that defined it was removed.
