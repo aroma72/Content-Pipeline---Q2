@@ -1,0 +1,197 @@
+/* info.css — infographic template styling + evolution primitives.
+   .seq  = staggered reveal element (revealed progressively across the beat)
+   .io   = fade/slide-in state (straight)         .io-late = late state-change
+   All motion is DRIVEN by seekTo() setting inline styles — deterministic. */
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;
+  padding:44px 56px;box-shadow:0 12px 48px rgba(46,42,36,.12)}
+
+.seq{opacity:0;transform:translateY(18px)}          /* start hidden; seekTo reveals */
+.io{opacity:0}
+.io-late{opacity:.35}
+
+/* checks */
+.checks{display:flex;flex-direction:column;gap:26px;min-width:820px}
+.check{display:flex;align-items:center;gap:24px;font-size:46px;color:var(--ink)}
+.check .box{width:52px;height:52px;border-radius:12px;border:4px solid var(--muted);
+  display:flex;align-items:center;justify-content:center;color:#fff;font-size:34px}
+.check.on .box{background:var(--accent);border-color:var(--accent)}
+
+/* four-parts grid */
+.fourparts{display:grid;grid-template-columns:1fr 1fr;gap:32px;min-width:980px}
+.part{background:var(--card);border:2px solid var(--line);border-left:10px solid var(--accent);
+  border-radius:14px;padding:34px 40px;font-size:48px;color:var(--head)}
+.part .num{font-size:28px;color:var(--muted);display:block;margin-bottom:8px}
+
+/* gauge */
+.gauge{display:flex;flex-direction:column;align-items:center;gap:28px}
+.gauge .bar{width:900px;height:46px;background:#EFE7D7;border-radius:999px;overflow:hidden}
+.gauge .fillbar{height:100%;width:0;background:var(--accent);border-radius:999px}
+.gauge .val{font-size:96px;color:var(--head);font-weight:700}
+.gauge .lab{font-size:40px;color:var(--muted)}
+
+/* ---- M07-style typography cards (statement / twocard / quote) ---- */
+.statement{max-width:1560px;text-align:center;padding:0 60px}
+.statement .stmt{font-family:var(--serif);font-weight:700;font-size:104px;line-height:1.14;color:var(--head)}
+.statement .stmt .hi{color:var(--accent)}
+.statement .stmt-sub{font-family:var(--sans);font-size:46px;color:var(--muted);margin-top:34px}
+
+.twocard{display:flex;flex-direction:column;align-items:center;gap:36px}
+.twocard-row{display:flex;align-items:center;gap:44px}
+.twocard .mini-card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:34px 44px;min-width:560px}
+.twocard .mini-title{font-family:var(--sans);font-weight:700;font-size:42px;color:var(--head);margin-bottom:20px}
+.twocard .mini-item{font-family:var(--sans);font-size:38px;color:var(--ink);margin:12px 0}
+.twocard .mini-card.bad{border-top:12px solid var(--muted)}
+.twocard .mini-card.good{border-top:12px solid var(--accent)}
+.twocard .arrow{font-size:84px;color:var(--muted)}
+
+.quote{max-width:1560px;text-align:center;padding:0 60px}
+.quote .q-mark{font-family:var(--serif);font-size:150px;color:var(--accent);line-height:.5;margin-bottom:26px}
+.quote .q-text{font-family:var(--serif);font-weight:700;font-size:90px;line-height:1.2;color:var(--head)}
+.quote .q-by{font-family:var(--sans);font-size:42px;color:var(--muted);margin-top:32px}
+
+/* ---- eval-series custom templates ---- */
+:root{--good:#5C8A46;--bad:#C0653E}   /* sweet/green · sour/terracotta (both clear vs cream) */
+
+/* bignum — two big figures with a separator */
+.bignum{display:flex;flex-direction:column;align-items:center;gap:40px}
+.bignum-row{display:flex;align-items:center;gap:70px}
+.bignum .stat{display:flex;flex-direction:column;align-items:center;gap:14px}
+.bignum .big{font-family:var(--serif);font-weight:700;font-size:190px;line-height:.9;color:var(--head)}
+.bignum .stat.good .big{color:var(--good)}
+.bignum .stat.bad .big{color:var(--bad)}
+.bignum .lab{font-family:var(--sans);font-size:46px;color:var(--muted)}
+.bignum .sep{font-size:110px;color:var(--muted)}
+.bignum-note{font-family:var(--sans);font-weight:700;font-size:52px;color:var(--accent);
+  background:var(--card);border:2px solid var(--line);border-radius:14px;padding:20px 40px}
+
+/* tally — the hero prop (real tally marks) */
+.tally{display:flex;flex-direction:column;gap:40px;min-width:940px;position:relative}
+.tally-row{display:grid;grid-template-columns:300px 1fr 120px;align-items:center;gap:40px}
+.tally-label{font-family:var(--sans);font-weight:700;font-size:58px;color:var(--head)}
+.tally-label.good{color:var(--good)} .tally-label.bad{color:var(--bad)}
+.tally-count{font-family:var(--serif);font-weight:700;font-size:80px;text-align:right;color:var(--head)}
+.tally-count.good{color:var(--good)} .tally-count.bad{color:var(--bad)}
+.tally-marks{display:flex;gap:34px;align-items:flex-end}
+.tgroup{position:relative;display:flex;gap:12px}
+.tgroup .bar{width:8px;height:70px;background:var(--ink);border-radius:4px}
+.tgroup .slash{position:absolute;left:-6px;top:50%;width:66px;height:8px;background:var(--ink);
+  border-radius:4px;transform:translateY(-50%) rotate(-24deg)}
+.tally-cap{position:absolute;right:0;bottom:-70px;font-family:var(--sans);font-style:italic;
+  font-size:40px;color:#fff;background:var(--accent);padding:12px 26px;border-radius:999px}
+
+/* spectrum — three chips along a warm→muted range */
+.spectrum{display:flex;flex-direction:column;align-items:center;gap:48px;min-width:1100px}
+.spec-bar{width:1000px;height:22px;border-radius:999px;
+  background:linear-gradient(90deg,var(--good),var(--accent),var(--bad))}
+.spec-row{display:flex;justify-content:space-between;width:1000px}
+.spec-chip{display:flex;flex-direction:column;align-items:center;gap:18px;width:300px}
+.spec-chip .dot{width:46px;height:46px;border-radius:50%}
+.spec-chip.good .dot{background:var(--good)} .spec-chip.mid .dot{background:var(--accent)}
+.spec-chip.bad .dot{background:var(--bad)}
+.spec-lab{font-family:var(--sans);font-weight:700;font-size:48px;color:var(--head);text-align:center}
+
+/* bars — horizontal bar graph with count-up values out of a scale (before/after) */
+.bars{display:flex;flex-direction:column;gap:38px;min-width:1180px}
+.bar-row{display:grid;grid-template-columns:340px 1fr 190px;align-items:center;gap:40px}
+.bar-label{font-family:var(--sans);font-weight:700;font-size:52px;color:var(--head)}
+.bar-label.big{color:var(--good)} .bar-label.bad{color:var(--bad)}
+.bar-track{height:56px;background:#EFE7D7;border-radius:999px;overflow:hidden}
+.bar-fill{height:100%;width:0;background:var(--muted);border-radius:999px}
+.bar-fill.big{background:var(--good)} .bar-fill.bad{background:var(--bad)}
+.bar-valwrap{display:flex;align-items:baseline;gap:8px;justify-content:flex-end}
+.bar-value{font-family:var(--serif);font-weight:700;font-size:78px;color:var(--head)}
+.bar-value.big{color:var(--good)} .bar-value.bad{color:var(--bad)}
+.bar-suffix{font-family:var(--sans);font-size:40px;color:var(--muted)}
+
+/* browser — window chrome + body slot (v04 blank money-frame) */
+.browserwin{width:1500px;background:var(--card);border:1px solid var(--line);border-radius:16px;
+  overflow:hidden;box-shadow:0 18px 60px rgba(46,42,36,.18)}
+.browserwin .url{margin-left:18px;font-family:var(--sans);font-size:30px;color:var(--muted);
+  background:var(--bg);border-radius:8px;padding:6px 22px}
+.browser-body{min-height:560px;background:#fff;display:flex;align-items:center;justify-content:center}
+.browser-body.blank{background:#fff}
+.browser-text{font-family:var(--sans);font-size:44px;color:var(--ink)}
+
+/* grid — N toned cells (v04 twelve-green) */
+.gridwrap{display:flex;flex-direction:column;align-items:center;gap:36px}
+.cellgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:28px}
+.cell{width:210px;height:150px;border-radius:14px;display:flex;align-items:center;justify-content:center;
+  border:2px solid var(--line)}
+.cell.good{background:rgba(92,138,70,.14);border-color:var(--good)}
+.cell.bad{background:rgba(192,101,62,.14);border-color:var(--bad)}
+.cell .tick{font-size:78px;font-weight:700}
+.cell.good .tick{color:var(--good)} .cell.bad .tick{color:var(--bad)}
+
+/* scoresheet — two mark sheets side by side (v05 hero) */
+.scoresheets{display:flex;flex-direction:column;align-items:center;gap:30px}
+.sheets-row{display:flex;gap:60px}
+.sheet{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:28px 34px;min-width:560px;
+  box-shadow:0 12px 40px rgba(46,42,36,.10)}
+.sheet-title{font-family:var(--sans);font-weight:700;font-size:40px;color:var(--head);margin-bottom:18px;text-align:center}
+.sheet-row{display:flex;justify-content:space-between;align-items:center;gap:24px;padding:12px 14px;border-radius:10px;
+  font-family:var(--sans);font-size:34px;color:var(--ink)}
+.sheet-row.diff{background:rgba(224,168,74,.20);outline:2px solid var(--accent)}
+.sheet-mark{font-size:40px;font-weight:700}
+.sheet-mark.good{color:var(--good)} .sheet-mark.bad{color:var(--bad)}
+.sheets-note{font-family:var(--sans);font-weight:700;font-size:46px;color:var(--accent);
+  background:var(--card);border:2px solid var(--line);border-radius:12px;padding:16px 34px}
+
+/* piles — four-pile horizontal bar chart (video 02 engine: beats 15 & 17) */
+.piles{display:flex;flex-direction:column;gap:34px;min-width:1180px}
+.pile-row{display:grid;grid-template-columns:360px 1fr 130px;align-items:center;gap:40px}
+.pile-label{font-family:var(--sans);font-weight:700;font-size:54px;color:var(--head)}
+.pile-label.big{color:var(--bad)}
+.pile-track{height:56px;background:#EFE7D7;border-radius:999px;overflow:hidden}
+.pile-fill{height:100%;width:0;background:var(--accent);border-radius:999px;transition:none}
+.pile-fill.big{background:var(--bad)}
+.pile-count{font-family:var(--serif);font-weight:700;font-size:78px;text-align:right;color:var(--head)}
+.pile-count.big{color:var(--bad)}
+.pile-count.muted{color:var(--muted);font-family:var(--sans);font-weight:400;font-size:56px}
+
+/* screens (answers / promptcard / solo overlay) — crisp "real" UI */
+.screen{background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden;
+  box-shadow:0 16px 54px rgba(46,42,36,.16);min-width:560px}
+.screen-bar{display:flex;align-items:center;gap:14px;padding:20px 26px;background:#EDE4D3;border-bottom:1px solid var(--line)}
+.screen-bar .dot{width:20px;height:20px;border-radius:50%}
+.screen-bar .dot.r{background:#D97A6C}.screen-bar .dot.y{background:#E7B45A}.screen-bar .dot.g{background:#7BB06A}
+.screen-title{margin-left:14px;font-family:var(--sans);font-weight:700;font-size:38px;color:var(--head)}
+.screen-body{padding:34px 40px;display:flex;flex-direction:column;gap:24px}
+.ans-line{display:flex;justify-content:space-between;gap:30px;font-family:var(--sans);font-size:44px}
+.ans-line .k{color:var(--muted)} .ans-line .v{color:var(--ink);font-weight:700}
+
+.answers{display:flex;flex-direction:column;align-items:center;gap:44px}
+.ans-prompt{font-family:var(--sans);font-size:46px;color:var(--head);background:var(--card);
+  border:2px solid var(--line);border-radius:12px;padding:20px 38px}
+.answers-row{display:flex;align-items:center;gap:44px}
+.answers .screen{min-width:640px}
+.answers .vs{font-size:96px;color:var(--bad);font-weight:700}
+
+.promptcard{width:1400px;background:var(--card);border:1px solid var(--line);border-radius:18px;
+  overflow:hidden;box-shadow:0 18px 60px rgba(46,42,36,.18)}
+.promptcard-body{padding:44px 54px;display:flex;flex-direction:column;gap:22px}
+.promptcard .you{font-family:var(--sans);font-size:34px;color:var(--muted)}
+.promptcard .bubble{font-family:var(--sans);font-size:52px;line-height:1.35;color:var(--ink);
+  background:var(--bg);border-left:10px solid var(--accent);border-radius:12px;padding:30px 38px}
+
+/* solo screen used inside the right-hand overlay box (fits 720px) */
+.screen.solo{width:100%;min-width:0}
+.overlay-box .screen.solo .screen-body{padding:26px 30px;gap:18px}
+.overlay-box .ans-line{font-size:36px}
+
+/* quiz — interactive QUESTION / REVEAL card (house rule §3b) */
+.quiz{display:flex;flex-direction:column;gap:34px;min-width:1200px;max-width:1560px}
+.quiz-stem{font-family:var(--serif);font-weight:700;font-size:66px;line-height:1.15;
+  color:var(--head);text-align:center}
+.quiz-opts{display:flex;flex-direction:column;gap:24px}
+.quiz-opt{display:flex;align-items:center;gap:28px;background:var(--card);
+  border:2px solid var(--line);border-radius:16px;padding:26px 36px}
+.quiz-badge{flex:0 0 auto;width:64px;height:64px;border-radius:12px;background:#EDE4D3;
+  color:var(--head);font-family:var(--sans);font-weight:700;font-size:40px;
+  display:flex;align-items:center;justify-content:center}
+.quiz-text{font-family:var(--sans);font-size:48px;color:var(--ink)}
+.quiz-opt.correct{border-color:var(--good);background:rgba(92,138,70,.12)}
+.quiz-opt.correct .quiz-badge{background:var(--good);color:#fff}
+.quiz-note{align-self:center;font-family:var(--sans);font-weight:700;font-size:46px;
+  color:var(--accent);background:var(--card);border:2px solid var(--line);
+  border-radius:12px;padding:18px 36px}

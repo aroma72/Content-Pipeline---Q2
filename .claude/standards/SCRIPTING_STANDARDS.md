@@ -95,47 +95,53 @@ including each structural part and the common failure mode they nearly hit.
 "So here's your move: [reflection prompt applied to the learner's own work]."
 ```
 
-### 3b. Interactive Question — the CHECKPOINT beat (Required, effective 2026-09-11)
+### 3b. Interactive Question — the CHECKPOINT beat (Required, effective 2026-09-15)
 
-> **House rule (supersedes the in-video QUESTION → REVEAL of 2026-08-17):** EVERY video MUST contain
-> at least one **checkpoint** — one multiple-choice question the learner actually answers. It is
-> **never drawn and never spoken.** The video simply **pauses** at that point and the learner's LMS
-> shows the question as a popup. Non-negotiable for every new video and every re-cut.
+> **House rule:** EVERY video MUST contain at least one **checkpoint** — one multiple-choice question
+> that is **never drawn and never spoken**. Nothing about it goes in the video. The player **pauses**
+> just before it, the learner's LMS asks the question, shows the feedback for whichever answer they
+> chose, and the video then **resumes** from the same instant. Non-negotiable for every new video
+> and every re-cut.
 
-**Why it changed.** The cards taught the answer to a viewer who could not answer, and a video cannot
-know whether anyone got it right. Moving the question into the player makes it a real question:
-the learner answers, the LMS marks it, and the explanation is written for someone who just chose wrong.
+**Why it is shaped this way.** A question printed on a card taught the answer to a viewer who could not
+answer it, and the video could never know whether anyone got it right. In the player it is a real
+question: they commit, they are marked, and they are told why. The pause is what buys thinking time —
+there is no hold on screen to do that job any more.
 
 ```js
 // beats.js — sits BETWEEN two spoken beats, at roughly the two-thirds mark
 { id: '14', mode: 'checkpoint',
   quiz: {
     stem: 'One question about the concept just taught.',
-    options: ['…', '…', '…', '…'],          // 3–4 plausible options
-    answer: 1,                               // 0-based index
-    explain: 'Why that is right — and why the tempting wrong one is wrong.',
+    options: ['…', '…', '…', '…'],       // 3–4 plausible options
+    answer: 1,                            // 0-based index
+    correctNote: 'Confirm it, and say why — shown when they get it right.',
+    explain: 'Why the right answer is right, and why the tempting wrong one is wrong.',
   } },
 ```
 
 - **It occupies zero time.** No voiceover, so no entry in `durations.json`, so no frames. Its position
   in the array *is* the pause point.
 - **The pause is always on a sentence boundary.** Every beat is one spoken sentence followed by a short
-  trailing pause, so a checkpoint between two beats can never cut into a sentence. Never place one
-  first or last — with no sentence either side the API marks `pause.safe: false` and the LMS won't fire it.
-- **Write `explain` for the learner who got it wrong.** It is the only feedback they see; the old
-  six-word on-screen caption is not good enough and the API now reports `explanationSource: 'missing'`
-  when it is absent.
-- **Mechanics:** `lib/beats-util.js` `renderable()` filters checkpoints out; `tts-lesson.js`,
-  `compile-lesson.js` and `verify.js` all render `renderable(beats)`. Port `lib/beats-util.js` into any
-  folder that lacks it. This is format-agnostic — the same beat works in the illustrated and the
-  IDE-screencast formats.
+  trailing pause, so a checkpoint between two beats can never cut into a sentence; the API also stops
+  0.25s early so the previous frame is still up. Never place one first or last — with no sentence either
+  side the API marks `pause.safe: false` and the LMS will not fire it.
+- **Write both halves of the feedback.** `explain` is what a learner sees after choosing wrong — it is
+  their only correction, so make it say why the right answer is right *and* why the tempting wrong one
+  is wrong. `correctNote` confirms a right answer and says why; if you omit it the API synthesises one
+  from `explain`, which is weaker. Missing `explain` → `explanationSource: 'missing'` and
+  `publish-checkpoint.js` refuses to publish.
+- **Format-agnostic:** the same beat works in the illustrated format and the IDE-screencast format.
+- **Older videos** that draw the question and answer on screen still serve; the API reports them with
+  `rendersInVideo: true`, `pausesVideo: false` and `onScreenUntilSeconds`, so the LMS does not stop over
+  a question the video is already answering aloud.
 - **Delivery:** `server/lib/checkpoints.js` reads `beats.js` + `durations.json` and serves
-  `GET /api/v1/videos/:videoId/checkpoints` with `atSeconds` measured **from the start of the delivered
-  `_final.mp4`** (brand intro included). Committing `beats.js` and `durations.json` is what publishes a
-  question — no separate upload step.
-- **Legacy videos** built before this rule still carry their cards on screen; the API reports them as
-  `rendersInVideo: true` / `questionStyle: 'on-screen'` so the LMS can choose not to pause over a
-  question the video is already answering out loud.
+  `GET /api/v1/videos/:videoId/checkpoints` — `atSeconds` (where to pause, measured from the start of
+  the delivered `_final.mp4`, brand intro included), `pausesVideo: true`, `resumeAtSeconds`, and
+  `feedback.correct` / `feedback.incorrect`. Publish with
+  `node scripts/publish-checkpoint.js <series>/<slug>` — it commits, pushes, triggers the Railway
+  deploy and then **fetches the checkpoint back and compares it**, so "published" means verified live
+  rather than merely pushed.
 
 ---
 
@@ -367,4 +373,4 @@ For video scripts, slides and voiceover must align. Learners with little AI back
 
 ---
 
-*Last verified: 2026-09-11 — §3b replaced: the in-video QUESTION → REVEAL pair becomes a non-rendered CHECKPOINT beat; the player pauses and the LMS asks.*
+*Last verified: 2026-09-15 — §3b: the question is a non-rendered CHECKPOINT beat. The player pauses just before it, the LMS asks and gives feedback on the answer, then the video resumes.*

@@ -46,7 +46,7 @@ Pipeline: `beats.js` → `generate-lesson-art.js` (Imagen) → `segment-all.py` 
 | 0 | gate the script (`reviewing-explainer-scripts`) | READY before any art/TTS/render |
 | 1 | `npm i` · ensure Python has Pillow+numpy · `.env` key present | env ready |
 | 2 | write `beats.js` (one beat/sentence; pick mode; overlays on ali beats that name things) | script as data |
-| 2b | `node qa-visuals.js` · `node qa-cutouts.js` | **REQUIRED before you spend a rupee.** §3d visual standard (one concrete setting · AI is a laptop, never a glowing orb · ≥28% `scene` · ≤2 `statement` cards · ≥3 data templates + real numbers · scenes show an action) and no half-cut props. Exit 2 → fix `beats.js` first |
+| 2b | `node qa-info.js && node qa-visuals.js` · `node qa-cutouts.js` | **REQUIRED before you spend a rupee.** §3d visual standard (one concrete setting · AI is a laptop, never a glowing orb · ≥28% `scene` · ≤2 `statement` cards · ≥3 data templates + real numbers · scenes show an action) and no half-cut props. Exit 2 → fix `beats.js` first |
 | 3 | `node generate-lesson-art.js --yes` | `art/*.png` — eyeball each; regenerate any that won't cut clean |
 | 3b | `node qa-art.js` | **REQUIRED before TTS/render.** Vision judge on every image: impossible hands (thumb on the wrong side, wrist not connecting), wrong finger counts, merged/floating limbs, broken faces, sliced objects, **and any baked-in text or LOGO**. Exit 2 → `ART_IDS=<ids> node generate-lesson-art-gemini.js --yes` and re-judge. (Caught an Apple logo on the laptop in 4 beats that a script gate cannot see.) |
 | 4 | `python segment-all.py` | `layers/<id>/{boy,plate}.png`+anchors — verify **tight** bboxes |
@@ -59,9 +59,9 @@ Pipeline: `beats.js` → `generate-lesson-art.js` (Imagen) → `segment-all.py` 
 | 9 | `node verify.js` | acceptance checklist (Section 11 of the spec) |
 
 `--yes` (or `CONFIRM_SPEND=1`) is required on steps 3, 5 and 5b — the cost guard blocks paid calls otherwise.
-Two non-negotiables the gate enforces before you reach step 3: a **CHECKPOINT** beat — the question the
-player pauses on and the LMS pops, never drawn and never spoken (§3b) — and **`animateIds`** naming the
-2–4 story beats to animate with omni (§3c).
+Two non-negotiables the gate enforces before you reach step 3: a **QUESTION card** carrying a `quiz`
+block plus its **REVEAL** card — the LMS popup mirrors the card's own window and never pauses the video
+(§3b) — and **`animateIds`** naming the 2–4 story beats to animate with omni (§3c).
 
 ## Quality bar — measure EVERY video against this (see memory: explainer-video-quality-standard)
 Established on the Change Management video. A miss is a FAIL to fix, not ship:
@@ -71,7 +71,7 @@ Established on the Change Management video. A miss is a FAIL to fix, not ship:
 4. **Consistent flat-illustration visuals** — never mix photoreal with illustration; same Ali throughout.
 5. **No baked-in text in images** (prompts forbid text/letters/numbers; blank props); teaching text is crisp HTML.
 6. **Cutouts never cut an object halfway** — whole object or none; 2-person/complex beats use `scene`, not `ali`.
-7. **Movement in every beat** — push-in / parallax / Ken Burns + evolving infographics; no dead-still holds. **AND add real i2v motion on the 2–4 story-critical beats** where movement carries the story (emotional turns, a metaphor coming alive, the closing invite) — `generate-lesson-video-omni.js` (paid, kie-gated, confirm spend); compile auto-uses `clips/<id>.mp4`, falls back to Ken Burns if absent. See animation-motion-design + memory `feedback_use_animations`. Also add a **CHECKPOINT** beat — `{mode:'checkpoint', quiz:{stem, options, answer, explain}}`, zero-time, between two spoken beats; it is never rendered, the player pauses there and the LMS asks (SCRIPTING_STANDARDS §3b).
+7. **Movement in every beat** — push-in / parallax / Ken Burns + evolving infographics; no dead-still holds. **AND add real i2v motion on the 2–4 story-critical beats** where movement carries the story (emotional turns, a metaphor coming alive, the closing invite) — `generate-lesson-video-omni.js` (paid, kie-gated, confirm spend); compile auto-uses `clips/<id>.mp4`, falls back to Ken Burns if absent. See animation-motion-design + memory `feedback_use_animations`. Also add the **QUESTION card** (`holdAfter:6` + `quiz:{stem, options, answer, explain}`) and its **REVEAL** card (`revealsQuiz:true`); the card plays on screen and the LMS popup mirrors its exact window without pausing (SCRIPTING_STANDARDS §3b).
 8. **Taleemabad bumpers** intro+outro (logo+wordmark, intro title, no outro sign-off unless asked).
 9. **Subtle calm music** (School-of-Life vibe) starts at the logo, ducks under VO; prefer `brand/music.mp3`.
 

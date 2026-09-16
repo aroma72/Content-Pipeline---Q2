@@ -1,5 +1,12 @@
 'use strict';
 /*
+ * ⚠ 2026-09-15: the Imagen `:predict` models are NOT available on the current Gemini key —
+ * imagen-4.0-ultra-generate-001 returns 404 for every image and this script produces nothing while
+ * still exiting 0. Use generate-lesson-art-gemini.js instead (same prompts, Gemini image model,
+ * seeded with art/_ref.png so Ali stays consistent). Check with:
+ *   node -e "fetch('https://generativelanguage.googleapis.com/v1beta/models?key='+require('./lib/config').geminiKey()).then(r=>r.json()).then(j=>console.log(j.models.filter(m=>/imagen/.test(m.name)).length))"
+ */
+/*
  * generate-lesson-art.js — Imagen stills for every ali/scene beat that has `art`.
  *
  * LAW 4 (clean-hero): character centered, standing, on PLAIN CREAM; props float

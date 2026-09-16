@@ -34,9 +34,9 @@ One-line rationale: <why this verdict>
 Two checks are **mandatory on every script** and must appear explicitly in your output, named, with a
 pass/fail — never silently omitted:
 1. **Interactive CHECKPOINT** (Standard §3b): one `{mode:'checkpoint', quiz:{stem, options, answer,
-   explain}}` beat, sitting between two spoken beats (never first or last), with 3–4 options, a valid
-   0-based `answer`, and an `explain` written for the learner who chose wrong. Missing → NOT READY;
-   on-screen QUESTION/REVEAL cards (`tpl:'quiz'`) → NEEDS WORK, convert them. Same in every format.
+   correctNote, explain}}` beat between two spoken beats (never first or last), 3–4 options, a valid
+   0-based `answer`, and feedback written for both a right and a wrong choice. Missing → NOT READY;
+   on-screen QUESTION/REVEAL cards (`tpl:'quiz'`) → NEEDS WORK, convert them.
 2. **Animation at the story points** (Standard §3c): `module.exports.animateIds` names 2–4 beats where
    real omni i2v motion carries the story (emotional turn / metaphor coming alive / closing invite),
    and every id exists in the beat list. Missing, empty, or dangling ids → NOT READY. Ids that only

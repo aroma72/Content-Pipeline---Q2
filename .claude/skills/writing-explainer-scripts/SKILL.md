@@ -50,12 +50,12 @@ underlying facts must be accurate and current. **Do not draft beats until `resea
 - **One concept per video.** Define jargon on first use. One metaphor per concept.
 - **Mentor tone:** ≥2 emotional checkpoints (normalize early, reassure at the hard part); no shaming.
 - **Interactive CHECKPOINT (REQUIRED in every video).** One multiple-choice question the learner really
-  answers — **never drawn, never spoken**. The player pauses there and the LMS pops the question. Write
-  it as a zero-time beat sitting BETWEEN two spoken beats at ~⅔ through (never first or last, or the
-  pause has no sentence to land between):
-  `{id:'14', mode:'checkpoint', quiz:{stem, options:[…3–4…], answer:<0-based index>, explain:'why that is
-  right, and why the tempting wrong one is wrong'}}`. Write `explain` for the learner who just chose
-  wrong — it is the only feedback they get. Same beat in every format, illustrated or IDE-screencast.
+  answers — **never drawn, never spoken**. The player pauses there, the LMS asks it, shows feedback on
+  their answer, then the video resumes. Write it as a zero-time beat BETWEEN two spoken beats at ~⅔
+  through (never first or last):
+  `{id:'14', mode:'checkpoint', quiz:{stem, options:[…3–4…], answer:<0-based index>,
+  correctNote:'confirm it and say why', explain:'why that is right, and why the tempting wrong one is
+  wrong'}}`. Both feedback halves are the learner's only correction — write them properly.
   See SCRIPTING_STANDARDS §3b.
 - **The Evals-Grade Visual Standard (DEFAULT for every video — Standard §3d).** Build the visuals the
   way the evals series did, unless Aroma asks otherwise: (1) ONE concrete setting as a const, repeated

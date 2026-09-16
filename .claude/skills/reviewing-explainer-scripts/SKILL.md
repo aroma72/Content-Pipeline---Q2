@@ -32,20 +32,21 @@ apply this rubric directly.
     held/leaned-on, or any 2-object composition, MUST be `mode:'scene'`. Run `node qa-cutouts.js` — it
     fails this deterministically. (Body-only poses — three fingers, thumbs-up, open hands — are fine.)
     See memory `feedback_cutout_qa`.
-9. **No CHECKPOINT beat** (Standard §3b, REQUIRED effective 2026-09-11): every video must contain at
-   least one `{mode:'checkpoint', quiz:{stem, options, answer, explain}}` beat. Missing → NOT READY.
-   Also NOT READY if: it is the first or last beat (the pause has no sentence either side), `answer` is
-   not a valid 0-based index into `options`, there are fewer than three options, or `explain` is missing
-   or is a six-word caption rather than feedback for someone who just chose wrong. A script that still
-   renders QUESTION/REVEAL cards on screen (`tpl:'quiz'`) → NEEDS WORK: convert it to a checkpoint.
+9. **No CHECKPOINT beat** (Standard §3b, REQUIRED effective 2026-09-15): every video must contain at
+   least one `{mode:'checkpoint', quiz:{stem, options, answer, correctNote, explain}}` beat. Missing →
+   NOT READY. Also NOT READY if: it is first or last in the list (no sentence either side to stop
+   between), `answer` is not a valid 0-based index into `options`, fewer than three options, or
+   `explain` is missing or is a six-word caption rather than a real correction. On-screen QUESTION/REVEAL
+   cards (`tpl:'quiz'`) → NEEDS WORK: convert them to a checkpoint.
 10. **No animation plan** (Standard §3c, REQUIRED effective 2026-08-17): `module.exports.animateIds`
     must name **2–4 beats where real motion carries the story** (emotional turn, metaphor coming alive,
     closing invite), to be generated with omni i2v. Missing, empty, or pointing at ids that don't exist
     → NOT READY. Beats chosen purely to decorate a static definition → NEEDS WORK with the better beats
     named. (Exempt: IDE-screencast assignment/assessment videos, where i2v does not apply.)
 
-11. **Fails the Evals-Grade Visual Standard** (Standard §3d, REQUIRED effective 2026-08-21): run
-    `node qa-visuals.js` in the video folder. Any violation → NOT READY. The six rules: one concrete
+11. **Fails the Evals-Grade Visual Standard** (Standard §3d, REQUIRED effective 2026-08-21): run `node qa-info.js` AND
+    `node qa-visuals.js` in the video folder. qa-info catches info-card data shapes that render as
+    blank or zeroed cards without throwing (the 2026-09-15 defect class). Any violation → NOT READY. The six rules: one concrete
     persistent setting (not an abstract room) · the AI is a real laptop with a blank screen (NEVER a
     glowing orb/blob) · ≥28% `scene` beats · ≤2 plain `statement` cards · ≥3 distinct data templates
     plus real numbers · scenes show a physical action. This is the DEFAULT visual format for every

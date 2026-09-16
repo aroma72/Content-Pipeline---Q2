@@ -23,7 +23,7 @@ const ALI = 'Ali, a friendly South Asian man in his mid-20s, warm medium-brown s
 const STYLE = 'flat 2D vector editorial illustration, clean rounded shapes, warm cream and honey ' +
   'palette, soft friendly storybook style, gentle depth, absolutely no text, no words, no letters, ' +
   'no numbers, no labels';
-const HERO = `${STYLE}, single subject centered and standing, plain flat cream background`;
+const HERO = `${STYLE}, single subject centered and standing, plain flat cream background, BOTH EYES OPEN and symmetrical, never winking, never one eye closed`;
 // the persistent concrete setting — repeated in EVERY scene prompt
 const ROOM = 'in the back room of Ali\'s small stationery shop, cream walls, a wooden desk against ' +
   'the wall, a fat paper order file with a worn cardboard cover lying on the desk, a chipped blue ' +
@@ -31,7 +31,8 @@ const ROOM = 'in the back room of Ali\'s small stationery shop, cream walls, a w
   'the right opening onto the shop floor';
 const LAPTOP = 'a simple boxy cream-coloured laptop open on the desk, its screen a blank pale ' +
   'rectangle, plain and unbranded with no logo, badge, sticker or marking anywhere on it';
-const STAFF = 'three shop staff visible through the doorway as simple flat figures, facing away';
+const STAFF = 'two adult shop assistants of full adult height and adult proportions, ' +
+  'standing beyond the doorway on the shop floor, seen from behind at a serving counter'
 
 module.exports = [
   { id: '01', mode: 'info',
@@ -57,12 +58,12 @@ module.exports = [
   { id: '05', mode: 'info',
     vo: 'Twelve summaries this month, and nobody but Ali opened one.',
     cap: 'Twelve written · one reader',
-    info: { tpl: 'bignum', data: { value: 12, label: 'summaries written', sub: 'readers: 1' } } },
+    info: { tpl: 'bignum', data: { left: { big: '12', lab: 'summaries written' }, sep: 'read by', right: { big: '1', lab: 'person — him' } } } },
 
   { id: '06', mode: 'ali',
     vo: 'If you have built something good that nobody uses, this is why.',
     cap: 'You are not alone here',
-    art: `${ALI}, a rueful understanding half-smile, one eyebrow slightly raised, ${HERO}` },
+    art: `${ALI}, a rueful understanding half-smile, gently amused, ${HERO}` },
 
   { id: '07', mode: 'scene',
     vo: 'His staff keep asking the same questions in the shop group chat.',
@@ -77,22 +78,25 @@ module.exports = [
   { id: '09', mode: 'info',
     vo: 'The agent cannot see the file, and cannot speak in the chat.',
     cap: 'Locked out of both',
-    info: { tpl: 'twocard', data: { left: { title: 'Cannot see', body: 'the records the team relies on' }, right: { title: 'Cannot speak', body: 'where the team is actually talking' } } } },
+    info: { tpl: 'grid', data: { title: 'Two doors, both shut', n: 2, tone: 'bad' } } },
 
   { id: '10', mode: 'info',
     vo: 'The team\'s memory lives in one place. Their attention lives in another.',
     cap: 'Two different places',
-    info: { tpl: 'twocard', data: { left: { title: 'Memory', body: 'where decisions are kept' }, right: { title: 'Attention', body: 'where people are looking now' } } } },
+    info: { tpl: 'twocard', data: {
+      left: { title: 'Memory', items: ['where decisions are kept'] },
+      right: { title: 'Attention', items: ['where people are looking now'] } } } },
 
   { id: '11', mode: 'info',
     vo: 'Notion is memory. It stays, and you can search it.',
     cap: 'Notion · memory',
-    info: { tpl: 'twocard', data: { left: { title: 'Notion — memory', body: 'it stays, and you can search it', hi: true }, right: { title: 'Attention', body: 'where people are looking now' } } } },
+    info: { tpl: 'screen', data: { title: 'Where things live', lines: [
+      { k: 'Notion', v: 'memory — it stays, and you can search it' } ] } } },
 
   { id: '12', mode: 'info',
     vo: 'Slack is attention. It is read now, then it scrolls away.',
     cap: 'Slack · attention',
-    info: { tpl: 'twocard', data: { left: { title: 'Notion — memory', body: 'it stays, and you can search it' }, right: { title: 'Slack — attention', body: 'read now, then it scrolls away', hi: true } } } },
+    info: { tpl: 'screen', data: { title: 'Where things live', lines: [{ k: 'Notion', v: 'memory — it stays, and you can search it' }, { k: 'Slack', v: 'attention — read now, then it scrolls away' }] } } },
 
   { id: '13', mode: 'scene',
     vo: 'Ali types the paper file into a Notion table on the laptop screen.',
@@ -107,16 +111,12 @@ module.exports = [
   { id: '15', mode: 'info',
     vo: 'Reading and writing, across two tools, is four doors.',
     cap: 'Four doors',
-    info: { tpl: 'fourparts', data: { items: [
-      { title: 'Read Notion', body: 'the records it can look up' },
-      { title: 'Write Notion', body: 'what it records for later' },
-      { title: 'Read Slack', body: 'what the team is asking' },
-      { title: 'Write Slack', body: 'what it says back' } ] } } },
+    info: { tpl: 'fourparts', data: { title: 'Four doors', parts: ['Read Notion — the records it can look up', 'Write Notion — what it records for later', 'Read Slack — what the team is asking', 'Write Slack — what it says back'] } } },
 
   { id: '16', mode: 'ali',
     vo: 'Beginners open all four at once, and then trust none of them.',
     cap: 'All four at once',
-    art: `${ALI}, a slightly overwhelmed expression, eyebrows raised, ${HERO}` },
+    art: `${ALI}, a slightly overwhelmed expression, both eyebrows raised, ${HERO}` },
 
   // ── the checkpoint: nothing on screen; the player stops and the LMS asks ──
   // Zero time, so its position IS the boundary between beat 16 and beat 18 —
@@ -142,7 +142,7 @@ module.exports = [
   { id: '20', mode: 'scene',
     vo: 'A staff member asks about last Tuesday, and the answer arrives in the chat.',
     cap: 'Answered while the tea is still warm',
-    art: `${ALI} seated at the desk looking up from the chipped blue mug toward the doorway with a relieved smile, ${LAPTOP}, ${STAFF} one of them turned back toward him, ${ROOM}, ${STYLE}` },
+    art: `${ALI} seated alone at the desk, looking up from the laptop with a relieved open smile, both hands resting on the desk, the chipped blue mug beside him, the doorway beyond him empty, ${LAPTOP}, ${ROOM}, ${STYLE}` },
 
   { id: '22', mode: 'ali',
     vo: 'Nothing about his agent changed today. Only what it could reach.',
@@ -168,5 +168,6 @@ module.exports = [
 module.exports.title = 'Locked Out of the Room';
 module.exports.character = ALI;
 module.exports.refPrompt = `${ALI}, neutral friendly expression, arms relaxed at his sides, ${HERO}`;
-// i2v story beats, retuned for THIS video: the unread terminal, paper becoming a table, the answer landing
-module.exports.animateIds = ['04', '13', '20'];
+// i2v story beats for THIS video: the unread terminal, the paper file being searched, the answer landing.
+// Beat 13 was tried and dropped — its plain right-hand wall made the model invent a floating sheet.
+module.exports.animateIds = ['04', '08', '20'];
