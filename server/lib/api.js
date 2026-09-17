@@ -144,6 +144,26 @@ function build() {
           auth: true, implemented: false,
           description: 'Returns 501. The LMS is the system of record for answers; '
             + 'this service holds no learner identity.' },
+        { method: 'GET', path: '/api/v1/health', auth: false,
+          description: 'Liveness and what is configured, with no credential and no lesson data.' },
+        { method: 'POST', path: '/demo/make-video', auth: false,
+          description: 'Write and gate a script from a topic. Buys nothing, so no token is '
+            + 'needed; the job is bound to the caller. Pass a callbackUrl (tenants only) to '
+            + 'be told when it moves instead of polling.' },
+        { method: 'GET', path: '/demo/make-video/:jobId', auth: 'owner',
+          description: 'Job status. Only the owner of the job can read it.' },
+        { method: 'POST', path: '/demo/make-video/:jobId/claim', auth: true,
+          description: 'Take ownership of a job created in a browser session you hold, so it '
+            + 'can then be produced with your credential.' },
+        { method: 'POST', path: '/demo/make-video/:jobId/produce', auth: true,
+          description: 'SPENDS MONEY. Accepts Idempotency-Key; a retry returns the existing '
+            + 'run rather than buying a second video.' },
+        { method: 'POST', path: '/demo/make-video/:jobId/approve', auth: true,
+          description: 'PUBLISHES to YouTube. `by` is recorded against your tenant.' },
+        { method: 'GET', path: '/demo/jobs', auth: true,
+          description: 'Your jobs, oldest transition first. Page with ?since= and ?cursor=.' },
+        { method: 'GET', path: '/demo/spend', auth: true,
+          description: 'What you have spent this month and what remains.' },
         { method: 'POST', path: '/api/v1/courses/plan', auth: true,
           description: 'Topic in, full course plan out: modules, lessons, an SLO and a '
             + 'question per lesson, plus a cost and time estimate. Spends one model call '
@@ -180,8 +200,24 @@ function build() {
           '5. Resume at resumeAtSeconds (the same instant you paused).',
         ],
         rules: [
-          'atSeconds is measured from the start of <videoId>_final.mp4, which begins with '
-          + 'a 2.6s brand intro. lessonAtSeconds excludes it.',
+          'atSeconds ALREADY INCLUDES the brand intro. It is measured from the start of '
+          + '<videoId>_final.mp4, the file we serve and the file we upload. Do NOT add the '
+          + 'intro length yourself — that is the single most expensive mistake available '
+          + 'here, and it is always late, so the learner meets a question about something '
+          + 'the narrator has already moved past. lessonAtSeconds excludes it, and is there '
+          + 'only so the two can never be silently confused.',
+          'Read timing.introOffsetSource rather than assuming 2.6. It is "probed" (measured '
+          + 'from that video own intro), "brand-constant" (the committed measurement — the '
+          + 'usual answer in production, where .mp4 files are not in the image), "no-bumpers" '
+          + '(delivered bare, so the offset is genuinely 0 and atSeconds === lessonAtSeconds), '
+          + 'or "assumed" — and "assumed" is exactly the case where timing.trusted is false.',
+          'durability says whether you may bind a lesson block to this row. "committed" is in '
+          + 'our repository and survives a redeploy. "ephemeral" was made at runtime and will '
+          + 'disappear on the next one — link it and the block will one day serve no questions. '
+          + '"unknown" means we could not tell; treat it as ephemeral.',
+          'Slugs are immutable. A videoId is minted once, before the video is made, and is '
+          + 'never rewritten. If a slug stops resolving, the video was ephemeral and the '
+          + 'container was redeployed — not renamed.',
           'Only fire a checkpoint whose pause.safe is true. False means it has no whole '
           + 'sentence on one side and there is nowhere clean to stop.',
           'Do not fire a checkpoint whose timing.trusted is false.',
@@ -197,6 +233,26 @@ function build() {
         'Call this server-to-server; a browser would expose the token.',
         'Answers are recorded by the LMS, not here.',
       ],
+    });
+  });
+
+  /**
+   * Liveness, with no credential.
+   *
+   * Asked for twice. An integrator needs something to point a monitor at that is
+   * not an authenticated data route, and that does not go red when a token is
+   * rotated. Deliberately carries no lesson data and no roster -- just whether
+   * this service is up and whether it is configured enough to answer.
+   */
+  router.get('/health', (_req, res) => {
+    const reg = tenants.registry();
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      ok: true,
+      service: 'content-queen',
+      version: 'v1',
+      configured: reg.configured,
+      time: new Date().toISOString(),
     });
   });
 

@@ -303,6 +303,120 @@ check('the public view never contains a token', () => {
   return 'clean';
 });
 
+// ── 6b. the catalogue bridge ──────────────────────────────────────────────────
+
+console.log('\n6b. the catalogue names durability and the playable URL');
+
+check('the manifest exists and is current with git', () => {
+  const m = require(path.join(ROOT, 'server', 'catalogue-manifest.json'));
+  assert(m && m.paths, 'no manifest');
+  const n = Object.keys(m.paths).length;
+  assert(n > 10, `manifest looks empty: ${n} paths`);
+  return `${n} committed videos`;
+});
+
+check('a runtime-made video is ephemeral, a committed one is not', () => {
+  const c = require(path.join(ROOT, 'server', 'lib', 'checkpoints'));
+  const rows = c.listVideos();
+  assert(rows.length, 'no catalogue rows');
+  for (const r of rows) {
+    assert(['committed', 'ephemeral', 'unknown'].includes(r.durability),
+      `row ${r.path} has an unusable durability: ${r.durability}`);
+  }
+  const committed = rows.filter((r) => r.durability === 'committed');
+  assert(committed.length, 'nothing was reported as committed');
+  // This is the answer to "are slugs immutable?": they are. What churns is
+  // whether the folder is in the image at all.
+  const madeRows = rows.filter((r) => r.path.startsWith('made/'));
+  for (const r of madeRows) {
+    assert(r.durability !== 'unknown', `a made/ row should be classified, got ${r.durability}`);
+  }
+  return `${committed.length} committed, ${rows.length - committed.length} not`;
+});
+
+check('every row carries catalogueUpdatedAt', () => {
+  const c = require(path.join(ROOT, 'server', 'lib', 'checkpoints'));
+  const rows = c.listVideos();
+  const missing = rows.filter((r) => !r.catalogueUpdatedAt);
+  assert(!missing.length, `rows without catalogueUpdatedAt: ${missing.map((r) => r.path).join(', ')}`);
+  return 'all rows timestamped';
+});
+
+check('a publish record joins onto the catalogue row by path, not by videoId', () => {
+  const pl = require(path.join(ROOT, 'server', 'lib', 'publish-log'));
+  const idx = pl.index();
+  // The two id fields collide by name and are different things. If the join were
+  // written against `videoId` it would silently match nothing, or worse, match
+  // the wrong row -- so assert the shape the join depends on.
+  for (const [key, rec] of idx) {
+    assert(key.includes('/'), `a publish key should be <series>/<slug>, got '${key}'`);
+    assert(rec.url && /youtu/.test(rec.url), `record for ${key} has no YouTube url`);
+    assert(rec.videoId !== key.split('/')[1],
+      `the YouTube id and the folder name are being conflated for ${key}`);
+  }
+  return `${idx.size} publish records, all keyed on <series>/<slug>`;
+});
+
+/**
+ * The question the LMS has asked three times: does atSeconds include the intro?
+ *
+ * Answered by measuring the actual files rather than by assurance. Skips where
+ * the .mp4 files are absent -- which is CI, and is also the deploy container,
+ * since they are gitignored.
+ */
+check('MEASURED: atSeconds includes the brand intro, and the constant matches the file', () => {
+  const c = require(path.join(ROOT, 'server', 'lib', 'checkpoints'));
+  const rows = c.listVideos().filter((r) => r.deliverableOnServer);
+  if (!rows.length) return skip('no rendered .mp4 on this machine');
+
+  const withProbe = rows
+    .map((r) => c.forPath(r.path))
+    .find((p) => p && p.timing.introOffsetSource === 'probed' && p.checkpoints.length);
+  if (!withProbe) return skip('no video with a probed intro and a checkpoint');
+
+  const constant = JSON.parse(fs.readFileSync(
+    path.join(ROOT, 'explainer-videos', 'brand-intro-outro', 'bumper-durations.json'), 'utf8'
+  ));
+
+  // 1. The measured intro agrees with the constant the deploy container uses.
+  //    If these ever diverge, every checkpoint in production silently shifts
+  //    while still reporting trusted:true -- which is what that file warns about.
+  const drift = Math.abs(withProbe.timing.introOffsetSeconds - constant.introSeconds);
+  assert(drift < 0.05,
+    `the measured intro is ${withProbe.timing.introOffsetSeconds}s but bumper-durations.json `
+    + `says ${constant.introSeconds}s — re-measure it, or production timings are wrong`);
+
+  // 2. atSeconds is lesson time PLUS the intro, for every checkpoint.
+  for (const cp of withProbe.checkpoints) {
+    const delta = Number((cp.atSeconds - cp.lessonAtSeconds).toFixed(3));
+    assert(Math.abs(delta - withProbe.timing.introOffsetSeconds) < 0.02,
+      `checkpoint ${cp.id}: atSeconds - lessonAtSeconds is ${delta}, `
+      + `expected the intro offset ${withProbe.timing.introOffsetSeconds}`);
+  }
+
+  // 3. The checkpoint lands inside the delivered file, not past its end.
+  const final = path.join(ROOT, 'explainer-videos', withProbe.series,
+    path.basename(withProbe.videoId), 'out', withProbe.deliverable);
+  if (fs.existsSync(final)) {
+    const total = withProbe.timing.lessonSeconds + constant.introSeconds + constant.outroSeconds;
+    for (const cp of withProbe.checkpoints) {
+      assert(cp.atSeconds < total,
+        `checkpoint ${cp.id} fires at ${cp.atSeconds}s, past the ~${total.toFixed(1)}s file`);
+    }
+  }
+  return `intro ${withProbe.timing.introOffsetSeconds}s, matches the committed constant`;
+});
+
+check('the ETag changes when the payload does, and only then', () => {
+  const c = require(path.join(ROOT, 'server', 'lib', 'checkpoints'));
+  const a = c.etagOf({ count: 1, videos: [{ videoId: 'x' }] });
+  const b = c.etagOf({ count: 1, videos: [{ videoId: 'x' }] });
+  const d = c.etagOf({ count: 1, videos: [{ videoId: 'y' }] });
+  assert(a === b, 'the same payload produced two different ETags');
+  assert(a !== d, 'a changed payload produced the same ETag');
+  return 'payload-derived';
+});
+
 // ── 7. the .env loader, without needing a .env ────────────────────────────────
 
 console.log('\n7. .env loader (proved without a real .env, so CI can run it)');

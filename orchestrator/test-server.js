@@ -478,6 +478,31 @@ async function bridgeChecks() {
       });
     });
 
+  await check('the catalogue tells the LMS whether a row is safe to link to',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      const r = await req(port, { path: '/api/v1/videos', headers: { authorization: `Bearer ${LMS_TOKEN}` } });
+      assert(r.status === 200, `expected 200, got ${r.status}`);
+      if (!r.json.count) return skip('no videos with checkpoints on this machine');
+      for (const row of r.json.videos) {
+        assert(['committed', 'ephemeral', 'unknown'].includes(row.durability),
+          `row ${row.path} has no usable durability`);
+        assert('youtube' in row, `row ${row.path} carries no youtube field`);
+        assert(row.catalogueUpdatedAt, `row ${row.path} has no catalogueUpdatedAt`);
+      }
+      return `${r.json.count} rows, all classified`;
+    }); });
+
+  await check('GET /api/v1/health answers without a credential and leaks nothing',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      const r = await req(port, { path: '/api/v1/health' });
+      assert(r.status === 200, `expected 200, got ${r.status}`);
+      assert(r.json.ok === true, 'health is not ok');
+      assert(r.json.configured === true, 'health does not report a configured service');
+      assert(!r.text.includes(LMS_TOKEN) && !r.text.includes(LEGACY_TOKEN), 'health leaked a token');
+      assert(!/videos|checkpoints|correctIndex/i.test(r.text), 'health leaked lesson data');
+      return 'public, clean';
+    }); });
+
   await check('/health reports the job store durability honestly',
     () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
       const r = await req(port, { path: '/health' });
