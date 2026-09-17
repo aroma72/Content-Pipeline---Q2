@@ -110,3 +110,7 @@ fashion-tech-*/node_modules/
 .previews/
 explainer-videos/testing/lesson-preview/
 explainer-videos/testing/render-smoke/
+
+# Runtime job records. Real ones live on the Railway volume; this is the
+# local-development fallback and must never be committed.
+.jobstore/

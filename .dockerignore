@@ -69,3 +69,6 @@ explainer-videos/**/clips
 .env.*
 .git
 .beads/*.jsonl
+# ...except the record that a video exists on YouTube. It is the only proof a
+# catalogue row has a playable URL, and without it the image ships none.
+!.beads/publish_review.jsonl

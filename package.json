@@ -8,7 +8,9 @@
     "start": "node server/index.js",
     "dev": "node server/index.js",
     "lint": "eslint orchestrator server scripts",
-    "test": "node orchestrator/test-regressions.js"
+    "test": "node orchestrator/test-regressions.js && node orchestrator/test-store.js && node orchestrator/test-server.js",
+    "test:server": "node orchestrator/test-server.js",
+    "test:store": "node orchestrator/test-store.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.97.1",

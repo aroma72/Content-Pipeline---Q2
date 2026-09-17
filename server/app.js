@@ -29,23 +29,56 @@ const { parseRequest } = require('./lib/parse');
 function createApp(opts = {}) {
   // The pipeline. Injected in tests so no route can reach the spine or spend.
   const oneVideo = opts.oneVideo || require('./lib/one-video');
+  const jobStore = opts.store || require('./lib/job-store').shared();
+  const jobsLib = opts.jobs || require('./lib/jobs');
+  const owner = require('./lib/owner');
+  const tenants = require('./lib/tenants');
+  const throttle = opts.throttle || require('./lib/throttle');
+  const ledger = opts.ledger || require('./lib/ledger');
+  const idempotency = require('./lib/idempotency');
+  const webhook = opts.webhook || require('./lib/webhook');
+  const { bearerOf } = require('./lib/api');
 
   const app = express();
 
   // Railway terminates TLS at its edge and forwards over http, so without this
   // req.protocol reads "http" and the self-describing API index hands the LMS
   // developer http:// example URLs for an https-only service.
-  app.set('trust proxy', true);
+  //
+  // `1`, not `true`. With `true` Express believes the LEFT-MOST X-Forwarded-For
+  // entry, which is supplied entirely by the caller -- so every per-IP limit
+  // became advisory the moment someone set the header. `1` trusts exactly the one
+  // hop Railway's proxy adds. req.protocol, the reason this line exists, is
+  // unaffected.
+  app.set('trust proxy', 1);
 
   // Keep the raw body: Slack's signature is computed over the exact bytes sent, so
   // verifying against a re-serialised object never matches.
-  app.use(express.json({
+  //
+  // 2mb is what /slack/events needs. It is far more than any other route accepts,
+  // and it used to apply to all of them -- so an unauthenticated caller could make
+  // the server parse two megabytes before any auth check ran. The small limit is
+  // the default now and the large one is scoped to the route that earns it.
+  const slackJson = express.json({
     limit: '2mb',
     verify: (req, _res, buf) => { req.rawBody = buf.toString('utf8'); },
-  }));
+  });
+  app.use((req, res, next) => {
+    if (req.path === '/slack/events') return slackJson(req, res, next);
+    return express.json({ limit: '32kb' })(req, res, next);
+  });
 
   app.get('/health', (_req, res) => {
-    res.json({ ok: true, surfaces: readiness(), tick: tick.status() });
+    res.json({
+      ok: true,
+      surfaces: readiness(),
+      tick: tick.status(),
+      // Say what the store actually is. A service that claimed durability it did
+      // not have would send the next person debugging the wrong end entirely.
+      jobStore: jobStore.health(),
+      tenants: tenants.registry().health(),
+      webhooks: webhook.health(),
+    });
   });
 
   app.get('/', (_req, res) => res.type('text').send('Drawing Room agent. Mention me in Slack, or file a ticket in Notion.'));
@@ -140,132 +173,317 @@ function createApp(opts = {}) {
    * No key: the service supplies its own credential. Rate limited instead,
    * because the writing step is a real model call.
    */
-  const MAKE_LIMIT = { perIpPerHour: 6, globalPerHour: 40 };
-  const makeHits = [];
-  const makeByIp = new Map();
-
-  app.post('/demo/make-video', async (req, res) => {
-    const ip = req.ip || 'unknown';
-    const now = Date.now();
-    const hourAgo = now - 3600_000;
-    while (makeHits.length && makeHits[0] < hourAgo) makeHits.shift();
-    const mine = (makeByIp.get(ip) || []).filter((t) => t >= hourAgo);
-
-    if (makeHits.length >= MAKE_LIMIT.globalPerHour || mine.length >= MAKE_LIMIT.perIpPerHour) {
-      return res.status(429).json({
-        error: 'rate_limited',
-        message: `This demo makes ${MAKE_LIMIT.perIpPerHour} videos an hour. Try again shortly.`,
-      });
-    }
-    mine.push(now);
-    makeByIp.set(ip, mine);
-    makeHits.push(now);
-    if (makeByIp.size > 500) {
-      for (const [k, v] of makeByIp) if (!v.some((t) => t >= hourAgo)) makeByIp.delete(k);
-    }
-
-    // Writing a house-standard script is research + a draft + a gate, and a gate
-    // that says NEEDS WORK sends it back to be redrafted. That is minutes, not
-    // seconds, so it runs as a job the page polls rather than a held-open request
-    // that an edge proxy would cut before the script was finished.
-    const job = startWrite(req.body || {});
-    res.status(202).json({ jobId: job.id, status: job.status });
-  });
+  // ── who is calling, on every /demo route ────────────────────────────────
+  //
+  // A jobId used to be the only thing standing between a stranger and the two
+  // buttons that spend money and publish video. Every job is now bound to an
+  // owner at birth: a tenant when a credential is present, otherwise a signed,
+  // HttpOnly cookie. See server/lib/owner.js for why a cookie and not a token.
+  app.use('/demo', owner.attachOwner({ registry: () => tenants.registry(), bearerOf }));
 
   /**
-   * Jobs for the Make a Video page.
+   * Make ONE video from a topic. The smallest useful thing this system does, and
+   * the only path that runs end to end today with nobody in the middle.
    *
-   * In memory, and that is deliberate rather than a shortcut: the container has no
-   * volume, so a job record written to disk would not outlive a redeploy either.
-   * What DOES survive is the script itself, in explainer-videos/<series>/<slug>/,
-   * and the YouTube link once it is published.
+   * One model call writes the lesson and its question; the renderer draws it.
+   * About ninety seconds, and nothing is bought -- cards need no art or audio.
+   *
+   * STILL OPEN TO ANYONE, ON PURPOSE. Research, draft and gate are model calls on
+   * the service's own credential and buy nothing, so requiring a token here would
+   * cost the demo its point and protect nothing. The money is two calls further
+   * on, and that is where the credential is required.
    */
-  const jobs = new Map();
+  const MAKE_LIMIT = {
+    perOwnerPerHour: Number(process.env.ANON_MAKE_PER_HOUR) || 6,
+    perIpPerHour: Number(process.env.ANON_MAKE_PER_IP_PER_HOUR) || 30,
+    globalPerHour: Number(process.env.MAKE_GLOBAL_PER_HOUR) || 40,
+  };
 
-  function startWrite(body) {
-    const id = require('crypto').randomBytes(6).toString('hex');
-    const job = {
-      id, status: 'running', stage: 'research', topic: String(body.topic || '').slice(0, 300),
-      startedAt: Date.now(), script: null, error: null, produce: null,
-    };
-    jobs.set(id, job);
+  app.post('/demo/make-video', async (req, res) => {
+    // A tenant gets its own bucket; an anonymous caller is keyed on the signed
+    // cookie, which is the closest thing to an identity they have.
+    const isTenant = req.owner.kind === 'tenant';
+    const limit = isTenant
+      ? Math.max(MAKE_LIMIT.perOwnerPerHour, throttle.limitsFor(req.owner.tenant).producePerHour)
+      : MAKE_LIMIT.perOwnerPerHour;
+
+    const perOwner = throttle.consume({
+      bucket: `make:${req.owner.id}:h`, limit, windowMs: throttle.HOUR,
+    });
+    throttle.setHeaders(res, perOwner);
+    if (!perOwner.ok) {
+      return res.status(429).json({
+        error: 'rate_limited',
+        message: `This makes ${limit} scripts an hour per caller. Try again in `
+          + `${perOwner.retryAfterSec} seconds.`,
+        retryAfterSeconds: perOwner.retryAfterSec,
+      });
+    }
+
+    // A backstop only, and deliberately loose. With a proxy in front, the client
+    // supplies X-Forwarded-For, so this bounds abuse rather than identifying
+    // anybody -- the cookie bucket above is the real limit.
+    if (!isTenant) {
+      const perIp = throttle.consume({
+        bucket: `make:ip:${req.ip || 'unknown'}:h`,
+        limit: MAKE_LIMIT.perIpPerHour, windowMs: throttle.HOUR,
+      });
+      if (!perIp.ok) {
+        return res.status(429).json({
+          error: 'rate_limited',
+          message: 'Too many scripts from this address in the last hour.',
+          retryAfterSeconds: perIp.retryAfterSec,
+        });
+      }
+      const global = throttle.consume({
+        bucket: 'make:global:h', limit: MAKE_LIMIT.globalPerHour, windowMs: throttle.HOUR,
+      });
+      if (!global.ok) {
+        return res.status(429).json({
+          error: 'rate_limited',
+          message: 'This service is writing as many scripts as it allows itself this hour.',
+          retryAfterSeconds: global.retryAfterSec,
+        });
+      }
+    }
+
+    const topic = String((req.body && req.body.topic) || '').trim();
+    if (!topic) {
+      // Checked here rather than left to fail inside the job. It used to burn one
+      // of the caller's six attempts and surface minutes later as status:'failed',
+      // which is a confusing way to say "you sent an empty field".
+      return res.status(400).json({ error: 'bad_request', message: 'A topic is required.' });
+    }
+
+    // A callback is a request this server makes on a stranger's instruction, so
+    // only an identified caller may register one -- see server/lib/webhook.js.
+    let callbackUrl = null;
+    const wanted = req.body && req.body.callbackUrl;
+    if (wanted) {
+      if (!isTenant) {
+        return res.status(401).json({
+          error: 'unauthorized',
+          message: 'A callbackUrl needs a credential; anonymous callers may not register one.',
+        });
+      }
+      const ok = webhook.validateCallbackUrl(wanted);
+      if (!ok.ok) return res.status(400).json({ error: 'bad_callback', message: ok.why });
+      callbackUrl = ok.url.toString();
+    }
+
+    const job = startWrite({ topic, notes: req.body && req.body.notes }, req.owner, callbackUrl);
+    res.status(202).json({
+      jobId: job.id,
+      status: job.status,
+      owner: req.owner.kind,
+      note: req.owner.kind === 'anon'
+        ? 'This job is bound to this browser session. Producing it needs an API token.'
+        : undefined,
+    });
+  });
+
+  /** Fire a callback, if this job asked for one. Never blocks the transition. */
+  function notify(job) {
+    if (!job || !job.callbackUrl) return;
+    const tenant = job.tenantId ? tenants.registry().byId(job.tenantId) : null;
+    webhook.send({
+      url: job.callbackUrl,
+      secret: (tenant && tenant.webhookSecret) || null,
+      store: jobStore,
+      jobId: job.id,
+      event: {
+        type: 'job.status_changed',
+        jobId: job.id,
+        status: job.status,
+        stage: job.stage,
+        at: new Date().toISOString(),
+      },
+    });
+  }
+
+  const jobOpts = { store: jobStore, oneVideo, onTransition: notify };
+
+  function startWrite(body, jobOwner, callbackUrl) {
+    const job = jobsLib.create({ topic: body.topic, notes: body.notes, owner: jobOwner, callbackUrl }, jobOpts);
+    const id = job.id;
 
     oneVideo.write(body, {
       log: (m) => console.log(`[make-video ${id}]`, m),
-      onStage: (st) => { job.stage = st; },
+      onStage: (st) => { jobsLib.transition(id, { stage: st }, jobOpts); },
     }).then((r) => {
-      job.status = 'written';
-      job.stage = 'gate';
-      job.script = r;
-      console.log(`[make-video ${id}] READY: ${r.title} (${r.beats.length} beats, ` +
-        `${r.redrafts} redraft(s))`);
+      // Stored as a projection. The beats already live durably in
+      // explainer-videos/<series>/<slug>/beats.js; a second copy here would be a
+      // second truth, free to drift from the first.
+      const checkpoint = (r.beats || []).find((b) => b.mode === 'checkpoint');
+      jobsLib.transition(id, {
+        status: 'written',
+        stage: 'gate',
+        patch: {
+          script: {
+            itemId: r.itemId, slug: r.slug, series: r.series, title: r.title,
+            slo: r.brief && r.brief.slo,
+            interpretation: r.brief && r.brief.interpretation,
+            scenario: r.brief && r.brief.ali_scenario,
+            gate: r.gate && r.gate.verdict,
+            redrafts: r.redrafts,
+            beats: (r.beats || []).map((b) => ({ id: b.id, mode: b.mode, vo: b.vo || null })),
+            // The question the LMS will pop. Never drawn, never spoken.
+            checkpoint: checkpoint ? checkpoint.quiz : null,
+            checkpointAfterBeat: checkpoint
+              ? ((r.beats.slice(0, r.beats.indexOf(checkpoint)).filter((b) => b.mode !== 'checkpoint').pop() || {}).id)
+              : null,
+          },
+        },
+      }, jobOpts);
+      console.log(`[make-video ${id}] READY: ${r.title} (${r.beats.length} beats, `
+        + `${r.redrafts} redraft(s))`);
     }).catch((e) => {
-      job.status = 'failed';
-      job.error = e.message;
+      jobsLib.transition(id, { status: 'failed', patch: { error: e.message } }, jobOpts);
       console.error(`[make-video ${id}] failed: ${e.message}`);
       // The stack, always. A SyntaxError names no file and no line in its message,
       // so without this a module that fails to PARSE in the container is
-      // indistinguishable from one that throws while running -- which is exactly
-      // the hour "Invalid or unexpected token" cost with nothing else to go on.
+      // indistinguishable from one that throws while running.
       if (e.stack) console.error(e.stack.split('\n').slice(0, 8).join('\n'));
     });
 
-    // A finished job is worth keeping only as long as someone might poll for it.
-    setTimeout(() => jobs.delete(id), 2 * 60 * 60 * 1000).unref();
     return job;
   }
 
-  app.get('/demo/make-video/:jobId', (req, res) => {
-    const job = jobs.get(req.params.jobId);
-    if (!job) return res.status(404).json({ error: 'not_found', message: 'No such job (or it expired).' });
+  /**
+   * Load the job this request is about, or answer for it.
+   *
+   * A caller who does not own the job gets 404 with a body identical to a job
+   * that never existed. 403 would confirm the id is real, which turns a
+   * twelve-character id space into an enumeration oracle -- and confirming the id
+   * is most of what someone holding a stray jobId wanted.
+   */
+  function ownedJob(req, res) {
+    const job = jobsLib.get(req.params.jobId, jobOpts);
+    if (!job || !jobsLib.ownedBy(job, req.owner)) { owner.notFound(res); return null; }
+    return job;
+  }
 
-    const out = {
-      jobId: job.id, status: job.status, stage: job.stage, topic: job.topic,
-      elapsedSeconds: Math.round((Date.now() - job.startedAt) / 1000),
-      error: job.error,
-    };
-    if (job.script) {
-      const sc = job.script;
-      const checkpoint = sc.beats.find((b) => b.mode === 'checkpoint');
-      out.script = {
-        itemId: sc.itemId, slug: sc.slug, title: sc.title,
-        slo: sc.brief && sc.brief.slo,
-        interpretation: sc.brief && sc.brief.interpretation,
-        scenario: sc.brief && sc.brief.ali_scenario,
-        gate: sc.gate && sc.gate.verdict,
-        redrafts: sc.redrafts,
-        beats: sc.beats.map((b) => ({ id: b.id, mode: b.mode, vo: b.vo || null })),
-        // The question the LMS will pop. Never drawn, never spoken.
-        checkpoint: checkpoint ? checkpoint.quiz : null,
-        checkpointAfterBeat: checkpoint
-          ? (sc.beats.slice(0, sc.beats.indexOf(checkpoint)).filter((b) => b.mode !== 'checkpoint').pop() || {}).id
-          : null,
-      };
-    }
-    if (job.produce) out.produce = job.produce;
-    res.json(out);
+  const baseUrlOf = (req) => `${req.protocol}://${req.get('host')}`;
+
+  app.get('/demo/make-video/:jobId', (req, res) => {
+    const job = ownedJob(req, res);
+    if (!job) return undefined;
+    return res.json(jobsLib.toPublic(job, { baseUrl: baseUrlOf(req) }));
   });
 
   /**
-   * Turn a gated script into the finished, published video.
+   * Hand an anonymous job to the tenant about to pay for it.
    *
-   * SEPARATE FROM WRITING ON PURPOSE. Everything up to the gate is model calls on
-   * the service credential and buys nothing. This buys generated art and speech --
-   * about $1.50 a video -- and house rules say that is never spent without a person
-   * saying yes. Pressing the button on a script you have just read IS that yes.
+   * The demo page creates a job with no credential (free) and then presses
+   * Produce with one. Without this step the creator and the producer are
+   * different owners and every job the page makes would 404 at the button.
    */
-  app.post('/demo/make-video/:jobId/produce', (req, res) => {
-    const job = jobs.get(req.params.jobId);
-    if (!job) return res.status(404).json({ error: 'not_found', message: 'No such job (or it expired).' });
-    if (job.status !== 'written' || !job.script) {
-      return res.status(409).json({ error: 'not_ready', message: 'This video has no gated script yet.' });
-    }
-    if (job.produce && job.produce.status === 'running') {
-      return res.status(409).json({ error: 'already_running', message: 'It is already being produced.' });
+  app.post('/demo/make-video/:jobId/claim', owner.requireTenant('produce'), (req, res) => {
+    const job = jobsLib.get(req.params.jobId, jobOpts);
+    if (!job) return owner.notFound(res);
+
+    // Already ours. Idempotent, so a client that cannot remember whether it
+    // claimed does not have to care.
+    if (jobsLib.ownedBy(job, req.owner)) {
+      return res.json({ jobId: job.id, owner: job.ownerId, claimedFrom: job.claimedFrom, alreadyOurs: true });
     }
 
-    const budgetUsd = Number(process.env.PIPELINE_MAX_APPROVABLE_USD || 0);
+    // Otherwise the tenant must prove it holds the browser session that created
+    // the job. The tenant token alone is deliberately not enough -- if it were,
+    // any credential could adopt any stranger's job by guessing its id.
+    const sessionId = owner.cookieOwnerId(req);
+    if (!sessionId || job.ownerId !== sessionId) return owner.notFound(res);
+
+    const r = jobsLib.claim(req.params.jobId, { to: req.owner }, jobOpts);
+    if (!r.ok) return res.status(409).json({ error: 'cannot_claim', message: r.why });
+    return res.json({ jobId: r.job.id, owner: r.job.ownerId, claimedFrom: r.job.claimedFrom });
+  });
+
+  /**
+   * Turn a gated script into the finished video.
+   *
+   * SEPARATE FROM WRITING ON PURPOSE. Everything up to the gate buys nothing.
+   * This buys generated art and speech -- about $1.50 -- and house rules say that
+   * is never spent without a person saying yes. Pressing the button on a script
+   * you have just read IS that yes, and the credential is who said it.
+   */
+  app.post('/demo/make-video/:jobId/produce', owner.requireTenant('produce'), (req, res) => {
+    const job = ownedJob(req, res);
+    if (!job) return undefined;
+    const tenant = req.owner.tenant;
+
+    // Idempotency is checked FIRST, before the state guard.
+    //
+    // A retry arrives after the original has moved the job on, so judging it
+    // against the new state answers a question the caller did not ask -- they
+    // are not starting a run, they are asking what happened to the one they
+    // already started. The stored response is that answer.
+    const key = idempotency.keyOf(req);
+    let claimed = null;
+    if (key) {
+      const bodyHash = idempotency.fingerprint(job.id, req.body);
+      const begun = idempotency.begin(jobStore, { tenantId: tenant.id, jobId: job.id, key, bodyHash });
+      if (begun.state === 'conflict') {
+        return res.status(409).json({
+          error: 'idempotency_key_reuse',
+          message: 'That Idempotency-Key was used for a different request.',
+        });
+      }
+      if (begun.state === 'replay' || begun.state === 'in_flight') {
+        res.set('Idempotency-Replayed', 'true');
+        const stored = begun.record.response;
+        return res.status((stored && stored.status) || 202)
+          .json((stored && stored.body) || { jobId: job.id, status: job.status, idempotent: true });
+      }
+      claimed = begun;
+    }
+
+    /** Give the key back, so a genuine later retry is not answered from a run that never began. */
+    const unclaim = () => { if (claimed) idempotency.abandon(jobStore, { tenantId: tenant.id, scopedKey: claimed.scopedKey }); };
+
+    if (!job.script || (job.status !== 'written' && job.status !== 'interrupted')) {
+      // None of these is an error, and none of them may spend again. A client
+      // that retried a timed-out request wants to know where its run got to, not
+      // a 409 it has to special-case -- and a second paid run is the one outcome
+      // that must never happen here.
+      if (['producing', 'publishing', 'awaiting_review', 'published'].includes(job.status)) {
+        unclaim();
+        return res.status(202).json({
+          jobId: job.id,
+          status: job.status,
+          idempotent: true,
+          startedAt: job.produce && job.produce.startedAt,
+          spendUsd: job.produce && job.produce.spendUsd,
+          note: job.status === 'producing' || job.status === 'publishing'
+            ? 'Already in flight; this is the existing run, not a second one.'
+            : 'This has already been produced. Nothing was bought again.',
+        });
+      }
+      unclaim();
+      return res.status(409).json({
+        error: 'not_ready',
+        message: job.script
+          ? `This job is ${job.status}, so there is nothing to produce.`
+          : 'This video has no gated script yet.',
+      });
+    }
+
+    // A spend we cannot record is a spend we will not make.
+    if (!jobStore.canRecordSpend()) {
+      unclaim();
+      return res.status(503).json({
+        error: 'ledger_unavailable',
+        message: 'This server cannot durably record what it spends, so it refuses to spend. '
+          + 'See jobStore.durability on /health.',
+      });
+    }
+
+    const budgetUsd = Math.min(
+      config.pipeline.maxApprovableUsd,
+      Number.isFinite(tenant.maxRunUsd) && tenant.maxRunUsd !== null ? tenant.maxRunUsd : Infinity
+    );
     if (!(budgetUsd > 0)) {
+      unclaim();
       return res.status(503).json({
         error: 'no_budget',
         message: 'Producing a video buys art and speech, and this service has no approved '
@@ -273,132 +491,206 @@ function createApp(opts = {}) {
       });
     }
 
-    job.produce = { status: 'running', stage: 'produce', startedAt: Date.now() };
-    job.status = 'producing';
+    // Rate limits, before anything is written down.
+    const limits = throttle.limitsFor(tenant);
+    for (const [bucket, limit, windowMs, label] of [
+      [`produce:${tenant.id}:h`, limits.producePerHour, throttle.HOUR, 'an hour'],
+      [`produce:${tenant.id}:d`, limits.producePerDay, throttle.DAY, 'a day'],
+    ]) {
+      const r = throttle.check({ bucket, limit, windowMs });
+      throttle.setHeaders(res, r);
+      if (!r.ok) {
+        unclaim();
+        return res.status(429).json({
+          error: 'rate_limited',
+          message: `${tenant.id} may produce ${limit} videos ${label}.`,
+          retryAfterSeconds: r.retryAfterSec,
+        });
+      }
+    }
+
+    const reservation = ledger.reserve(jobStore, {
+      tenantId: tenant.id, jobId: job.id, usd: budgetUsd, key, tenant,
+    });
+    if (!reservation.ok) {
+      unclaim();
+      // 402, not 429: this tells the caller retrying will never help, which a
+      // rate limit explicitly does not.
+      const status = reservation.reason === 'ledger_unavailable' ? 503 : 402;
+      return res.status(status).json({ error: reservation.reason, message: reservation.why, ...reservation });
+    }
+
+    for (const bucket of [`produce:${tenant.id}:h`, `produce:${tenant.id}:d`]) {
+      throttle.consume({ bucket, limit: Infinity, windowMs: throttle.DAY });
+    }
+
+    jobsLib.transition(job.id, {
+      status: 'producing',
+      patch: {
+        spendRef: reservation.ref,
+        produce: { status: 'running', stage: 'produce', startedAt: Date.now() },
+      },
+    }, jobOpts);
 
     oneVideo.produce(
       {
         itemId: job.script.itemId, budgetUsd, brief: job.script.brief,
         // Only when the request says so. Default is still to stop and wait.
-        publishAs: (req.body && req.body.publish) ? ((req.body && req.body.by) || 'Aroma') : null,
+        publishAs: (req.body && req.body.publish) ? approverOf(req) : null,
       },
       {
         log: (m) => console.log(`[produce ${job.id}]`, m),
-        onStage: (st) => { job.produce.stage = st; },
+        onStage: (st) => {
+          jobsLib.transition(job.id, { patch: { produce: { ...(jobsLib.get(job.id, jobOpts) || {}).produce, stage: st } } }, jobOpts);
+        },
       }
     ).then((r) => {
-      const elapsed = Math.round((Date.now() - job.produce.startedAt) / 1000);
+      const cur = jobsLib.get(job.id, jobOpts);
+      const elapsed = Math.round((Date.now() - ((cur && cur.produce && cur.produce.startedAt) || Date.now())) / 1000);
+      ledger.settle(jobStore, {
+        tenantId: tenant.id, ref: reservation.ref, jobId: job.id,
+        runId: r.runId, usd: r.spendUsd, outcome: r.awaitingReview ? 'awaiting_review' : 'done',
+      });
       if (r.awaitingReview) {
         // The pipeline working as designed: a person watches it before it goes out.
-        job.status = 'awaiting_review';
-        job.review = { itemId: r.itemId, artifacts: r.artifacts, qa: r.qa, finalPath: r.finalPath };
-        job.produce = {
-          status: 'awaiting_review', stage: 'review',
-          spendUsd: r.spendUsd, qa: r.qa, elapsedSeconds: elapsed,
-        };
+        jobsLib.transition(job.id, {
+          status: 'awaiting_review',
+          patch: {
+            spendRef: null,
+            // The absolute path is NOT stored -- see server/lib/jobs.js.
+            review: { itemId: r.itemId, series: r.series || 'made', slug: r.slug, artifacts: r.artifacts, qa: r.qa },
+            produce: { status: 'awaiting_review', stage: 'review', spendUsd: r.spendUsd, qa: r.qa, elapsedSeconds: elapsed },
+          },
+        }, jobOpts);
         console.log(`[produce ${job.id}] finished, waiting for a human to approve it`);
-        return;
+      } else {
+        jobsLib.transition(job.id, {
+          status: 'published',
+          patch: {
+            spendRef: null,
+            produce: { status: 'done', stage: 'upload', spendUsd: r.spendUsd, youtube: r.youtube, elapsedSeconds: elapsed },
+          },
+        }, jobOpts);
+        console.log(`[produce ${job.id}] published:`, JSON.stringify(r.youtube));
       }
-      job.status = 'published';
-      job.produce = {
-        status: 'done', stage: 'upload',
-        spendUsd: r.spendUsd,
-        youtube: r.youtube,
-        elapsedSeconds: elapsed,
-      };
-      console.log(`[produce ${job.id}] published:`, JSON.stringify(r.youtube));
+      if (claimed) {
+        idempotency.complete(jobStore, { tenantId: tenant.id, scopedKey: claimed.scopedKey },
+          { status: 202, body: { jobId: job.id, status: 'producing', budgetUsd } });
+      }
     }).catch((e) => {
-      job.status = 'written';   // the script is still good; only the render failed
-      job.produce = { status: 'failed', error: e.message };
+      // A run that failed after buying art HAS spent money. Settling at whatever
+      // the spine recorded -- rather than releasing the reservation -- is what
+      // stops a tenant burning budget for free by failing runs deliberately.
+      ledger.settle(jobStore, {
+        tenantId: tenant.id, ref: reservation.ref, jobId: job.id,
+        runId: e.runId, usd: Number(e.spendUsd) || 0, outcome: 'failed',
+      });
+      jobsLib.transition(job.id, {
+        status: 'written',   // the script is still good; only the render failed
+        patch: { spendRef: null, produce: { status: 'failed', error: e.message } },
+      }, jobOpts);
       console.error(`[produce ${job.id}] failed: ${e.message}`);
-      // The stack, always. A SyntaxError names no file and no line in its message,
-      // so without this a module that fails to PARSE in the container is
-      // indistinguishable from one that throws while running -- which is exactly
-      // the hour "Invalid or unexpected token" cost with nothing else to go on.
       if (e.stack) console.error(e.stack.split('\n').slice(0, 8).join('\n'));
+      unclaim();
     });
 
-    res.status(202).json({ jobId: job.id, status: 'producing', budgetUsd });
+    return res.status(202).json({ jobId: job.id, status: 'producing', budgetUsd, spendRef: reservation.ref });
+  });
+
+  /**
+   * Who approved this, in a form that survives being read later.
+   *
+   * `by` was free text defaulting to 'Aroma', so a video approved by another
+   * organisation's instructor was recorded in our audit trail under Aroma's name.
+   * The tenant is the part that is verified -- it comes from the credential --
+   * and the display name is what the caller says about itself.
+   */
+  function approverOf(req) {
+    const tenant = req.owner.tenant;
+    const claimedName = String((req.body && req.body.by) || '').slice(0, 120).trim();
+    if (!tenant) return claimedName || 'Aroma';
+    return claimedName
+      ? `${claimedName} (${tenant.name}, tenant:${tenant.id})`
+      : `${tenant.name} (tenant:${tenant.id})`;
+  }
+
+  /**
+   * The script as a file you can keep.
+   *
+   * Reached by a top-level navigation from the page, which cannot carry an
+   * Authorization header -- so this is one of the two routes the ownership cookie
+   * exists for.
+   */
+  app.get('/demo/make-video/:jobId/script.md', (req, res) => {
+    const job = ownedJob(req, res);
+    if (!job) return undefined;
+    if (!job.script) return res.status(404).type('text').send('No script for this job (or it expired).');
+
+    const sc = job.script;
+    const cp = sc.checkpoint || null;
+    const L = [];
+
+    L.push(`# ${sc.title}`, '');
+    if (sc.interpretation) L.push(`> ${sc.interpretation}`, '');
+    L.push(`**Topic asked:** ${job.topic}`);
+    if (sc.slo) L.push(`**Outcome:** ${sc.slo}`);
+    if (sc.scenario) L.push(`**Scenario:** ${sc.scenario}`);
+    L.push(`**Review:** ${sc.gate || '?'}`
+      + (sc.redrafts ? ` after ${sc.redrafts} redraft${sc.redrafts > 1 ? 's' : ''}` : ' on the first pass')
+      + ` · ${sc.beats.length} beats`);
+    L.push('', '---', '', '## The script', '');
+    L.push('One beat is one spoken sentence, and the picture shown while it is spoken.', '');
+
+    for (const b of sc.beats) {
+      if (b.mode === 'checkpoint') {
+        L.push('', `**— the video pauses here (beat ${b.id}) —**`, '');
+        continue;
+      }
+      L.push(`**${b.id}** *(${b.mode})*  ${b.vo}`, '');
+    }
+
+    if (cp) {
+      L.push('---', '', '## The checkpoint', '');
+      L.push('Never drawn, never spoken. The video pauses and the LMS shows this as a popup.', '');
+      L.push(`**${cp.stem}**`, '');
+      cp.options.forEach((o, i) => {
+        L.push(`${i === cp.answer ? '- **[correct]**' : '-'} ${o}`);
+      });
+      L.push('', `**Why the others are wrong:** ${cp.explain}`, '');
+    }
+
+    L.push('---', '', `_Made by Content Queen for Taleemabad University · ${new Date().toISOString().slice(0, 10)}_`, '');
+
+    const name = (sc.slug || 'script').replace(/[^a-z0-9-]/gi, '-').slice(0, 60);
+    res.set('Content-Type', 'text/markdown; charset=utf-8');
+    res.set('Content-Disposition', `attachment; filename="${name}.md"`);
+    return res.send(L.join('\n'));
   });
 
   /**
    * Stream the finished video so it can be watched before it is published.
    *
-   * Without this the approval gate is unusable: the stage waits for a person to
-   * say the video is good, and the person had no way to see it. Range requests are
-   * honoured so the browser can scrub.
+   * The path is resolved now rather than remembered: a stored absolute path is
+   * still a valid-looking string after a redeploy and points at nothing, so this
+   * would serve a confident 500 where an honest 404 is the truth.
    */
-  /**
-   * The script as a file you can keep.
-   *
-   * A job record lives in memory and expires after two hours, and the container
-   * keeps no disk between releases -- so a script you liked was, until now,
-   * readable only for as long as the tab stayed open. Markdown because it is the
-   * format a person can read, edit, paste into a document and hand to someone
-   * else without a tool in between.
-   */
-  app.get('/demo/make-video/:jobId/script.md', (req, res) => {
-    const job = jobs.get(req.params.jobId);
-    if (!job || !job.script) {
-      return res.status(404).type('text').send('No script for this job (or it expired).');
+  app.get('/demo/make-video/:jobId/video', (req, res) => {
+    const job = ownedJob(req, res);
+    if (!job) return undefined;
+    const file = jobsLib.resolveFinalPath(job, { oneVideo });
+    if (!file || !fs.existsSync(file)) {
+      return res.status(404).type('text')
+        .send('No finished video for this job on this container. If it was published, the YouTube link is the durable copy.');
     }
-    const sc = job.script;
-    // Normalise here rather than at each use, so the shape is stated once.
-    const brief = sc.brief || {};
-    const verdict = (sc.gate && sc.gate.verdict) || sc.gate || null;
-    const cpBeat = (sc.beats || []).find((b) => b.mode === 'checkpoint');
-    const cp = (cpBeat && cpBeat.quiz) || sc.checkpoint || null;
-    const L = [];
-
-    L.push(`# ${sc.title}`, "");
-    const interpretation = sc.interpretation || brief.interpretation;
-    if (interpretation) L.push(`> ${interpretation}`, "");
-    L.push(`**Topic asked:** ${job.topic}`);
-    const slo = sc.slo || brief.slo;
-    const scenario = sc.scenario || brief.ali_scenario || brief.scenario;
-    if (slo) L.push(`**Outcome:** ${slo}`);
-    if (scenario) L.push(`**Scenario:** ${scenario}`);
-    L.push(`**Review:** ${verdict || "?"}`
-      + (sc.redrafts ? ` after ${sc.redrafts} redraft${sc.redrafts > 1 ? "s" : ""}` : " on the first pass")
-      + ` · ${sc.beats.length} beats`);
-    L.push("", "---", "", "## The script", "");
-    L.push("One beat is one spoken sentence, and the picture shown while it is spoken.", "");
-
-    for (const b of sc.beats) {
-      if (b.mode === 'checkpoint') {
-        L.push("", `**— the video pauses here (beat ${b.id}) —**`, "");
-        continue;
-      }
-      L.push(`**${b.id}** *(${b.mode})*  ${b.vo}`, "");
-    }
-
-    if (cp) {
-      L.push("---", "", "## The checkpoint", "");
-      L.push("Never drawn, never spoken. The video pauses and the LMS shows this as a popup.", "");
-      L.push(`**${cp.stem}**`, "");
-      cp.options.forEach((o, i) => {
-        L.push(`${i === cp.answer ? "- **[correct]**" : "-"} ${o}`);
-      });
-      L.push("", `**Why the others are wrong:** ${cp.explain}`, "");
-    }
-
-    L.push("---", "", `_Made by Content Queen for Taleemabad University · ${new Date().toISOString().slice(0, 10)}_`, "");
-
-    const name = (sc.slug || 'script').replace(/[^a-z0-9-]/gi, '-').slice(0, 60);
-    res.set('Content-Type', 'text/markdown; charset=utf-8');
-    res.set('Content-Disposition', `attachment; filename="${name}.md"`);
-    res.send(L.join('\n'));
+    return streamFile(req, res, file);
   });
 
-  app.get('/demo/make-video/:jobId/video', (req, res) => {
-    const job = jobs.get(req.params.jobId);
-    const file = job && job.review && job.review.finalPath;
-    if (!file || !fs.existsSync(file)) {
-      return res.status(404).type('text').send('No finished video for this job.');
-    }
+  /** Range-capable MP4 streaming, in one place rather than three copies. */
+  function streamFile(req, res, file) {
     const size = fs.statSync(file).size;
     const range = req.headers.range;
     res.set('Content-Type', 'video/mp4');
+    res.set('Accept-Ranges', 'bytes');
     if (!range) {
       res.set('Content-Length', size);
       return fs.createReadStream(file).pipe(res);
@@ -406,40 +698,99 @@ function createApp(opts = {}) {
     const m = /bytes=(\d*)-(\d*)/.exec(range) || [];
     const start = Number(m[1] || 0);
     const end = m[2] ? Number(m[2]) : size - 1;
+    if (!(start >= 0) || start >= size || end < start) {
+      return res.status(416).set('Content-Range', `bytes */${size}`).end();
+    }
     res.status(206).set({
       'Content-Range': `bytes ${start}-${end}/${size}`,
-      'Accept-Ranges': 'bytes',
       'Content-Length': end - start + 1,
     });
-    fs.createReadStream(file, { start, end }).pipe(res);
-  });
+    return fs.createReadStream(file, { start, end }).pipe(res);
+  }
 
   /** Publish a video a person has just watched. Nothing paid for is made again. */
-  app.post('/demo/make-video/:jobId/approve', (req, res) => {
-    const job = jobs.get(req.params.jobId);
-    if (!job) return res.status(404).json({ error: 'not_found', message: 'No such job (or it expired).' });
+  app.post('/demo/make-video/:jobId/approve', owner.requireTenant('approve'), (req, res) => {
+    const job = ownedJob(req, res);
+    if (!job) return undefined;
     if (job.status !== 'awaiting_review' || !job.review) {
       return res.status(409).json({ error: 'not_ready', message: 'There is no finished video waiting here.' });
     }
+    const tenant = req.owner.tenant;
 
-    job.status = 'publishing';
-    job.produce = { ...job.produce, status: 'running', stage: 'upload' };
+    const limits = throttle.limitsFor(tenant);
+    const gate = throttle.consume({
+      bucket: `approve:${tenant.id}:h`, limit: limits.approvePerHour, windowMs: throttle.HOUR,
+    });
+    throttle.setHeaders(res, gate);
+    if (!gate.ok) {
+      return res.status(429).json({
+        error: 'rate_limited',
+        message: `${tenant.id} may publish ${limits.approvePerHour} videos an hour.`,
+        retryAfterSeconds: gate.retryAfterSec,
+      });
+    }
+
+    const by = approverOf(req);
+    jobsLib.transition(job.id, {
+      status: 'publishing',
+      patch: { produce: { ...job.produce, status: 'running', stage: 'upload' }, approvedBy: by },
+    }, jobOpts);
 
     oneVideo.approve(
-      { itemId: job.review.itemId, by: (req.body && req.body.by) || 'Aroma', artifacts: job.review.artifacts },
-      { log: (m) => console.log(`[approve ${job.id}]`, m), onStage: (st) => { job.produce.stage = st; } }
+      { itemId: job.review.itemId, by, artifacts: job.review.artifacts },
+      {
+        log: (m) => console.log(`[approve ${job.id}]`, m),
+        onStage: (st) => {
+          jobsLib.transition(job.id, { patch: { produce: { ...(jobsLib.get(job.id, jobOpts) || {}).produce, stage: st } } }, jobOpts);
+        },
+      }
     ).then((r) => {
-      job.status = 'published';
-      job.produce = { ...job.produce, status: 'done', stage: 'upload', youtube: r.youtube };
+      const cur = jobsLib.get(job.id, jobOpts) || {};
+      ledger.settle(jobStore, {
+        tenantId: tenant.id, ref: `approve-${job.id}`, jobId: job.id,
+        runId: r.runId, usd: 0, outcome: 'approve',
+      });
+      jobsLib.transition(job.id, {
+        status: 'published',
+        patch: { produce: { ...cur.produce, status: 'done', stage: 'upload', youtube: r.youtube } },
+      }, jobOpts);
       console.log(`[approve ${job.id}] published:`, JSON.stringify(r.youtube));
     }).catch((e) => {
-      job.status = 'awaiting_review';
-      job.produce = { ...job.produce, status: 'awaiting_review', stage: 'review', error: e.message };
+      const cur = jobsLib.get(job.id, jobOpts) || {};
+      jobsLib.transition(job.id, {
+        status: 'awaiting_review',
+        patch: { produce: { ...cur.produce, status: 'awaiting_review', stage: 'review', error: e.message } },
+      }, jobOpts);
       console.error(`[approve ${job.id}] failed:`, e.message);
     });
 
-    res.status(202).json({ jobId: job.id, status: 'publishing' });
+    return res.status(202).json({ jobId: job.id, status: 'publishing', by });
   });
+
+  /**
+   * Every job this caller owns, oldest transition first.
+   *
+   * Without this a lost jobId meant a lost job even while it was still live, and
+   * polling was the only way to learn anything had changed.
+   */
+  app.get('/demo/jobs', owner.requireTenant(), (req, res) => {
+    const page = jobsLib.listFor(req.owner, {
+      since: req.query.since, cursor: req.query.cursor,
+      limit: req.query.limit, status: req.query.status,
+    }, jobOpts);
+    res.json({
+      count: page.jobs.length,
+      jobs: page.jobs.map((j) => jobsLib.toPublic(j, { includeScript: false, baseUrl: baseUrlOf(req) })),
+      nextCursor: page.nextCursor,
+      hasMore: page.hasMore,
+    });
+  });
+
+  /** What this tenant has spent this month, so a 402 is never a surprise. */
+  app.get('/demo/spend', owner.requireTenant(), (req, res) => {
+    res.json(ledger.summary(jobStore, req.owner.tenant));
+  });
+
 
   /**
    * The videos this container actually holds, newest first.
@@ -478,7 +829,15 @@ function createApp(opts = {}) {
     });
   });
 
-  app.get('/demo/videos', (_req, res) => {
+  /**
+   * Every finished render sitting on this container.
+   *
+   * Behind a credential now. While this service made only its own content the
+   * exposure was ours to weigh; the moment another organisation creates videos
+   * here it becomes a cross-tenant listing, where one customer's unapproved
+   * drafts are downloadable by anyone who finds the URL.
+   */
+  app.get('/demo/videos', owner.requireTenant(), (_req, res) => {
     const list = oneVideo.finished();
     res.json({
       count: list.length,
@@ -490,22 +849,10 @@ function createApp(opts = {}) {
     });
   });
 
-  app.get('/demo/videos/:slug/file', (req, res) => {
+  app.get('/demo/videos/:slug/file', owner.requireTenant(), (req, res) => {
     const file = oneVideo.fileForSlug(req.params.slug);
     if (!file) return res.status(404).type('text').send('No finished video by that name.');
-    const size = fs.statSync(file).size;
-    const range = req.headers.range;
-    res.set('Content-Type', 'video/mp4');
-    if (!range) {
-      res.set({ 'Content-Length': size, 'Accept-Ranges': 'bytes' });
-      return fs.createReadStream(file).pipe(res);
-    }
-    const m = /bytes=(\d*)-(\d*)/.exec(range) || [];
-    const start = Number(m[1] || 0);
-    const end = m[2] ? Number(m[2]) : size - 1;
-    res.status(206).set({ 'Content-Range': `bytes ${start}-${end}/${size}`,
-      'Accept-Ranges': 'bytes', 'Content-Length': end - start + 1 });
-    fs.createReadStream(file, { start, end }).pipe(res);
+    return streamFile(req, res, file);
   });
 
   const MAKE_FILE = path.join(__dirname, '..', 'prototypes', 'make-a-video.html');

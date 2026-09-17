@@ -222,6 +222,282 @@ async function authChecks() {
   }));
 }
 
+// ── 2. the money holes the LMS reported ──────────────────────────────────────
+
+const fs = require('fs');
+const os = require('os');
+
+const storeDirs = [];
+function storeEnv() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cq-http-'));
+  storeDirs.push(dir);
+  return dir;
+}
+
+/** A server with its own private job store, so tests cannot see each other. */
+function freshEnv(extra = {}) {
+  return {
+    ...BASE_ENV,
+    JOB_STORE_DIR: storeEnv(),
+    OWNER_COOKIE_SECRET: 'a-test-cookie-secret-long-enough-to-sign',
+    PIPELINE_MAX_APPROVABLE_USD: '5',
+    ...extra,
+  };
+}
+
+function freshStore(env) {
+  return require(path.join(__dirname, '..', 'server', 'lib', 'job-store'))
+    .open({ dir: env.JOB_STORE_DIR, env });
+}
+
+/** Create a job anonymously and return { jobId, cookie }. */
+async function makeJob(port, topic = 'a topic to teach') {
+  const r = await req(port, { method: 'POST', path: '/demo/make-video', body: { topic } });
+  assert(r.status === 202, `create failed: ${r.status} ${r.text}`);
+  return { jobId: r.json.jobId, cookie: cookieFrom(r.setCookie, 'cq_owner'), body: r.json };
+}
+
+/** Wait until the fake pipeline's promise has settled the job to `written`. */
+async function settle() {
+  for (let i = 0; i < 50; i++) {
+    await new Promise((r) => setImmediate(r));
+  }
+}
+
+async function moneyChecks() {
+  console.log('\n2. /produce and /approve are the calls that spend and publish');
+
+  await check('creating a script still needs no token, and binds a session',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      const r = await req(port, { method: 'POST', path: '/demo/make-video', body: { topic: 'how to mark a register' } });
+      assert(r.status === 202, `expected 202, got ${r.status}: ${r.text}`);
+      assert(cookieFrom(r.setCookie, 'cq_owner'), 'no ownership cookie was set');
+      assert(r.json.owner === 'anon', `expected an anon owner, got ${r.json.owner}`);
+      return 'free, and owned';
+    }); });
+
+  await check('an empty topic is a 400, not a burned attempt that fails minutes later',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      const r = await req(port, { method: 'POST', path: '/demo/make-video', body: { topic: '   ' } });
+      assert(r.status === 400, `expected 400, got ${r.status}`);
+      return '400 up front';
+    }); });
+
+  await check('THE HOLE: producing with no token is 401, not 202',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      const { jobId, cookie } = await makeJob(port);
+      await settle();
+      const r = await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/produce`, cookie });
+      assert(r.status === 401, `expected 401, got ${r.status}: ${r.text}`);
+      return 'the budget is behind a credential';
+    }); });
+
+  await check('THE HOLE: approving with no token is 401, not 202',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      const { jobId, cookie } = await makeJob(port);
+      await settle();
+      const r = await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/approve`, cookie });
+      assert(r.status === 401, `expected 401, got ${r.status}`);
+      return 'the channel is behind a credential';
+    }); });
+
+  await check('a leaked jobId alone cannot read the job',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      const { jobId, cookie } = await makeJob(port);
+      const mine = await req(port, { path: `/demo/make-video/${jobId}`, cookie });
+      assert(mine.status === 200, `the owner could not read their own job: ${mine.status}`);
+      const stranger = await req(port, { path: `/demo/make-video/${jobId}` });
+      assert(stranger.status === 404, `a stranger got ${stranger.status}, expected 404`);
+      return 'owner 200, stranger 404';
+    }); });
+
+  await check('a non-owner gets 404 identical to a job that never existed (no enumeration oracle)',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      const { jobId } = await makeJob(port);
+      const real = await req(port, { path: `/demo/make-video/${jobId}` });
+      const fake = await req(port, { path: '/demo/make-video/deadbeefdead' });
+      assert(real.status === fake.status, `statuses differ: ${real.status} vs ${fake.status}`);
+      assert(real.text === fake.text, `bodies differ:\n  ${real.text}\n  ${fake.text}`);
+      return 'indistinguishable';
+    }); });
+
+  await check('a tenant cannot produce another owner job until it claims it',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      const { jobId, cookie } = await makeJob(port);
+      await settle();
+      const auth = { authorization: `Bearer ${LMS_TOKEN}` };
+      const before = await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/produce`, headers: auth });
+      assert(before.status === 404, `expected 404 before claiming, got ${before.status}`);
+      const claim = await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/claim`, headers: auth, cookie });
+      assert(claim.status === 200, `claim failed: ${claim.status} ${claim.text}`);
+      const after = await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/produce`, headers: auth });
+      assert(after.status === 202, `expected 202 after claiming, got ${after.status}: ${after.text}`);
+      return 'claim transfers, then produce works';
+    }); });
+
+  await check('the same Idempotency-Key twice starts one run, not two',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      const { jobId, cookie } = await makeJob(port);
+      await settle();
+      const auth = { authorization: `Bearer ${LMS_TOKEN}` };
+      await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/claim`, headers: auth, cookie });
+      const h = { ...auth, 'idempotency-key': 'retry-abc-123' };
+      const first = await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/produce`, headers: h, body: {} });
+      const second = await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/produce`, headers: h, body: {} });
+      assert(first.status === 202, `first produce: ${first.status} ${first.text}`);
+      assert(second.status === 202, `second produce: ${second.status} ${second.text}`);
+      assert(second.headers['idempotency-replayed'] === 'true', 'the retry was not marked as a replay');
+      return 'replayed, not re-bought';
+    }); });
+
+  await check('a repeat produce with no key returns the run in flight, not a 409',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      const { jobId, cookie } = await makeJob(port);
+      await settle();
+      const auth = { authorization: `Bearer ${LMS_TOKEN}` };
+      await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/claim`, headers: auth, cookie });
+      await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/produce`, headers: auth, body: {} });
+      const again = await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/produce`, headers: auth, body: {} });
+      assert(again.status === 202, `expected 202, got ${again.status}: ${again.text}`);
+      assert(again.json.idempotent === true, 'the response did not say it was the existing run');
+      return '202 with the existing run';
+    }); });
+
+  await check('a tenant at its monthly ceiling gets 402, and is told what remains',
+    () => {
+      const env = freshEnv({
+        TENANTS_JSON: JSON.stringify([{ id: 'tiny', name: 'Tiny', token: LMS_TOKEN, monthlyUsd: 1 }]),
+      });
+      return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+        const { jobId, cookie } = await makeJob(port);
+        await settle();
+        const auth = { authorization: `Bearer ${LMS_TOKEN}` };
+        await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/claim`, headers: auth, cookie });
+        // The per-run budget is $5 and the monthly ceiling is $1, so the very
+        // first reservation cannot fit.
+        const r = await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/produce`, headers: auth, body: {} });
+        assert(r.status === 402, `expected 402, got ${r.status}: ${r.text}`);
+        assert(r.json.error === 'tenant_budget_exhausted', `wrong error: ${r.json.error}`);
+        assert(typeof r.json.remainingUsd === 'number', 'the refusal did not say what remains');
+        return `402, $${r.json.remainingUsd} left`;
+      });
+    });
+
+  await check('a 429 carries Retry-After so a client can back off',
+    () => {
+      const env = freshEnv({ ANON_MAKE_PER_HOUR: '1' });
+      return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+        const first = await req(port, { method: 'POST', path: '/demo/make-video', body: { topic: 'one' } });
+        const cookie = cookieFrom(first.setCookie, 'cq_owner');
+        const second = await req(port, { method: 'POST', path: '/demo/make-video', body: { topic: 'two' }, cookie });
+        assert(second.status === 429, `expected 429, got ${second.status}`);
+        assert(second.headers['retry-after'], 'no Retry-After header');
+        assert(second.headers['x-ratelimit-limit'] === '1', `wrong limit header: ${second.headers['x-ratelimit-limit']}`);
+        return `Retry-After ${second.headers['retry-after']}s`;
+      });
+    });
+
+  await check('a store that cannot record spend refuses to spend',
+    () => {
+      const env = freshEnv();
+      const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cq-ro-')), 'a-file');
+      fs.writeFileSync(f, 'x');
+      const broken = require(path.join(__dirname, '..', 'server', 'lib', 'job-store'))
+        .open({ dir: path.join(f, 'nope'), env: {} });
+      return withServer(env, { oneVideo: fakePipeline(), store: broken }, async (port) => {
+        const { jobId, cookie } = await makeJob(port);
+        await settle();
+        const auth = { authorization: `Bearer ${LMS_TOKEN}` };
+        await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/claim`, headers: auth, cookie });
+        const r = await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/produce`, headers: auth, body: {} });
+        assert(r.status === 503, `expected 503, got ${r.status}: ${r.text}`);
+        assert(r.json.error === 'ledger_unavailable', `wrong error: ${r.json.error}`);
+        return 'a limit it cannot record is not a limit';
+      });
+    });
+}
+
+// ── 3. the bridge, listing and callbacks ─────────────────────────────────────
+
+async function bridgeChecks() {
+  console.log('\n3. the job names its catalogue key, and jobs can be listed');
+
+  await check('/demo/jobs is tenant-scoped and needs a token',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      const anon = await req(port, { path: '/demo/jobs' });
+      assert(anon.status === 401, `expected 401 without a token, got ${anon.status}`);
+      const auth = { authorization: `Bearer ${LMS_TOKEN}` };
+      const mine = await req(port, { path: '/demo/jobs', headers: auth });
+      assert(mine.status === 200, `expected 200, got ${mine.status}`);
+      assert(Array.isArray(mine.json.jobs), 'no jobs array');
+      return `${mine.json.count} jobs`;
+    }); });
+
+  await check('a written job already names the slug its checkpoints will be under',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      const { jobId, cookie } = await makeJob(port, 'how to mark a register');
+      await settle();
+      const r = await req(port, { path: `/demo/make-video/${jobId}`, cookie });
+      assert(r.status === 200, `expected 200, got ${r.status}`);
+      assert(r.json.catalogue, 'no catalogue key on the job');
+      assert(r.json.catalogue.videoId, 'no videoId');
+      assert(/\/api\/v1\/videos\/.+\/checkpoints$/.test(r.json.catalogue.checkpointsUrl),
+        `wrong checkpoints url: ${r.json.catalogue.checkpointsUrl}`);
+      return r.json.catalogue.videoId;
+    }); });
+
+  await check('a callbackUrl to a metadata address is refused',
+    () => {
+      const env = freshEnv({ WEBHOOK_ALLOWED_HOSTS: 'hooks.example.edu' });
+      return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+        const auth = { authorization: `Bearer ${LMS_TOKEN}` };
+        const bad = await req(port, {
+          method: 'POST', path: '/demo/make-video', headers: auth,
+          body: { topic: 'x', callbackUrl: 'http://169.254.169.254/latest/meta-data/' },
+        });
+        assert(bad.status === 400, `expected 400, got ${bad.status}: ${bad.text}`);
+        const good = await req(port, {
+          method: 'POST', path: '/demo/make-video', headers: auth,
+          body: { topic: 'x', callbackUrl: 'https://hooks.example.edu/cq' },
+        });
+        assert(good.status === 202, `an allowlisted host was refused: ${good.status} ${good.text}`);
+        return 'metadata refused, allowlisted accepted';
+      });
+    });
+
+  await check('an anonymous caller may not register a callbackUrl',
+    () => {
+      const env = freshEnv({ WEBHOOK_ALLOWED_HOSTS: 'hooks.example.edu' });
+      return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+        const r = await req(port, {
+          method: 'POST', path: '/demo/make-video',
+          body: { topic: 'x', callbackUrl: 'https://hooks.example.edu/cq' },
+        });
+        assert(r.status === 401, `expected 401, got ${r.status}`);
+        return 'outbound requests need a named caller';
+      });
+    });
+
+  await check('/health reports the job store durability honestly',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      const r = await req(port, { path: '/health' });
+      assert(r.json.jobStore, 'no jobStore block on /health');
+      assert(r.json.jobStore.durability !== 'volume', 'claimed volume durability with no volume');
+      assert(r.json.tenants.count >= 1, 'no tenants reported');
+      assert(!r.text.includes(LMS_TOKEN), '/health leaked a token');
+      return `durability: ${r.json.jobStore.durability}`;
+    }); });
+
+  await check('the finished-videos listing is no longer open to anyone with the URL',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      const anon = await req(port, { path: '/demo/videos' });
+      assert(anon.status === 401, `expected 401, got ${anon.status}`);
+      const auth = await req(port, { path: '/demo/videos', headers: { authorization: `Bearer ${LMS_TOKEN}` } });
+      assert(auth.status === 200, `expected 200 with a token, got ${auth.status}`);
+      return 'credential required';
+    }); });
+}
+
 // ── run ───────────────────────────────────────────────────────────────────────
 
 (async () => {
@@ -230,6 +506,9 @@ async function authChecks() {
   console.log('='.repeat(64));
 
   await authChecks();
+  await moneyChecks();
+  await bridgeChecks();
+  for (const d of storeDirs) { try { fs.rmSync(d, { recursive: true, force: true }); } catch { /* best effort */ } }
 
   console.log(`\n${'-'.repeat(64)}`);
   console.log(`  ${pass} passed, ${failures.length} failed` + (skipped ? `, ${skipped} skipped` : ''));

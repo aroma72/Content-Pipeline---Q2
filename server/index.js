@@ -23,6 +23,11 @@ try { require('../orchestrator/lib/env').loadDotenv(); } catch { /* not fatal */
 const { config, readiness } = require('./lib/config');
 const tick = require('./lib/tick');
 const { createApp } = require('./app');
+const jobStore = require('./lib/job-store').shared();
+const jobs = require('./lib/jobs');
+const ledger = require('./lib/ledger');
+const owner = require('./lib/owner');
+const tenants = require('./lib/tenants');
 
 const app = createApp();
 
@@ -39,6 +44,46 @@ const server = app.listen(config.port, () => {
   if (!r.gemini) console.warn('[server] no GEMINI_API_KEY / GOOGLE_STUDIO_API_KEY — no art or voiceover');
   if (!r.budgetAuthorised) console.warn('[server] PIPELINE_BUDGET_USD is 0 — every request will refuse to spend');
   if (r.dryRun) console.log('[server] DRY RUN is on — the chain runs but nothing is spent or rendered');
+
+  // Say what the job store actually is, at boot, rather than letting a lost job
+  // be the thing that discovers it.
+  const store = jobStore.health();
+  console.log(`[server] job store: ${store.durability} at ${store.dir} (${store.jobs} jobs)`);
+  if (store.durability !== 'volume') console.warn(`[server] ${store.note}`);
+  if (store.error) console.warn(`[server] job store error: ${store.error}`);
+
+  const reg = tenants.registry().health();
+  console.log(`[server] tenants: ${reg.count} (${reg.ids.join(', ') || 'none'})`);
+  for (const e of reg.errors) console.warn(`[server] tenant config: ${e}`);
+  if (owner.usingEphemeralSecret()) {
+    console.warn('[server] OWNER_COOKIE_SECRET unset — anonymous demo sessions will not survive a restart');
+  }
+
+  // Reconcile what the last process left mid-flight. A job found `producing`
+  // had its promise die with that process; nothing will ever move it again.
+  const restored = jobs.restore({ store: jobStore });
+  if (restored.interrupted || restored.failed) {
+    console.warn(`[server] restored ${restored.loaded} jobs: `
+      + `${restored.interrupted} interrupted mid-produce, ${restored.failed} failed`);
+  }
+  const reconciled = ledger.reconcileOpen(jobStore, { jobs });
+  if (reconciled.closed) console.warn(`[server] closed ${reconciled.closed} open spend reservations`);
+
+  // One sweeper, not a timer per job. The old per-job timeout was armed at
+  // CREATION, so a produce running at the two-hour mark lost its record while it
+  // was still spending. This runs on the last transition instead.
+  const sweepMs = Number(process.env.JOB_STORE_SWEEP_MS) || 3600_000;
+  setInterval(() => {
+    try {
+      const r2 = jobStore.sweep();
+      jobStore.sweepIdem();
+      require('./lib/throttle').gc();
+      if (r2.removed.length) console.log(`[sweep] removed ${r2.removed.length} expired jobs`);
+      for (const id of r2.stuck) console.warn(`[sweep] job ${id} has not moved in over a week`);
+    } catch (e) {
+      console.error('[sweep]', e.message);
+    }
+  }, sweepMs).unref();
 
   tick.startLoop();
 });
