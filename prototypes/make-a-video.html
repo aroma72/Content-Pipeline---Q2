@@ -314,9 +314,59 @@ button.ghost:hover:not(:disabled){background:#F9FAFB;border-color:#9CA3AF}
     poll();
   });
 
+  /**
+   * The credential for the two calls that cost money.
+   *
+   * Writing a script needs nothing, so the page is usable without this. It is
+   * asked for at the moment it is first needed rather than up front, and held in
+   * sessionStorage so a reload does not re-prompt but closing the tab forgets it.
+   */
+  function apiToken(force) {
+    var t = null;
+    try { t = sessionStorage.getItem('cq_token'); } catch (e) { t = null; }
+    if (!t || force) {
+      t = window.prompt('Producing a video spends real money, so it needs an API token.\n\n'
+        + 'Ask Aroma Tahir for one. Writing and reading a script needs no token.');
+      if (!t) return null;
+      try { sessionStorage.setItem('cq_token', t.trim()); } catch (e) { /* private window */ }
+      t = t.trim();
+    }
+    return t;
+  }
+
+  function authed(token) {
+    return { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token };
+  }
+
+  /**
+   * Take ownership of this job before spending on it.
+   *
+   * The job was created anonymously and is bound to this browser session; the
+   * token identifies a different caller. Without this step the produce call
+   * would not recognise the job as ours.
+   */
+  async function claim(token) {
+    var res = await fetch('/demo/make-video/' + jobId + '/claim', {
+      method: 'POST', headers: authed(token),
+    });
+    if (res.ok) return { ok: true };
+    var body = {};
+    try { body = await res.json(); } catch (e) { /* no body */ }
+    if (res.status === 401 || res.status === 403) return { ok: false, badToken: true, message: body.message };
+    return { ok: false, message: body.message || 'This job could not be claimed.' };
+  }
+
   async function poll() {
     var job;
-    try { job = await (await fetch('/demo/make-video/' + jobId)).json(); }
+    var res;
+    try { res = await fetch('/demo/make-video/' + jobId); }
+    catch (e) { return setTimeout(poll, 5000); }
+    if (res.status === 404) {
+      return fail('This browser is not sending the session cookie for this page, so the '
+        + 'job it just started is no longer reachable. Check that cookies are enabled '
+        + 'for this site, then try again.');
+    }
+    try { job = await res.json(); }
     catch (e) { return setTimeout(poll, 5000); }
 
     if (job.status === 'failed') return fail(job.error || 'The run did not finish.');
@@ -389,7 +439,24 @@ button.ghost:hover:not(:disabled){background:#F9FAFB;border-color:#9CA3AF}
     $('p-status').className = 'status';
     $('p-status').innerHTML = '<span class="spin"></span>Starting\u2026';
     try {
-      var res = await fetch('/demo/make-video/' + jobId + '/produce', { method: 'POST' });
+      var token = apiToken(false);
+      if (!token) {
+        $('p-status').className = 'status err';
+        $('p-status').textContent = 'A token is needed to produce a video.';
+        $('produce').disabled = false;
+        return;
+      }
+      var taken = await claim(token);
+      if (!taken.ok) {
+        if (taken.badToken) apiToken(true);
+        $('p-status').className = 'status err';
+        $('p-status').textContent = taken.message || 'That token was not accepted.';
+        $('produce').disabled = false;
+        return;
+      }
+      var res = await fetch('/demo/make-video/' + jobId + '/produce', {
+        method: 'POST', headers: authed(token), body: '{}',
+      });
       var r = await res.json();
       if (!res.ok) {
         $('p-status').className = 'status err';
@@ -449,7 +516,16 @@ button.ghost:hover:not(:disabled){background:#F9FAFB;border-color:#9CA3AF}
     $('a-status').className = 'status';
     $('a-status').innerHTML = '<span class="spin"></span>Uploading\u2026';
     try {
-      var res = await fetch('/demo/make-video/' + jobId + '/approve', { method: 'POST' });
+      var token = apiToken(false);
+      if (!token) {
+        $('a-status').className = 'status err';
+        $('a-status').textContent = 'A token is needed to publish.';
+        $('approve').disabled = false;
+        return;
+      }
+      var res = await fetch('/demo/make-video/' + jobId + '/approve', {
+        method: 'POST', headers: authed(token), body: '{}',
+      });
       if (!res.ok) {
         var r = await res.json();
         $('a-status').className = 'status err';

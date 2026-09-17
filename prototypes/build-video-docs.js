@@ -24,6 +24,7 @@ if (!puppeteer) throw new Error('puppeteer not found in:\n  ' + PUPPET_CANDIDATE
 const DOCS = [
   { src: 'video-builder-concept.html',   out: 'Make-A-Video-Concept.pdf' },
   { src: 'video-builder-technical.html', out: 'Make-A-Video-Technical.pdf' },
+  { src: 'lms-reply-2026-09-17.html',     out: 'LMS-Reply-2026-09-17.pdf' },
 ];
 
 (async () => {

@@ -82,6 +82,38 @@ jobs:
           fi
           echo "✓ Eval dataset exists with $(find tests/eval_dataset -type d -name session_* | wc -l) sessions"
 
+  node:
+    name: Node — server, store and regression tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          # build-catalogue-manifest --check compares the manifest against git,
+          # so a shallow clone would make it fail for the wrong reason.
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Catalogue manifest is current
+        # The catalogue tells the LMS which rows survive a redeploy. It cannot be
+        # computed at runtime (.dockerignore excludes .git), so a stale manifest
+        # would silently mislabel a new video as ephemeral.
+        run: node scripts/build-catalogue-manifest.js --check
+
+      - name: Tests
+        # Runs without a .env: the tests that need one skip rather than fail.
+        run: npm test
+
   lint:
     name: Code Quality Checks
     runs-on: ubuntu-latest
@@ -115,12 +147,12 @@ jobs:
     name: Post Results
     runs-on: ubuntu-latest
     if: always()
-    needs: [test, lint]
+    needs: [test, node, lint]
 
     steps:
       - name: Check test results
         run: |
-          if [ "${{ needs.test.result }}" = "success" ] && [ "${{ needs.lint.result }}" = "success" ]; then
+          if [ "${{ needs.test.result }}" = "success" ] && [ "${{ needs.node.result }}" = "success" ] && [ "${{ needs.lint.result }}" = "success" ]; then
             echo "✅ All checks passed"
           else
             echo "❌ Some checks failed"

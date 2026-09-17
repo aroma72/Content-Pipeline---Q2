@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Reply — the creation API asks of 17 September</title>
+<style>
+@page{ size:A4; margin:14mm 15mm 13mm; }
+:root{
+  --ink:#26231F; --muted:#615A50; --line:#CFC8BA; --line-soft:#E4DED2;
+  --panel:#FAF8F3; --accent:#8A5A2B; --good:#4A7238; --bad:#B0572F;
+  --sans:'Segoe UI',Arial,sans-serif; --mono:Consolas,'Courier New',monospace;
+  --serif:Georgia,'Times New Roman',serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{font-family:var(--sans);font-size:9.3pt;line-height:1.5;color:var(--ink);background:#fff}
+.page{page-break-after:always}
+.page:last-child{page-break-after:auto}
+.page.cont .eyebrow,.page.cont h1,.page.cont .lede{display:none}
+.page.cont section:first-of-type{margin-top:0}
+.rh{display:flex;justify-content:space-between;align-items:baseline;
+  border-bottom:.6pt solid var(--line);padding-bottom:5pt;margin-bottom:13pt;
+  font-family:var(--mono);font-size:7pt;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.rh b{color:var(--accent);font-weight:500}
+.eyebrow{font-family:var(--mono);font-size:7.5pt;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--accent);margin-bottom:7pt}
+h1{font-family:var(--serif);font-weight:700;font-size:24pt;line-height:1.07;margin-bottom:9pt}
+.lede{font-size:10.6pt;line-height:1.48;color:var(--muted);max-width:150mm}
+.lede strong{color:var(--ink);font-weight:500}
+h2{font-size:12pt;font-weight:600;margin-bottom:4pt;letter-spacing:-.2pt}
+h3{font-size:9.8pt;font-weight:600;margin-bottom:3pt}
+.sub{color:var(--muted);font-size:8.9pt;margin-bottom:9pt;max-width:155mm}
+section+section{margin-top:14pt}
+.body{max-width:158mm}
+.body p{margin-bottom:6pt}
+b,strong{font-weight:600}
+em{font-style:italic;color:var(--muted)}
+
+pre{font-family:var(--mono);font-size:7.7pt;line-height:1.42;background:#F7F4ED;
+  border:.5pt solid var(--line-soft);border-left:2pt solid var(--accent);
+  padding:7pt 9pt;margin:7pt 0;white-space:pre-wrap;word-break:break-word}
+pre .c{color:var(--muted)}
+code{font-family:var(--mono);font-size:8.3pt;background:#F3EFE7;padding:.5pt 2.5pt}
+
+table{border-collapse:collapse;width:100%;margin-top:6pt}
+th,td{text-align:left;vertical-align:top;padding:4.5pt 7pt 4.5pt 0;
+  border-bottom:.5pt solid var(--line-soft);font-size:8.7pt;line-height:1.42}
+th{font-family:var(--mono);font-size:6.8pt;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--muted);border-bottom:.6pt solid var(--line);padding-bottom:4pt}
+td.n{font-family:var(--mono);font-size:7.6pt;width:12mm;color:var(--accent);font-weight:600}
+td.k{font-family:var(--mono);font-size:7.8pt;width:44mm;word-break:normal;overflow-wrap:anywhere}
+td.s{width:22mm;font-family:var(--mono);font-size:7.2pt;letter-spacing:.06em;text-transform:uppercase}
+td.s.done{color:var(--good)}
+td.s.you{color:var(--accent)}
+td.s.open{color:var(--bad)}
+
+.panel{border:.6pt solid var(--line);background:var(--panel);padding:9pt 10pt;margin-top:8pt}
+.panel h3{margin-bottom:3pt}
+.panel p{font-size:8.6pt;color:var(--muted)}
+.warn{border-left:2pt solid var(--bad);background:#FDF4F0;padding:8pt 10pt;margin:8pt 0}
+.warn .t{font-weight:600;font-size:9.3pt;margin-bottom:2pt;color:#8C3F1D}
+.warn .d{font-size:8.5pt;color:var(--muted);line-height:1.42}
+.ok{border-left:2pt solid var(--good);background:#F3F7F0;padding:8pt 10pt;margin:8pt 0}
+.ok .t{font-weight:600;font-size:9.3pt;margin-bottom:2pt;color:#3D6130}
+.ok .d{font-size:8.5pt;color:var(--muted);line-height:1.42}
+
+ul{list-style:none;margin:5pt 0}
+li{position:relative;padding-left:10pt;margin-bottom:4pt;font-size:8.8pt;line-height:1.42}
+li:before{content:'';position:absolute;left:0;top:4pt;width:3.2pt;height:3.2pt;border:.7pt solid var(--accent)}
+ol{margin:5pt 0 5pt 14pt}
+ol li{padding-left:0;list-style:decimal}
+ol li:before{display:none}
+
+.foot{margin-top:12pt;border-top:.5pt solid var(--line-soft);padding-top:5pt;
+  font-family:var(--mono);font-size:6.8pt;letter-spacing:.07em;color:var(--muted);
+  display:flex;justify-content:space-between}
+</style>
+</head>
+<body>
+
+<!-- ══ 1 ══════════════════════════════════════════════════════ -->
+<div class="page">
+  <div class="rh"><span>Taleemabad University · <b>Make a Video</b></span><span>Reply · 17 Sep 2026</span></div>
+  <div class="eyebrow">Reply to the creation-API document of 17 September</div>
+  <h1>Item 1 is done.<br>So are 2 to 6, and 8 to 14.</h1>
+  <p class="lede">You asked for one thing above all others: that <code>/demo/*</code> stop letting a
+  <code>jobId</code> spend our budget and publish to our channel. <strong>That is built, tested and
+  on a branch.</strong> So is almost everything else on your list. This document says what changed,
+  answers the six questions that were only ever questions, and names the four things that still need
+  a person rather than a commit.</p>
+
+  <div class="ok">
+    <div class="t">You were right on all three counts, and one of them was worse than you thought.</div>
+    <div class="d">The <code>404</code> you measured was not a broken auth check — there was no auth
+    on <code>/demo</code> at all, and no catch-all, so unmatched paths fell through to Express. The
+    TTL was worse than "two hours": it was a timer armed at <em>creation</em>, so a produce run
+    started 110 minutes into a job lost its record at 120 minutes <b>while it carried on
+    spending</b>. And the rate limiting was inverted exactly as you described.</div>
+  </div>
+
+  <section>
+    <h2>1 · What changed</h2>
+    <p class="sub">Every row is covered by a test that fails if it regresses. The surface had none
+    before this; it now has 48.</p>
+    <table>
+      <tr><th>Your item</th><th>What it does now</th></tr>
+      <tr><td class="k">2.1 Authenticate /demo/*</td><td><b>Split by cost, not by route.</b> Writing and reading a script buys nothing, so those stay open and your instructors can read before you spend. <code>/produce</code> and <code>/approve</code> require a bearer token. Separately, <b>every job is bound to its creator</b> — so a leaked <code>jobId</code> alone now reads nothing, produces nothing and publishes nothing.</td></tr>
+      <tr><td class="k">2.2 Throttle produce/approve</td><td>Limits are <b>per tenant</b>, not per IP. Your point landed: a per-IP limit is a per-organisation limit for anyone behind one egress, so our "6 per hour" was six per hour for your whole university. Every <code>429</code> now carries <code>Retry-After</code> and <code>X-RateLimit-*</code>.</td></tr>
+      <tr><td class="k">2.3 Idempotent /produce</td><td><code>Idempotency-Key</code> accepted, scoped to (tenant, job, key), written <em>before</em> dispatch. A replay returns the original response with <code>Idempotency-Replayed: true</code>. Without a key, a repeat on a job already producing returns <b>202 with the existing run</b> — the old 409 is gone.</td></tr>
+      <tr><td class="k">2.4 Persist job state</td><td>Jobs are files, not a Map. They survive a restart today. They survive a <em>redeploy</em> the moment a volume is attached — see §4, item A.</td></tr>
+      <tr><td class="k">2.5 TTL from the terminal state</td><td>Seven days from the <b>last transition</b>. A job stuck in <code>producing</code> is reported, never deleted quietly.</td></tr>
+      <tr><td class="k">2.6 Webhook or cursor</td><td><b>Both.</b> <code>GET /demo/jobs?since=&amp;cursor=</code>, and an optional <code>callbackUrl</code> at creation, HMAC-signed with the timestamp inside the signed payload.</td></tr>
+      <tr><td class="k">2.8 Structured <code>by</code></td><td>The tenant is recorded from your <em>credential</em>, not from the field. Your instructor's name is carried alongside it. Nothing you approve is filed under Aroma's name again.</td></tr>
+      <tr><td class="k">2.9 / 2.10 The bridge</td><td>A job now names the catalogue key it will appear under; a catalogue row now carries <code>youtube.url</code>. See §3.</td></tr>
+      <tr><td class="k">2.11 Health route</td><td><code>GET /api/v1/health</code>, unauthenticated, no lesson data. Point a monitor at it and it will not go red when a token rotates.</td></tr>
+    </table>
+  </section>
+
+  <div class="foot"><span>Make a Video · Reply to the asks of 17 September</span><span>Page 1 of 6</span></div>
+</div>
+
+<!-- ══ 2 ══════════════════════════════════════════════════════ -->
+<div class="page cont">
+  <div class="rh"><span>Taleemabad University · <b>Make a Video</b></span><span>Reply · 17 Sep 2026</span></div>
+
+  <section>
+    <h2>2 · The six questions</h2>
+    <p class="sub">These cost nothing to answer and should not have waited.</p>
+
+    <h3>2.1 · Does the playable copy include the 2.6-second intro? (your items 9, §2.10)</h3>
+    <div class="body">
+      <p><b><code>atSeconds</code> already includes it. Do not add it yourself.</b> It is measured
+      from the start of <code>&lt;videoId&gt;_final.mp4</code> — the file we serve and the file we
+      upload. <code>lessonAtSeconds</code> excludes it, and exists only so the two can never be
+      silently confused.</p>
+      <p>Measured, not asserted. There is now a test that probes the real bumper and the real
+      deliverable on every run:</p>
+    </div>
+<pre>intro.mp4                       2.600 s   (ffmpeg, measured)
+bumper-durations.json           2.600 s   (the constant the container uses)
+atSeconds - lessonAtSeconds     2.600 s   (every checkpoint, every video)</pre>
+    <div class="warn">
+      <div class="t">Read <code>timing.introOffsetSource</code>. Never assume 2.6.</div>
+      <div class="d"><code>probed</code> — measured from that video's own intro.
+      <code>brand-constant</code> — the committed measurement, and the usual answer in production,
+      where <code>.mp4</code> files are not in the image. <code>no-bumpers</code> — delivered bare,
+      so the offset is genuinely <b>0</b> and <code>atSeconds === lessonAtSeconds</code>; adding 2.6
+      to one of these fires every checkpoint 2.6 s late. <code>assumed</code> — and that is exactly
+      the case where <code>timing.trusted</code> is <code>false</code>.</div>
+    </div>
+
+    <h3>2.2 · Are slugs immutable? (your item 13)</h3>
+    <div class="body">
+      <p><b>Yes. What churned was existence, not identity.</b> A slug is minted once, before the
+      video is made, and is never rewritten. We went and checked <code>…-r2fi</code> specifically.</p>
+      <p>Here is what actually happened. Videos made through <code>/demo/make-video</code> are
+      written into the container's filesystem at runtime, and our image build strips
+      <code>out/</code>, <code>art/</code> and every <code>.mp4</code>. Exactly one such folder is
+      committed to our repository. <b>So a redeploy took them, and the slug was never touched.</b>
+      Because a re-run of the same topic draws a fresh timestamp suffix, a lesson re-made afterwards
+      reappears under a new <code>videoId</code> — which from where you are standing is
+      indistinguishable from a rename.</p>
+      <p>You should not have had to work that out from the outside, and you should not have to
+      again. Every catalogue row now says so itself:</p>
+    </div>
+<pre>"durability": "committed"   <span class="c">in our repository; survives a redeploy. Safe to link.</span>
+"durability": "ephemeral"   <span class="c">made at runtime; WILL disappear. Do not link a block to it.</span>
+"durability": "unknown"     <span class="c">we could not tell. Treat as ephemeral.</span></pre>
+    <div class="body">
+      <p>Of the 24 rows in the catalogue today, 23 are <code>committed</code>. We would rather tell
+      you <code>unknown</code> than guess: a row wrongly called durable is a dead question inside one
+      of your courses, and a learner finds it before either of us does.</p>
+    </div>
+
+  </section>
+
+  <div class="foot"><span>Make a Video · Reply to the asks of 17 September</span><span>Page 2 of 6</span></div>
+</div>
+
+<!-- ══ 3 ══════════════════════════════════════════════════════ -->
+<div class="page cont">
+  <div class="rh"><span>Taleemabad University · <b>Make a Video</b></span><span>Reply · 17 Sep 2026</span></div>
+
+  <section>
+    <h3>2.3 · What do <code>questionStyle</code> and <code>pausesVideo</code> mean? (your item 11)</h3>
+    <table>
+      <tr><th>questionStyle</th><th>pausesVideo</th><th>What the player must do</th></tr>
+      <tr><td class="k">popup</td><td class="k">true</td><td>The question is <b>never drawn and never spoken</b>. The popup is the only place the learner will ever see it — skip it and they miss it entirely. Pause, ask, require an answer, show feedback, resume. This is every current video.</td></tr>
+      <tr><td class="k">on-screen</td><td class="k">false</td><td>Older format: the question and its answer are drawn into the video itself. <b>Do not pause over these</b> — the video answers itself. Use <code>onScreenUntilSeconds</code> if you want to mirror it.</td></tr>
+    </table>
+    <div class="body">
+      <p><code>questionStyle</code> is derived, not stored: a video is <code>popup</code> when
+      <em>every</em> one of its checkpoints has <code>rendersInVideo: false</code>. Your 17/8 split
+      moving from 18/6 is the older on-screen videos being re-cut into the popup format.</p>
+    </div>
+  </section>
+
+  <div class="foot"><span>Make a Video · Reply to the asks of 17 September</span><span>Page 3 of 6</span></div>
+</div>
+
+<!-- ══ 4 ══════════════════════════════════════════════════════ -->
+<div class="page cont">
+  <div class="rh"><span>Taleemabad University · <b>Make a Video</b></span><span>Reply · 17 Sep 2026</span></div>
+
+  <section>
+    <h3>2.4 · Is <code>timingTrusted: false</code> transient, and can it flip after linking? (item 12)</h3>
+    <div class="body">
+      <p><b>It can flip in both directions, and yes, after you have linked.</b> Two independent
+      causes, and they behave differently:</p>
+      <ul>
+        <li><b>A missing beat length.</b> <code>durations.json</code> is written by the voiceover
+        step; until it exists, or if any non-checkpoint beat is missing from it, every later time is
+        a guess. This is <em>transient</em> — it becomes true when the video is next rendered.</li>
+        <li><b>The intro offset was guessed</b> (<code>introOffsetSource: "assumed"</code>), meaning
+        we could neither probe the bumper nor read the committed constant. Rarer, and a
+        misconfiguration on our side rather than a stage not yet run.</li>
+      </ul>
+      <p>Your three untrusted videos changing identity between Tuesday and Wednesday is the first
+      cause: those are videos mid-pipeline, not videos that broke. <b>Treat it as a live field, not a
+      property of the link.</b> Re-read it when you serve, and refuse to fire a checkpoint whose
+      <code>timing.trusted</code> is false at that moment, rather than at the moment you mapped it.</p>
+    </div>
+
+    <h3>2.5 · <code>catalogueUpdatedAt</code>, and is the ETag payload-derived? (item 14)</h3>
+    <div class="body">
+      <p><b>The ETag is payload-derived</b> — a SHA-1 of the exact serialised body — so it is stable
+      while the content is and changes only when something real does. Two cautions, because we would
+      rather you hear them from us than discover them at 100 rows:</p>
+      <ul>
+        <li>It is compared as a raw string. A <b>weak</b> (<code>W/"…"</code>) or multi-value
+        <code>If-None-Match</code> will never match, and you will get a 200 every time.</li>
+        <li>It covers the whole response including <code>count</code>, so any row changing changes
+        the catalogue ETag.</li>
+      </ul>
+      <p><code>catalogueUpdatedAt</code> is now on every row, derived from the files the payload is
+      actually built from, so it cannot claim a freshness the content does not have.</p>
+    </div>
+
+  </section>
+
+  <div class="foot"><span>Make a Video · Reply to the asks of 17 September</span><span>Page 4 of 6</span></div>
+</div>
+
+<!-- ══ 5 ══════════════════════════════════════════════════════ -->
+<div class="page cont">
+  <div class="rh"><span>Taleemabad University · <b>Make a Video</b></span><span>Reply · 17 Sep 2026</span></div>
+
+  <section>
+    <h3>2.6 · The bridge between the two APIs (items 9 and 10)</h3>
+    <div class="body">
+      <p>You described this exactly right: two islands, and a human crossing by eye. Both halves are
+      closed, in both directions.</p>
+    </div>
+<pre><span class="c"># A job now names the catalogue key it will appear under —</span>
+"catalogue": {
+  "videoId": "how-to-mark-a-register-ab12",
+  "path": "made/how-to-mark-a-register-ab12",
+  "checkpointsUrl": "/api/v1/videos/how-to-mark-a-register-ab12/checkpoints"
+}
+
+<span class="c"># — and a catalogue row now carries the playable copy.</span>
+"youtube": { "url": "https://youtu.be/…", "videoId": "…", "privacyStatus": "unlisted" },
+"youtubeVideoId": "…"</pre>
+    <div class="warn">
+      <div class="t">Two fields are called <code>videoId</code> and they are not the same thing.</div>
+      <div class="d">The row's <code>videoId</code> is our folder name and is what
+      <code>/checkpoints</code> takes. <code>youtube.videoId</code> is a YouTube id. We nested it
+      rather than flattening it for precisely this reason — join on <code>path</code>, never on
+      <code>videoId</code>.</div>
+    </div>
+    <div class="body">
+      <p>One honest limit: we have only ever recorded two publishes, both from August, and neither is
+      in a folder that has checkpoints — so <code>youtube</code> will read <code>null</code> on every
+      row today. Everything published from now on carries it. We are not going to backfill something
+      we do not have the records for and pretend otherwise.</p>
+    </div>
+  </section>
+
+  <div class="foot"><span>Make a Video · Reply to the asks of 17 September</span><span>Page 5 of 6</span></div>
+</div>
+
+<!-- ══ 6 ══════════════════════════════════════════════════════ -->
+<div class="page cont">
+  <div class="rh"><span>Taleemabad University · <b>Make a Video</b></span><span>Reply · 17 Sep 2026</span></div>
+
+  <section>
+    <h2>3 · What you will need to change</h2>
+    <p class="sub">Small, and all of it in the direction you were already building.</p>
+    <ol>
+      <li><b>Send your token on <code>/produce</code> and <code>/approve</code>.</b> The same bearer
+      you already use for <code>/api/v1/*</code>, or a second one if you would rather — say which and
+      we will mint it.</li>
+      <li><b>Call <code>/claim</code> once</b> between creating a job and producing it, if the job was
+      created from a browser rather than your server. Server-to-server, you will not need it: a job
+      created with your token is already yours.</li>
+      <li><b>Read <code>durability</code> before you bind a lesson block.</b> This is the one that
+      stops §1 of your document happening again.</li>
+      <li><b>Drop the intro-offset arithmetic</b> if you have any. <code>atSeconds</code> is already
+      right.</li>
+      <li>Optionally, <b>delete your poller</b> and give us a <code>callbackUrl</code>. We need to
+      allowlist your host first — send it and it is one variable.</li>
+    </ol>
+    <div class="ok">
+      <div class="t">Your §3 items 3 and 6 can go.</div>
+      <div class="d">Copying the MP4 out of our container, and the two-failed-lookups vanished-job
+      detector, were both compensating for the TTL. Keep the job mirror, the script snapshot, the
+      proxy and your own spend controls — we would keep all four in your position. The proxy in
+      particular is still worth it even now that the <code>jobId</code> is no longer a credential.</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>4 · What is still open, and who has it</h2>
+    <table>
+      <tr><th>#</th><th>What</th><th>Who</th></tr>
+      <tr><td class="n">A</td><td><b>Attach a Railway volume.</b> Everything above works without it, but a redeploy still clears jobs until it exists. The code needs no change — the store moves onto the volume by itself.</td><td class="s you">Aroma</td></tr>
+      <tr><td class="n">B</td><td><b>Rotate the API token</b> and send the replacement outside chat. Your item 15, and you are right that it is overdue.</td><td class="s you">Aroma</td></tr>
+      <tr><td class="n">C</td><td><b>A Taleemabad University YouTube channel</b> (your §2.7). We cannot solve this in code — it needs a channel and a credential we do not hold. <b>Your offer to create one and hand us the credential is the cheapest answer and we would like to take it.</b></td><td class="s open">Joint</td></tr>
+      <tr><td class="n">D</td><td><b>Per-tenant budgets are built</b> — your monthly ceiling is enforced before a run starts, and <code>GET /demo/spend</code> shows you what remains, so a 402 is never a surprise. What we still need from you is the <b>number</b>.</td><td class="s open">Joint</td></tr>
+      <tr><td class="n">E</td><td><code>series</code> → module mapping, six series (your item 16). Still ours to send.</td><td class="s open">Joint</td></tr>
+      <tr><td class="n">F</td><td>The August content-write schema (your item 17). Open since 10 August; we have not forgotten it.</td><td class="s you">Aroma</td></tr>
+    </table>
+    <div class="body">
+      <p>On your §2.2 footnote: thank you for not spoofing <code>X-Forwarded-For</code>. You were
+      right that it would have worked — we trusted the whole header. That is fixed, and the limits
+      that matter are keyed on your credential now rather than on an address, so the question does
+      not arise again.</p>
+    </div>
+  </section>
+
+  <div class="panel">
+    <h3>One thing to expect</h3>
+    <p>The public demo page can no longer spend money on an anonymous click — it asks for a token at
+    the Produce button. That is deliberate, and it is the same change as item 1. If you have handed
+    that link to anyone, tell them it is now a way to read a script for free, not a way to make a
+    video.</p>
+  </div>
+
+  <div class="foot"><span>Make a Video · Reply to the asks of 17 September</span><span>Page 6 of 6</span></div>
+</div>
+
+</body>
+</html>
