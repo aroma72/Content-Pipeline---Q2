@@ -11,8 +11,14 @@
  * answer key. The index at GET /api/v1 is public and carries no lesson data, so
  * a developer can discover the surface without a credential.
  *
- * Fail closed. With no CONTENT_API_TOKEN set, the data routes answer 503 rather
- * than serving openly. A misconfigured deploy must not silently become public.
+ * Fail closed. With no credential configured at all -- neither CONTENT_API_TOKEN
+ * nor TENANTS_JSON -- the data routes answer 503 rather than serving openly. A
+ * misconfigured deploy must not silently become public.
+ *
+ * Who is calling. Every authenticated route resolves the bearer token to a
+ * tenant (see tenants.js) and leaves it on req.tenant, so spend and approvals
+ * can be attributed to the organisation that asked for them rather than all
+ * landing under Aroma's name.
  *
  * Calling pattern. Prefer server-to-server: the LMS backend fetches the payload
  * with the token and hands its own page only what that learner needs. A browser
@@ -24,19 +30,10 @@
 const express = require('express');
 const checkpoints = require('./checkpoints');
 
-const TOKEN = () => process.env.CONTENT_API_TOKEN || '';
+const tenants = require('./tenants');
+
 const ORIGINS = () => (process.env.CONTENT_API_ORIGINS || '')
   .split(',').map((s) => s.trim()).filter(Boolean);
-
-/** Constant-time compare, so a wrong token cannot be found byte by byte. */
-function tokenMatches(supplied) {
-  const expected = TOKEN();
-  if (!expected || !supplied) return false;
-  const a = Buffer.from(supplied);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length) return false;
-  return require('crypto').timingSafeEqual(a, b);
-}
 
 function bearerOf(req) {
   const h = req.get('authorization') || '';
@@ -46,22 +43,57 @@ function bearerOf(req) {
   return (req.get('x-api-key') || '').trim();
 }
 
+/**
+ * Resolve the caller to a tenant, or refuse.
+ *
+ * Sets `req.tenant` on the way through, so every route downstream can attribute
+ * what it does to somebody. The matching itself lives in tenants.js -- this only
+ * decides what a failure looks like.
+ *
+ * Still fails closed with 503 when NO credential is configured at all. That
+ * distinction matters: 503 means the server is misconfigured, 401 means your
+ * token is wrong, and collapsing them sends the next person to the wrong place.
+ */
 function requireToken(req, res, next) {
-  if (!TOKEN()) {
+  const reg = tenants.registry();
+  if (!reg.configured) {
     return res.status(503).json({
       error: 'api_not_configured',
-      message: 'CONTENT_API_TOKEN is not set on the server, so the checkpoint API '
-        + 'is disabled. It fails closed rather than serving answer keys openly.',
+      message: 'No API credential is configured on this server (CONTENT_API_TOKEN or '
+        + 'TENANTS_JSON), so the API is disabled. It fails closed rather than '
+        + 'serving answer keys openly.',
     });
   }
-  if (!tokenMatches(bearerOf(req))) {
+  const tenant = reg.match(bearerOf(req));
+  if (!tenant) {
     res.set('WWW-Authenticate', 'Bearer realm="content-queen"');
     return res.status(401).json({
       error: 'unauthorized',
-      message: 'Send the token as: Authorization: Bearer <CONTENT_API_TOKEN>',
+      message: 'Send your token as: Authorization: Bearer <token>',
     });
   }
+  req.tenant = tenant;
   return next();
+}
+
+/**
+ * Require a tenant that additionally holds a named scope.
+ *
+ * A scope is refused with 403, not 404: unlike a job id, the existence of an
+ * endpoint is not a secret, and telling a caller their credential lacks a
+ * permission is the only way they can ask for the right one.
+ */
+function requireScope(scope) {
+  return (req, res, next) => requireToken(req, res, () => {
+    if (scope && !req.tenant.scopes.has(scope)) {
+      return res.status(403).json({
+        error: 'forbidden',
+        message: `This credential does not carry the '${scope}' scope.`,
+        tenant: req.tenant.id,
+      });
+    }
+    return next();
+  });
 }
 
 /** CORS only for explicitly allowlisted origins. Never a wildcard. */
@@ -98,7 +130,7 @@ function build() {
       service: 'content-queen checkpoint api',
       version: 'v1',
       auth: 'Authorization: Bearer <token>  (ask Aroma Tahir for CONTENT_API_TOKEN)',
-      configured: Boolean(TOKEN()),
+      configured: tenants.registry().configured,
       endpoints: [
         { method: 'GET', path: '/api/v1', auth: false,
           description: 'This index.' },
@@ -388,4 +420,4 @@ function build() {
   return router;
 }
 
-module.exports = { build, requireToken, cors };
+module.exports = { build, requireToken, requireScope, cors, bearerOf };

@@ -17,11 +17,23 @@ const path = require('path');
 
 let loaded = false;
 
-function loadDotenv() {
-  if (loaded) return;
+/**
+ * @param {{from?: string, force?: boolean}} [opts]
+ *   from  - directory to start walking up from. Defaults to this file's own,
+ *           which is the only behaviour production uses.
+ *   force - load again even if it has already run. The memo exists so twenty
+ *           requires do not re-read the file; a test proving the parser needs to
+ *           bypass it, and had no way to.
+ *
+ * Both default to the previous behaviour exactly, so the two existing callers
+ * (server/index.js and orchestrator/run.js) pass nothing and are unaffected.
+ */
+function loadDotenv(opts = {}) {
+  const { from = __dirname, force = false } = opts;
+  if (loaded && !force) return;
   loaded = true;
 
-  let dir = __dirname;
+  let dir = from;
   for (let i = 0; i < 6; i++) {
     const p = path.join(dir, '.env');
     if (fs.existsSync(p)) {

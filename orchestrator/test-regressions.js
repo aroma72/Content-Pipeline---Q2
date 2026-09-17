@@ -18,13 +18,35 @@ const PATHS_REPO = path.join(__dirname, '..');
 const produceInternals = require('./lib/stages/produce')._internals;
 
 let pass = 0;
+let skipped = 0;
 const failures = [];
+
+/**
+ * A third outcome, because two were not enough.
+ *
+ * Some tests need something the machine may legitimately not have -- a .env
+ * file, a rendered video, a network. With only PASS and FAIL the choice was to
+ * fail the suite on a clean checkout, or to weaken the assertion until it proved
+ * nothing. Both are worse than saying plainly that the test did not run.
+ *
+ * A skip is NOT a pass: it is counted and reported separately, so a suite that
+ * has quietly stopped testing anything is visible rather than green.
+ */
+const skip = (why) => ({ __skip: true, why });
+
+function report(name, detail) {
+  if (detail && detail.__skip) {
+    skipped++;
+    console.log(`  SKIP  ${name}  (${detail.why})`);
+    return;
+  }
+  pass++;
+  console.log(`  PASS  ${name}${detail ? `  (${detail})` : ''}`);
+}
 
 function check(name, fn) {
   try {
-    const detail = fn();
-    pass++;
-    console.log(`  PASS  ${name}${detail ? `  (${detail})` : ''}`);
+    report(name, fn());
   } catch (e) {
     failures.push({ name, message: e.message });
     console.log(`  FAIL  ${name}\n          ${e.message}`);
@@ -32,9 +54,7 @@ function check(name, fn) {
 }
 async function checkAsync(name, fn) {
   try {
-    const detail = await fn();
-    pass++;
-    console.log(`  PASS  ${name}${detail ? `  (${detail})` : ''}`);
+    report(name, await fn());
   } catch (e) {
     failures.push({ name, message: e.message });
     console.log(`  FAIL  ${name}\n          ${e.message}`);
@@ -46,11 +66,14 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
 console.log('\n1. .env loading (was: "no credentials" while the key sat in .env)');
 
 check('loadDotenv populates keys from .env', () => {
+  const envPath = path.join(__dirname, '..', '.env');
+  // CI and a fresh clone have no .env, and should not. Skipping says so plainly.
+  // The loader itself is proved against a temp file in test-store.js, which
+  // needs no secret and therefore runs everywhere.
+  if (!fs.existsSync(envPath)) return skip('no .env on this machine (CI or a fresh clone)');
   delete process.env.ANTHROPIC_API_KEY;
   delete process.env.GEMINI_API_KEY;
-  const envPath = path.join(__dirname, '..', '.env');
-  assert(fs.existsSync(envPath), '.env not present -- cannot test');
-  require('./lib/env').loadDotenv();
+  require('./lib/env').loadDotenv({ force: true });
   assert(process.env.ANTHROPIC_API_KEY, 'ANTHROPIC_API_KEY not set after loadDotenv');
   return `key len ${process.env.ANTHROPIC_API_KEY.length}`;
 });
@@ -2137,7 +2160,7 @@ async function llmChecks() {
   namingChecks();
 
   console.log(`\n${'-'.repeat(64)}`);
-  console.log(`  ${pass} passed, ${failures.length} failed`);
+  console.log(`  ${pass} passed, ${failures.length} failed` + (skipped ? `, ${skipped} skipped` : ''));
   if (failures.length) {
     for (const f of failures) console.log(`    - ${f.name}: ${f.message}`);
     process.exitCode = 1;
