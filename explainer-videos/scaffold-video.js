@@ -34,7 +34,7 @@ const FILES = [
   'stitch-brand.js', 'segment-all.py', 'package.json',
   // Imagen is dead on the current key; the Gemini generator is the working path.
   'generate-lesson-art-gemini.js', 'generate-lesson-video-omni.js',
-  'qa-info.js', 'qa-visuals.js', 'qa-art.js', 'qa-clips.js', 'qa-cutouts.js',
+  'qa-info.js', 'qa-checkpoint.js', 'qa-visuals.js', 'qa-art.js', 'qa-clips.js', 'qa-cutouts.js',
 ];
 const DIRS = ['animation', 'lib'];
 

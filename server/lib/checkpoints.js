@@ -230,6 +230,13 @@ function forPath(relPath) {
       // the video, so the popup is the only place the learner ever sees it.
       pausesVideo: true,
       resumeAfterFeedback: true,
+      // The learner must CHOOSE an option before playback continues. Not a dismissible
+      // overlay, no "skip", no clicking outside to close, no seeking past it — the
+      // question is the gate, which is the only reason a checkpoint changes behaviour
+      // rather than decorating it.
+      requiresAnswer: true,
+      blocking: true,
+      allowSkip: false,
       resumeAtSeconds: sec(lessonAt + offset.seconds),
       rendersInVideo,
       pause,

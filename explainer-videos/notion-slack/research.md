@@ -96,3 +96,22 @@ in depth** (one Notion table, one Slack channel, one action) rather than a surve
 
 Ordering follows the actual smooth path: *decide what crosses the boundary (1) → pick the door (2) →
 get permission right (3) → write structured data (4) → speak without spamming (5) → make it safe (6)*.
+
+---
+
+## F. Intro video — Railway and GitHub (added 2026-09-16)
+
+For the module opener, which covers all four connections rather than Notion and Slack alone.
+
+| # | Fact | Source | Date |
+|---|------|--------|------|
+| F15 | An always-on agent is **a persistent-state system**, not a memory-augmented model: its behaviour depends on state accumulated across earlier interactions, and its correctness depends on governing that state as much as recalling it. Stateless web infrastructure is poorly suited to it — agents need continuous context, persistent sessions and real-time coordination. | [arXiv — Always-On Agents: persistent memory, state and governance](https://arxiv.org/pdf/2606.30306) · [arXiv — Infrastructure for the Agentic Web](https://arxiv.org/pdf/2606.20570) | 2026 |
+| F16 | Agents must be **continuously on and listening for work**. Production agents take minutes to iterate, so serverless functions with aggressive timeouts do not fit; Railway runs long-lived services that stay up between requests, historically at **99.96% uptime**, for roughly **$10–20/month** for a multi-service stack plus provider API fees. | [Railway — Running agents on Railway](https://docs.railway.com/guides/running-agents-on-railway) · [Railway for Agents](https://docs.railway.com/agents) | 2026 |
+| F17 | Local is right only when local state matters — "you just built an app, haven't pushed it to GitHub yet, and are running out of the directory you're standing in." Everything autonomous belongs hosted. | [Railway blog — agent connections](https://blog.railway.com/p/agent-connection-to-railway) | 2026 |
+| F18 | **The number that should frighten people:** a 2026 study of **33,596 agent-authored pull requests** found **61.38% received no recorded human review at all**, and **71.58%** of the review comments that did exist were written by agents rather than people. Human review does not scale when agents can produce convincing PRs in volume. | [arXiv — Why are agentic pull requests merged or rejected?](https://arxiv.org/pdf/2605.22534) · [arXiv — How humans review AI-generated pull requests](https://arxiv.org/html/2605.02273v1) | 2026 |
+| F19 | AI-authored changes should be treated as **artifacts from an untrusted producer** that must prove provenance before review — which is exactly what a pull request is for: a reviewable, reversible, attributable unit of change. | [DevOps.com — The agent proposes, the pipeline disposes](https://devops.com/the-agent-proposes-the-pipeline-disposes-controls-for-ai-authored-change/) · [GitHub Blog — reviewing agent pull requests](https://github.blog/ai-and-ml/generative-ai/agent-pull-requests-are-everywhere-heres-how-to-review-them/) | 2026 |
+
+**The teaching frame these four facts give.** Each connection does one job nothing else can do:
+Slack is where work is **asked for**, Notion is where it is **remembered**, GitHub is where it **lands
+reviewably**, Railway is where it **keeps running**. Remove any one and a specific, nameable thing breaks —
+that is the spine of the intro video, and F18 is the beat that stops GitHub sounding like mere storage.

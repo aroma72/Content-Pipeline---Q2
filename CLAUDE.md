@@ -91,7 +91,7 @@ owner: aroma
 - All scripts MUST follow SCRIPTING_STANDARDS.md — concept depth + a SINGLE protagonist story (supersedes the old "3+ diverse examples" rule)
 - Teach through ONE named, invented protagonist in ONE running scenario, followed in depth — NOT a list of multiple domain examples. **The protagonist is ALWAYS named "Ali"** (never Bilal or any other name), for any example in any video
 - Go deep, not wide: friction → fix → structure → failure mode → payoff, all on the protagonist's task; reuse the same protagonist across a video series; never use a real colleague's name
-- **EVERY video MUST include a CHECKPOINT beat** — `{mode:'checkpoint', quiz:{stem, options, answer, correctNote, explain}}` — NEVER drawn and NEVER spoken. The player pauses at that beat boundary (always between whole sentences), the LMS asks the question and shows feedback for the chosen answer, then the video resumes. `server/lib/checkpoints.js` serves it; publish with `node scripts/publish-checkpoint.js <series>/<slug>`. See SCRIPTING_STANDARDS §3b
+- **EVERY video MUST include a CHECKPOINT beat** — `{mode:'checkpoint', quiz:{stem, options, answer, correctNote, explain}}` — NEVER drawn, NEVER spoken. The player pauses at that beat boundary, the LMS shows the question, **the learner must click an option to continue** (no skip/dismiss/seek-past), gets feedback that explains the mistake, then the video resumes. Enforced by `qa-checkpoint.js` (fails the build) and `scripts/publish-checkpoint.js` (verifies it live on Railway). Settled — do not change the format without Aroma saying so. See SCRIPTING_STANDARDS §3b
 
 🚫 **Infrastructure:**
 - Never hardcode SYSTEM_PROMPT — extract to `prompts/{name}.txt`

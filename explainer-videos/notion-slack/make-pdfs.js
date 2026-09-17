@@ -15,16 +15,15 @@ const OUT = path.join(ROOT, 'pdf');
 const puppeteer = require(path.join(ROOT, '..', 'autonomy', 'node_modules', 'puppeteer'));
 
 const FILES = [
-  ['Scripts/notion-slack-00-module-overview.md', 'notion-slack-00-module-overview.pdf', 'Module overview — the six videos, in order'],
-  ['Scripts/notion-slack-01-locked-out.md', 'notion-slack-01-locked-out.pdf', 'Video 1 · Locked Out of the Room'],
-  ['Scripts/notion-slack-02-two-doors.md', 'notion-slack-02-two-doors.pdf', 'Video 2 · Two Doors In: Connector or Key'],
-  ['Scripts/notion-slack-03-key-one-room.md', 'notion-slack-03-key-one-room.pdf', 'Video 3 · The Key Only Opens One Room'],
-  ['Scripts/notion-slack-04-rows-not-paragraphs.md', 'notion-slack-04-rows-not-paragraphs.pdf', 'Video 4 · Rows, Not Paragraphs'],
-  ['Scripts/notion-slack-05-speaking-without-spamming.md', 'notion-slack-05-speaking-without-spamming.pdf', 'Video 5 · Speaking Without Spamming'],
-  ['Scripts/notion-slack-06-safe-then-run.md', 'notion-slack-06-safe-then-run.pdf', 'Video 6 · Safe, Then Let It Run'],
-  ['Scripts/notion-slack-07-notion-click-by-click.md', 'notion-slack-07-notion-click-by-click.pdf', 'Video 7 · Notion, Click by Click (screencast)'],
-  ['Scripts/notion-slack-08-slack-click-by-click.md', 'notion-slack-08-slack-click-by-click.pdf', 'Video 8 · Slack, Click by Click (screencast)'],
-  ['research.md', 'notion-slack-research-brief.pdf', 'Appendix · Research brief (every fact, sourced)'],
+  ['Scripts/ns-00-module-overview.md', 'ns-00.pdf', 'Module overview — the seven videos, and the format change'],
+  ['Scripts/ns-01-why-a-chat-window-isnt-enough.md', 'ns-01.pdf', 'Video 1 · Why a Chat Window Is Not Enough  (§1)'],
+  ['Scripts/ns-02-the-loop-end-to-end.md', 'ns-02.pdf', 'Video 2 · The Loop, End to End  (§2)'],
+  ['Scripts/ns-03-notion-operating-area.md', 'ns-03.pdf', 'Video 3 · Notion — The Task Board  (§3)'],
+  ['Scripts/ns-04-slack-both-directions.md', 'ns-04.pdf', 'Video 4 · Slack — Speak, Then Listen  (§4a + §4b)'],
+  ['Scripts/ns-05-github-two-jobs.md', 'ns-05.pdf', 'Video 5 · GitHub — Two Jobs  (§5)'],
+  ['Scripts/ns-06-the-body-you-already-have.md', 'ns-06.pdf', 'Video 6 · Your Deployment — The Body  (§6)'],
+  ['Scripts/ns-07-the-four-mistakes.md', 'ns-07.pdf', 'Video 7 · The Four Mistakes  (§7)'],
+  ['research.md', 'ns-research.pdf', 'Appendix · Research brief (every fact, sourced)'],
 ];
 
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -168,7 +167,8 @@ const CSS = `
   .m-scene { background: #f7e8d8; color: #8a5a25; }
   .m-info { background: #e6eaf3; color: #2f4373; }
   .m-ui { background: #e2eef1; color: #1d5563; }      /* screencast: interface screen */
-  .m-card { background: #f0ece2; color: #6b5f48; }    /* screencast: full-screen card */
+  .m-card { background: #f0ece2; color: #6b5f48; }
+  .m-checkpoint { background: #f3e3e8; color: #7a3350; }  /* LMS pause point — nothing rendered */    /* screencast: full-screen card */
   .beat .vo { flex: 1; }
   .beat em { color: #7a6f5f; font-size: 9pt; }
   @media screen { body { padding: 14mm; } }  /* only for --png previews; print uses @page margins */
@@ -197,23 +197,26 @@ const CSS = `
 `;
 
 function page(html) {
-  return `<div class="doc"><div class="brand">Taleemabad University · Module 14 · Notion + Slack · script draft for review</div>${html}</div>`;
+  return `<div class="doc"><div class="brand">Taleemabad University · Module 14 · Notion · Slack · GitHub · your deployment</div>${html}</div>`;
 }
 
 function cover(entries) {
   return `<div class="cover">
     <div class="kicker">Taleemabad University · Agentic AI Mastery</div>
-    <h1>Module 14 — Connecting Your Agent to Notion and Slack</h1>
-    <div class="sub">Eight video scripts · six concept + two screencast walkthroughs · draft for review</div>
-    <div class="meta">
-      One protagonist (Ali) · one setting (the back room of his stationery shop) · one running project
-      (his order agent) · ~26 beats and ~2 minutes per video.<br>
-      Videos 7 and 8 are step-by-step walkthroughs on the real Notion and Slack screens, with the
-      capture list for every screen.<br>
-      Every fact in these scripts traces to the sourced research brief at the back.<br>
+    <h1>Module 14 — Connect Your Agent to the Places It Works</h1>
+    <div class="sub">Seven technical how-to scripts · no protagonist · interfaces, diagrams and terminal only</div>
+    <div class=meta>
+      Rewritten 2026-09-16 against <code>notion-slack-railway-github-guide.md</code>, grounded in the
+      team's own ILHAM system — so every step and code shape is real, not hypothetical.<br>
+      <strong>The premise:</strong> you stop opening the project and chatting with it. You ask in Slack.
+      It works in the background. It tracks itself in Notion. It comes back when it is done, or stuck.<br>
+      Videos 3–6 are walkthroughs on the real interfaces, each with the exact screens to capture.<br>
+      Deployment is platform-agnostic throughout — Railway, Render, Vercel or Fly; the module never tells
+      anyone to set up a new host.<br>
+      Every video pauses for a question the learner must answer to continue.<br>
       No art, voiceover or render has been generated. Nothing is built until you approve the scripts.
     </div>
-    <div class="toc"><h2>Contents</h2><ol>
+    <div class=toc><h2>Contents</h2><ol>
       ${entries.map((t, i) => `<li><span class="i">${String(i + 1).padStart(2, '0')}</span><span>${esc(t)}</span></li>`).join('')}
     </ol></div>
   </div>`;
@@ -247,7 +250,7 @@ if (require.main !== module) return;
     console.log('  ·', dest.replace(/\.pdf$/, ''), split ? '(pdf)' : '(png)');
   }
 
-  const one = path.join(ROOT, 'Module-14-Notion-Slack-Scripts.pdf');
+  const one = path.join(ROOT, 'Module-14-Scripts-v2.pdf');
   const p = await browser.newPage();
   await p.setContent(`<!doctype html><meta charset="utf-8"><style>${CSS}</style>${parts.join('\n')}`, { waitUntil: 'load' });
   await p.pdf({ path: one, format: 'A4', printBackground: true });

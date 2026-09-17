@@ -97,11 +97,18 @@ including each structural part and the common failure mode they nearly hit.
 
 ### 3b. Interactive Question — the CHECKPOINT beat (Required, effective 2026-09-15)
 
-> **House rule:** EVERY video MUST contain at least one **checkpoint** — one multiple-choice question
-> that is **never drawn and never spoken**. Nothing about it goes in the video. The player **pauses**
-> just before it, the learner's LMS asks the question, shows the feedback for whichever answer they
-> chose, and the video then **resumes** from the same instant. Non-negotiable for every new video
-> and every re-cut.
+> **House rule (settled; Aroma has specified this three times — do not re-litigate it):** EVERY video
+> MUST contain at least one **checkpoint** — one multiple-choice question that is **never drawn and
+> never spoken**. Nothing about it goes in the video. The player **pauses** just before it, the LMS
+> shows the question, **the learner MUST click an option to continue** (no skip, no dismiss, no seeking
+> past it), they are shown feedback good enough to explain the mistake, and the video then **resumes**
+> from the same instant. The timing and the question go to Railway so the LMS developer can wire it up.
+> Non-negotiable for every new video and every re-cut.
+>
+> **Enforced, not remembered:** `node qa-checkpoint.js` fails the build if the checkpoint is missing,
+> drawn, spoken, first/last, un-answerable, or has wrong-answer feedback too thin to explain anything
+> (<120 characters, or a single sentence). `scripts/publish-checkpoint.js` then refuses to publish one
+> whose feedback is missing, and verifies the payload live before reporting success.
 
 **Why it is shaped this way.** A question printed on a card taught the answer to a viewer who could not
 answer it, and the video could never know whether anyone got it right. In the player it is a real

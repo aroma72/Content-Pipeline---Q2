@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Walkthrough</title>
+<!--
+  walkthrough.html — renderer for the TECHNICAL HOW-TO format (no protagonist).
+
+  Established 2026-09-17. Three beat modes, no character art of any kind:
+    card  — full-screen title / signpost / checklist        (same shape as assessment.html)
+    info  — any window.InfoTemplates template (diagrams, data cards)
+    ui    — a re-created product interface: browser chrome, a screen, a cursor, a highlight
+
+  The `ui` mode is why this file exists. The module has to SHOW Notion's Connections menu, Slack's
+  Bot Token Scopes, GitHub's fine-grained token page and a host's variables page — and re-creating
+  them here beats screen-capture: nothing real can leak, every label is proofread-able, and when a
+  vendor moves a button the fix is one line rather than a re-shoot.
+
+  Driver contract is identical to lesson.html / assessment.html:
+    window.__DATA = { beats, durations } · window.seekTo(ms) · window.ready
+-->
+<script src="info.js"></script>
+<style>
+  :root{
+    --bg:#FBF7EF; --ink:#23201c; --muted:#8a7f6d; --line:#e4dac6; --accent:#C9A227;
+    --teal:#1c4e46; --chrome:#EFE8DA; --white:#fffdf8; --bad:#b4442e; --good:#2f7a52;
+    --sans:'Segoe UI',system-ui,Arial,sans-serif;
+    --serif:Georgia,'Times New Roman',serif;
+    --mono:'Cascadia Code','SF Mono',Consolas,monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:1920px;height:1080px;overflow:hidden;background:var(--bg);font-family:var(--sans)}
+  #stage{position:relative;width:1920px;height:1080px}
+  .layer{position:absolute;inset:0;opacity:0}
+
+  /* ---------- card ---------- */
+  .card{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;text-align:center;padding:0 200px;background:var(--bg)}
+  .card .small{color:var(--accent);font-size:32px;letter-spacing:5px;text-transform:uppercase;margin-bottom:34px}
+  .card .big{color:var(--teal);font-family:var(--serif);font-weight:700;font-size:82px;line-height:1.2}
+  .card .sub{color:var(--muted);font-size:38px;margin-top:38px;line-height:1.45}
+  .card .rule{width:120px;height:5px;background:var(--accent);border-radius:3px;margin:46px auto 0}
+
+  /* ---------- info ---------- */
+  .infowrap{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:90px 140px}
+
+  /* ---------- ui: a re-created product screen ---------- */
+  .win{position:absolute;left:150px;right:150px;top:110px;bottom:190px;background:var(--white);
+    border:1px solid var(--line);border-radius:18px;overflow:hidden;
+    box-shadow:0 30px 80px rgba(60,45,20,.13);display:flex;flex-direction:column}
+  .chrome{height:74px;flex:none;background:var(--chrome);display:flex;align-items:center;gap:18px;
+    padding:0 26px;border-bottom:1px solid var(--line)}
+  .dots{display:flex;gap:10px}.dot{width:15px;height:15px;border-radius:50%;background:#cfc3ad}
+  .urlbar{flex:1;height:44px;background:var(--white);border:1px solid var(--line);border-radius:22px;
+    display:flex;align-items:center;padding:0 22px;color:var(--muted);font-size:26px;font-family:var(--mono)}
+  .appname{color:var(--teal);font-weight:700;font-size:26px;letter-spacing:.5px}
+  .screen{flex:1;padding:52px 60px;overflow:hidden;position:relative}
+  .scr-title{font-size:46px;color:var(--teal);font-weight:700;margin-bottom:10px}
+  .scr-sub{font-size:28px;color:var(--muted);margin-bottom:38px}
+  .row{display:flex;align-items:center;gap:22px;padding:20px 24px;border:1px solid var(--line);
+    border-radius:12px;margin-bottom:16px;background:var(--white);font-size:30px}
+  .row .k{color:var(--muted);flex:0 0 380px}
+  .row .v{color:var(--ink);font-family:var(--mono);font-size:27px}
+  .row.hl{border-color:var(--accent);box-shadow:0 0 0 4px rgba(201,162,39,.20);background:#FEFBF2}
+  .row .tag{margin-left:auto;font-size:22px;letter-spacing:1px;text-transform:uppercase;
+    padding:5px 14px;border-radius:999px;background:#EFE8DA;color:var(--muted)}
+  .row .tag.ok{background:#e4f0e8;color:var(--good)}
+  .row .tag.bad{background:#f6e3de;color:var(--bad)}
+  .btn{display:inline-flex;align-items:center;padding:18px 34px;border-radius:12px;background:var(--teal);
+    color:#fff;font-size:30px;font-weight:600;margin-top:10px}
+  .btn.ghost{background:var(--white);color:var(--teal);border:2px solid var(--teal)}
+  .btn.hl{box-shadow:0 0 0 6px rgba(201,162,39,.30)}
+  .code{background:#1f2630;border-radius:12px;padding:30px 34px;font-family:var(--mono);font-size:28px;
+    line-height:1.65;color:#d6dbe6;white-space:pre-wrap}
+  .code .cm{color:#7d8798}.code .hl{color:#e8c46a}
+  .menu{position:absolute;right:70px;top:120px;background:var(--white);border:1px solid var(--line);
+    border-radius:14px;box-shadow:0 20px 50px rgba(60,45,20,.18);padding:12px;min-width:420px}
+  .menu .mi{padding:16px 22px;border-radius:10px;font-size:29px;color:var(--ink)}
+  .menu .mi.hl{background:#FEFBF2;box-shadow:inset 0 0 0 2px var(--accent)}
+  .cursor{position:absolute;width:30px;height:30px;pointer-events:none;
+    border-left:3px solid #2a2a2a;border-top:3px solid #2a2a2a;transform:rotate(-38deg);
+    filter:drop-shadow(0 2px 3px rgba(0,0,0,.35))}
+  .caption{position:absolute;left:150px;right:150px;bottom:70px;text-align:center;
+    font-size:34px;color:var(--muted)}
+  .stepper{position:absolute;right:160px;top:52px;font-size:26px;letter-spacing:3px;
+    text-transform:uppercase;color:var(--accent)}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script>
+const stage=document.getElementById('stage');
+const esc=(s)=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+
+function makeCard(b){
+  const wrap=document.createElement('div'); wrap.className='layer';
+  const c=document.createElement('div'); c.className='card'; const d=b.card||{};
+  c.innerHTML=(d.small?`<div class="small seq">${esc(d.small)}</div>`:'')
+    +`<div class="big seq">${esc(d.big||b.vo||'')}</div>`
+    +(d.sub?`<div class="sub seq">${esc(d.sub)}</div>`:'')
+    +`<div class="rule seq"></div>`;
+  wrap.appendChild(c); return wrap;
+}
+
+function makeInfo(b){
+  const wrap=document.createElement('div'); wrap.className='layer';
+  const box=document.createElement('div'); box.className='infowrap';
+  const tpl=b.info&&window.InfoTemplates&&window.InfoTemplates[b.info.tpl];
+  if(tpl) box.appendChild(tpl(b.info.data||{}));
+  else box.innerHTML=`<div class="card"><div class="big seq">${esc(b.vo||'')}</div></div>`;
+  wrap.appendChild(box); return wrap;
+}
+
+/* A product screen, re-created. `screen` accepts:
+   app, url, title, sub, rows[{k,v,hl,tag,tagTone}], button{label,hl,ghost},
+   menu{items:[{label,hl}]}, code[], cursor{x,y}, stepper, caption            */
+function makeUI(b){
+  const wrap=document.createElement('div'); wrap.className='layer';
+  const s=b.screen||{};
+  const win=document.createElement('div'); win.className='win';
+
+  const chrome=document.createElement('div'); chrome.className='chrome';
+  chrome.innerHTML=`<div class="dots"><i class="dot"></i><i class="dot"></i><i class="dot"></i></div>`
+    +(s.app?`<div class="appname">${esc(s.app)}</div>`:'')
+    +(s.url?`<div class="urlbar">${esc(s.url)}</div>`:'');
+  win.appendChild(chrome);
+
+  const scr=document.createElement('div'); scr.className='screen';
+  if(s.title) scr.innerHTML+=`<div class="scr-title seq">${esc(s.title)}</div>`;
+  if(s.sub)   scr.innerHTML+=`<div class="scr-sub seq">${esc(s.sub)}</div>`;
+  (s.rows||[]).forEach(r=>{
+    const tag=r.tag?`<span class="tag ${r.tagTone||''}">${esc(r.tag)}</span>`:'';
+    scr.innerHTML+=`<div class="row seq${r.hl?' hl':''}"><span class="k">${esc(r.k||'')}</span>`
+      +`<span class="v">${esc(r.v||'')}</span>${tag}</div>`;
+  });
+  if(s.code) scr.innerHTML+=`<div class="code seq">${s.code.map(esc).join('\n')}</div>`;
+  if(s.button) scr.innerHTML+=`<div class="btn seq${s.button.hl?' hl':''}${s.button.ghost?' ghost':''}">`
+    +`${esc(s.button.label)}</div>`;
+  if(s.menu) scr.innerHTML+=`<div class="menu seq">`
+    +(s.menu.items||[]).map(m=>`<div class="mi${m.hl?' hl':''}">${esc(m.label)}</div>`).join('')+`</div>`;
+  if(s.cursor) scr.innerHTML+=`<div class="cursor" style="left:${s.cursor.x}px;top:${s.cursor.y}px"></div>`;
+  win.appendChild(scr);
+  wrap.appendChild(win);
+
+  if(s.stepper){ const st=document.createElement('div'); st.className='stepper'; st.textContent=s.stepper; wrap.appendChild(st); }
+  const cap=s.caption||b.cap;
+  if(cap){ const c=document.createElement('div'); c.className='caption seq'; c.textContent=cap; wrap.appendChild(c); }
+  return wrap;
+}
+
+let TL=[];
+function buildTimeline(data){
+  let t=0;
+  data.beats.forEach(b=>{
+    const dur=(data.durations[b.id]||3)*1000;
+    const layer = b.mode==='card'?makeCard(b) : b.mode==='ui'?makeUI(b) : makeInfo(b);
+    stage.appendChild(layer);
+    TL.push({id:b.id,start:t,end:t+dur,dur,layer,beat:b});
+    t+=dur;
+  });
+}
+
+function drive(item,ms){
+  const p=clamp((ms-item.start)/item.dur,0,1);
+  const L=item.layer;
+  // movement in every beat: a slow push-in on the window, a float on a card
+  const win=L.querySelector('.win');
+  if(win) win.style.transform=`scale(${(1+0.012*p).toFixed(4)})`;
+  const card=L.querySelector('.card');
+  if(card) card.style.transform=`translateY(${(Math.sin(ms/1100)*4).toFixed(1)}px)`;
+  // the cursor drifts the last few pixels onto its target, so a click reads as a click
+  const cur=L.querySelector('.cursor');
+  if(cur) cur.style.transform=`rotate(-38deg) translate(${((1-p)*26).toFixed(1)}px,${((1-p)*20).toFixed(1)}px)`;
+  // count-ups inside info templates
+  L.querySelectorAll('[data-tick]').forEach((n)=>{
+    const target=parseFloat(n.dataset.tick)||0;
+    n.textContent=Math.round(target*clamp(p/0.55,0,1));
+  });
+  // staggered reveal across the first ~60% of the beat
+  const seqs=L.querySelectorAll('.seq');
+  seqs.forEach((el,i)=>{ const t0=(i/Math.max(1,seqs.length))*0.6;
+    const a=clamp((p-t0)/0.14,0,1);
+    el.style.opacity=a; el.style.transform=`translateY(${(1-a)*16}px)`; });
+}
+
+window.seekTo=function(ms){
+  let active=TL[TL.length-1];
+  for(const it of TL){ if(ms>=it.start&&ms<it.end){active=it;break;} }
+  for(const it of TL) it.layer.style.opacity=(it===active)?1:0;
+  if(active) drive(active,ms);
+};
+
+(function init(){
+  const data=window.__DATA;
+  if(!data){document.title='no data';window.ready=true;return;}
+  buildTimeline(data);
+  window.seekTo(0);
+  window.ready=true;
+})();
+</script>
+</body>
+</html>

@@ -138,10 +138,14 @@ function build() {
           '1. Play until atSeconds, then pause. The stop is on a boundary between two '
           + 'spoken sentences, never inside one — see pause.atBeatBoundary.',
           '2. Show preamble, stem and options. correctIndex is the 0-based answer.',
-          '3. They answer. Show feedback.correct if they picked correctIndex, otherwise '
+          '3. THE LEARNER MUST PICK AN OPTION TO CONTINUE. requiresAnswer/blocking are true '
+          + 'and allowSkip is false on every checkpoint: no dismiss, no close-on-outside-click, '
+          + 'no skip button, and seeking past atSeconds should bring them back to it. The '
+          + 'question is the gate — that is the whole point of pausing.',
+          '4. Show feedback.correct if they picked correctIndex, otherwise '
           + 'feedback.incorrect — which says why the right answer is right and why the '
-          + 'tempting wrong one is wrong.',
-          '4. Resume at resumeAtSeconds (the same instant you paused).',
+          + 'tempting wrong one is wrong. Give them time to read it; do not auto-dismiss.',
+          '5. Resume at resumeAtSeconds (the same instant you paused).',
         ],
         rules: [
           'atSeconds is measured from the start of <videoId>_final.mp4, which begins with '

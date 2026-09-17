@@ -44,7 +44,7 @@ apply this rubric directly.
     → NOT READY. Beats chosen purely to decorate a static definition → NEEDS WORK with the better beats
     named. (Exempt: IDE-screencast assignment/assessment videos, where i2v does not apply.)
 
-11. **Fails the Evals-Grade Visual Standard** (Standard §3d, REQUIRED effective 2026-08-21): run `node qa-info.js` AND
+11. **Fails the Evals-Grade Visual Standard** (Standard §3d, REQUIRED effective 2026-08-21): run `node qa-info.js`, `node qa-checkpoint.js` AND
     `node qa-visuals.js` in the video folder. qa-info catches info-card data shapes that render as
     blank or zeroed cards without throwing (the 2026-09-15 defect class). Any violation → NOT READY. The six rules: one concrete
     persistent setting (not an abstract room) · the AI is a real laptop with a blank screen (NEVER a
