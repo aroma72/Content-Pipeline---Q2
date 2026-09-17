@@ -3,159 +3,182 @@
  * beats.js — "Module 14 Assignment — Connect Your Own Project" (the assignment guide video).
  * Companion to: Module 14 - Assignment (Connect Your Own Project).docx
  *
+ * Rebuilt 2026-09-17 on Aroma's own three-part script, replacing the seven-part walkthrough:
+ *   Part 1 — already done, but do it on your REAL project
+ *   Part 2 — one Slack message; the agent does the work and reports on itself in assignment.md
+ *   Part 3 — break it on purpose, and write reflection.md by hand
+ *
  * TECHNICAL HOW-TO FORMAT, same as videos 1-7: no protagonist, walkthrough.html renderer.
- * Its job is NOT to re-teach the steps — videos 3-6 did that. It is to show the learner what the
- * assignment asks for, what evidence to capture at each part, and how it is marked, so nobody
- * finishes the work and then loses marks for not having screenshotted the one thing that proves it.
+ * Beat 10 carries the prompt verbatim so it can be screenshotted off the screen; it uses
+ * `codeDense` (28px, the qa-frames floor) because the whole block has to fit on one slide.
  */
+
+// Wrapped at 80 columns so it lands as eleven lines inside the window at 28px. If you edit the
+// prompt, edit the same words in make-assignment-doc-v3.js — a learner copies one and is marked
+// against the other.
+const PROMPT = [
+  "Add a footer to this project's homepage with my name, the project name,",
+  'and the line "Built with Claude." Open a PR when it\'s done. Before opening',
+  'the PR, write (or update) a file at the repo root called assignment.md',
+  "covering this run. Use real values only, never placeholders: your bot/app's",
+  "name and this project's name, the Slack channel (and workspace, if named)",
+  "this came through, how many Notion databases you're connected to and which",
+  'one you used, the exact title of the Notion card you created with a link to',
+  'it, its full status history with timestamps (example: To Do, then In',
+  'Progress, then Blocked, then In Progress, then Done), the task text as',
+  "posted here, your polling or check-in interval, and the pull request's",
+  'number/link. If any step fails, say so honestly instead of skipping it.',
+];
 
 module.exports = [
   { id: '01', mode: 'card',
-    vo: 'The assignment is the same work, on a project of your own.',
-    card: { small: 'Module 14 · Assignment', big: 'Connect your own project.',
-      sub: 'Seven parts · about two hours · evidence at every step' } },
+    vo: 'Today I want to walk you through the Module fourteen assignment, and it is less scary than it looks.',
+    card: { small: 'Module 14 · Assignment', big: 'Three parts. That is all this is.',
+      sub: 'And the first one you have already done' } },
 
-  { id: '02', mode: 'info',
-    vo: 'One sentence tells you when you are done.',
-    cap: 'The test of done',
-    info: { tpl: 'statement', data: { text: 'You ask in Slack. A card, a pull request, and a reply come back.', hi: 'come back' } } },
+  { id: '02', mode: 'ui',
+    vo: 'It really only comes down to three parts.',
+    cap: 'The whole assignment',
+    screen: { app: 'Assignment', url: 'three parts',
+      title: 'What you are being asked for',
+      rows: [
+        { k: 'Part 1', v: 'Slack, Notion and GitHub connected', tag: 'done', tagTone: 'ok' },
+        { k: 'Part 2', v: 'One message. The agent reports on itself', hl: true },
+        { k: 'Part 3', v: 'Break it, and write down what happened' } ] } },
 
-  { id: '03', mode: 'info',
-    vo: 'And you never open an editor to make it happen.',
-    cap: 'Without opening an editor',
-    info: { tpl: 'statement', data: { text: 'Without opening an editor, on a laptop you have closed.', hi: 'you have closed' } } },
+  { id: '03', mode: 'card',
+    vo: 'Part one is basically done already.',
+    card: { small: 'Part 1', big: 'Already done.',
+      sub: 'If you followed the videos, tick it off' } },
 
   { id: '04', mode: 'ui',
-    vo: 'Six things to have ready before part one.',
-    cap: 'Before you start',
-    screen: { app: 'Assignment', url: 'before you start',
-      title: 'Have these six ready',
+    vo: 'If you sat through the videos and actually connected Slack, GitHub and Notion, with webhooks and polling, and your keys set up, you have finished this part.',
+    cap: 'Part 1 · what it means',
+    screen: { app: 'Assignment', url: 'part 1',
+      title: 'You have this already',
       rows: [
-        { k: 'Notion', v: 'a page you will share with an integration' },
-        { k: 'Slack', v: 'permission to install an app — ask your admin today' },
-        { k: 'GitHub', v: 'a scratch repo you will let an agent change' },
-        { k: 'A deployment', v: 'anything already live — you are not making a new one', hl: true },
-        { k: 'A test channel', v: 'not #general' },
-        { k: '.env', v: 'already listed in .gitignore' } ] } },
+        { k: 'Slack', v: 'app installed, bot invited, events arriving' },
+        { k: 'Notion', v: 'integration added under Connections' },
+        { k: 'GitHub', v: 'token and webhook, secrets matching' },
+        { k: 'The loop', v: 'polling or a check-in interval, running' },
+        { k: 'Your keys', v: 'in environment variables, nothing committed' } ] } },
 
   { id: '05', mode: 'info',
-    vo: 'Missing one of those is the usual reason this takes an evening instead of two hours.',
-    cap: 'Ask your admin today',
-    info: { tpl: 'statement', data: { text: 'Slack admin approval is the one that costs you a day.', hi: 'costs you a day' } } },
+    vo: 'One thing to do differently this time. Do not build this on a throwaway test repo.',
+    cap: 'The one change',
+    info: { tpl: 'statement', data: { text: 'Do it on the project you actually work on.', hi: 'actually work on' } } },
 
-  { id: '06', mode: 'ui',
-    vo: 'Parts one to five are the four connections, exactly as the videos taught them.',
-    cap: 'Parts 1 to 5',
-    screen: { app: 'Assignment', url: 'the seven parts',
-      title: 'What you build',
+  { id: '06', mode: 'info',
+    vo: 'That is what makes this assignment real, rather than just a demo.',
+    cap: 'Why it matters',
+    info: { tpl: 'twocard', data: {
+      left: { title: 'A scratch repo', items: ['Proves the wiring works', 'Tells you nothing about your own work'] },
+      right: { title: 'Your real project', items: ['The same wiring', 'You find out whether you trust it'] } } } },
+
+  { id: '07', mode: 'card',
+    vo: 'Part two is easy, and it is only easy because part one is done.',
+    card: { small: 'Part 2', big: 'One message.',
+      sub: 'You never touch an editor' } },
+
+  { id: '08', mode: 'ui',
+    vo: 'You open Slack and send your agent one message. It picks it up the same way it picks up every other task, through the webhook you built.',
+    cap: 'What happens next',
+    screen: { app: 'Assignment', url: 'part 2',
+      title: 'What the agent does',
       rows: [
-        { k: 'Part 1', v: 'Notion board, shared under Connections' },
-        { k: 'Part 2', v: 'Slack outbound: scopes, install, invite' },
-        { k: 'Part 3', v: 'Slack inbound: events, challenge, signature' },
-        { k: 'Part 4', v: 'GitHub: fine-grained token and a webhook' },
-        { k: 'Part 5', v: 'Your deployment: variables, address, check-in loop' } ] } },
-
-  { id: '07', mode: 'ui',
-    vo: 'Part six is the one that counts for most. Prove the loop, end to end.',
-    cap: 'Part 6 · prove it',
-    screen: { app: 'Assignment', url: 'part 6',
-      title: 'Prove the loop',
-      rows: [
-        { k: 'Ask', v: 'in Slack, for a small real change' },
-        { k: 'A card appears', v: 'in Notion, and its status moves' },
-        { k: 'A pull request opens', v: 'on GitHub' },
-        { k: 'The agent replies', v: 'in your thread', hl: true },
-        { k: 'You merge it', v: 'the agent proposes, you decide' } ] } },
-
-  { id: '08', mode: 'info',
-    vo: 'That part alone is worth twenty-four of the hundred marks.',
-    cap: '24 of 100',
-    info: { tpl: 'bignum', data: {
-      left: { big: '24', lab: 'marks for the loop' },
-      sep: 'of',
-      right: { big: '100', lab: 'total' } } } },
+        { k: 'Picks it up', v: 'through your webhook, as usual' },
+        { k: 'Creates a card', v: 'in Notion, and moves it while it works' },
+        { k: 'Opens a pull request', v: 'with the footer in it' },
+        { k: 'Writes assignment.md', v: 'at the repo root, about this run', hl: true } ] } },
 
   { id: '09', mode: 'ui',
-    vo: 'Part seven asks you to break it, four times, on purpose.',
-    cap: 'Part 7 · break it',
-    screen: { app: 'Assignment', url: 'part 7',
-      title: 'Break it on purpose',
-      rows: [
-        { k: 'Remove it from Connections', v: '404 object_not_found' },
-        { k: 'Point the URL at localhost', v: 'verification fails' },
-        { k: 'Change the secret on one side', v: '403 on every delivery' },
-        { k: 'Search your repo for token prefixes', v: 'ideally nothing' } ] } },
+    vo: 'Here is the message. Screenshot this, or copy it out of the assignment document, swap in your own name, and send it to your agent exactly as written.',
+    cap: 'Copy this, change only the name',
+    screen: { app: 'Slack', url: 'send this to your agent',
+      title: 'The message',
+      code: PROMPT, codeDense: true } },
 
-  { id: '10', mode: 'info',
-    vo: 'An integration you cannot break on demand is one you cannot debug under pressure.',
-    cap: 'Why you break it',
-    info: { tpl: 'statement', data: { text: 'What you can break on demand, you can debug under pressure.', hi: 'debug under pressure' } } },
-
-  { id: '11', mode: 'ui',
-    vo: 'Capture evidence as you go, not at the end.',
-    cap: 'Evidence A to G',
-    screen: { app: 'Assignment', url: 'what to capture',
-      title: 'Evidence, one per part',
+  { id: '10', mode: 'ui',
+    vo: 'Everything in that file has to be a real value it actually observed. Never a placeholder.',
+    cap: 'What assignment.md must contain',
+    screen: { app: 'assignment.md', url: 'real values only',
+      title: 'Written by the agent, not by you',
       rows: [
-        { k: 'A', v: 'Connections panel + your four columns' },
-        { k: 'B', v: 'Bot Token Scopes + the invite confirmation' },
-        { k: 'C', v: 'Your challenge handler and signature check' },
-        { k: 'D', v: 'Token permissions: Contents read/write, one repo' },
-        { k: 'E', v: 'Request URL verified + a log line arriving' },
-        { k: 'F', v: 'The Slack thread, the card, the pull request' },
-        { k: 'G', v: 'Your four-row table of errors and fixes' } ] } },
+        { k: 'Names', v: 'your bot or app, and this project' },
+        { k: 'Where it came from', v: 'the Slack channel, and workspace' },
+        { k: 'Notion', v: 'how many databases, and which one' },
+        { k: 'The card', v: 'title, link, status history with times', hl: true },
+        { k: 'The task', v: 'the text exactly as you posted it' },
+        { k: 'The run', v: 'the check-in interval, and the PR link' } ] } },
+
+  { id: '11', mode: 'info',
+    vo: 'And if a step fails, it should say so, instead of quietly skipping it.',
+    cap: 'Honesty is the point',
+    info: { tpl: 'statement', data: { text: 'An honest failure beats a tidy invention.', hi: 'tidy invention' } } },
 
   { id: '12', mode: 'info',
-    vo: 'People lose marks for not screenshotting the thing that proves it, having done the work.',
-    cap: 'Capture as you go',
-    info: { tpl: 'statement', data: { text: 'Do the work, then fail to prove it — the commonest way to lose marks.', hi: 'fail to prove it' } } },
+    vo: 'I kept the task itself deliberately simple. Every project has a homepage, and a footer needs no login and no database, so nobody gets stuck on a task that does not fit their setup.',
+    cap: 'Why a footer',
+    info: { tpl: 'statement', data: { text: 'A footer: no login, no database, nothing to get stuck on.', hi: 'nothing to get stuck on' } } },
 
   // ── CHECKPOINT ──
   { id: '13', mode: 'checkpoint',
     quiz: {
-      stem: 'You finish every part, everything works, and your submission includes a screenshot of your host\'s variables page with the Slack bot token readable. What happens?',
+      stem: 'Your agent opens the pull request, but it could not read the Notion card back. So assignment.md lists a neat "To Do, In Progress, Done" with no timestamps — a sequence it worked out rather than observed. What should it have done instead?',
       options: [
-        'Full marks — the work is complete',
-        'A small deduction for presentation',
-        'The submission is returned unmarked, and you rotate that token today',
-        'Nothing, because it is only a test workspace',
+        'Exactly that — the order is almost certainly right anyway',
+        'Left the status history out quietly and reported everything else',
+        'Said plainly that it could not retrieve the status history',
+        'Held the pull request back until it could read the card',
       ],
       answer: 2,
-      correctNote: 'Correct. A visible credential voids the submission regardless of how good the work is — and the right response is not embarrassment, it is rotating the token the same day, because it is now in a file you have sent to somebody.',
-      explain: 'It is returned unmarked, and the token has to be rotated. This is not a presentation rule, it is the whole point of the module\'s last lesson: a credential that leaves your machine is burned, whether it reached a public repo or a marker\'s inbox. "Only a test workspace" is the reasoning that ends with a real one leaking — and a token that can post to Slack and commit to a repo is not harmless even in a test. Mask every value in every screenshot, and if one slips through, rotate it rather than hoping.',
+      correctNote: 'Correct. The instruction is explicit: if any step fails, say so instead of skipping it. A named gap is useful information — it tells you exactly which permission is missing.',
+      explain: 'It should say plainly that it could not retrieve the status history. This file exists for one reason: to show what actually happened, not what probably happened. A sequence the agent worked out looks identical on the page to one it observed, which is why a tidy history with no timestamps is marked as a failure rather than a formatting slip. Leaving it out quietly is the same problem in a quieter coat — the marker cannot tell a missing field from a missing permission. And holding the pull request back is worse than either: the work is finished, and it is the report that is incomplete.',
     } },
 
-  { id: '14', mode: 'ui',
-    vo: 'One hundred marks, weighted toward the thing that actually proves the system runs.',
-    cap: 'How it is marked',
-    screen: { app: 'Assignment', url: 'marking',
-      title: '100 marks',
-      rows: [
-        { k: 'The loop proven (part 6)', v: '24', hl: true },
-        { k: 'Slack inbound (part 3)', v: '14' },
-        { k: 'GitHub two jobs (part 4)', v: '14' },
-        { k: 'Deployment (part 5)', v: '14' },
-        { k: 'Notion + Slack outbound', v: '24' },
-        { k: 'Broke it and fixed it (part 7)', v: '10' },
-        { k: 'A live credential anywhere', v: '−100', tag: 'voids it', tagTone: 'bad' } ] } },
+  { id: '14', mode: 'card',
+    vo: 'Part three is where you break something on purpose.',
+    card: { small: 'Part 3', big: 'Break it on purpose.',
+      sub: 'Then write down what actually happened' } },
 
-  { id: '15', mode: 'info',
-    vo: 'If the loop never fully works, parts one to five and seven are still worth seventy-six.',
-    cap: 'If it does not all work',
-    info: { tpl: 'statement', data: { text: 'A careful debugging story beats a bare claim that it worked.', hi: 'beats a bare claim' } } },
+  { id: '15', mode: 'ui',
+    vo: 'Go and break your own setup. Remove your Notion integration from Connections, or forget to invite your bot to the channel, and watch what error shows up.',
+    cap: 'Pick one, and watch',
+    screen: { app: 'Assignment', url: 'part 3',
+      title: 'Break it, and read the error',
+      rows: [
+        { k: 'Remove it from Connections', v: '404 object_not_found' },
+        { k: 'Forget the /invite', v: 'not_in_channel' },
+        { k: 'Change one side of the secret', v: '403 on every delivery' },
+        { k: 'Point the URL somewhere dead', v: 'nothing arrives at all' } ] } },
 
   { id: '16', mode: 'info',
-    vo: 'So submit what you built and what you diagnosed, either way.',
-    cap: 'Submit either way',
-    info: { tpl: 'checks', data: { title: 'Hand in', items: [
-      'Links to your repo and your deployed app',
-      'Evidence A to G, each with a one-line caption',
-      'What broke and how I found it — the real story',
-      'What you would and would not let this agent do' ] } } },
+    vo: 'Then write it down, by hand, in a file called reflection dot m d. What you did, the exact error you saw, and how you fixed it.',
+    cap: 'reflection.md',
+    info: { tpl: 'checks', data: { title: 'In your own words', items: [
+      'What you broke, and why you picked that one',
+      'The exact error text, copied out',
+      'Where you looked first, and whether that was right',
+      'How you fixed it' ] } } },
 
-  { id: '17', mode: 'card',
-    vo: 'Two hours, your own project, and an agent that works while you do something else.',
-    card: { small: 'Module 14 · Assignment', big: 'Your project. Two hours. One loop.',
+  { id: '17', mode: 'info',
+    vo: 'This part I really do want in your own words. Claude was not there when it broke, so it cannot write this one honestly for you.',
+    cap: 'Yours, not your agent’s',
+    info: { tpl: 'statement', data: { text: 'Claude was not there when it broke.', hi: 'was not there' } } },
+
+  { id: '18', mode: 'ui',
+    vo: 'When you are done, just send me the link to your repo. I will be looking for three things.',
+    cap: 'What to hand in',
+    screen: { app: 'Assignment', url: 'hand in',
+      title: 'Send one repo link',
+      rows: [
+        { k: 'Your working code', v: 'the footer, in a pull request or merged' },
+        { k: 'assignment.md', v: 'written by your agent, real values' },
+        { k: 'reflection.md', v: 'written by you, by hand', hl: true } ] } },
+
+  { id: '19', mode: 'card',
+    vo: 'And that is the whole assignment.',
+    card: { small: 'Module 14 · Assignment', big: 'Three parts. One message. One honest write-up.',
       sub: 'Everything you need is in videos 1 to 7' } },
 ];
 
