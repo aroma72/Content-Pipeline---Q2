@@ -221,11 +221,17 @@ function build() {
           'Only fire a checkpoint whose pause.safe is true. False means it has no whole '
           + 'sentence on one side and there is nowhere clean to stop.',
           'Do not fire a checkpoint whose timing.trusted is false.',
-          'rendersInVideo is false on every current video: the popup is the ONLY place '
-          + 'the learner ever sees the question, so if you skip it they miss it entirely.',
-          'Some older videos draw the question and the answer on screen. Those report '
-          + 'pausesVideo:false and onScreenUntilSeconds — do not pause over them, the '
-          + 'video answers itself.',
+          'questionStyle tells you which of the two formats a video is, and it is derived: '
+          + 'a row is "popup" only when EVERY one of its checkpoints has rendersInVideo:false. '
+          + 'Videos we make now are all popup; older ones draw the question on screen.',
+          'On a popup checkpoint the four behaviour flags agree: rendersInVideo:false, '
+          + 'pausesVideo:true, requiresAnswer:true, allowSkip:false. The popup is the ONLY '
+          + 'place the learner ever sees the question, so if you skip it they miss it entirely.',
+          'On an on-screen checkpoint all four relax together: pausesVideo:false, '
+          + 'requiresAnswer:false, blocking:false, allowSkip:true, plus onScreenUntilSeconds. '
+          + 'Do not pause over these — the video answers itself. A question that never pauses '
+          + 'cannot gate anything, so you will never see pausesVideo:false alongside '
+          + 'requiresAnswer:true; if you ever do, treat it as our bug and tell us.',
           'The learner\'s answer is recorded by you. This service stores nothing.',
         ],
       },

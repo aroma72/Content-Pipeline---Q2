@@ -28,6 +28,9 @@ The container has no persistent disk. Jobs, the spend ledger, idempotency record
 | 4 | OS temp | `ephemeral` |
 | 5 | nothing writable | `memory` — **producing is refused** |
 
+**Attached on 2026-09-18** — `content-queen-volume`, 50 GB at `/data`, so `/health`
+reports `volume`. Kept here because it has to be redone for any new environment.
+
 **Attach a Railway volume and nothing else needs doing.** Railway injects
 `RAILWAY_VOLUME_MOUNT_PATH` automatically, the store relocates onto it, and
 `/health` starts saying `volume`. No code change, no redeploy of config.
