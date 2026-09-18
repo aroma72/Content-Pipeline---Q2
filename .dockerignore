@@ -72,3 +72,10 @@ explainer-videos/**/clips
 # ...except the record that a video exists on YouTube. It is the only proof a
 # catalogue row has a playable URL, and without it the image ships none.
 !.beads/publish_review.jsonl
+
+# The orchestrator's own state. `!orchestrator` above admits the whole directory for
+# its code, which used to drag a developer's queue.jsonl into the image -- so every
+# redeploy replaced production's course queue with a build-time snapshot of a laptop,
+# blocked items and all. Queue state belongs on the volume, never in the image.
+orchestrator/queue.jsonl
+orchestrator/.runs

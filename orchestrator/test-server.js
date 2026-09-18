@@ -492,6 +492,37 @@ async function bridgeChecks() {
       return `${r.json.count} rows, all classified`;
     }); });
 
+  // The LMS found a checkpoint reporting pausesVideo:false alongside requiresAnswer:true
+  // and allowSkip:false. Those cannot both be honoured -- if the player never stops,
+  // there is no moment at which an answer can be required -- so every consumer had to
+  // guess which field won. A question the video draws for itself gates nothing.
+  await check('a question that never pauses never claims to require an answer',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      const auth = { authorization: `Bearer ${LMS_TOKEN}` };
+      const list = await req(port, { path: '/api/v1/videos', headers: auth });
+      assert(list.status === 200, `expected 200, got ${list.status}`);
+      if (!list.json.count) return skip('no videos with checkpoints on this machine');
+      let onScreen = 0; let popup = 0;
+      for (const row of list.json.videos) {
+        const r = await req(port, { path: `/api/v1/videos/${row.videoId}/checkpoints`, headers: auth });
+        assert(r.status === 200, `${row.videoId}: expected 200, got ${r.status}`);
+        for (const c of r.json.checkpoints) {
+          if (c.pausesVideo === false) {
+            onScreen++;
+            assert(c.requiresAnswer === false && c.blocking === false && c.allowSkip === true,
+              `${row.videoId}/${c.id} does not pause but still demands an answer`);
+            assert(typeof c.onScreenUntilSeconds === 'number',
+              `${row.videoId}/${c.id} does not pause and does not say how long it is legible`);
+          } else {
+            popup++;
+            assert(c.requiresAnswer === true && c.blocking === true && c.allowSkip === false,
+              `${row.videoId}/${c.id} pauses but does not gate -- the learner can skip past it`);
+          }
+        }
+      }
+      return `${popup} gating, ${onScreen} drawn on screen, none contradictory`;
+    }); });
+
   await check('GET /api/v1/health answers without a credential and leaks nothing',
     () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
       const r = await req(port, { path: '/api/v1/health' });

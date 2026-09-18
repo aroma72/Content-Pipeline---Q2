@@ -1,0 +1,402 @@
+[
+  {
+    "id": "ns-01-why-a-chat-window",
+    "title": "1 · Why a Chat Window Isn't Enough",
+    "t": {
+      "trusted": true,
+      "relativeTo": "ns-01-why-a-chat-window_final.mp4",
+      "introOffsetSeconds": 2.6,
+      "introOffsetSource": "brand-constant",
+      "lessonSeconds": 111.206,
+      "note": "atSeconds is measured from the start of the delivered file, which begins with the brand intro. lessonAtSeconds excludes it."
+    },
+    "c": {
+      "id": "q1",
+      "beatId": "18",
+      "revealBeatId": null,
+      "atSeconds": 89.34,
+      "lessonAtSeconds": 86.74,
+      "pausesVideo": true,
+      "resumeAfterFeedback": true,
+      "requiresAnswer": true,
+      "blocking": true,
+      "allowSkip": false,
+      "resumeAtSeconds": 89.34,
+      "rendersInVideo": false,
+      "pause": {
+        "atBeatBoundary": true,
+        "afterBeatId": "17",
+        "beforeBeatId": "19",
+        "boundaryLessonSeconds": 86.99,
+        "leadSeconds": 0.25,
+        "safe": true
+      },
+      "preamble": "Let's answer a quick question, to check the concept landed.",
+      "stem": "Your agent answers correctly every time you open the project and type a prompt. Which of the three capabilities does it have?",
+      "options": [
+        "Somewhere to track its work",
+        "A two-way line to you",
+        "A process running when you are not there",
+        "None of them"
+      ],
+      "correctIndex": 3,
+      "feedback": {
+        "correct": "Correct — and that is why connecting one service never feels like enough. While the only way to reach it is to open the project, you are personally doing all three jobs.",
+        "incorrect": "It has none of them, which surprises people because the setup clearly works. Look at what happens when you walk away: the task history disappears with the session, so there is no tracking; nothing can reach you, and you cannot reach it, without opening the editor, so there is no two-way line; and the process itself is your laptop, so nothing is running at all. Answering well while you watch is not the same as having any of the three."
+      },
+      "explanation": "It has none of them, which surprises people because the setup clearly works. Look at what happens when you walk away: the task history disappears with the session, so there is no tracking; nothing can reach you, and you cannot reach it, without opening the editor, so there is no two-way line; and the process itself is your laptop, so nothing is running at all. Answering well while you watch is not the same as having any of the three.",
+      "explanationSource": "authored",
+      "revealAtSeconds": null
+    }
+  },
+  {
+    "id": "ns-02-the-loop",
+    "title": "2 · The Loop, End to End",
+    "t": {
+      "trusted": true,
+      "relativeTo": "ns-02-the-loop_final.mp4",
+      "introOffsetSeconds": 2.6,
+      "introOffsetSource": "brand-constant",
+      "lessonSeconds": 90.898,
+      "note": "atSeconds is measured from the start of the delivered file, which begins with the brand intro. lessonAtSeconds excludes it."
+    },
+    "c": {
+      "id": "q1",
+      "beatId": "14",
+      "revealBeatId": null,
+      "atSeconds": 62.382,
+      "lessonAtSeconds": 59.782,
+      "pausesVideo": true,
+      "resumeAfterFeedback": true,
+      "requiresAnswer": true,
+      "blocking": true,
+      "allowSkip": false,
+      "resumeAtSeconds": 62.382,
+      "rendersInVideo": false,
+      "pause": {
+        "atBeatBoundary": true,
+        "afterBeatId": "13",
+        "beforeBeatId": "15",
+        "boundaryLessonSeconds": 60.032,
+        "leadSeconds": 0.25,
+        "safe": true
+      },
+      "preamble": "Let's answer a quick question, to check the concept landed.",
+      "stem": "Your agent is connected to Slack, Notion and GitHub, and the loop works exactly as shown. You shut your laptop and go home. What happens to the next request someone sends?",
+      "options": [
+        "It queues and runs when you open the laptop again",
+        "Nothing happens; there is no process running to receive it",
+        "Slack retries until the agent responds",
+        "Notion creates the card and the rest waits"
+      ],
+      "correctIndex": 1,
+      "feedback": {
+        "correct": "Exactly. Slack, Notion and GitHub are services the agent calls — none of them runs it. The code doing the reading, deciding and committing has to be executing somewhere, and if that somewhere is your laptop, closing it ends the loop.",
+        "incorrect": "Nothing happens at all, and the reason it is tempting to think otherwise is that these services feel active. They are not. Slack delivers an event to a URL; if nothing answers, it retries briefly and gives up — it does not hold messages for an app that is switched off. Notion only creates a card when something calls its API, and nothing is calling. Your agent is a program, and a program that is not running cannot poll, cannot be notified, and cannot create anything."
+      },
+      "explanation": "Nothing happens at all, and the reason it is tempting to think otherwise is that these services feel active. They are not. Slack delivers an event to a URL; if nothing answers, it retries briefly and gives up — it does not hold messages for an app that is switched off. Notion only creates a card when something calls its API, and nothing is calling. Your agent is a program, and a program that is not running cannot poll, cannot be notified, and cannot create anything.",
+      "explanationSource": "authored",
+      "revealAtSeconds": null
+    }
+  },
+  {
+    "id": "ns-03-notion",
+    "title": "3 · Notion — The Task Board",
+    "t": {
+      "trusted": true,
+      "relativeTo": "ns-03-notion_final.mp4",
+      "introOffsetSeconds": 2.6,
+      "introOffsetSource": "brand-constant",
+      "lessonSeconds": 118.528,
+      "note": "atSeconds is measured from the start of the delivered file, which begins with the brand intro. lessonAtSeconds excludes it."
+    },
+    "c": {
+      "id": "q1",
+      "beatId": "17",
+      "revealBeatId": null,
+      "atSeconds": 85.63,
+      "lessonAtSeconds": 83.03,
+      "pausesVideo": true,
+      "resumeAfterFeedback": true,
+      "requiresAnswer": true,
+      "blocking": true,
+      "allowSkip": false,
+      "resumeAtSeconds": 85.63,
+      "rendersInVideo": false,
+      "pause": {
+        "atBeatBoundary": true,
+        "afterBeatId": "16",
+        "beforeBeatId": "18",
+        "boundaryLessonSeconds": 83.28,
+        "leadSeconds": 0.25,
+        "safe": true
+      },
+      "preamble": "Let's answer a quick question, to check the concept landed.",
+      "stem": "You created the integration, copied the secret, and your code returns a 404 saying the database does not exist — but you are looking straight at it in your browser. What is wrong?",
+      "options": [
+        "The secret was copied incorrectly",
+        "The database was never shared with the integration under Connections",
+        "The database ID includes the view ID",
+        "Notion needs a paid plan for API access"
+      ],
+      "correctIndex": 1,
+      "feedback": {
+        "correct": "Exactly — and note how the error lies to you. It says \"does not exist\", which sends people hunting for a typo in the ID, when the real meaning is \"exists, but not for you\".",
+        "incorrect": "It is the sharing step, and the reason it catches everyone is that you can see the database perfectly well — but you are signed in as you, and the integration is not you. It has its own identity, with access to nothing, until a human explicitly shares a page with it. A mistyped secret would fail as an authentication error, not a missing object; a view ID in the database ID gives a different and clearer error; and none of this requires a paid plan."
+      },
+      "explanation": "It is the sharing step, and the reason it catches everyone is that you can see the database perfectly well — but you are signed in as you, and the integration is not you. It has its own identity, with access to nothing, until a human explicitly shares a page with it. A mistyped secret would fail as an authentication error, not a missing object; a view ID in the database ID gives a different and clearer error; and none of this requires a paid plan.",
+      "explanationSource": "authored",
+      "revealAtSeconds": null
+    }
+  },
+  {
+    "id": "ns-04-slack",
+    "title": "4 · Slack — Speak, Then Listen",
+    "t": {
+      "trusted": true,
+      "relativeTo": "ns-04-slack_final.mp4",
+      "introOffsetSeconds": 2.6,
+      "introOffsetSource": "brand-constant",
+      "lessonSeconds": 182.27,
+      "note": "atSeconds is measured from the start of the delivered file, which begins with the brand intro. lessonAtSeconds excludes it."
+    },
+    "c": {
+      "id": "q1",
+      "beatId": "17",
+      "revealBeatId": null,
+      "atSeconds": 90.794,
+      "lessonAtSeconds": 88.194,
+      "pausesVideo": true,
+      "resumeAfterFeedback": true,
+      "requiresAnswer": true,
+      "blocking": true,
+      "allowSkip": false,
+      "resumeAtSeconds": 90.794,
+      "rendersInVideo": false,
+      "pause": {
+        "atBeatBoundary": true,
+        "afterBeatId": "16",
+        "beforeBeatId": "18",
+        "boundaryLessonSeconds": 88.444,
+        "leadSeconds": 0.25,
+        "safe": true
+      },
+      "preamble": "Let's answer a quick question, to check the concept landed.",
+      "stem": "Your bot has chat:write, the app is installed, and the token is correct — but posting to your channel fails with not_in_channel. What is missing?",
+      "options": [
+        "The channels:history scope",
+        "The bot was never invited to that channel",
+        "The app needs reinstalling after adding scopes",
+        "The channel ID is wrong"
+      ],
+      "correctIndex": 1,
+      "feedback": {
+        "correct": "Exactly — and the error name says it plainly once you read it as a statement of fact rather than a failure: the bot is not in the channel. Scopes say what it may do anywhere; membership says where.",
+        "incorrect": "The bot is not a member of that channel. This is the most common Slack error, and it catches people because everything else is genuinely correct — the token works, the scope is granted, the app is installed. But a scope is a permission, not a presence: chat:write means \"may send messages\", not \"is in this room\". channels:history governs reading, not posting. Reinstalling matters when you add a scope, which fails differently (missing_scope). And a wrong channel ID gives channel_not_found — the error is telling you it found the channel fine and your bot simply is not in it."
+      },
+      "explanation": "The bot is not a member of that channel. This is the most common Slack error, and it catches people because everything else is genuinely correct — the token works, the scope is granted, the app is installed. But a scope is a permission, not a presence: chat:write means \"may send messages\", not \"is in this room\". channels:history governs reading, not posting. Reinstalling matters when you add a scope, which fails differently (missing_scope). And a wrong channel ID gives channel_not_found — the error is telling you it found the channel fine and your bot simply is not in it.",
+      "explanationSource": "authored",
+      "revealAtSeconds": null
+    }
+  },
+  {
+    "id": "ns-05-github",
+    "title": "5 · GitHub — Two Jobs",
+    "t": {
+      "trusted": true,
+      "relativeTo": "ns-05-github_final.mp4",
+      "introOffsetSeconds": 2.6,
+      "introOffsetSource": "brand-constant",
+      "lessonSeconds": 123.3,
+      "note": "atSeconds is measured from the start of the delivered file, which begins with the brand intro. lessonAtSeconds excludes it."
+    },
+    "c": {
+      "id": "q1",
+      "beatId": "19",
+      "revealBeatId": null,
+      "atSeconds": 89.152,
+      "lessonAtSeconds": 86.552,
+      "pausesVideo": true,
+      "resumeAfterFeedback": true,
+      "requiresAnswer": true,
+      "blocking": true,
+      "allowSkip": false,
+      "resumeAtSeconds": 89.152,
+      "rendersInVideo": false,
+      "pause": {
+        "atBeatBoundary": true,
+        "afterBeatId": "18",
+        "beforeBeatId": "20",
+        "boundaryLessonSeconds": 86.802,
+        "leadSeconds": 0.25,
+        "safe": true
+      },
+      "preamble": "Let's answer a quick question, to check the concept landed.",
+      "stem": "You added the webhook with a secret, deployed your server, and pushed an event — but the server rejects every delivery with a 403. What is almost certainly wrong?",
+      "options": [
+        "The payload URL is wrong",
+        "The secret in GitHub and the secret on your server do not match",
+        "The token needs Contents write permission",
+        "GitHub has not verified the webhook yet"
+      ],
+      "correctIndex": 1,
+      "feedback": {
+        "correct": "Right — and this one is nasty because both halves look correct in isolation. GitHub shows a secret is set; your server has a secret set. Neither dashboard can tell you they are different strings.",
+        "incorrect": "The two secrets do not match. The signature check recomputes the HMAC from the secret on your server and compares it to the header GitHub sent — if the strings differ by one character, or the environment variable was never actually set on the host, every delivery fails and returns 403. A wrong payload URL gives no delivery at all rather than a rejected one; the token's Contents permission governs committing, which has nothing to do with inbound verification; and GitHub does not hold webhooks back for verification the way Slack does."
+      },
+      "explanation": "The two secrets do not match. The signature check recomputes the HMAC from the secret on your server and compares it to the header GitHub sent — if the strings differ by one character, or the environment variable was never actually set on the host, every delivery fails and returns 403. A wrong payload URL gives no delivery at all rather than a rejected one; the token's Contents permission governs committing, which has nothing to do with inbound verification; and GitHub does not hold webhooks back for verification the way Slack does.",
+      "explanationSource": "authored",
+      "revealAtSeconds": null
+    }
+  },
+  {
+    "id": "ns-06-deployment",
+    "title": "6 · Your Deployment — The Body",
+    "t": {
+      "trusted": true,
+      "relativeTo": "ns-06-deployment_final.mp4",
+      "introOffsetSeconds": 2.6,
+      "introOffsetSource": "brand-constant",
+      "lessonSeconds": 128.667,
+      "note": "atSeconds is measured from the start of the delivered file, which begins with the brand intro. lessonAtSeconds excludes it."
+    },
+    "c": {
+      "id": "q1",
+      "beatId": "15",
+      "revealBeatId": null,
+      "atSeconds": 72.909,
+      "lessonAtSeconds": 70.309,
+      "pausesVideo": true,
+      "resumeAfterFeedback": true,
+      "requiresAnswer": true,
+      "blocking": true,
+      "allowSkip": false,
+      "resumeAtSeconds": 72.909,
+      "rendersInVideo": false,
+      "pause": {
+        "atBeatBoundary": true,
+        "afterBeatId": "14",
+        "beforeBeatId": "16",
+        "boundaryLessonSeconds": 70.559,
+        "leadSeconds": 0.25,
+        "safe": true
+      },
+      "preamble": "Let's answer a quick question, to check the concept landed.",
+      "stem": "You are setting up Slack's Event Subscriptions and you paste in http://localhost:8000/slack/events. Slack refuses to verify it. Why?",
+      "options": [
+        "Slack requires HTTPS, so https://localhost:8000 would work",
+        "Slack is calling your server from the internet and cannot reach an address that only exists on your laptop",
+        "The endpoint path must be exactly /slack/events",
+        "Event Subscriptions must be toggled on before the URL is accepted"
+      ],
+      "correctIndex": 1,
+      "feedback": {
+        "correct": "Exactly, and this is the concrete reason a deployment stops being optional the moment you want inbound events. Outbound calls work fine from a laptop — you are calling Slack. Inbound means Slack calls you.",
+        "incorrect": "localhost means \"this machine\" — and the machine Slack is calling from is Slack's, not yours. Their servers resolve it to themselves, find nothing, and verification fails. Switching to https does not help, because the problem is reachability rather than the protocol; the path can be anything you like as long as your app serves it; and toggling Event Subscriptions is what produced the URL box in the first place. This is why you can post messages from your laptop all day but cannot receive a single one until the app lives at a public address."
+      },
+      "explanation": "localhost means \"this machine\" — and the machine Slack is calling from is Slack's, not yours. Their servers resolve it to themselves, find nothing, and verification fails. Switching to https does not help, because the problem is reachability rather than the protocol; the path can be anything you like as long as your app serves it; and toggling Event Subscriptions is what produced the URL box in the first place. This is why you can post messages from your laptop all day but cannot receive a single one until the app lives at a public address.",
+      "explanationSource": "authored",
+      "revealAtSeconds": null
+    }
+  },
+  {
+    "id": "ns-07-mistakes",
+    "title": "7 · The Four Mistakes",
+    "t": {
+      "trusted": true,
+      "relativeTo": "ns-07-mistakes_final.mp4",
+      "introOffsetSeconds": 2.6,
+      "introOffsetSource": "brand-constant",
+      "lessonSeconds": 117.309,
+      "note": "atSeconds is measured from the start of the delivered file, which begins with the brand intro. lessonAtSeconds excludes it."
+    },
+    "c": {
+      "id": "q1",
+      "beatId": "13",
+      "revealBeatId": null,
+      "atSeconds": 62.279,
+      "lessonAtSeconds": 59.679,
+      "pausesVideo": true,
+      "resumeAfterFeedback": true,
+      "requiresAnswer": true,
+      "blocking": true,
+      "allowSkip": false,
+      "resumeAtSeconds": 62.279,
+      "rendersInVideo": false,
+      "pause": {
+        "atBeatBoundary": true,
+        "afterBeatId": "12",
+        "beforeBeatId": "14",
+        "boundaryLessonSeconds": 59.929,
+        "leadSeconds": 0.25,
+        "safe": true
+      },
+      "preamble": "Let's answer a quick question, to check the concept landed.",
+      "stem": "Your agent posts to Slack perfectly, but has never once received a message. Which mistake is this?",
+      "options": [
+        "The credential is set but the channel was never shared",
+        "The webhook points somewhere the outside world cannot reach",
+        "The signing secret is set in only one place",
+        "A key was committed and has been revoked"
+      ],
+      "correctIndex": 1,
+      "feedback": {
+        "correct": "Exactly — and the tell is the asymmetry. Sending working proves the token and scopes are fine, because you are the one calling Slack. Receiving nothing points at reachability.",
+        "incorrect": "It is the reachability one, and the giveaway is that sending works. If the credential were unshared or the bot uninvited you could not post at all, so the thing that is working rules that out. A half-set signing secret would produce requests that arrive and get rejected — 403s in your logs — not silence. A revoked key would break sending too, loudly and immediately. Silence in one direction while the other is healthy nearly always means nothing is listening at a public address."
+      },
+      "explanation": "It is the reachability one, and the giveaway is that sending works. If the credential were unshared or the bot uninvited you could not post at all, so the thing that is working rules that out. A half-set signing secret would produce requests that arrive and get rejected — 403s in your logs — not silence. A revoked key would break sending too, loudly and immediately. Silence in one direction while the other is healthy nearly always means nothing is listening at a public address.",
+      "explanationSource": "authored",
+      "revealAtSeconds": null
+    }
+  },
+  {
+    "id": "ns-assignment",
+    "title": "Assignment · Connect Your Own Project",
+    "c": {
+      "id": "q1",
+      "beatId": "13",
+      "revealBeatId": null,
+      "atSeconds": 90.252,
+      "lessonAtSeconds": 87.652,
+      "pausesVideo": true,
+      "resumeAfterFeedback": true,
+      "requiresAnswer": true,
+      "blocking": true,
+      "allowSkip": false,
+      "resumeAtSeconds": 90.252,
+      "rendersInVideo": false,
+      "pause": {
+        "atBeatBoundary": true,
+        "afterBeatId": "12",
+        "beforeBeatId": "14",
+        "boundaryLessonSeconds": 87.902,
+        "leadSeconds": 0.25,
+        "safe": true
+      },
+      "preamble": "Let's answer a quick question, to check the concept landed.",
+      "stem": "Your agent opens the pull request, but it could not read the Notion card back. So assignment.md lists a neat \"To Do, In Progress, Done\" with no timestamps — a sequence it worked out rather than observed. What should it have done instead?",
+      "options": [
+        "Exactly that — the order is almost certainly right anyway",
+        "Left the status history out quietly and reported everything else",
+        "Said plainly that it could not retrieve the status history",
+        "Held the pull request back until it could read the card"
+      ],
+      "correctIndex": 2,
+      "feedback": {
+        "correct": "Correct. The instruction is explicit: if any step fails, say so instead of skipping it. A named gap is useful information — it tells you exactly which permission is missing.",
+        "incorrect": "It should say plainly that it could not retrieve the status history. This file exists for one reason: to show what actually happened, not what probably happened. A sequence the agent worked out looks identical on the page to one it observed, which is why a tidy history with no timestamps is marked as a failure rather than a formatting slip. Leaving it out quietly is the same problem in a quieter coat — the marker cannot tell a missing field from a missing permission. And holding the pull request back is worse than either: the work is finished, and it is the report that is incomplete."
+      },
+      "explanation": "It should say plainly that it could not retrieve the status history. This file exists for one reason: to show what actually happened, not what probably happened. A sequence the agent worked out looks identical on the page to one it observed, which is why a tidy history with no timestamps is marked as a failure rather than a formatting slip. Leaving it out quietly is the same problem in a quieter coat — the marker cannot tell a missing field from a missing permission. And holding the pull request back is worse than either: the work is finished, and it is the report that is incomplete.",
+      "explanationSource": "authored",
+      "revealAtSeconds": null
+    },
+    "t": {
+      "trusted": true,
+      "relativeTo": "ns-assignment_final.mp4",
+      "introOffsetSeconds": 2.6,
+      "introOffsetSource": "brand-constant",
+      "lessonSeconds": 131.139,
+      "note": "atSeconds is measured from the start of the delivered file, which begins with the brand intro. lessonAtSeconds excludes it."
+    }
+  }
+]

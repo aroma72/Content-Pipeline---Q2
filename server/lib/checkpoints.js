@@ -329,6 +329,23 @@ function forPath(relPath) {
     });
   };
 
+  // A question the video draws for itself cannot gate anything: the learner has
+  // already read it, and the answer card arrives whether they choose or not. So
+  // the whole behaviour contract has to relax together. Setting only
+  // `pausesVideo` left `requiresAnswer: true, allowSkip: false` standing beside
+  // it, and a consumer could only resolve that by guessing which field won --
+  // which is exactly what the LMS had to do. Kept in one place so the flags
+  // cannot drift apart again.
+  const drawnOnScreen = (until) => {
+    const last = checkpoints[checkpoints.length - 1];
+    last.pausesVideo = false;
+    last.resumeAfterFeedback = false;
+    last.requiresAnswer = false;
+    last.blocking = false;
+    last.allowSkip = true;
+    last.onScreenUntilSeconds = until;
+  };
+
   // ── current format: the checkpoint beat. Nothing rendered; the player stops ──
   beats.forEach((c, i) => {
     if (!isCheckpointBeat(c)) return;
@@ -382,9 +399,7 @@ function forPath(relPath) {
     // The card holds the question on screen by itself, so pausing is optional
     // here; the window it is legible for is reported for a player that prefers
     // to overlay rather than stop.
-    const last = checkpoints[checkpoints.length - 1];
-    last.pausesVideo = false;
-    last.onScreenUntilSeconds = sec(startAt[i] + d + offset.seconds);
+    drawnOnScreen(sec(startAt[i] + d + offset.seconds));
   });
 
   // ── the `info` quiz-card pair: same rule, the window is the card's own time ──
@@ -432,10 +447,7 @@ function forPath(relPath) {
     // These videos draw the question and the answer themselves, so stopping is
     // optional — the card already holds it on screen. Reported so the LMS can
     // tell them apart from a video that shows nothing and must be paused.
-    const last = checkpoints[checkpoints.length - 1];
-    last.pausesVideo = false;
-    last.resumeAfterFeedback = false;
-    last.onScreenUntilSeconds = sec(startAt[i] + d + offset.seconds);
+    drawnOnScreen(sec(startAt[i] + d + offset.seconds));
   });
 
   if (!checkpoints.length) return null;

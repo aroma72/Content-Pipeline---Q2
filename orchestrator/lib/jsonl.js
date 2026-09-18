@@ -17,6 +17,26 @@ function append(file, record) {
 }
 
 /**
+ * Append and fsync before returning.
+ *
+ * Plain `append` leaves the line in the page cache, and Railway can stop a
+ * container between the write and the disk. That is survivable for a work log;
+ * it is not survivable for the queue, which is now the record of which lesson
+ * was paid for. Costs a handful of fsyncs per 30-minute lesson.
+ */
+function appendDurable(file, record) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const fd = fs.openSync(file, 'a');
+  try {
+    fs.writeFileSync(fd, JSON.stringify(record) + '
+', 'utf8');
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/**
  * Read every valid record. Malformed lines are skipped rather than thrown --
  * a half-written line from a killed process must not make the whole queue
  * unreadable and strand every remaining item.
@@ -42,4 +62,4 @@ function readValid(file) {
   return readAll(file).filter((r) => !r.__malformed);
 }
 
-module.exports = { append, readAll, readValid };
+module.exports = { append, appendDurable, readAll, readValid };

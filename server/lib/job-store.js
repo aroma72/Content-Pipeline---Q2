@@ -100,6 +100,9 @@ function open(opts = {}) {
     ensureDir(path.join(dir, 'jobs'));
     ensureDir(path.join(dir, 'ledger'));
     ensureDir(path.join(dir, 'idem'));
+    // The course queue lives here too, so one place owns the layout and one
+    // write-probe covers it.
+    ensureDir(path.join(dir, 'queue'));
     // Prove it, rather than assume it: a directory can exist and be read-only.
     const probe = path.join(dir, '.write-probe');
     fs.writeFileSync(probe, String(Date.now()));
