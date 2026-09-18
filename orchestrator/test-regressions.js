@@ -2150,6 +2150,112 @@ async function llmChecks() {
   }
 }
 
+// ── 11. a course outlives the process that started it ─────────────────────────
+//
+// Three bugs, all of which cost money rather than correctness:
+//   - the queue was wiped on redeploy, so a course could not survive its build;
+//   - a lesson was never marked 'claimed', so a restart re-picked it and the
+//     first attempt's ~$1.50 vanished with no record;
+//   - queue.setStatus was never exported, so approve() and reject() -- the whole
+//     point of a course pausing for a human -- threw TypeError on every call.
+
+function courseChecks() {
+  console.log('');
+  console.log('11. courses survive a restart, and cost at most the lesson in flight');
+
+  const os = require('os');
+  const queue = require(path.join(__dirname, 'lib', 'queue'));
+  const jobStore = require(path.join(__dirname, '..', 'server', 'lib', 'job-store'));
+
+  // approve() calls kick(), which drains the queue through the spine. No test
+  // may start a render, call a model, or spend a cent, so the spine is replaced
+  // with a stub that reports the lesson blocked and does nothing.
+  const spine = require(path.join(__dirname, 'lib', 'spine'));
+  spine.execute = async () => ({ status: 'blocked' });
+
+  const freshQueue = () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cq-course-'));
+    jobStore.reset();
+    queue.resetPathCache();
+    delete process.env.RAILWAY_VOLUME_MOUNT_PATH;
+    process.env.JOB_STORE_DIR = dir;
+    return dir;
+  };
+
+  check('the laptop queue is not shipped inside the image', () => {
+    const di = fs.readFileSync(path.join(__dirname, '..', '.dockerignore'), 'utf8');
+    assert(/^orchestrator\/queue\.jsonl$/m.test(di),
+      '.dockerignore admits !orchestrator wholesale, so a developer queue.jsonl ships to production');
+    return 'excluded';
+  });
+
+  check('queue.setStatus is exported, so approve and reject do not throw', () => {
+    assert(typeof queue.setStatus === 'function',
+      'course-worker calls queue.setStatus -- unexported, every approve and reject threw TypeError');
+    return 'exported';
+  });
+
+  check('the worker records a lesson as claimed before anything is spent on it', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'server', 'lib', 'course-worker.js'), 'utf8');
+    const claimAt = src.indexOf('queue.claim(');
+    const spendAt = src.indexOf('spine.execute(');
+    assert(claimAt > -1, 'buildOne never claims the lesson, so a restart cannot tell it from one never started');
+    assert(claimAt < spendAt, 'the lesson is claimed after the spend begins, which is too late to help');
+    return 'claimed first';
+  });
+
+  check('a lesson left mid-build is parked for a human, not silently rebuilt', () => {
+    freshQueue();
+    const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+    queue.enqueue({ topic: 'Lesson two', series: 'demo', slug: 'mid', source: 'course-builder' });
+    queue.claim('demo/mid', 'run-dead');
+    const r = cw.restore();
+    const item = queue.get('demo/mid');
+    assert(r.interrupted === 1, 'expected 1 interrupted, got ' + r.interrupted);
+    assert(item.status === 'blocked', 'expected blocked, got ' + item.status);
+    assert(item.interrupted === true, 'the lesson does not say it was interrupted');
+    assert(/rebuild this lesson/.test(item.reason), 'the reason does not name the cost of rebuilding');
+    return 'parked, and the cost is stated';
+  });
+
+  check('restore starts no build of its own, so a crash loop cannot spend', () => {
+    freshQueue();
+    const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+    queue.enqueue({ topic: 'Lesson three', series: 'demo', slug: 'idle', source: 'course-builder' });
+    cw.restore();
+    // Railway retries a failing deploy three times; three unattended rebuilds is real money.
+    assert(queue.get('demo/idle').status === 'queued', 'restore moved a queued lesson on its own');
+    assert(cw.status().running === false, 'restore started the worker');
+    return 'nothing started';
+  });
+
+  check('approving an interrupted lesson rebuilds it instead of publishing a video that was never made', () => {
+    freshQueue();
+    const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+    queue.enqueue({ topic: 'Lesson four', series: 'demo', slug: 'rebuilt', source: 'course-builder' });
+    queue.claim('demo/rebuilt', 'run-dead');
+    cw.restore();
+    cw.approve('demo/rebuilt', 'Aroma');
+    const item = queue.get('demo/rebuilt');
+    // reviewApproved would make the spine skip review for a render that is gone.
+    assert(!item.reviewApproved,
+      'an interrupted lesson carried reviewApproved -- the spine would skip review and publish nothing');
+    assert(item.interrupted === false, 'the interrupted flag was not cleared on approval');
+    return 'rebuilds, then blocks at review as normal';
+  });
+
+  check('approving a normally-built lesson still skips the expensive render', () => {
+    freshQueue();
+    const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+    queue.enqueue({ topic: 'Lesson five', series: 'demo', slug: 'normal', source: 'course-builder' });
+    queue.block('demo/normal', 'run-1', 'awaiting human review');
+    cw.approve('demo/normal', 'Aroma');
+    assert(queue.get('demo/normal').reviewApproved === 'Aroma',
+      'a normally-built lesson lost its approval and would re-render');
+    return 'resumes to publish';
+  });
+}
+
 (async () => {
   await interpreterChecks();
   await beatChecks();
@@ -2158,6 +2264,7 @@ async function llmChecks() {
   await integrationChecks();
   await redraftChecks();
   namingChecks();
+  courseChecks();
 
   console.log(`\n${'-'.repeat(64)}`);
   console.log(`  ${pass} passed, ${failures.length} failed` + (skipped ? `, ${skipped} skipped` : ''));

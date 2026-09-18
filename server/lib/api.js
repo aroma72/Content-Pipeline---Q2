@@ -345,6 +345,16 @@ function build() {
     const planner = require('./course-planner');
     const queue = require('../../orchestrator/lib/queue');
 
+    // A course is hours of work and tens of dollars. On a store that dies with
+    // the process there is no queue file at all: a built lesson could never be
+    // approved and GET /courses/:id would 404 immediately. Mirrors the rule that
+    // a spend which cannot be recorded is not a spend we accept.
+    if (queue.durability() === 'memory') {
+      return res.status(503).json({ error: 'no_durable_store',
+        message: 'This service cannot currently record course state, so a course started now '
+          + 'could not be approved or resumed. GET /api/v1/health reports the store.' });
+    }
+
     if (!body.plan || !Array.isArray(body.plan.modules)) {
       return res.status(400).json({ error: 'bad_request',
         message: 'Send the plan you got from POST /api/v1/courses/plan as `plan`.' });
@@ -419,9 +429,23 @@ function build() {
       .filter((i) => (i.notes || '').includes(tag))
       .map((i) => ({ id: i.id, topic: i.topic, status: i.status, module: i.module }));
     if (!items.length) {
-      return res.status(404).json({ error: 'not_found',
-        message: `No queued lessons tagged ${tag}. Note the queue is not durable across `
-          + 'deploys on this service — see the technical handoff.' });
+      // Report durability; do not assert the worst case. This used to tell every
+      // caller the queue was not durable and point at a handoff they had never
+      // been sent, so an unknown courseId and a lost course read identically.
+      const durability = queue.durability();
+      const since = queue.durableSince();
+      return res.status(404).json({
+        error: 'not_found',
+        message: `No lessons tagged ${tag} on this service.`,
+        durability,
+        durableSince: since,
+        note: durability === 'volume'
+          ? 'Course state is held on a mounted volume and survives a redeploy, so this is an '
+            + 'unrecognised courseId rather than a lost course.'
+          : `Course state on this service is "${durability}" durability, which does NOT survive `
+            + 'a redeploy. Attach a Railway volume before starting a course you cannot afford '
+            + 'to rebuild. GET /api/v1/health reports this under jobStore.durability.',
+      });
     }
     const by = (s) => items.filter((i) => i.status === s).length;
     const cw = require('./course-worker');

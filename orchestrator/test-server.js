@@ -523,6 +523,23 @@ async function bridgeChecks() {
       return `${popup} gating, ${onScreen} drawn on screen, none contradictory`;
     }); });
 
+  // The old body told every caller the queue was not durable and pointed at a
+  // "technical handoff" they had never been sent -- so an unknown courseId and a
+  // course genuinely lost to a redeploy read identically.
+  await check('an unknown course reports durability instead of assuming the worst',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      const r = await req(port, { path: '/api/v1/courses/course-nope', headers: { authorization: `Bearer ${LMS_TOKEN}` } });
+      assert(r.status === 404, `expected 404, got ${r.status}`);
+      assert(!/not durable across/.test(JSON.stringify(r.json)),
+        'still claims the queue is not durable, and still cites a handoff nobody was sent');
+      assert(['volume', 'container', 'ephemeral', 'memory'].includes(r.json.durability),
+        `no usable durability on the 404: ${r.json.durability}`);
+      const h = await req(port, { path: '/health' });
+      assert(h.json.courses && h.json.courses.durability === r.json.durability,
+        'the 404 and /health disagree about where course state lives');
+      return `404 with durability: ${r.json.durability}`;
+    }); });
+
   await check('GET /api/v1/health answers without a credential and leaks nothing',
     () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
       const r = await req(port, { path: '/api/v1/health' });

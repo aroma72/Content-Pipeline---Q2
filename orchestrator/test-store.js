@@ -417,6 +417,110 @@ check('the ETag changes when the payload does, and only then', () => {
   return 'payload-derived';
 });
 
+// ── 6c. the course queue lives where the jobs live ────────────────────────────
+//
+// It used to sit in the repo, so a redeploy wiped it and a course could not
+// survive its own build. Worse, `!orchestrator` in .dockerignore shipped a
+// developer's queue INTO the image, so a redeploy replaced production's queue
+// with a build-time snapshot of a laptop.
+
+console.log('');
+console.log('6c. the course queue survives what the jobs survive');
+
+const queueLib = require(path.join(ROOT, 'orchestrator', 'lib', 'queue'));
+const legacyQueue = require(path.join(ROOT, 'orchestrator', 'lib', 'paths')).PATHS.legacyQueue;
+const slash = (p) => p.split(path.sep).join('/');
+
+function queueIn(env) {
+  jobStore.reset();
+  queueLib.resetPathCache();
+  delete process.env.JOB_STORE_DIR;
+  delete process.env.RAILWAY_VOLUME_MOUNT_PATH;
+  Object.assign(process.env, env);
+  return queueLib;
+}
+function freshDir() {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'cq-queue-'));
+  tmpdirs.push(d);
+  return d;
+}
+
+check('the queue file resolves under the job store, not the repo', () => {
+  const dir = freshDir();
+  const q = queueIn({ JOB_STORE_DIR: dir });
+  assert(slash(q.queueFile()).startsWith(slash(dir)),
+    'queue is at ' + q.queueFile() + ', outside the store ' + dir);
+  assert(slash(q.queueFile()) !== slash(legacyQueue), 'the queue is still in the repo');
+  return q.durability();
+});
+
+check('a queue written by one process is read by the next', () => {
+  const dir = freshDir();
+  let q = queueIn({ JOB_STORE_DIR: dir });
+  q.enqueue({ topic: 'Lesson one', series: 'demo', slug: 'survive-1', source: 'course-builder' });
+  // A redeploy is a new process reading the same directory.
+  delete require.cache[require.resolve(path.join(ROOT, 'orchestrator', 'lib', 'queue'))];
+  q = require(path.join(ROOT, 'orchestrator', 'lib', 'queue'));
+  q.resetPathCache();
+  assert(q.currentItems().filter((i) => i.id === 'demo/survive-1').length === 1,
+    'the lesson did not survive the restart');
+  return 'the course outlives the process';
+});
+
+check('a Railway volume relocates the queue too', () => {
+  const mount = freshDir();
+  const q = queueIn({ RAILWAY_VOLUME_MOUNT_PATH: mount });
+  assert(q.durability() === 'volume', 'expected volume, got ' + q.durability());
+  assert(slash(q.queueFile()).startsWith(slash(mount)), 'the queue did not follow the volume');
+  return 'volume';
+});
+
+check('THE MONEY TEST: an in-image queue is never seeded onto a volume', () => {
+  // A legacy file only reaches a volume-backed deploy by being baked into the
+  // image, where it is a snapshot of somebody's laptop. Copying it forward would
+  // resurrect dead lessons, and a 'queued' one would be built and PAID FOR.
+  const mount = freshDir();
+  const q = queueIn({ RAILWAY_VOLUME_MOUNT_PATH: mount });
+  if (!fs.existsSync(legacyQueue)) return skip('no legacy queue on this machine');
+  assert(q.currentItems().length === 0,
+    'seeded ' + q.currentItems().length + ' laptop lessons onto a volume');
+  return 'a volume starts empty, as it must';
+});
+
+check('a legacy queue IS seeded once at container durability, and only once', () => {
+  const dir = freshDir();
+  const q = queueIn({ JOB_STORE_DIR: dir });
+  if (!fs.existsSync(legacyQueue)) return skip('no legacy queue on this machine');
+  const seeded = q.currentItems().length;
+  assert(seeded > 0, 'the legacy queue was not carried across on a container store');
+  const size = fs.statSync(q.queueFile()).size;
+  q.resetPathCache();
+  q.currentItems();
+  assert(fs.statSync(q.queueFile()).size === size, 'the legacy queue was copied a second time');
+  return seeded + ' items, seeded once';
+});
+
+check('the queue is appended, never rewritten', () => {
+  const dir = freshDir();
+  const q = queueIn({ JOB_STORE_DIR: dir });
+  q.enqueue({ topic: 'One', series: 'demo', slug: 'append-1', source: 'course-builder' });
+  const afterFirst = fs.readFileSync(q.queueFile(), 'utf8');
+  q.enqueue({ topic: 'Two', series: 'demo', slug: 'append-2', source: 'course-builder' });
+  assert(fs.readFileSync(q.queueFile(), 'utf8').startsWith(afterFirst),
+    'an earlier event was rewritten -- history must survive, and two writers must not clobber');
+  return 'history intact';
+});
+
+check('a torn final line does not strand the rest of the queue', () => {
+  const dir = freshDir();
+  const q = queueIn({ JOB_STORE_DIR: dir });
+  q.enqueue({ topic: 'Good', series: 'demo', slug: 'torn-1', source: 'course-builder' });
+  fs.appendFileSync(q.queueFile(), '{"id":"demo/torn-2","stat');
+  assert(q.currentItems().some((i) => i.id === 'demo/torn-1'),
+    'a half-written line stranded the items before it');
+  return 'malformed lines skipped';
+});
+
 // ── 7. the .env loader, without needing a .env ────────────────────────────────
 
 console.log('\n7. .env loader (proved without a real .env, so CI can run it)');

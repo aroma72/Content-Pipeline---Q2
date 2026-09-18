@@ -25,6 +25,12 @@ const DOCS = [
   { src: 'video-builder-concept.html',   out: 'Make-A-Video-Concept.pdf' },
   { src: 'video-builder-technical.html', out: 'Make-A-Video-Technical.pdf' },
   { src: 'lms-reply-2026-09-17.html',     out: 'LMS-Reply-2026-09-17.pdf' },
+  { src: 'lms-reply-2026-09-18.html',     out: 'LMS-Reply-2026-09-18.pdf' },
+  // The course-builder pair was built by hand and so drifted from its source --
+  // including a credential that had been scrubbed from the HTML but survived in
+  // the PDF. Anything we send has to be rebuildable by running this.
+  { src: 'course-builder-concept.html',   out: 'Course-Builder-Concept.pdf' },
+  { src: 'course-builder-technical.html', out: 'Course-Builder-Technical.pdf' },
 ];
 
 (async () => {

@@ -66,6 +66,23 @@ const server = app.listen(config.port, () => {
     console.warn(`[server] restored ${restored.loaded} jobs: `
       + `${restored.interrupted} interrupted mid-produce, ${restored.failed} failed`);
   }
+  // Same reconciliation for courses. A lesson left 'claimed' was mid-build when
+  // the process died; it is parked for a person rather than rebuilt, because a
+  // rebuild costs about $1.50 and Railway retries a failing deploy three times.
+  try {
+    const courses = require('./lib/course-worker').restore();
+    if (courses.lessons) {
+      console.log(`[server] courses: ${courses.lessons} lesson(s) on a ${courses.durability} queue`
+        + (courses.interrupted ? `, ${courses.interrupted} interrupted mid-build` : ''));
+    }
+    if (courses.durability !== 'volume') {
+      console.warn('[server] course queue durability is '
+        + `${courses.durability} — a redeploy can interrupt a course. Attach a Railway volume.`);
+    }
+  } catch (e) {
+    console.error('[server] course restore failed:', e.message);
+  }
+
   const reconciled = ledger.reconcileOpen(jobStore, { jobs });
   if (reconciled.closed) console.warn(`[server] closed ${reconciled.closed} open spend reservations`);
 

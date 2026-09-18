@@ -76,6 +76,20 @@ function createApp(opts = {}) {
       // Say what the store actually is. A service that claimed durability it did
       // not have would send the next person debugging the wrong end entirely.
       jobStore: jobStore.health(),
+      // Where course state lives, so "did my course survive the redeploy?" is a
+      // GET rather than an argument.
+      courses: (() => {
+        try {
+          const q = require('../orchestrator/lib/queue');
+          const cw = require('./lib/course-worker');
+          return {
+            durability: q.durability(),
+            queueFile: q.queueFile(),
+            durableSince: q.durableSince(),
+            awaitingApproval: cw.awaitingApproval().length,
+          };
+        } catch (e) { return { error: e.message }; }
+      })(),
       tenants: tenants.registry().health(),
       webhooks: webhook.health(),
     });

@@ -28,8 +28,7 @@ function appendDurable(file, record) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const fd = fs.openSync(file, 'a');
   try {
-    fs.writeFileSync(fd, JSON.stringify(record) + '
-', 'utf8');
+    fs.writeFileSync(fd, JSON.stringify(record) + '\n', 'utf8');
     fs.fsyncSync(fd);
   } finally {
     fs.closeSync(fd);

@@ -1,6 +1,6 @@
 ---
 type: reference
-last_verified: 2026-09-17
+last_verified: 2026-09-18
 owner: Aroma Tahir
 ---
 
@@ -17,8 +17,8 @@ request, not a guess.
 
 ## The one that changes behaviour: a volume
 
-The container has no persistent disk. Jobs, the spend ledger and idempotency
-records are written to a directory resolved in this order:
+The container has no persistent disk. Jobs, the spend ledger, idempotency records
+**and the course queue** are written to a directory resolved in this order:
 
 | Order | Source | Durability reported |
 |---|---|---|
@@ -37,6 +37,23 @@ redeploy. That is the honest position, not a failure — but a 25-minute produce
 run followed by an open-ended human review is exactly the window a redeploy
 lands in, so this is the difference between losing a job and losing the money
 that job spent.
+
+### What a redeploy still costs, once the volume is attached
+
+The queue is durable, so the **course** survives. The lesson that was mid-build
+does not, and cannot be made to: `orchestrator/.runs/` and the per-video working
+directories (`art/`, `audio/`, `frames/`, `out/`) are excluded from the image and
+do not come back. Resuming from saved run state would tell the spine to skip art
+that no longer exists.
+
+So the honest claim is bounded, not absolute: **a redeploy costs at most the one
+lesson in flight (about $1.50 and 30 minutes), never the course.** That lesson is
+parked as `blocked` with `interrupted: true` and waits for a person — approving it
+rebuilds it, rather than publishing a video that was never rendered.
+
+`orchestrator/queue.jsonl` and `orchestrator/.runs` are in `.dockerignore`. Without
+those two lines a developer's local queue ships inside the image, and every
+redeploy replaces production's course state with a snapshot of a laptop.
 
 `numReplicas` must stay `1`. A Railway volume cannot be shared, and the store
 assumes a single writer.
@@ -125,6 +142,25 @@ never existed. A 403 would confirm the id is real.
    reaches someone in a chat message is exposed regardless of how carefully it is
    handled afterwards.
 4. Remove `OWNER_COOKIE_SECRET_PREVIOUS` once a month has passed.
+
+### Rotating a tenant token
+
+`TENANTS_JSON` is one variable holding an array, so rotating one tenant means
+editing that array, not replacing it.
+
+1. `node scripts/mint-tenant.js --id <slug> --name "..." --monthly 50`
+2. Merge the printed object into the existing array, replacing only that
+   tenant's `token`. Keep the same `id` — spend is attributed by id, and changing
+   it orphans the month's ledger.
+3. `node scripts/mint-tenant.js --check --file <saved.json>` before pasting. The
+   loader fails soft: a short token, a duplicate id or two tenants sharing a
+   token are dropped and merely reported on `/health`, so a typo looks like it
+   worked until the other organisation cannot authenticate.
+4. Set it in Railway, then send the credential outside chat.
+
+A credential that has ever been written into a document is compromised, including
+after the document is edited — the value stays in git history and in any PDF
+already rendered from it. Rotate it; do not just delete the line.
 
 ---
 
