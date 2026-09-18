@@ -23,6 +23,7 @@ owner: aroma
 | Extract & mux voiceover | `docs/audio-extraction.md` |
 | Understand frame count formula | `docs/design-standards.md` |
 | Fix text cutoff in diagrams | `docs/troubleshooting.md` |
+| **Operate the live service (durability, tenants, deploying)** | **`docs/SERVICE_DURABILITY_AND_CONTRACTS.md`** |
 | Track my work | `.beads/status.jsonl` |
 | Understand the content pipeline | `docs/content-pipeline.md` |
 | Maintain infrastructure | `docs/infrastructure-maintenance.md` |
