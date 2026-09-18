@@ -15,8 +15,64 @@
  * become a new `source`, not a queue rewrite.
  */
 
+const path = require('path');
+const fs = require('fs');
 const { PATHS } = require('./paths');
 const jsonl = require('./jsonl');
+
+// ── where the queue lives ────────────────────────────────────────────────────
+// In the job store, not in the repo, so it lands on the Railway volume and a
+// course outlives the redeploy that interrupts it. Resolved lazily and memoised:
+// job-store requires lib/paths back, so resolving at module-evaluation time
+// would hand it a half-built PATHS and silently drop durability to a temp dir.
+let cached = null;
+
+function store() {
+  try {
+    return require('../../server/lib/job-store').shared();
+  } catch {
+    // The orchestrator CLI can run without server/ present.
+    return null;
+  }
+}
+
+function resolve() {
+  if (cached) return cached;
+  const s = store();
+  const dir = s && s.writable ? path.join(s.dir, 'queue') : PATHS.orchestrator;
+  const durability = s ? (s.writable ? s.durability : 'memory') : 'container';
+  const file = path.join(dir, 'queue.jsonl');
+
+  // Seed once from the old in-repo location -- but NEVER onto a volume. A legacy
+  // file only reaches a volume-backed deploy by having been baked into the image,
+  // where it is a build-time snapshot of somebody's laptop. Copying that forward
+  // would resurrect dead lessons, and a 'queued' one would be built and paid for.
+  // Migration must not be able to spend money.
+  try {
+    if (durability !== 'volume' && !fs.existsSync(file) && fs.existsSync(PATHS.legacyQueue)) {
+      fs.mkdirSync(dir, { recursive: true });
+      fs.copyFileSync(PATHS.legacyQueue, file);
+      jsonl.append(file, { __migratedFrom: PATHS.legacyQueue, __at: new Date().toISOString() });
+    }
+  } catch { /* a queue that cannot be seeded is an empty queue, not a crash */ }
+
+  cached = { file, dir, durability };
+  return cached;
+}
+
+/** The resolved queue file. */
+function queueFile() { return resolve().file; }
+
+/** How well this queue survives: volume | container | ephemeral | memory. */
+function durability() { return resolve().durability; }
+
+/** When this queue file came into existence, or null if it does not exist yet. */
+function durableSince() {
+  try { return fs.statSync(queueFile()).birthtime.toISOString(); } catch { return null; }
+}
+
+/** Test isolation -- mirrors jobStore.reset(). */
+function resetPathCache() { cached = null; }
 
 const ITEM_STATUS = {
   QUEUED: 'queued',
@@ -40,7 +96,7 @@ function slugify(topic) {
  */
 function currentItems() {
   const byId = new Map();
-  for (const ev of jsonl.readValid(PATHS.queue)) {
+  for (const ev of jsonl.readValid(queueFile())) {
     if (!ev.id) continue;
     const prev = byId.get(ev.id) || {};
     byId.set(ev.id, { ...prev, ...ev });
@@ -76,7 +132,7 @@ function enqueue({
     status: ITEM_STATUS.QUEUED,
     enqueuedAt: new Date().toISOString(),
   };
-  jsonl.append(PATHS.queue, item);
+  jsonl.appendDurable(queueFile(), item);
   return item;
 }
 
@@ -97,7 +153,7 @@ function setStatus(id, status, extra = {}) {
   const item = get(id);
   if (!item) throw new Error(`No queue item '${id}'`);
   const ev = { id, status, updatedAt: new Date().toISOString(), ...extra };
-  jsonl.append(PATHS.queue, ev);
+  jsonl.appendDurable(queueFile(), ev);
   return { ...item, ...ev };
 }
 
@@ -109,5 +165,10 @@ const requeue = (id) => setStatus(id, ITEM_STATUS.QUEUED, { requeuedAt: new Date
 
 module.exports = {
   ITEM_STATUS, slugify, currentItems, enqueue, nextQueued, get,
-  claim, done, fail, block, requeue,
+  // setStatus is the primitive the named helpers wrap. It is exported because
+  // approving a lesson has to carry fields none of them do (reviewApproved,
+  // approvedAt) -- course-worker called it for months while it was private, so
+  // every approve and reject threw.
+  setStatus, claim, done, fail, block, requeue,
+  queueFile, durability, durableSince, resetPathCache,
 };

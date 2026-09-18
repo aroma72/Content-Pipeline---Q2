@@ -19,6 +19,8 @@
   Driver contract is identical to lesson.html / assessment.html:
     window.__DATA = { beats, durations } · window.seekTo(ms) · window.ready
 -->
+<link rel="stylesheet" href="mckinsey.css">
+<link rel="stylesheet" href="info.css">
 <script src="info.js"></script>
 <style>
   :root{
@@ -45,44 +47,47 @@
   .infowrap{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:90px 140px}
 
   /* ---------- ui: a re-created product screen ---------- */
-  .win{position:absolute;left:150px;right:150px;top:110px;bottom:190px;background:var(--white);
+  .win{position:absolute;left:110px;right:110px;top:88px;bottom:168px;background:var(--white);
     border:1px solid var(--line);border-radius:18px;overflow:hidden;
     box-shadow:0 30px 80px rgba(60,45,20,.13);display:flex;flex-direction:column}
   .chrome{height:74px;flex:none;background:var(--chrome);display:flex;align-items:center;gap:18px;
     padding:0 26px;border-bottom:1px solid var(--line)}
   .dots{display:flex;gap:10px}.dot{width:15px;height:15px;border-radius:50%;background:#cfc3ad}
-  .urlbar{flex:1;height:44px;background:var(--white);border:1px solid var(--line);border-radius:22px;
-    display:flex;align-items:center;padding:0 22px;color:var(--muted);font-size:26px;font-family:var(--mono)}
-  .appname{color:var(--teal);font-weight:700;font-size:26px;letter-spacing:.5px}
+  .urlbar{flex:1;height:52px;background:var(--white);border:1px solid var(--line);border-radius:22px;
+    display:flex;align-items:center;padding:0 22px;color:var(--muted);font-size:30px;font-family:var(--mono)}
+  .appname{color:var(--teal);font-weight:700;font-size:30px;letter-spacing:.5px}
   .screen{flex:1;padding:52px 60px;overflow:hidden;position:relative}
-  .scr-title{font-size:46px;color:var(--teal);font-weight:700;margin-bottom:10px}
-  .scr-sub{font-size:28px;color:var(--muted);margin-bottom:38px}
+  .scr-title{font-size:56px;color:var(--teal);font-weight:700;margin-bottom:10px}
+  .scr-sub{font-size:34px;color:var(--muted);margin-bottom:38px}
   .row{display:flex;align-items:center;gap:22px;padding:20px 24px;border:1px solid var(--line);
-    border-radius:12px;margin-bottom:16px;background:var(--white);font-size:30px}
-  .row .k{color:var(--muted);flex:0 0 380px}
-  .row .v{color:var(--ink);font-family:var(--mono);font-size:27px}
+    border-radius:12px;margin-bottom:18px;background:var(--white);font-size:34px}
+  .row .k{color:var(--muted);flex:0 0 420px}
+  .row .v{color:var(--ink);font-family:var(--mono);font-size:31px}
   .row.hl{border-color:var(--accent);box-shadow:0 0 0 4px rgba(201,162,39,.20);background:#FEFBF2}
-  .row .tag{margin-left:auto;font-size:22px;letter-spacing:1px;text-transform:uppercase;
+  .row .tag{margin-left:auto;font-size:28px;letter-spacing:1px;text-transform:uppercase;
     padding:5px 14px;border-radius:999px;background:#EFE8DA;color:var(--muted)}
   .row .tag.ok{background:#e4f0e8;color:var(--good)}
   .row .tag.bad{background:#f6e3de;color:var(--bad)}
   .btn{display:inline-flex;align-items:center;padding:18px 34px;border-radius:12px;background:var(--teal);
-    color:#fff;font-size:30px;font-weight:600;margin-top:10px}
+    color:#fff;font-size:34px;font-weight:600;margin-top:14px}
   .btn.ghost{background:var(--white);color:var(--teal);border:2px solid var(--teal)}
   .btn.hl{box-shadow:0 0 0 6px rgba(201,162,39,.30)}
-  .code{background:#1f2630;border-radius:12px;padding:30px 34px;font-family:var(--mono);font-size:28px;
+  .code{background:#1f2630;border-radius:12px;padding:34px 38px;font-family:var(--mono);font-size:32px;
     line-height:1.65;color:#d6dbe6;white-space:pre-wrap}
   .code .cm{color:#7d8798}.code .hl{color:#e8c46a}
+  /* For a block the learner is meant to copy verbatim — a long prompt, say. 28px is the floor
+     qa-frames enforces, so this is as dense as anything on screen is ever allowed to get. */
+  .code.dense{font-size:28px;line-height:1.5;padding:28px 32px}
   .menu{position:absolute;right:70px;top:120px;background:var(--white);border:1px solid var(--line);
     border-radius:14px;box-shadow:0 20px 50px rgba(60,45,20,.18);padding:12px;min-width:420px}
-  .menu .mi{padding:16px 22px;border-radius:10px;font-size:29px;color:var(--ink)}
+  .menu .mi{padding:18px 24px;border-radius:10px;font-size:33px;color:var(--ink)}
   .menu .mi.hl{background:#FEFBF2;box-shadow:inset 0 0 0 2px var(--accent)}
   .cursor{position:absolute;width:30px;height:30px;pointer-events:none;
     border-left:3px solid #2a2a2a;border-top:3px solid #2a2a2a;transform:rotate(-38deg);
     filter:drop-shadow(0 2px 3px rgba(0,0,0,.35))}
-  .caption{position:absolute;left:150px;right:150px;bottom:70px;text-align:center;
-    font-size:34px;color:var(--muted)}
-  .stepper{position:absolute;right:160px;top:52px;font-size:26px;letter-spacing:3px;
+  .caption{position:absolute;left:150px;right:150px;bottom:62px;text-align:center;
+    font-size:40px;color:var(--muted)}
+  .stepper{position:absolute;right:120px;top:44px;font-size:30px;letter-spacing:3px;
     text-transform:uppercase;color:var(--accent)}
 </style>
 </head>
@@ -114,7 +119,7 @@ function makeInfo(b){
 
 /* A product screen, re-created. `screen` accepts:
    app, url, title, sub, rows[{k,v,hl,tag,tagTone}], button{label,hl,ghost},
-   menu{items:[{label,hl}]}, code[], cursor{x,y}, stepper, caption            */
+   menu{items:[{label,hl}]}, code[], codeDense, cursor{x,y}, stepper, caption   */
 function makeUI(b){
   const wrap=document.createElement('div'); wrap.className='layer';
   const s=b.screen||{};
@@ -134,7 +139,7 @@ function makeUI(b){
     scr.innerHTML+=`<div class="row seq${r.hl?' hl':''}"><span class="k">${esc(r.k||'')}</span>`
       +`<span class="v">${esc(r.v||'')}</span>${tag}</div>`;
   });
-  if(s.code) scr.innerHTML+=`<div class="code seq">${s.code.map(esc).join('\n')}</div>`;
+  if(s.code) scr.innerHTML+=`<div class="code seq${s.codeDense?' dense':''}">${s.code.map(esc).join('\n')}</div>`;
   if(s.button) scr.innerHTML+=`<div class="btn seq${s.button.hl?' hl':''}${s.button.ghost?' ghost':''}">`
     +`${esc(s.button.label)}</div>`;
   if(s.menu) scr.innerHTML+=`<div class="menu seq">`

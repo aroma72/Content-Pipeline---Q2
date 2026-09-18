@@ -23,6 +23,7 @@ owner: aroma
 | Extract & mux voiceover | `docs/audio-extraction.md` |
 | Understand frame count formula | `docs/design-standards.md` |
 | Fix text cutoff in diagrams | `docs/troubleshooting.md` |
+| **Operate the live service (durability, tenants, deploying)** | **`docs/SERVICE_DURABILITY_AND_CONTRACTS.md`** |
 | Track my work | `.beads/status.jsonl` |
 | Understand the content pipeline | `docs/content-pipeline.md` |
 | Maintain infrastructure | `docs/infrastructure-maintenance.md` |
@@ -113,7 +114,6 @@ owner: aroma
 | daily-git-sync | Auto-commit daily @ 12pm |
 | quality-checker | Validate frame counts vs VO before render |
 
----
 
 ## Skills
 
@@ -128,7 +128,6 @@ owner: aroma
 | audio-mux | `/audio-mux` |
 | git-workflow | `/git-workflow` |
 
----
 
 ## Standards Documents
 
@@ -138,14 +137,13 @@ owner: aroma
 - **VIDEO_PRODUCTION_RULES.md** — Frame math, SVG safety, text prevention (legacy)
 - **VOICEOVER_POLICY.md** / **DOC_TYPE_SYSTEM.md** / **METADATA_CONTRACT.md** — VO policy · doc types & line limits · frontmatter
 
----
 
 ## Known Failures (See `.beads/failures.jsonl`)
 
-- SVG text cutoff → viewBox 850px · blank slides → frames = VO_seconds × 30 · wrong submodule order → submodule FIRST · stale frame counts → validate first
-- Explainer pipeline: dark-bg art breaks cutout (force cream) · stale `frames/` → `rm -rf` & re-render · `clips == beats` before compile
+- SVG text cutoff → viewBox 850px · blank slides → frames = VO_seconds × 30 · wrong submodule order → submodule FIRST · stale frame counts → validate first · dark-bg art breaks cutout (force cream) · stale `frames/` → `rm -rf` & re-render · `clips == beats` before compile
 
 ---
 
 ## Pre-Push Quality Gate: `bash .claude/scripts/smoke-test.sh`
-*Last updated: 2026-07-09*
+🚫 **Deploy = `git push origin <branch>:main` then `railway redeploy --from-source -y`** — `--from-source` pulls main, so it ROLLS BACK unmerged work.
+*Last updated: 2026-09-18*

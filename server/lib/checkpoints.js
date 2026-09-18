@@ -29,6 +29,7 @@ const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 
 const { PATHS } = require('../../orchestrator/lib/paths');
+const publishLog = require('./publish-log');
 
 /** The house preamble. The beats' own note says "Write your answer down." --
  *  correct for a video nobody can answer, wrong for a popup that takes input. */
@@ -155,13 +156,78 @@ function isCheckpointBeat(beat) {
   return Boolean(beat) && beat.mode === 'checkpoint' && Boolean(beat.quiz);
 }
 
-/** Load beats.js fresh, so an edited script is picked up without a restart. */
+/**
+ * Load beats.js, re-parsing only when the file has actually changed.
+ *
+ * The cache-bust was there so an edited script is picked up without a restart,
+ * and that still holds -- but it meant EVERY beats.js in the tree was re-read and
+ * re-executed on every catalogue request, and findByVideoId did it twice. An
+ * mtime check keeps the same behaviour for one statSync instead of a re-parse.
+ */
+const beatsCache = new Map();
+
 function loadBeats(dir) {
   const file = path.join(dir, 'beats.js');
-  if (!fs.existsSync(file)) return null;
+  let st = null;
+  try { st = fs.statSync(file); } catch { return null; }
+
+  const hit = beatsCache.get(file);
+  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.beats;
+
   delete require.cache[require.resolve(file)];
   const mod = require(file);
-  return Array.isArray(mod) ? mod : null;
+  const beats = Array.isArray(mod) ? mod : null;
+  beatsCache.set(file, { mtimeMs: st.mtimeMs, size: st.size, beats });
+  return beats;
+}
+
+/**
+ * When this video's inputs last changed.
+ *
+ * The LMS asked for a catalogueUpdatedAt so they can tell "nothing changed" from
+ * "I have not looked". Derived from the files the payload is actually built out
+ * of, so it cannot claim freshness the content does not have.
+ */
+function sourceMtime(dir) {
+  let newest = 0;
+  for (const name of ['beats.js', 'durations.json']) {
+    try { newest = Math.max(newest, fs.statSync(path.join(dir, name)).mtimeMs); } catch { /* absent */ }
+  }
+  return newest;
+}
+
+/**
+ * Which videos are committed to git, and therefore survive a redeploy.
+ *
+ * Read from a manifest built before the image, because .dockerignore excludes
+ * .git and there is no way to ask this question at runtime. See
+ * scripts/build-catalogue-manifest.js.
+ */
+let manifest;
+function committedPaths() {
+  if (manifest === undefined) {
+    try {
+      manifest = require('../catalogue-manifest.json');
+    } catch { manifest = null; }
+  }
+  return manifest;
+}
+
+/**
+ * Is a row safe for an LMS to link a lesson block to?
+ *
+ * 'committed'  in git, so it is in the image and survives a redeploy
+ * 'ephemeral'  made at runtime; it will disappear on the next redeploy
+ * 'unknown'    no manifest shipped, so we genuinely do not know
+ *
+ * `unknown` rather than a guess on purpose. A row the LMS declines to link
+ * because we were unsure costs a lookup; a row wrongly called durable is a dead
+ * question inside a university course, discovered by a learner.
+ */
+function durabilityOf(relPath) {
+  const m = committedPaths();
+  if (!m || !m.paths) return 'unknown';
+  return Object.prototype.hasOwnProperty.call(m.paths, relPath) ? 'committed' : 'ephemeral';
 }
 
 function loadDurations(dir) {
@@ -263,6 +329,23 @@ function forPath(relPath) {
     });
   };
 
+  // A question the video draws for itself cannot gate anything: the learner has
+  // already read it, and the answer card arrives whether they choose or not. So
+  // the whole behaviour contract has to relax together. Setting only
+  // `pausesVideo` left `requiresAnswer: true, allowSkip: false` standing beside
+  // it, and a consumer could only resolve that by guessing which field won --
+  // which is exactly what the LMS had to do. Kept in one place so the flags
+  // cannot drift apart again.
+  const drawnOnScreen = (until) => {
+    const last = checkpoints[checkpoints.length - 1];
+    last.pausesVideo = false;
+    last.resumeAfterFeedback = false;
+    last.requiresAnswer = false;
+    last.blocking = false;
+    last.allowSkip = true;
+    last.onScreenUntilSeconds = until;
+  };
+
   // ── current format: the checkpoint beat. Nothing rendered; the player stops ──
   beats.forEach((c, i) => {
     if (!isCheckpointBeat(c)) return;
@@ -316,9 +399,7 @@ function forPath(relPath) {
     // The card holds the question on screen by itself, so pausing is optional
     // here; the window it is legible for is reported for a player that prefers
     // to overlay rather than stop.
-    const last = checkpoints[checkpoints.length - 1];
-    last.pausesVideo = false;
-    last.onScreenUntilSeconds = sec(startAt[i] + d + offset.seconds);
+    drawnOnScreen(sec(startAt[i] + d + offset.seconds));
   });
 
   // ── the `info` quiz-card pair: same rule, the window is the card's own time ──
@@ -366,10 +447,7 @@ function forPath(relPath) {
     // These videos draw the question and the answer themselves, so stopping is
     // optional — the card already holds it on screen. Reported so the LMS can
     // tell them apart from a video that shows nothing and must be paused.
-    const last = checkpoints[checkpoints.length - 1];
-    last.pausesVideo = false;
-    last.resumeAfterFeedback = false;
-    last.onScreenUntilSeconds = sec(startAt[i] + d + offset.seconds);
+    drawnOnScreen(sec(startAt[i] + d + offset.seconds));
   });
 
   if (!checkpoints.length) return null;
@@ -399,6 +477,18 @@ function forPath(relPath) {
     // Whether the file sits on THIS server. False in the deploy container, where
     // .mp4 files are gitignored -- it does not mean the video was never made.
     deliverableOnServer: fs.existsSync(finalPath),
+    // The playable copy, when there is one. Without this a catalogue entry gave
+    // checkpoints with no URL while a finished job gave a URL with no
+    // checkpoints, and a person bridged the two by eye.
+    //
+    // NOTE the nesting: `youtube.videoId` is a YouTube id, this payload's
+    // `videoId` is a folder name. They are different things that unluckily share
+    // a name, and flattening one onto the other would break every checkpoint
+    // lookup for a published video.
+    youtube: publishLog.forPath(relPath) || null,
+    youtubeVideoId: (publishLog.forPath(relPath) || {}).videoId || null,
+    durability: durabilityOf(relPath),
+    catalogueUpdatedAt: sourceMtime(dir) ? new Date(sourceMtime(dir)).toISOString() : null,
     checkpoints,
   };
 }
@@ -450,15 +540,39 @@ function listVideos() {
       // 'popup' — nothing is on screen, the player pauses and asks.
       // 'on-screen' — built before the popup; the cards still play in the video.
       questionStyle: payload.checkpoints.every((c) => !c.rendersInVideo) ? 'popup' : 'on-screen',
+      // The playable copy, so this row and a finished job are no longer islands.
+      youtube: payload.youtube,
+      youtubeVideoId: payload.youtubeVideoId,
+      // Whether an LMS can safely bind a lesson block to this row. A row that is
+      // not committed to git exists only on this container and goes away with the
+      // next redeploy -- which is what made a slug look as though it had been
+      // renamed when nothing about it had changed.
+      durability: payload.durability,
+      catalogueUpdatedAt: payload.catalogueUpdatedAt,
     });
   }
   return out.sort((a, b) => a.path.localeCompare(b.path));
 }
 
-/** Find a video by id alone, so the LMS never has to know our folder layout. */
+/**
+ * Find a video by id alone, so the LMS never has to know our folder layout.
+ *
+ * Walks the tree once. It used to call listVideos() -- building every payload in
+ * the catalogue -- and then build the one it wanted again, so a single checkpoint
+ * lookup did the whole catalogue's work twice.
+ */
 function findByVideoId(videoId) {
-  const hit = listVideos().find((v) => v.videoId === videoId);
-  return hit ? forPath(hit.path) : null;
+  const root = PATHS.explainerVideos;
+  if (!fs.existsSync(root)) return null;
+  for (const dir of videoDirs()) {
+    if (path.basename(dir) !== videoId) continue;
+    const rel = path.relative(root, dir).split(path.sep).join('/');
+    try {
+      const payload = forPath(rel);
+      if (payload) return payload;
+    } catch { /* try the next match */ }
+  }
+  return null;
 }
 
 function etagOf(payload) {

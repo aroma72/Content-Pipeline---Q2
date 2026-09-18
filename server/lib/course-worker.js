@@ -26,9 +26,14 @@
  * expensive render -- are skipped, not repeated. It picks up at review, passes
  * now that approval is present, and uploads.
  *
- * WHAT IT STILL DOES NOT DO
- * Survive a redeploy. The container has no volume, so a course interrupted by a
- * deploy loses its queue. Stated in the handoff rather than papered over.
+ * SURVIVING A RESTART
+ * The queue lives in the job store, so it lands on the Railway volume and the
+ * course outlives a redeploy. What does NOT survive is the lesson that was
+ * mid-build: its render working directories are .dockerignore'd and do not come
+ * back. So restore() parks that one lesson as blocked and asks a person, rather
+ * than silently rebuilding and re-spending -- Railway retries a failing deploy
+ * three times, and three unattended rebuilds is real money. The honest claim is
+ * therefore: a redeploy costs at most the lesson in flight, never the course.
  */
 
 const queue = require('../../orchestrator/lib/queue');
@@ -69,6 +74,13 @@ function status() {
 
 async function buildOne(item) {
   const st = state.create(item);
+  // Record that this lesson is being built BEFORE any of it is paid for. The
+  // spine only ever writes block/fail/done, so a lesson used to sit at 'queued'
+  // for its whole ~30-minute, ~$1.50 build: after a restart it was
+  // indistinguishable from one that had never started, drain() picked it up
+  // again, and the first attempt's spend vanished with no record of it. Let a
+  // failure here throw -- a build with no record of itself is the thing to stop.
+  queue.claim(item.id, st.runId);
   current = { id: item.id, topic: item.topic, startedAt: new Date().toISOString() };
   log(`building ${item.id} (run ${st.runId})`);
 
@@ -148,13 +160,18 @@ function approve(lessonId, by = 'Aroma') {
     return { ok: false, why: `That lesson is '${item.status}', not waiting for approval. `
       + 'Only a lesson that has finished building can be approved.' };
   }
-  // Requeue carrying the approval. The spine resumes from saved state, so the
-  // render is skipped and it continues from review -> upload.
-  queue.setStatus(lessonId, queue.ITEM_STATUS.QUEUED, {
-    reviewApproved: by,
-    approvedAt: new Date().toISOString(),
-  });
-  log(`approved ${lessonId} by ${by} -- resuming to publish, then the next lesson`);
+  // A lesson interrupted by a restart never finished rendering, and its working
+  // files are gone. Carrying reviewApproved here would make the spine skip
+  // review for a video that does not exist -- publishing nothing, or something
+  // stale. Approving THAT means "yes, rebuild it", so the approval is not
+  // carried and the lesson blocks at review again once it has really been made.
+  const rebuild = item.interrupted === true;
+  queue.setStatus(lessonId, queue.ITEM_STATUS.QUEUED, rebuild
+    ? { interrupted: false, rebuildApprovedBy: by, approvedAt: new Date().toISOString() }
+    : { reviewApproved: by, approvedAt: new Date().toISOString() });
+  log(rebuild
+    ? `approved ${lessonId} by ${by} -- rebuilding the lesson a restart interrupted`
+    : `approved ${lessonId} by ${by} -- resuming to publish, then the next lesson`);
   kick();
   return { ok: true };
 }
@@ -171,4 +188,31 @@ function reject(lessonId, why = '') {
   return { ok: true };
 }
 
-module.exports = { drain, kick, status, approve, reject, queued, awaitingApproval };
+/**
+ * Fold the queue after a restart and park anything caught mid-build.
+ *
+ * Mirrors jobs.restore(), which turns a producing job into interrupted+resumable
+ * and stops. Deliberately starts nothing: a crash loop must not be able to spend.
+ */
+function restore() {
+  let interrupted = 0;
+  const items = queue.currentItems().filter((i) => i.source === 'course-builder');
+  for (const i of items) {
+    if (i.status !== queue.ITEM_STATUS.CLAIMED) continue;
+    queue.setStatus(i.id, queue.ITEM_STATUS.BLOCKED, {
+      interrupted: true,
+      interruptedAt: new Date().toISOString(),
+      previousRunId: i.runId || null,
+      reason: 'interrupted by a server restart before it finished. Nothing was published, '
+        + 'and the partial render did not survive. Approve to rebuild this lesson '
+        + '(about $1.50 and 30 minutes), or reject to stop the course.',
+    });
+    interrupted++;
+  }
+  if (items.length) {
+    log(`restored ${items.length} lesson(s), ${interrupted} interrupted mid-build`);
+  }
+  return { lessons: items.length, interrupted, durability: queue.durability() };
+}
+
+module.exports = { drain, kick, status, approve, reject, queued, awaitingApproval, restore };

@@ -25,7 +25,17 @@ const PATHS = {
   qaRatingsLog: path.join(REPO_ROOT, '.beads', 'qa_ratings.jsonl'),
 
   // Orchestrator-owned state.
-  queue: path.join(ORCHESTRATOR_DIR, 'queue.jsonl'),
+  //
+  // `legacyQueue` is where the queue used to live, in the repo. It is now only a
+  // migration source: the live queue sits in the job store (see lib/queue.js), so
+  // it lands on the Railway volume and a course survives a redeploy. Resolving it
+  // here would require job-store during this module's own evaluation, and
+  // job-store requires this module back -- so lib/queue.js resolves it lazily.
+  legacyQueue: path.join(ORCHESTRATOR_DIR, 'queue.jsonl'),
+  // Per-run spine state. Deliberately NOT moved onto the volume: the render
+  // working directories it points at (art/, audio/, frames/, out/) are
+  // .dockerignore'd and never come back, so resuming from it after a redeploy
+  // would tell the spine to skip art that no longer exists.
   runsDir: path.join(ORCHESTRATOR_DIR, '.runs'),
 
   // The video pipeline this spine drives.

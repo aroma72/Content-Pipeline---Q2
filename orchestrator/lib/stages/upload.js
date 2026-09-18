@@ -164,7 +164,7 @@ module.exports = {
     // without the pipeline ever waiting on them.
     const provisional = result.privacyStatus !== 'public';
     if (provisional) {
-      jsonl.append(path.join(PATHS.beads, 'publish_review.jsonl'), {
+      const record = {
         type: 'provisional_publish',
         at: new Date().toISOString(),
         runId: st.runId,
@@ -177,7 +177,19 @@ module.exports = {
         qaTotal: qaScoreOf(artifacts.qa),
         cleared: false,
         note: 'Unlisted pending human review. Clear by setting cleared=true after watching.',
-      });
+      };
+      jsonl.append(path.join(PATHS.beads, 'publish_review.jsonl'), record);
+
+      // Mirrored into the job store as well, when it is durable. .beads lives on
+      // the container filesystem, so on Railway this record -- the only evidence
+      // that a paid-for video exists on YouTube -- died with the next redeploy.
+      // The catalogue joins against this to hand the LMS a playable URL.
+      try {
+        if (require('../../../server/lib/publish-log').record(record)) {
+          log('mirrored the publish record into the durable job store');
+        }
+      } catch { /* the mirror is a bonus; .beads above is the pipeline's own log */ }
+
       log(`flagged for review in .beads/publish_review.jsonl (still ${result.privacyStatus})`);
     }
 

@@ -11,8 +11,14 @@
  * answer key. The index at GET /api/v1 is public and carries no lesson data, so
  * a developer can discover the surface without a credential.
  *
- * Fail closed. With no CONTENT_API_TOKEN set, the data routes answer 503 rather
- * than serving openly. A misconfigured deploy must not silently become public.
+ * Fail closed. With no credential configured at all -- neither CONTENT_API_TOKEN
+ * nor TENANTS_JSON -- the data routes answer 503 rather than serving openly. A
+ * misconfigured deploy must not silently become public.
+ *
+ * Who is calling. Every authenticated route resolves the bearer token to a
+ * tenant (see tenants.js) and leaves it on req.tenant, so spend and approvals
+ * can be attributed to the organisation that asked for them rather than all
+ * landing under Aroma's name.
  *
  * Calling pattern. Prefer server-to-server: the LMS backend fetches the payload
  * with the token and hands its own page only what that learner needs. A browser
@@ -24,19 +30,10 @@
 const express = require('express');
 const checkpoints = require('./checkpoints');
 
-const TOKEN = () => process.env.CONTENT_API_TOKEN || '';
+const tenants = require('./tenants');
+
 const ORIGINS = () => (process.env.CONTENT_API_ORIGINS || '')
   .split(',').map((s) => s.trim()).filter(Boolean);
-
-/** Constant-time compare, so a wrong token cannot be found byte by byte. */
-function tokenMatches(supplied) {
-  const expected = TOKEN();
-  if (!expected || !supplied) return false;
-  const a = Buffer.from(supplied);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length) return false;
-  return require('crypto').timingSafeEqual(a, b);
-}
 
 function bearerOf(req) {
   const h = req.get('authorization') || '';
@@ -46,22 +43,57 @@ function bearerOf(req) {
   return (req.get('x-api-key') || '').trim();
 }
 
+/**
+ * Resolve the caller to a tenant, or refuse.
+ *
+ * Sets `req.tenant` on the way through, so every route downstream can attribute
+ * what it does to somebody. The matching itself lives in tenants.js -- this only
+ * decides what a failure looks like.
+ *
+ * Still fails closed with 503 when NO credential is configured at all. That
+ * distinction matters: 503 means the server is misconfigured, 401 means your
+ * token is wrong, and collapsing them sends the next person to the wrong place.
+ */
 function requireToken(req, res, next) {
-  if (!TOKEN()) {
+  const reg = tenants.registry();
+  if (!reg.configured) {
     return res.status(503).json({
       error: 'api_not_configured',
-      message: 'CONTENT_API_TOKEN is not set on the server, so the checkpoint API '
-        + 'is disabled. It fails closed rather than serving answer keys openly.',
+      message: 'No API credential is configured on this server (CONTENT_API_TOKEN or '
+        + 'TENANTS_JSON), so the API is disabled. It fails closed rather than '
+        + 'serving answer keys openly.',
     });
   }
-  if (!tokenMatches(bearerOf(req))) {
+  const tenant = reg.match(bearerOf(req));
+  if (!tenant) {
     res.set('WWW-Authenticate', 'Bearer realm="content-queen"');
     return res.status(401).json({
       error: 'unauthorized',
-      message: 'Send the token as: Authorization: Bearer <CONTENT_API_TOKEN>',
+      message: 'Send your token as: Authorization: Bearer <token>',
     });
   }
+  req.tenant = tenant;
   return next();
+}
+
+/**
+ * Require a tenant that additionally holds a named scope.
+ *
+ * A scope is refused with 403, not 404: unlike a job id, the existence of an
+ * endpoint is not a secret, and telling a caller their credential lacks a
+ * permission is the only way they can ask for the right one.
+ */
+function requireScope(scope) {
+  return (req, res, next) => requireToken(req, res, () => {
+    if (scope && !req.tenant.scopes.has(scope)) {
+      return res.status(403).json({
+        error: 'forbidden',
+        message: `This credential does not carry the '${scope}' scope.`,
+        tenant: req.tenant.id,
+      });
+    }
+    return next();
+  });
 }
 
 /** CORS only for explicitly allowlisted origins. Never a wildcard. */
@@ -98,7 +130,7 @@ function build() {
       service: 'content-queen checkpoint api',
       version: 'v1',
       auth: 'Authorization: Bearer <token>  (ask Aroma Tahir for CONTENT_API_TOKEN)',
-      configured: Boolean(TOKEN()),
+      configured: tenants.registry().configured,
       endpoints: [
         { method: 'GET', path: '/api/v1', auth: false,
           description: 'This index.' },
@@ -112,6 +144,26 @@ function build() {
           auth: true, implemented: false,
           description: 'Returns 501. The LMS is the system of record for answers; '
             + 'this service holds no learner identity.' },
+        { method: 'GET', path: '/api/v1/health', auth: false,
+          description: 'Liveness and what is configured, with no credential and no lesson data.' },
+        { method: 'POST', path: '/demo/make-video', auth: false,
+          description: 'Write and gate a script from a topic. Buys nothing, so no token is '
+            + 'needed; the job is bound to the caller. Pass a callbackUrl (tenants only) to '
+            + 'be told when it moves instead of polling.' },
+        { method: 'GET', path: '/demo/make-video/:jobId', auth: 'owner',
+          description: 'Job status. Only the owner of the job can read it.' },
+        { method: 'POST', path: '/demo/make-video/:jobId/claim', auth: true,
+          description: 'Take ownership of a job created in a browser session you hold, so it '
+            + 'can then be produced with your credential.' },
+        { method: 'POST', path: '/demo/make-video/:jobId/produce', auth: true,
+          description: 'SPENDS MONEY. Accepts Idempotency-Key; a retry returns the existing '
+            + 'run rather than buying a second video.' },
+        { method: 'POST', path: '/demo/make-video/:jobId/approve', auth: true,
+          description: 'PUBLISHES to YouTube. `by` is recorded against your tenant.' },
+        { method: 'GET', path: '/demo/jobs', auth: true,
+          description: 'Your jobs, oldest transition first. Page with ?since= and ?cursor=.' },
+        { method: 'GET', path: '/demo/spend', auth: true,
+          description: 'What you have spent this month and what remains.' },
         { method: 'POST', path: '/api/v1/courses/plan', auth: true,
           description: 'Topic in, full course plan out: modules, lessons, an SLO and a '
             + 'question per lesson, plus a cost and time estimate. Spends one model call '
@@ -148,16 +200,38 @@ function build() {
           '5. Resume at resumeAtSeconds (the same instant you paused).',
         ],
         rules: [
-          'atSeconds is measured from the start of <videoId>_final.mp4, which begins with '
-          + 'a 2.6s brand intro. lessonAtSeconds excludes it.',
+          'atSeconds ALREADY INCLUDES the brand intro. It is measured from the start of '
+          + '<videoId>_final.mp4, the file we serve and the file we upload. Do NOT add the '
+          + 'intro length yourself — that is the single most expensive mistake available '
+          + 'here, and it is always late, so the learner meets a question about something '
+          + 'the narrator has already moved past. lessonAtSeconds excludes it, and is there '
+          + 'only so the two can never be silently confused.',
+          'Read timing.introOffsetSource rather than assuming 2.6. It is "probed" (measured '
+          + 'from that video own intro), "brand-constant" (the committed measurement — the '
+          + 'usual answer in production, where .mp4 files are not in the image), "no-bumpers" '
+          + '(delivered bare, so the offset is genuinely 0 and atSeconds === lessonAtSeconds), '
+          + 'or "assumed" — and "assumed" is exactly the case where timing.trusted is false.',
+          'durability says whether you may bind a lesson block to this row. "committed" is in '
+          + 'our repository and survives a redeploy. "ephemeral" was made at runtime and will '
+          + 'disappear on the next one — link it and the block will one day serve no questions. '
+          + '"unknown" means we could not tell; treat it as ephemeral.',
+          'Slugs are immutable. A videoId is minted once, before the video is made, and is '
+          + 'never rewritten. If a slug stops resolving, the video was ephemeral and the '
+          + 'container was redeployed — not renamed.',
           'Only fire a checkpoint whose pause.safe is true. False means it has no whole '
           + 'sentence on one side and there is nowhere clean to stop.',
           'Do not fire a checkpoint whose timing.trusted is false.',
-          'rendersInVideo is false on every current video: the popup is the ONLY place '
-          + 'the learner ever sees the question, so if you skip it they miss it entirely.',
-          'Some older videos draw the question and the answer on screen. Those report '
-          + 'pausesVideo:false and onScreenUntilSeconds — do not pause over them, the '
-          + 'video answers itself.',
+          'questionStyle tells you which of the two formats a video is, and it is derived: '
+          + 'a row is "popup" only when EVERY one of its checkpoints has rendersInVideo:false. '
+          + 'Videos we make now are all popup; older ones draw the question on screen.',
+          'On a popup checkpoint the four behaviour flags agree: rendersInVideo:false, '
+          + 'pausesVideo:true, requiresAnswer:true, allowSkip:false. The popup is the ONLY '
+          + 'place the learner ever sees the question, so if you skip it they miss it entirely.',
+          'On an on-screen checkpoint all four relax together: pausesVideo:false, '
+          + 'requiresAnswer:false, blocking:false, allowSkip:true, plus onScreenUntilSeconds. '
+          + 'Do not pause over these — the video answers itself. A question that never pauses '
+          + 'cannot gate anything, so you will never see pausesVideo:false alongside '
+          + 'requiresAnswer:true; if you ever do, treat it as our bug and tell us.',
           'The learner\'s answer is recorded by you. This service stores nothing.',
         ],
       },
@@ -165,6 +239,26 @@ function build() {
         'Call this server-to-server; a browser would expose the token.',
         'Answers are recorded by the LMS, not here.',
       ],
+    });
+  });
+
+  /**
+   * Liveness, with no credential.
+   *
+   * Asked for twice. An integrator needs something to point a monitor at that is
+   * not an authenticated data route, and that does not go red when a token is
+   * rotated. Deliberately carries no lesson data and no roster -- just whether
+   * this service is up and whether it is configured enough to answer.
+   */
+  router.get('/health', (_req, res) => {
+    const reg = tenants.registry();
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      ok: true,
+      service: 'content-queen',
+      version: 'v1',
+      configured: reg.configured,
+      time: new Date().toISOString(),
     });
   });
 
@@ -257,6 +351,16 @@ function build() {
     const planner = require('./course-planner');
     const queue = require('../../orchestrator/lib/queue');
 
+    // A course is hours of work and tens of dollars. On a store that dies with
+    // the process there is no queue file at all: a built lesson could never be
+    // approved and GET /courses/:id would 404 immediately. Mirrors the rule that
+    // a spend which cannot be recorded is not a spend we accept.
+    if (queue.durability() === 'memory') {
+      return res.status(503).json({ error: 'no_durable_store',
+        message: 'This service cannot currently record course state, so a course started now '
+          + 'could not be approved or resumed. GET /api/v1/health reports the store.' });
+    }
+
     if (!body.plan || !Array.isArray(body.plan.modules)) {
       return res.status(400).json({ error: 'bad_request',
         message: 'Send the plan you got from POST /api/v1/courses/plan as `plan`.' });
@@ -331,9 +435,23 @@ function build() {
       .filter((i) => (i.notes || '').includes(tag))
       .map((i) => ({ id: i.id, topic: i.topic, status: i.status, module: i.module }));
     if (!items.length) {
-      return res.status(404).json({ error: 'not_found',
-        message: `No queued lessons tagged ${tag}. Note the queue is not durable across `
-          + 'deploys on this service — see the technical handoff.' });
+      // Report durability; do not assert the worst case. This used to tell every
+      // caller the queue was not durable and point at a handoff they had never
+      // been sent, so an unknown courseId and a lost course read identically.
+      const durability = queue.durability();
+      const since = queue.durableSince();
+      return res.status(404).json({
+        error: 'not_found',
+        message: `No lessons tagged ${tag} on this service.`,
+        durability,
+        durableSince: since,
+        note: durability === 'volume'
+          ? 'Course state is held on a mounted volume and survives a redeploy, so this is an '
+            + 'unrecognised courseId rather than a lost course.'
+          : `Course state on this service is "${durability}" durability, which does NOT survive `
+            + 'a redeploy. Attach a Railway volume before starting a course you cannot afford '
+            + 'to rebuild. GET /api/v1/health reports this under jobStore.durability.',
+      });
     }
     const by = (s) => items.filter((i) => i.status === s).length;
     const cw = require('./course-worker');
@@ -388,4 +506,4 @@ function build() {
   return router;
 }
 
-module.exports = { build, requireToken, cors };
+module.exports = { build, requireToken, requireScope, cors, bearerOf };

@@ -1,0 +1,23 @@
+{
+  "name": "explainer-lesson",
+  "private": true,
+  "version": "1.0.0",
+  "description": "One line-synced explainer video (beats.js -> branded MP4). Copy per video.",
+  "scripts": {
+    "art": "node generate-lesson-art.js",
+    "segment": "python segment-all.py",
+    "tts": "node tts-lesson.js",
+    "sample": "node compile-lesson.js --sample",
+    "compile": "node compile-lesson.js",
+    "brand": "node stitch-brand.js",
+    "verify": "node verify.js"
+  },
+  "dependencies": {
+    "docx": "^8.5.0",
+    "ffmpeg-static": "^5.3.0",
+    "puppeteer": "^25.0.0"
+  },
+  "optionalDependencies": {
+    "lottie-web": "^5.13.0"
+  }
+}

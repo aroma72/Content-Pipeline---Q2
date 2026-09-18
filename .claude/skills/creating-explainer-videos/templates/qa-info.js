@@ -117,7 +117,9 @@ for (const b of beats) {
   if (!NUMERIC_TPL.has(b.info.tpl)) continue;
   const said = [];
   for (const [w, n] of Object.entries(WORD)) {
-    if (new RegExp(`\\b${w}\\b`, 'i').test(b.vo)) said.push(n);
+    // Must not be the tail of a hyphenated compound: "twenty-four" is 24, not 4. Matching it
+    // made this gate cry wolf on a card reading "24 of 100", which is exactly right.
+    if (new RegExp(`(?<![\\w-])${w}\\b`, 'i').test(b.vo)) said.push(n);
   }
   (b.vo.match(/\b\d+\b/g) || []).forEach((d) => said.push(Number(d)));
   if (!said.length) continue;

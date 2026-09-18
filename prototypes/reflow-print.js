@@ -14,18 +14,19 @@ const fs = require('fs');
 const path = require('path');
 
 const FILE = path.join(__dirname, 'handoff-print.html');
-const TOTAL = 7;
+const TOTAL = 8;
 
 const LAYOUT = [
   { cover: true, rh: null, secs: ['What this replaces'],
-    foot: 'the question content shown is the live checkpoint from Autonomy 01<br>\n    '
+    foot: 'the question content shown is a live checkpoint from the catalogue<br>\n    '
         + 'Frames captured from the rendered lesson and from the live demo linked above' },
   { rh: 'The four states', secs: ['The four states'] },
   { rh: 'Flow and endpoints', secs: ['What happens, in order', 'The endpoints'] },
   // The credential gets a page to itself: it is the page they will look for, and
   // the one page Aroma may not want forwarded.
   { rh: 'Authentication', secs: ['Authentication'] },
-  { rh: 'The payload', secs: ["One video's checkpoints", 'The timing rule that will bite you'] },
+  { rh: 'The payload', secs: ["One video's checkpoints"] },
+  { rh: 'Timing', secs: ['The timing rule that will bite you'] },
   { rh: 'Behaviour', secs: ['Behaviour rules', 'Palette'] },
   { rh: 'Decisions', secs: ['Open decisions'],
     foot: 'Drawing Room content pipeline, Taleemabad · prepared by Aroma Tahir<br>\n    '

@@ -294,6 +294,39 @@ else
 fi
 
 # ============================================================================
+# The manifest is what tells the LMS a catalogue row is safe to link to. It is a
+# BUILD artefact -- .dockerignore strips .git, so the running service cannot work
+# it out for itself. When it goes stale, finished and committed videos report
+# `durability: "ephemeral"` and the LMS refuses to bind a lesson to them. Six
+# videos were unlinkable this way before anyone noticed.
+# ============================================================================
+echo ""
+echo "🔎 Test: Catalogue manifest is current..."
+if node scripts/build-catalogue-manifest.js --check > /tmp/manifest-out.txt 2>&1; then
+  echo "  ✅ PASS: $(tail -1 /tmp/manifest-out.txt)"
+  PASS=$((PASS + 1))
+else
+  echo "  ❌ FAIL: the manifest is stale — run: node scripts/build-catalogue-manifest.js"
+  tail -5 /tmp/manifest-out.txt | sed "s/^/     /"
+  FAIL=$((FAIL + 1))
+fi
+
+# ============================================================================
+# A credential in a document is compromised the moment it is committed, and it
+# survives in git history and in any PDF already rendered from it.
+# ============================================================================
+echo ""
+echo "🔎 Test: No API credential committed in the handoff documents..."
+if grep -rlE "cq_[A-Za-z0-9_-]{24,}" prototypes/*.html > /tmp/cred-out.txt 2>&1; then
+  echo "  ❌ FAIL: a live-looking credential is in a document:"
+  sed "s/^/     /" /tmp/cred-out.txt
+  FAIL=$((FAIL + 1))
+else
+  echo "  ✅ PASS: no credential in prototypes/*.html"
+  PASS=$((PASS + 1))
+fi
+
+# ============================================================================
 echo ""
 echo "========================================"
 echo "SMOKE TEST SUMMARY"

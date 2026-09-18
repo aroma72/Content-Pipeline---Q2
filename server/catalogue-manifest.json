@@ -1,0 +1,171 @@
+{
+  "generatedAt": "2026-09-18T09:32:43.689Z",
+  "gitCommit": "adfdc7a11c912907042637d0371ca539e615fe50",
+  "paths": {
+    "agentic-workflows/orchestrator": {
+      "committedAt": "2026-08-20T16:36:22+05:00"
+    },
+    "agentic-workflows/orchestrator/assessment": {
+      "committedAt": "2026-08-20T16:36:22+05:00"
+    },
+    "autonomy/assessment/module-11-assessment": {
+      "committedAt": "2026-08-20T16:36:22+05:00"
+    },
+    "autonomy/autonomy-01-spectrum": {
+      "committedAt": "2026-09-09T11:59:54+05:00"
+    },
+    "autonomy/autonomy-02-guardrails": {
+      "committedAt": "2026-09-11T14:38:22+05:00"
+    },
+    "autonomy/autonomy-03-safety-risks": {
+      "committedAt": "2026-08-20T16:36:22+05:00"
+    },
+    "autonomy/autonomy-03-when-to-ask": {
+      "committedAt": "2026-08-20T16:36:22+05:00"
+    },
+    "autonomy/autonomy-04-autonomy-slider": {
+      "committedAt": "2026-08-20T16:36:22+05:00"
+    },
+    "company-training/change-management": {
+      "committedAt": "2026-07-15T17:04:48+05:00"
+    },
+    "evals/evals-01-check-more-than-one": {
+      "committedAt": "2026-07-30T12:00:13+05:00"
+    },
+    "evals/evals-02-sort-into-piles": {
+      "committedAt": "2026-07-30T12:00:13+05:00"
+    },
+    "evals/evals-03-what-an-eval-is": {
+      "committedAt": "2026-08-20T16:36:22+05:00"
+    },
+    "evals/evals-04-e2e-evals": {
+      "committedAt": "2026-08-20T16:36:22+05:00"
+    },
+    "evals/evals-05-write-the-rubric": {
+      "committedAt": "2026-08-20T16:36:22+05:00"
+    },
+    "evals/evals-06-llm-as-a-judge": {
+      "committedAt": "2026-08-20T16:36:22+05:00"
+    },
+    "evals/evals-07-run-it-on-your-project": {
+      "committedAt": "2026-08-20T16:36:22+05:00"
+    },
+    "evals/evals-08-when-the-score-lies": {
+      "committedAt": "2026-08-20T16:36:22+05:00"
+    },
+    "evals/evals-1-what-are-evals": {
+      "committedAt": "2026-07-30T12:00:13+05:00"
+    },
+    "evals/evals-2-eval-types-e2e": {
+      "committedAt": "2026-07-24T12:00:03+05:00"
+    },
+    "evals/evals-3-llm-as-judge": {
+      "committedAt": "2026-07-24T12:00:03+05:00"
+    },
+    "evals/module-11-assessment": {
+      "committedAt": "2026-08-13T12:50:44+05:00"
+    },
+    "evals/what-a-rubric-actually-does": {
+      "committedAt": "2026-08-20T16:36:22+05:00"
+    },
+    "evals/why-a-checklist-beats-a-careful-reader": {
+      "committedAt": "2026-09-02T17:36:52+05:00"
+    },
+    "future-of-learning/fol-01-ai-and-the-future-of-learning": {
+      "committedAt": "2026-08-20T16:36:22+05:00"
+    },
+    "future-of-learning/fol-02-will-ai-take-my-job": {
+      "committedAt": "2026-08-20T16:36:22+05:00"
+    },
+    "future-of-learning/fol-02-will-ai-take-my-job-m0": {
+      "committedAt": "2026-08-20T16:36:22+05:00"
+    },
+    "harness/harness-01-what-is-a-harness": {
+      "committedAt": "2026-08-20T16:36:22+05:00"
+    },
+    "harness/harness-02-model-interface-harness": {
+      "committedAt": "2026-08-20T16:36:22+05:00"
+    },
+    "harness/harness-03-real-product": {
+      "committedAt": "2026-08-20T16:36:22+05:00"
+    },
+    "harness/harness-04-getting-the-job-in": {
+      "committedAt": "2026-08-20T16:36:22+05:00"
+    },
+    "harness/harness-05-brain-and-tools": {
+      "committedAt": "2026-08-20T16:36:22+05:00"
+    },
+    "harness/harness-06-safe-room": {
+      "committedAt": "2026-08-20T16:36:22+05:00"
+    },
+    "harness/harness-assessment": {
+      "committedAt": "2026-08-20T16:36:22+05:00"
+    },
+    "harness/harness-assignment-2": {
+      "committedAt": "2026-08-20T16:36:22+05:00"
+    },
+    "made/how-do-i-use-whatsapp-for-my-shop-iozq": {
+      "committedAt": "2026-09-11T21:56:29+05:00"
+    },
+    "notion-slack/assessment/module-14-assessment": {
+      "committedAt": "2026-09-15T14:36:23+05:00"
+    },
+    "notion-slack/notion-slack-01-locked-out": {
+      "committedAt": "2026-09-16T12:00:18+05:00"
+    },
+    "notion-slack/notion-slack-02-two-doors": {
+      "committedAt": "2026-09-16T12:00:18+05:00"
+    },
+    "notion-slack/notion-slack-03-key-one-room": {
+      "committedAt": "2026-09-16T12:00:18+05:00"
+    },
+    "notion-slack/ns-01-why-a-chat-window": {
+      "committedAt": "2026-09-17T14:22:09+05:00"
+    },
+    "notion-slack/ns-02-the-loop": {
+      "committedAt": "2026-09-17T15:49:00+05:00"
+    },
+    "notion-slack/ns-03-notion": {
+      "committedAt": "2026-09-17T16:05:05+05:00"
+    },
+    "notion-slack/ns-04-slack": {
+      "committedAt": "2026-09-17T16:31:15+05:00"
+    },
+    "notion-slack/ns-05-github": {
+      "committedAt": "2026-09-17T16:43:29+05:00"
+    },
+    "notion-slack/ns-06-deployment": {
+      "committedAt": "2026-09-17T16:47:23+05:00"
+    },
+    "notion-slack/ns-07-mistakes": {
+      "committedAt": "2026-09-17T16:47:52+05:00"
+    },
+    "notion-slack/ns-assignment": {
+      "committedAt": "2026-09-17T20:50:07+05:00"
+    },
+    "self-healing/self-healing-01-fixes-its-own-mistakes": {
+      "committedAt": "2026-09-02T17:36:52+05:00"
+    },
+    "self-healing/self-healing-02-who-checks-the-work": {
+      "committedAt": "2026-09-02T17:36:52+05:00"
+    },
+    "self-healing/self-healing-03-remembering-the-fix": {
+      "committedAt": "2026-09-02T17:36:52+05:00"
+    },
+    "self-healing/self-healing-04-changing-the-brain": {
+      "committedAt": "2026-09-02T17:36:52+05:00"
+    },
+    "self-healing/self-healing-05-fix-the-system-first": {
+      "committedAt": "2026-09-02T17:36:52+05:00"
+    },
+    "self-healing/self-healing-06-prove-it-got-better": {
+      "committedAt": "2026-09-02T17:36:52+05:00"
+    },
+    "self-healing/self-healing-assignment": {
+      "committedAt": "2026-08-20T16:36:22+05:00"
+    },
+    "testing/ai-in-2030": {
+      "committedAt": "2026-08-20T16:36:22+05:00"
+    }
+  }
+}
