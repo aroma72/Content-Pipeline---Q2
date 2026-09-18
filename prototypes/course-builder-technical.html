@@ -145,7 +145,7 @@ footer a{color:var(--accent)}
     </div>
   </section>
 
-  <footer>Page 1 of 5 · Course Builder technical handoff</footer>
+  <footer>Page 1 of 7 · Course Builder technical handoff</footer>
 </div>
 
 <!-- page 2 -->
@@ -211,7 +211,7 @@ footer a{color:var(--accent)}
     </div>
 
     </section>
-  <footer>Page 2 of 5</footer>
+  <footer>Page 2 of 7</footer>
 </div>
 
 <div class="page">
@@ -262,7 +262,7 @@ footer a{color:var(--accent)}
     </div>
 
     </section>
-  <footer>Page 3 of 5</footer>
+  <footer>Page 3 of 7</footer>
 </div>
 
 <div class="page">
@@ -310,7 +310,7 @@ footer a{color:var(--accent)}
       part of the item id after the slash.</p>
   </section>
 
-  <footer>Page 4 of 5</footer>
+  <footer>Page 4 of 7</footer>
 </div>
 
 <!-- page 4 -->
@@ -328,13 +328,87 @@ footer a{color:var(--accent)}
           progress list. Never block a request on it.</td></tr>
         <tr><td>We store no plans</td><td><b>Persist the plan on your side as soon as you show
           it.</b> If the user navigates away, it is gone — we kept nothing.</td></tr>
-        <tr><td>Our build queue is not durable</td><td>If our service redeploys mid-build, the
-          remaining lessons are lost and the course must be restarted. Show per-lesson status
-          rather than a single percentage, so a stall is visible.</td></tr>
+        <tr><td>A redeploy costs one lesson</td><td>The course itself survives — the queue is
+          held on a mounted volume. The lesson that was mid-build does not: its render files are
+          stripped from our image and do not come back, so it is parked as <code>blocked</code>
+          with <code>interrupted: true</code> and waits for a person. Approving it
+          <em>rebuilds</em> that lesson. Show per-lesson status rather than one percentage, so a
+          stall is visible.</td></tr>
         <tr><td>Videos render one at a time</td><td>Two courses started together take twice as
           long. Consider allowing one build at a time per user.</td></tr>
         <tr><td>Lessons can fail QA and be remade</td><td><code>failed</code> in the status
           response is real. Decide whether a course appears when partly ready.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+
+  <footer>Page 5 of 7</footer>
+</div>
+
+<div class="page">
+  <div class="rh"><span>Course Builder</span><span>Approving and rejecting</span></div>
+
+  <section>
+    <h2>Approving, rejecting, and the states a lesson moves through</h2>
+    <p class="sub">A course pauses at every lesson. These are the two calls that move it, and the
+      only states you will see in <code>items[].status</code>.</p>
+    <table>
+      <thead><tr><th>Call</th><th>What it does</th></tr></thead>
+      <tbody>
+        <tr><td><code>POST /api/v1/courses/{courseId}/lessons/{series}/{slug}/approve</code></td>
+          <td>Publishes that lesson and releases the next one. The lesson id contains a slash;
+            send it unescaped. <code>by</code> is recorded against <b>your tenant</b>, taken from
+            your credential rather than the field, exactly as on
+            <code>/demo/make-video/:id/approve</code>.</td></tr>
+        <tr><td><code>POST …/reject</code></td>
+          <td><b>Terminal.</b> The course stops and nothing after that lesson is built. Lessons
+            already approved stay published — a reject does not unpublish them. There is no
+            un-reject; re-plan to start again.</td></tr>
+      </tbody>
+    </table>
+    <table>
+      <thead><tr><th>Status</th><th>Means</th></tr></thead>
+      <tbody>
+        <tr><td><code>queued</code></td><td>Waiting. Nothing spent on it yet.</td></tr>
+        <tr><td><code>claimed</code></td><td>Being built right now. Recorded before any spend, so
+          an interrupted build is always distinguishable from one that never started.</td></tr>
+        <tr><td><code>blocked</code></td><td><b>Waiting for a person.</b> This is the pause. Check
+          <code>awaitingApproval</code> in the status response for which lesson and why. An
+          <code>interrupted: true</code> here means a restart caught it mid-build and approving it
+          rebuilds rather than publishes.</td></tr>
+        <tr><td><code>done</code></td><td>Built, approved and published.</td></tr>
+        <tr><td><code>failed</code></td><td>Failed QA, or rejected by a human.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+
+  <footer>Page 6 of 7</footer>
+</div>
+
+<div class="page">
+  <div class="rh"><span>Course Builder</span><span>Smaller answers · integration</span></div>
+
+  <section>
+    <h2>Five smaller answers</h2>
+    <table>
+      <tbody>
+        <tr><td>Error shape</td><td>Always <code>{ "error": "&lt;slug&gt;", "message": "&lt;prose&gt;" }</code>,
+          with extra fields where they help — <code>409</code> carries <code>lessons</code> and
+          <code>estimate</code>; the <code>404</code> carries <code>durability</code>.</td></tr>
+        <tr><td><code>Idempotency-Key</code></td><td><b>Not on <code>/courses/build</code></b> —
+          only on <code>/produce</code>. Build is guarded by the <code>confirmLessons</code> echo
+          plus duplicate-slug rejection: a repeat returns <code>202</code> with the duplicates in
+          <code>rejected</code>, not a second course. Ask and we will add the key.</td></tr>
+        <tr><td><code>callbackUrl</code></td><td><b>Not for courses yet</b> — it is accepted on
+          <code>POST /demo/make-video</code> only. Poll <code>GET /courses/{courseId}</code> every
+          30–60s. Ask and it is the same signed-webhook path.</td></tr>
+        <tr><td>Rate limits</td><td>Keyed on <b>your tenant</b>, not your IP — one egress address
+          does not throttle your whole university. Every <code>429</code> carries
+          <code>Retry-After</code> and <code>X-RateLimit-*</code>.</td></tr>
+        <tr><td>What is charged, when</td><td><b>Per lesson, as each is released</b> — never the
+          whole course up front. A course stopped after lesson two has cost two lessons.</td></tr>
       </tbody>
     </table>
   </section>
@@ -356,18 +430,22 @@ footer a{color:var(--accent)}
 
   <section>
     <div class="callout">
-      <div class="k">Two things that are genuinely unfinished</div>
+      <div class="k">One thing that is genuinely unfinished</div>
       <p><b>Plans cannot be edited.</b> A user accepts a plan or re-plans with a better
       description. If editing matters to you, tell us — it changes the contract, because an
       edited plan has to come back to us.</p>
-      <p><b>Build durability.</b> Our queue does not survive a redeploy of our service. This
-      is on our list; until it is fixed, a long course build is best run when nobody is
-      shipping changes to the pipeline.</p>
+      <p><b>Build durability was the second item here, and it is now done.</b> The queue moved
+      onto the job store, so it follows a Railway volume and a course outlives a redeploy.
+      <code>GET /api/v1/health</code> reports <code>courses.durability</code>, and the 404 body
+      on an unknown <code>courseId</code> reports it too, so you never have to guess whether a
+      course was lost or never existed. Until the volume is attached it reads
+      <code>"container"</code> — survives a restart, not a redeploy — and says so rather than
+      claiming otherwise.</p>
     </div>
   </section>
 
   <footer>
-    Page 5 of 5 · Drawing Room content pipeline, Taleemabad · prepared by Aroma Tahir<br>
+    Page 7 of 7 · Drawing Room content pipeline, Taleemabad · prepared by Aroma Tahir<br>
     Prototype: <a href="https://content-queen-production.up.railway.app/demo/course-builder">content-queen-production.up.railway.app/demo/course-builder</a> ·
     API index: <a href="https://content-queen-production.up.railway.app/api/v1">/api/v1</a><br>
     The credential is deliberately NOT in this document. It is sent separately, and a document that carries one cannot be forwarded safely.
