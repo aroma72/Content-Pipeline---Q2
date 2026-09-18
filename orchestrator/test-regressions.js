@@ -2254,7 +2254,28 @@ function courseChecks() {
       'a normally-built lesson lost its approval and would re-render');
     return 'resumes to publish';
   });
+
+  // buildOne() reaches the script stage, which writes into explainer-videos/.
+  // A leftover fixture series becomes a REAL catalogue row served to the LMS --
+  // two junk rows reached the catalogue this way before this cleanup existed.
+  // Remove ONLY the fixture series directory. videoDir('demo','') yields
+  // explainer-videos/demo, whose dirname is explainer-videos itself -- taking the
+  // dirname here once deleted the entire video library, so the path is built
+  // explicitly and asserted to sit under explainer-videos before anything is removed.
+  const PATHS = require(path.join(__dirname, 'lib', 'paths')).PATHS;
+  const fixtureDir = path.join(PATHS.explainerVideos, 'demo');
+  if (path.relative(PATHS.explainerVideos, fixtureDir) === 'demo') {
+    try { fs.rmSync(fixtureDir, { recursive: true, force: true }); } catch { /* best effort */ }
+  }
+  check('the fixture series left no row in the catalogue', () => {
+    delete require.cache[require.resolve(path.join(__dirname, '..', 'server', 'lib', 'checkpoints'))];
+    const rows = require(path.join(__dirname, '..', 'server', 'lib', 'checkpoints')).listVideos();
+    const junk = rows.filter((r) => r.series === 'demo');
+    assert(junk.length === 0, junk.length + ' test videos are being served to the LMS');
+    return rows.length + ' real rows';
+  });
 }
+
 
 (async () => {
   await interpreterChecks();
