@@ -317,7 +317,12 @@ Three traps, each of which cost real time on 2026-09-18:
    Run with unmerged work it **rolls production back** — it did exactly that here.
    Only run it once `main` is what you want live.
 
-`railway up` times out uploading from this repo. Do not rely on it.
+`railway up` times out from this repo and should not be relied on. The cause is the
+working tree, not the network: `explainer-videos/` alone is ~36 GB of render output,
+and `railway up` indexes the whole directory before it uploads. `.railwayignore`
+correctly excludes `frames/`, `art/`, `audio/`, `out/`, `clips/` and `layers/`, so
+little of that is actually sent — but the walk still has to happen, and the request
+expires first. Deploy through git instead.
 
 Changing a service *setting* (attaching a volume) triggers a rebuild of the current
 source, which can make new code appear live and confuse the picture.
