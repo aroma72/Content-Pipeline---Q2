@@ -2255,8 +2255,7 @@ async function courseChecks() {
   // Keep the options the worker passed. Stubbing the spine to a bare status left
   // every option invisible to the suite -- which is how courses shipped running to
   // 'qa', one stage short of the review they are built around, with nothing failing.
-  let lastSpineOpts = null;
-  spine.execute = async (item, opts) => { lastSpineOpts = opts; return { status: 'blocked' }; };
+  spine.execute = async () => ({ status: 'blocked' });
 
   const freshQueue = () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cq-course-'));
