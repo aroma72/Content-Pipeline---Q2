@@ -72,13 +72,29 @@ check('loadDotenv populates keys from .env', () => {
   // needs no secret and therefore runs everywhere.
   if (!fs.existsSync(envPath)) return skip('no .env on this machine (CI or a fresh clone)');
   delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
   delete process.env.GEMINI_API_KEY;
   require('./lib/env').loadDotenv({ force: true });
-  assert(process.env.ANTHROPIC_API_KEY, 'ANTHROPIC_API_KEY not set after loadDotenv');
-  return `key len ${process.env.ANTHROPIC_API_KEY.length}`;
+  // What this regression is about is that loadDotenv puts the file's credentials
+  // into process.env at all -- the bug was "no credentials" while they sat in
+  // .env. Which credential is not the point, and naming ANTHROPIC_API_KEY made it
+  // the point: the deployed service runs LLM_BACKEND=cli on CLAUDE_CODE_OAUTH_TOKEN
+  // and has no ANTHROPIC_API_KEY at all, so an .env copied from production failed
+  // a test about loading rather than about keys. Accept either credential the
+  // router (lib/llm-router.js:21-51) can actually start on.
+  const cred = process.env.CLAUDE_CODE_OAUTH_TOKEN || process.env.ANTHROPIC_API_KEY;
+  assert(cred, 'neither CLAUDE_CODE_OAUTH_TOKEN nor ANTHROPIC_API_KEY set after loadDotenv');
+  return `credential len ${cred.length}`;
 });
 
 check('GOOGLE_STUDIO_API_KEY is bridged to GEMINI_API_KEY for child processes', () => {
+  // Same reason the check above skips: the bridge can only be observed once
+  // loadDotenv has had a .env to load. CI has no secret to put there, so without
+  // this guard the pair disagreed -- one skipped, one failed -- and the suite was
+  // red on main for a week over a file it is correct not to have.
+  if (!fs.existsSync(path.join(__dirname, '..', '.env'))) {
+    return skip('no .env on this machine (CI or a fresh clone)');
+  }
   assert(process.env.GEMINI_API_KEY, 'GEMINI_API_KEY not bridged');
   assert(
     process.env.GEMINI_API_KEY === process.env.GOOGLE_STUDIO_API_KEY,
@@ -209,7 +225,10 @@ async function beatChecks() {
   const extractJson = (() => {
     const src = fs.readFileSync(path.join(__dirname, 'lib', 'llm-cli.js'), 'utf8');
     const grab = (name) => {
-      const m = src.match(new RegExp('function ' + name + '[\\s\\S]*?\\n\\}\\n'));
+      // \r? because a Windows checkout (core.autocrlf=true) gives this file CRLF
+      // endings, and an LF-only regex matched no function at all -- the whole suite
+      // aborted here, before a single course check ran.
+      const m = src.match(new RegExp('function ' + name + '[\\s\\S]*?\\r?\\n\\}\\r?\\n'));
       assert(m, `${name} not found in llm-cli.js`);
       return m[0];
     };
@@ -1221,6 +1240,37 @@ async function beatChecks() {
     return 'carried';
   });
 
+  // A rendered, paid-for lesson was destroyed by the grammar gate that runs AFTER
+  // the render: eval-text.js is an LLM judge, it had passed the same beats.js before
+  // the spend, and it failed the second time on "Then he asks, have I got that right,
+  // and he stops talking." -- narration, where the question mark it wanted cannot be
+  // heard. 25 minutes and $0.598, and the finished _final.mp4 was left on disk while
+  // the run was settled `failed`. The gate keeps its verdict; it no longer gets to
+  // throw the video away on its own.
+  check('a finding AFTER the render parks the video for a person instead of killing the run', () => {
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'produce.js'), 'utf8');
+
+    const blockBranch = /if \(blockOnFail\) \{\s*throw new BlockedError\(/.test(src);
+    assert(blockBranch,
+      'the post-render branch does not throw BlockedError -- RejectedError is settled as '
+      + '`failed` by the spine, which discards a finished video and gives the LMS nothing to act on');
+
+    // Scope is the whole point: every sensor BEFORE the spend must still reject, because
+    // there is no video to save yet and a rejection there costs nothing.
+    const callsites = [...src.matchAll(/blockOnFail:\s*true/g)];
+    assert(callsites.length === 1,
+      `blockOnFail is set at ${callsites.length} call sites -- exactly one (the post-render `
+      + 'eval-text.js) may block; a pre-spend sensor that blocks stops rejecting bad scripts');
+
+    const postRender = /await sensor\('eval-text\.js'[^;]*\{ blockOnFail: true \}\);/.test(src);
+    assert(postRender, 'the post-render eval-text.js call does not pass blockOnFail');
+
+    const preSpend = /await sensor\('eval-text\.js',[^;]*\{ redraftable: true \}\);/.test(src);
+    assert(preSpend, 'the pre-spend eval-text.js call lost `redraftable: true`');
+
+    return 'blocks after the render, still rejects before the spend';
+  });
+
   check('a change request never counts as approval', () => {
     const { reviewVerdict } = require('../server/lib/tick')._internals;
     // "yes but change the ending" as approval publishes the unchanged ending --
@@ -1913,8 +1963,16 @@ async function integrationChecks() {
     assert(!/no stdin data received/i.test(r.stderr || ''), 'the stdin warning is still emitted');
     pass++; console.log('  PASS  live: no "waiting on stdin" warning from claude');
   } catch (e) {
-    failures.push({ name: 'stdin warning', message: e.message.split('\n')[0] });
-    console.log(`  FAIL  stdin warning\n          ${e.message.split('\n')[0]}`);
+    // A runner without the Claude CLI installed is not a regression in shell.js.
+    // ENOENT means the binary is absent, which is the normal state of CI; anything
+    // else means the call was made and went wrong, and that still fails.
+    if (/ENOENT/.test(e.message)) {
+      skipped++;
+      console.log('  SKIP  live: no "waiting on stdin" warning from claude  (claude CLI not installed)');
+    } else {
+      failures.push({ name: 'stdin warning', message: e.message.split('\n')[0] });
+      console.log(`  FAIL  stdin warning\n          ${e.message.split('\n')[0]}`);
+    }
   }
 
   check('the prompt goes on stdin, not argv (Windows caps argv at ~32767)', () => {
@@ -2159,7 +2217,7 @@ async function llmChecks() {
 //   - queue.setStatus was never exported, so approve() and reject() -- the whole
 //     point of a course pausing for a human -- threw TypeError on every call.
 
-function courseChecks() {
+async function courseChecks() {
   console.log('');
   console.log('11. courses survive a restart, and cost at most the lesson in flight');
 
@@ -2171,7 +2229,11 @@ function courseChecks() {
   // may start a render, call a model, or spend a cent, so the spine is replaced
   // with a stub that reports the lesson blocked and does nothing.
   const spine = require(path.join(__dirname, 'lib', 'spine'));
-  spine.execute = async () => ({ status: 'blocked' });
+  // Keep the options the worker passed. Stubbing the spine to a bare status left
+  // every option invisible to the suite -- which is how courses shipped running to
+  // 'qa', one stage short of the review they are built around, with nothing failing.
+  let lastSpineOpts = null;
+  spine.execute = async (item, opts) => { lastSpineOpts = opts; return { status: 'blocked' }; };
 
   const freshQueue = () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cq-course-'));
@@ -2202,6 +2264,30 @@ function courseChecks() {
     assert(claimAt > -1, 'buildOne never claims the lesson, so a restart cannot tell it from one never started');
     assert(claimAt < spendAt, 'the lesson is claimed after the spend begins, which is too late to help');
     return 'claimed first';
+  });
+
+  await checkAsync('a course lesson runs far enough to reach the stage that pauses for a person', async () => {
+    freshQueue();
+    const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+    lastSpineOpts = null;
+    queue.enqueue({ topic: 'Lesson six', series: 'demo', slug: 'stops', source: 'course-builder' });
+    await cw.drain();
+    assert(lastSpineOpts, 'the worker never called the spine');
+    const order = spine.STAGE_ORDER;
+    const stop = lastSpineOpts.stopAfter;
+    assert(order.includes(stop), `stopAfter '${stop}' is not a stage, so nothing will ever match it`);
+    // Both halves, because the value can drift in either direction and each costs
+    // something different. Before 'review' the lesson can never pause: it is settled
+    // `done` unseen and never published. Before 'upload' it pauses but publishing
+    // stops working -- which is what production already did, so stopping short of it
+    // would take a working behaviour away.
+    assert(order.indexOf(stop) >= order.indexOf('review'),
+      `courses stop after '${stop}', which is before 'review' -- every lesson is settled done `
+      + 'without ever pausing for approval, and is never published');
+    assert(order.indexOf(stop) >= order.indexOf('upload'),
+      `courses stop after '${stop}', so an approved lesson is never published and `
+      + 'youtubeVideoId stays null -- production already ran them to upload');
+    return `stops after '${stop}'`;
   });
 
   check('a lesson left mid-build is parked for a human, not silently rebuilt', () => {
@@ -2242,6 +2328,40 @@ function courseChecks() {
       'an interrupted lesson carried reviewApproved -- the spine would skip review and publish nothing');
     assert(item.interrupted === false, 'the interrupted flag was not cleared on approval');
     return 'rebuilds, then blocks at review as normal';
+  });
+
+  check('the course stop stage is its own, not the global default', () => {
+    // config.pipeline.stopAfter is never empty -- it defaults to 'qa' -- so a
+    // `config.pipeline.stopAfter || 'review'` fallback on the course path never
+    // fires. Courses must resolve their own value or they silently inherit 'qa'.
+    const configPath = require.resolve(path.join(__dirname, '..', 'server', 'lib', 'config'));
+    const before = process.env.PIPELINE_STOP_AFTER;
+    process.env.PIPELINE_STOP_AFTER = 'qa';
+    delete require.cache[configPath];
+    const c = require(configPath).config;
+    if (before === undefined) delete process.env.PIPELINE_STOP_AFTER;
+    else process.env.PIPELINE_STOP_AFTER = before;
+    delete require.cache[configPath];
+    assert(c.pipeline.courseStopAfter === 'upload',
+      `PIPELINE_STOP_AFTER=qa dragged courses to '${c.pipeline.courseStopAfter}'`);
+    return 'independent of PIPELINE_STOP_AFTER';
+  });
+
+  check('a blank budget variable reads as unset, not as an authorised zero', () => {
+    // Number('') is 0, and 0 is finite -- so a variable left empty in Railway looks
+    // configured in the dashboard and reads as "authorised nothing", which blocks
+    // every course lesson at produce.
+    const configPath = require.resolve(path.join(__dirname, '..', 'server', 'lib', 'config'));
+    const before = process.env.PIPELINE_MAX_APPROVABLE_USD;
+    process.env.PIPELINE_MAX_APPROVABLE_USD = '   ';
+    delete require.cache[configPath];
+    const c = require(configPath).config;
+    if (before === undefined) delete process.env.PIPELINE_MAX_APPROVABLE_USD;
+    else process.env.PIPELINE_MAX_APPROVABLE_USD = before;
+    delete require.cache[configPath];
+    assert(c.pipeline.maxApprovableUsd === 10,
+      'a blank variable read as ' + c.pipeline.maxApprovableUsd + ' rather than falling back');
+    return 'blank falls back';
   });
 
   check('approving a normally-built lesson still skips the expensive render', () => {
@@ -2285,7 +2405,7 @@ function courseChecks() {
   await integrationChecks();
   await redraftChecks();
   namingChecks();
-  courseChecks();
+  await courseChecks();
 
   console.log(`\n${'-'.repeat(64)}`);
   console.log(`  ${pass} passed, ${failures.length} failed` + (skipped ? `, ${skipped} skipped` : ''));
