@@ -44,7 +44,6 @@ function run({ video }) {
 
   // Largest gap between visible changes (covers head/tail too).
   let maxGap = 0, gapStart = 0;
-  let prev = 0;
   const marks = [0, ...changeTimes, (diffs.length + 1) * winSec];
   for (let i = 1; i < marks.length; i++) {
     const g = marks[i] - marks[i - 1];

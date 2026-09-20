@@ -10,7 +10,20 @@
 // things that are wrong at runtime and invisible until then.
 export default [
   {
-    files: ['orchestrator/**/*.js', 'server/**/*.js', 'scripts/**/*.js'],
+    // The sensors and the renderer live in the skill templates and are copied into
+    // every video folder. They were outside this check, which is backwards: an
+    // unbound name in orchestrator/ throws before anything is bought, while one in
+    // qa-art.js or compile-lesson.js throws after the art is paid for. gates/ is
+    // here for the same reason.
+    files: [
+      'orchestrator/**/*.js',
+      'server/**/*.js',
+      'scripts/**/*.js',
+      '.claude/skills/**/templates/**/*.js',
+      'gates/*.js',
+      'gates/lib/**/*.js',
+    ],
+    ignores: ['**/node_modules/**'],
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: 'commonjs',
@@ -68,11 +81,20 @@ export default [
     // Code inside page.evaluate() runs in Chrome, not in Node. These names are
     // real there and undefined here, so the check is told which file is which
     // rather than being switched off.
-    files: ['scripts/record-demo.js'],
+    // The renderer and the frame sensor drive a Puppeteer page, and the animation
+    // templates ARE the page. Same reasoning: name the files, do not switch the
+    // check off, or the one class of bug this config exists for hides in them.
+    files: [
+      'scripts/record-demo.js',
+      '.claude/skills/**/templates/compile-lesson.js',
+      '.claude/skills/**/templates/qa-frames.js',
+      '.claude/skills/**/templates/animation/**/*.js',
+    ],
     languageOptions: {
       globals: {
         window: 'readonly', document: 'readonly', navigator: 'readonly',
         Response: 'readonly', Event: 'readonly', HTMLElement: 'readonly',
+        getComputedStyle: 'readonly', requestAnimationFrame: 'readonly',
       },
     },
   },

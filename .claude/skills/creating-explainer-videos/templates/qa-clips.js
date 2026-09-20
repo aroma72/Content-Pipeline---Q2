@@ -36,7 +36,6 @@ if (!fs.existsSync(clipsDir)) { console.log('[qa-clips] no clips/ — nothing to
 const clips = fs.readdirSync(clipsDir).filter((f) => f.endsWith('.mp4'));
 if (!clips.length) { console.log('[qa-clips] no clips present — every beat uses Ken Burns.'); process.exit(0); }
 
-const beats = require(path.join(CWD, 'beats.js'));
 const durs = JSON.parse(fs.readFileSync(path.join(CWD, 'durations.json'), 'utf8'));
 const ff = require('ffmpeg-static');
 const tmpdir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'qaclips-'));

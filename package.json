@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "node server/index.js",
-    "lint": "eslint orchestrator server scripts",
+    "lint": "eslint orchestrator server scripts .claude/skills gates",
     "test": "node orchestrator/test-regressions.js && node orchestrator/test-store.js && node orchestrator/test-server.js",
     "test:server": "node orchestrator/test-server.js",
     "test:store": "node orchestrator/test-store.js"
