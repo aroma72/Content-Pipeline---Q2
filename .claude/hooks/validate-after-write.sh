@@ -6,7 +6,8 @@ FILE_PATH="$1"
 
 # Validate Python syntax
 if [[ "$FILE_PATH" == *.py ]]; then
-  if ! python3 -m py_compile "$FILE_PATH" 2>/dev/null; then
+  if command -v py >/dev/null 2>&1; then PY=py; else PY=python3; fi
+  if ! PYTHONPYCACHEPREFIX="${TMPDIR:-/tmp}/claude-pycache" "$PY" -m py_compile "$FILE_PATH" 2>/dev/null; then
     echo "❌ ERROR: Python file has syntax errors. Fix before continuing."
     exit 1
   fi
