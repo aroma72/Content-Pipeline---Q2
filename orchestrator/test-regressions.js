@@ -739,23 +739,36 @@ async function beatChecks() {
   // --- 4d. The quality sensors actually run --------------------------------
   console.log('\n3d. produce runs the quality sensors (was: verify.js only, on the autonomous path)');
 
-  check('produce.js runs all four sensors, each before the spend it protects', () => {
+  // A sensor shipped in the templates but wired into nothing reports safety it
+  // never checked. qa-checkpoint, qa-info and qa-frames sat that way for months
+  // while CLAUDE.md said qa-checkpoint "fails the build", so this list is the
+  // guard: adding a sensor to templates/ without calling it here fails the suite.
+  const SENSORS = ['qa-visuals.js', 'qa-cutouts.js', 'qa-checkpoint.js', 'qa-info.js',
+    'qa-art.js', 'qa-frames.js', 'eval-text.js'];
+
+  check('produce.js runs every sensor, each before the spend it protects', () => {
     const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'produce.js'), 'utf8');
     const at = (needle) => src.indexOf(needle);
-    for (const name of ['qa-visuals.js', 'qa-cutouts.js', 'qa-art.js', 'eval-text.js']) {
+    for (const name of SENSORS) {
       assert(at(`sensor('${name}'`) !== -1, `produce.js never runs ${name}`);
     }
-    assert(at("sensor('qa-visuals.js'") < at('--- spend gate'), 'qa-visuals runs after money is committed');
-    assert(at("sensor('qa-cutouts.js'") < at('--- spend gate'), 'qa-cutouts runs after money is committed');
+    // Script-level sensors read only beats.js, so they must land before any money
+    // is committed -- there they cost nothing to fail.
+    for (const name of ['qa-visuals.js', 'qa-cutouts.js', 'qa-checkpoint.js', 'qa-info.js']) {
+      assert(at(`sensor('${name}'`) < at('--- spend gate'), `${name} runs after money is committed`);
+    }
     assert(at("sensor('qa-art.js'") < at('// 4. voiceover'), 'qa-art runs after TTS is bought');
-    return 'all four, correctly ordered';
+    // qa-frames needs durations.json, so it cannot precede TTS -- but it must
+    // precede the ~1h compile, which is the whole point of measuring the frame.
+    assert(at("sensor('qa-frames.js'") < at('// 5. render'), 'qa-frames runs after the expensive render');
+    return `all ${SENSORS.length}, correctly ordered`;
   });
 
   check('every sensor ships in the templates, so a scaffold can run them', () => {
-    for (const name of ['qa-visuals.js', 'qa-cutouts.js', 'qa-art.js', 'eval-text.js']) {
+    for (const name of SENSORS) {
       assert(fs.existsSync(path.join(tplDir, name)), `${name} missing from the skill templates`);
     }
-    return '4 present';
+    return `${SENSORS.length} present`;
   });
 
   check('the template sync is unconditional, so old folders get new gates', () => {
@@ -1257,10 +1270,20 @@ async function beatChecks() {
 
     // Scope is the whole point: every sensor BEFORE the spend must still reject, because
     // there is no video to save yet and a rejection there costs nothing.
+    //
+    // This used to assert exactly one blockOnFail call site, which was the same thing
+    // while eval-text was the only sensor past the spend gate. qa-frames is now also
+    // past it, so count stopped tracking the rule. Assert the rule itself: a blocking
+    // sensor may sit anywhere after the spend gate and nowhere before it.
+    const spendGateAt = src.indexOf('--- spend gate');
+    assert(spendGateAt !== -1, 'the spend gate marker moved -- this check cannot locate it');
     const callsites = [...src.matchAll(/blockOnFail:\s*true/g)];
-    assert(callsites.length === 1,
-      `blockOnFail is set at ${callsites.length} call sites -- exactly one (the post-render `
-      + 'eval-text.js) may block; a pre-spend sensor that blocks stops rejecting bad scripts');
+    assert(callsites.length >= 1, 'no sensor blocks after the render any more');
+    for (const m of callsites) {
+      assert(m.index > spendGateAt,
+        'a sensor BEFORE the spend gate passes blockOnFail -- there is no video to save '
+        + 'yet, so it must reject the script rather than park a run for a person');
+    }
 
     const postRender = /await sensor\('eval-text\.js'[^;]*\{ blockOnFail: true \}\);/.test(src);
     assert(postRender, 'the post-render eval-text.js call does not pass blockOnFail');

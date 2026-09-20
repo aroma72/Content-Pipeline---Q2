@@ -425,7 +425,7 @@ module.exports = Object.assign(module.exports, {
       // more and reports the real verdict, so the failure is never swallowed.
     };
 
-    const sensor = async (script, what, { redraftable = false } = {}) => {
+    const sensor = async (script, what, { redraftable = false, blockOnFail = false } = {}) => {
       if (opts.dryRun) { log(`${script}: skipped (dry run)`); return; }
 
       // A gate that silently does not run is worse than no gate -- it reports
@@ -500,6 +500,25 @@ module.exports = Object.assign(module.exports, {
           );
         }
 
+        // After the render, a finding is not a verdict to act on automatically. The
+        // video exists, it has been paid for, and the gate that found this is an LLM
+        // judge that had already passed the same text before the spend -- a failed
+        // run here destroys a finished lesson over a disagreement the judge does not
+        // hold consistently. It happened: 25 minutes and $0.598, thrown away because
+        // "Then he asks, have I got that right, and he stops talking." was read as a
+        // question missing its punctuation, in narration nobody can hear punctuation
+        // in. So the run BLOCKS, carrying the finding to the person who can look at
+        // the video and decide. Nothing is discarded and nothing publishes itself.
+        if (blockOnFail) {
+          throw new BlockedError(
+            `${what} needs a human decision (${script}, exit ${e.code}):\n${findings}`,
+            {
+              blocker: `${script} findings after the render`,
+              details: { sensor: script, what, findings, finalRendered: true },
+            }
+          );
+        }
+
         // RejectedError keeps only `verdict` and `details`, so the sensor's identity
         // goes INSIDE details -- passed as a sibling key it is silently dropped and
         // the Slack report cannot say which gate failed.
@@ -514,6 +533,14 @@ module.exports = Object.assign(module.exports, {
     // a script that would produce a bad video costs nothing to reject here.
     await sensor('qa-visuals.js', 'the Evals-Grade Visual Standard', { redraftable: true });
     await sensor('qa-cutouts.js', 'half-cut props on cutout beats', { redraftable: true });
+    // CLAUDE.md has said "enforced by qa-checkpoint.js (fails the build)" since the
+    // format was settled, and nothing ran it -- not this stage, not CI, not a hook.
+    // validate-beats.js covers whether a checkpoint exists, where it sits and that it
+    // is never spoken; the rules about whether the QUESTION works -- 3-4 options, an
+    // answer index that indexes something, no two options the same, feedback long
+    // enough to explain the mistake -- live only here and were checked nowhere.
+    await sensor('qa-checkpoint.js', 'the in-video checkpoint question', { redraftable: true });
+    await sensor('qa-info.js', 'info-beat data shapes', { redraftable: true });
     // Grammar and clarity read beats.js and nothing else, so there is no reason to
     // learn about them only after paying for art and a voice. Measured: a run got
     // all the way through art, TTS and the render before failing on "he names the
@@ -736,6 +763,16 @@ module.exports = Object.assign(module.exports, {
       }
     }
 
+    // 4b. measure what the frame actually looks like, before paying for the render.
+    // qa-frames renders its own frames off lesson.html + durations.json, so it can
+    // see an element spilling off 1920x1080 or a beat that never draws while the
+    // ~1h compile is still ahead rather than behind. It was shipped in the
+    // templates and referenced by reviewing-explainer-scripts/SKILL.md, and run by
+    // nothing. Block rather than reject: the art and voice are already bought, so a
+    // finding here goes to a person instead of discarding them.
+    await sensor('qa-frames.js', 'what the rendered frame actually looks like',
+      { blockOnFail: true });
+
     // 5. render. compile-lesson.js always writes out/lesson.mp4 -- that name is
     // its contract with stitch-brand.js, and is NOT the slug.
     const bare = path.join('out', 'lesson.mp4');
@@ -808,8 +845,12 @@ module.exports = Object.assign(module.exports, {
     // first run (before the spend) is where a finding can still be redrafted; this
     // one catches an edit made between then and here, and is deliberately NOT
     // redraftable -- rewinding after the render would throw a finished video away
-    // over a comma. Anything it reports goes to a human.
-    await sensor('eval-text.js', 'grammar and clarity of the spoken and on-screen text');
+    // over a comma. Anything it reports goes to a human, and `blockOnFail` is what
+    // makes that true: without it this threw RejectedError, which the spine settles
+    // as `failed` -- the finished video thrown away exactly as the line above says
+    // it must not be.
+    await sensor('eval-text.js', 'grammar and clarity of the spoken and on-screen text',
+      { blockOnFail: true });
 
     const finalPath = path.join(dir, final);
     if (!opts.dryRun && !fs.existsSync(finalPath)) {
