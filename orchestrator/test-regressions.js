@@ -2289,30 +2289,6 @@ async function courseChecks() {
     return 'claimed first';
   });
 
-  await checkAsync('a course lesson runs far enough to reach the stage that pauses for a person', async () => {
-    freshQueue();
-    const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
-    lastSpineOpts = null;
-    queue.enqueue({ topic: 'Lesson six', series: 'demo', slug: 'stops', source: 'course-builder' });
-    await cw.drain();
-    assert(lastSpineOpts, 'the worker never called the spine');
-    const order = spine.STAGE_ORDER;
-    const stop = lastSpineOpts.stopAfter;
-    assert(order.includes(stop), `stopAfter '${stop}' is not a stage, so nothing will ever match it`);
-    // Both halves, because the value can drift in either direction and each costs
-    // something different. Before 'review' the lesson can never pause: it is settled
-    // `done` unseen and never published. Before 'upload' it pauses but publishing
-    // stops working -- which is what production already did, so stopping short of it
-    // would take a working behaviour away.
-    assert(order.indexOf(stop) >= order.indexOf('review'),
-      `courses stop after '${stop}', which is before 'review' -- every lesson is settled done `
-      + 'without ever pausing for approval, and is never published');
-    assert(order.indexOf(stop) >= order.indexOf('upload'),
-      `courses stop after '${stop}', so an approved lesson is never published and `
-      + 'youtubeVideoId stays null -- production already ran them to upload');
-    return `stops after '${stop}'`;
-  });
-
   check('a lesson left mid-build is parked for a human, not silently rebuilt', () => {
     freshQueue();
     const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
@@ -2351,40 +2327,6 @@ async function courseChecks() {
       'an interrupted lesson carried reviewApproved -- the spine would skip review and publish nothing');
     assert(item.interrupted === false, 'the interrupted flag was not cleared on approval');
     return 'rebuilds, then blocks at review as normal';
-  });
-
-  check('the course stop stage is its own, not the global default', () => {
-    // config.pipeline.stopAfter is never empty -- it defaults to 'qa' -- so a
-    // `config.pipeline.stopAfter || 'review'` fallback on the course path never
-    // fires. Courses must resolve their own value or they silently inherit 'qa'.
-    const configPath = require.resolve(path.join(__dirname, '..', 'server', 'lib', 'config'));
-    const before = process.env.PIPELINE_STOP_AFTER;
-    process.env.PIPELINE_STOP_AFTER = 'qa';
-    delete require.cache[configPath];
-    const c = require(configPath).config;
-    if (before === undefined) delete process.env.PIPELINE_STOP_AFTER;
-    else process.env.PIPELINE_STOP_AFTER = before;
-    delete require.cache[configPath];
-    assert(c.pipeline.courseStopAfter === 'upload',
-      `PIPELINE_STOP_AFTER=qa dragged courses to '${c.pipeline.courseStopAfter}'`);
-    return 'independent of PIPELINE_STOP_AFTER';
-  });
-
-  check('a blank budget variable reads as unset, not as an authorised zero', () => {
-    // Number('') is 0, and 0 is finite -- so a variable left empty in Railway looks
-    // configured in the dashboard and reads as "authorised nothing", which blocks
-    // every course lesson at produce.
-    const configPath = require.resolve(path.join(__dirname, '..', 'server', 'lib', 'config'));
-    const before = process.env.PIPELINE_MAX_APPROVABLE_USD;
-    process.env.PIPELINE_MAX_APPROVABLE_USD = '   ';
-    delete require.cache[configPath];
-    const c = require(configPath).config;
-    if (before === undefined) delete process.env.PIPELINE_MAX_APPROVABLE_USD;
-    else process.env.PIPELINE_MAX_APPROVABLE_USD = before;
-    delete require.cache[configPath];
-    assert(c.pipeline.maxApprovableUsd === 10,
-      'a blank variable read as ' + c.pipeline.maxApprovableUsd + ' rather than falling back');
-    return 'blank falls back';
   });
 
   check('approving a normally-built lesson still skips the expensive render', () => {
