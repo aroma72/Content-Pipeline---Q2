@@ -1,6 +1,6 @@
 ---
 type: router
-last_verified: 2026-06-02
+last_verified: 2026-09-20
 owner: aroma
 ---
 
@@ -144,6 +144,6 @@ owner: aroma
 
 ---
 
-## Pre-Push Quality Gate: `bash .claude/scripts/smoke-test.sh`
+## Pre-Push Quality Gate: `bash .claude/scripts/smoke-test.sh` — install it: `bash scripts/install-hooks.sh` (once per clone; also adds pre-commit). Audit: `docs/HARNESS_AUDIT.md`
 🚫 **Deploy = `git push origin <branch>:main` then `railway redeploy --from-source -y`** — `--from-source` pulls main, so it ROLLS BACK unmerged work.
-*Last updated: 2026-09-18*
+*Last updated: 2026-09-20*
