@@ -11,12 +11,31 @@ NC='\033[0m' # No Color
 echo "Running pre-commit checks..."
 
 # 1. Block hardcoded SYSTEM_PROMPT in skills/agents
+#
+# This check used to fire on every commit, whatever was staged. The pipeline ended
+# in `xargs -I {}`, and xargs with -I exits 0 when its input is empty, so a commit
+# touching no skills/*.py still produced a zero status; the `|| true | grep -q .`
+# meant to catch that never ran, and the condition was true every time. A hook that
+# refuses every commit is a hook nobody can install, which is roughly what happened.
+#
+# Select the files first, and only look inside them if there are any.
 echo -n "Checking for hardcoded prompts... "
-if git diff --cached --name-only | grep -E "(skills|agents)/.*\.py" | xargs -I {} grep -l "^SYSTEM_PROMPT = " {} 2>/dev/null || true | grep -q .; then
-  echo -e "${RED}FAIL${NC}"
-  echo "ERROR: Hardcoded SYSTEM_PROMPT found. Extract to prompts/ directory instead."
-  echo "HINT: Use _load_prompt() function to load from PROMPTS_DIR"
-  exit 1
+STAGED_PY=$(git diff --cached --name-only --diff-filter=ACM | grep -E "^(skills|agents)/.*\.py$" || true)
+if [ -n "$STAGED_PY" ]; then
+  # -- Read the STAGED content, not the working tree: the point is what is about to
+  # be committed, and those differ whenever a file is partially staged.
+  # The rule is "no HARDCODED prompt", so match an assignment whose right-hand side
+  # opens a string literal. `SYSTEM_PROMPT = _load_prompt("x")` is the pattern
+  # CLAUDE.md asks for and must not be flagged; the CI grep (^SYSTEM_PROMPT = ) does
+  # not draw that distinction and would reject the correct form.
+  for f in $STAGED_PY; do
+    if git show ":$f" 2>/dev/null | grep -qE '^SYSTEM_PROMPT = ("""|'"'''"'|"|'"'"')'; then
+      echo -e "${RED}FAIL${NC}"
+      echo "ERROR: Hardcoded SYSTEM_PROMPT found in $f. Extract to prompts/ directory instead."
+      echo "HINT: Use _load_prompt() function to load from PROMPTS_DIR"
+      exit 1
+    fi
+  done
 fi
 echo -e "${GREEN}OK${NC}"
 
