@@ -340,7 +340,7 @@ module.exports = Object.assign(module.exports, {
       if (!fs.existsSync(path.join(dir, 'beats.js'))) {
         throw new BlockedError(
           `No beats.js in ${dir}. The script stage must write beats.js before produce runs.`,
-          { blocker: 'beats.js missing' }
+          { blocker: 'beats.js missing', code: 'produce-input' }
         );
       }
 
@@ -414,10 +414,25 @@ module.exports = Object.assign(module.exports, {
             log(`regenerating art ${ids} failed: ${regenErr.message}`);
             return;                                 // let sensor report the original verdict
           }
+          // These images were BOUGHT. Recording only an intervention meant the run
+          // ledger under-read by up to 2 x N images every time the vision judge
+          // rejected anything, and `.beads/runs.jsonl` is the only place a course
+          // run's cost exists at all -- so the under-count reached the invoice
+          // reconciliation, not just a log. A spend that is not recorded cannot be
+          // budgeted against, and `estimateSpend` will not see it either: the
+          // regenerated PNG keeps the same prompt sidecar, so it is correctly
+          // invisible to the cache and must be billed here or nowhere.
+          const repairUsd = Number((ids.split(',').filter(Boolean).length * COST.imagePerImage).toFixed(4));
+          state.recordSpend(st, {
+            stage: 'produce',
+            usd: repairUsd,
+            detail: `imagen: ${ids.split(',').filter(Boolean).length} repaired image(s) after qa-art rejection`,
+          });
           state.recordIntervention(st, {
             stage: 'produce',
             kind: 'art_regenerated',
-            detail: `qa-art rejected art ${ids}; regenerated and re-judged (attempt ${attempt}).`,
+            detail: `qa-art rejected art ${ids}; regenerated and re-judged (attempt ${attempt}) `
+              + `at $${repairUsd.toFixed(2)}.`,
           });
         }
       }
@@ -514,6 +529,7 @@ module.exports = Object.assign(module.exports, {
             `${what} needs a human decision (${script}, exit ${e.code}):\n${findings}`,
             {
               blocker: `${script} findings after the render`,
+              code: 'post-render-check',
               details: { sensor: script, what, findings, finalRendered: true },
             }
           );
@@ -555,8 +571,13 @@ module.exports = Object.assign(module.exports, {
     // a retry after a crash is correctly costed at $0 rather than blocked again.
     const est = estimateSpend(artifacts.script && artifacts.script.beats, dir);
     const budget = opts.budgetUsd;
+    // Measured against MEDIA spend, not the run total. The budget is a ceiling on
+    // what this video buys -- images, speech, motion. Token spend is now counted
+    // too (state.recordSpend kind 'model'), and letting it into this comparison
+    // would spend the art budget on research and quietly ship a stills-only video.
+    const spentOnMedia = state.mediaSpend(st);
     const spendApproved = est.totalUsd === 0
-      || (budget !== null && budget !== undefined && (st.spend.usd + est.totalUsd) <= budget);
+      || (budget !== null && budget !== undefined && (spentOnMedia + est.totalUsd) <= budget);
 
     log(`estimated spend: ${est.images} image(s) x $${COST.imagePerImage} = $${est.artUsd}` +
         ` + ${est.clips} TTS clip(s) x $${COST.ttsPerClip} = $${est.ttsUsd}` +
@@ -574,7 +595,7 @@ module.exports = Object.assign(module.exports, {
         `Paid art/TTS not approved: this video costs ~$${est.totalUsd} and the budget is ` +
         `${budget === null || budget === undefined ? 'unset' : '$' + budget}. ` +
         `Re-run with --budget <usd> (plan item 3.2 makes this automatic).`,
-        { blocker: 'no pre-approved spend budget', planItem: '3.2' }
+        { blocker: 'no pre-approved spend budget', planItem: '3.2', code: 'spend-approval' }
       );
     }
 
@@ -614,7 +635,8 @@ module.exports = Object.assign(module.exports, {
         );
       }
       state.recordSpend(st, {
-        stage: 'produce', usd: Number((missingArt.length * COST.imagePerImage).toFixed(2)),
+        stage: 'produce', kind: 'media',
+        usd: Number((missingArt.length * COST.imagePerImage).toFixed(2)),
         detail: `imagen: ${missingArt.length} retried image(s)`,
       });
       log(`art/ now complete`);
@@ -625,7 +647,8 @@ module.exports = Object.assign(module.exports, {
       // would inflate the cost totals `run.js metrics` reports.
       if (!opts.dryRun) {
         state.recordSpend(st, {
-          stage: 'produce', usd: est.artUsd, detail: `imagen: ${est.images} image(s)`,
+          stage: 'produce', kind: 'media',
+          usd: est.artUsd, detail: `imagen: ${est.images} image(s)`,
         });
       }
     }
@@ -677,7 +700,8 @@ module.exports = Object.assign(module.exports, {
       await run('node', ['tts-lesson.js', '--yes'], { timeoutMs: 30 * 60 * 1000 });
       if (!opts.dryRun) {
         state.recordSpend(st, {
-          stage: 'produce', usd: est.ttsUsd, detail: `gemini tts: ${est.clips} clip(s)`,
+          stage: 'produce', kind: 'media',
+          usd: est.ttsUsd, detail: `gemini tts: ${est.clips} clip(s)`,
         });
       }
     }
@@ -709,7 +733,9 @@ module.exports = Object.assign(module.exports, {
       // re-check the budget: the pre-TTS estimate used the 5s floor.
       const animSecs = motionBeats.reduce((a, b) => a + i2vSeconds(readDuration(dir, b.id)), 0);
       const animUsd = Number((animSecs * COST.i2vPerSecond).toFixed(2));
-      const room = budget === null || budget === undefined ? 0 : budget - (st.spend.usd + animUsd);
+      const room = budget === null || budget === undefined
+        ? 0
+        : budget - (state.mediaSpend(st) + animUsd);
 
       if (opts.dryRun) {
         log(`animation: skipped (dry run) -- would animate ${motionBeats.length} beat(s), ~$${animUsd}`);
@@ -720,7 +746,7 @@ module.exports = Object.assign(module.exports, {
         state.recordIntervention(st, {
           stage: 'produce',
           kind: 'animation_skipped_over_budget',
-          detail: `i2v needs $${animUsd}; budget left $${(budget - st.spend.usd).toFixed(2)}`,
+          detail: `i2v needs $${animUsd}; budget left $${(budget - state.mediaSpend(st)).toFixed(2)}`,
         });
         sensorResults.push({
           ok: true, sensor: 'animate', what: 'i2v motion',
@@ -739,7 +765,7 @@ module.exports = Object.assign(module.exports, {
           const got = missingPerBeat(motionBeats, dir, 'clips', (id) => `${id}.mp4`);
           const made = motionBeats.length - got.length;
           state.recordSpend(st, {
-            stage: 'produce',
+            stage: 'produce', kind: 'media',
             usd: Number((made > 0 ? (animSecs * COST.i2vPerSecond * made / motionBeats.length) : 0).toFixed(2)),
             detail: `kie i2v: ${made} clip(s)`,
           });

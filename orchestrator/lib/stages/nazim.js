@@ -28,7 +28,7 @@ module.exports = {
       (item.recommendationId
         ? ` Recommendation ${item.recommendationId} cannot be marked actioned either.`
         : ''),
-      { blocker: 'NAZIM content-write API spec', planItem: '1.2' }
+      { blocker: 'NAZIM content-write API spec', planItem: '1.2', code: 'nazim' }
     );
   },
 };

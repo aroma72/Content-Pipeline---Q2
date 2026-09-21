@@ -66,7 +66,7 @@ module.exports = {
     if (!produced || !produced.finalPath) {
       throw new BlockedError(
         'Nothing to upload: the produce stage did not report a final deliverable.',
-        { blocker: 'no produce artifact' }
+        { blocker: 'no produce artifact', code: 'upload' }
       );
     }
 
@@ -75,7 +75,7 @@ module.exports = {
       throw new BlockedError(
         `Refusing to upload ${path.basename(finalPath)} -- only the bumper-wrapped ` +
         `_final.mp4 is the deliverable (LAW 1).`,
-        { blocker: 'not the branded deliverable' }
+        { blocker: 'not the branded deliverable', code: 'upload' }
       );
     }
 
@@ -87,7 +87,7 @@ module.exports = {
     if (!fs.existsSync(finalPath)) {
       throw new BlockedError(
         `Deliverable is missing at ${finalPath}.`,
-        { blocker: 'deliverable absent' }
+        { blocker: 'deliverable absent', code: 'upload' }
       );
     }
 
@@ -99,7 +99,7 @@ module.exports = {
         'YouTube is not authorised on this machine. A human must run once:\n' +
         '    node orchestrator/youtube-auth.js\n' +
         '  (needs YOUTUBE_CLIENT_ID / YOUTUBE_CLIENT_SECRET in .env)',
-        { blocker: 'one-time Google OAuth consent not done', planItem: '2.1' }
+        { blocker: 'one-time Google OAuth consent not done', planItem: '2.1', code: 'upload' }
       );
     }
 
@@ -131,7 +131,7 @@ module.exports = {
       // it as blocked so the queue item can be requeued once consent is renewed.
       if (e instanceof yt.YouTubeAuthError) {
         throw new BlockedError(`YouTube authorisation failed: ${e.message}`, {
-          blocker: 'YouTube credentials need renewing', planItem: '2.1',
+          blocker: 'YouTube credentials need renewing', planItem: '2.1', code: 'upload',
         });
       }
 
@@ -144,7 +144,7 @@ module.exports = {
           'The YouTube Data API v3 is not enabled on this Google Cloud project.\n' +
           `  Enable it here, then requeue:\n    ${enableUrl || 'https://console.cloud.google.com/apis/library/youtube.googleapis.com'}\n` +
           '  (Creating the OAuth client does not enable the API -- they are separate steps.)',
-          { blocker: 'YouTube Data API v3 not enabled', planItem: '2.1' }
+          { blocker: 'YouTube Data API v3 not enabled', planItem: '2.1', code: 'upload' }
         );
       }
 
@@ -153,7 +153,7 @@ module.exports = {
         throw new BlockedError(
           `YouTube API quota exhausted: ${String(e.message).slice(0, 200)}\n` +
           '  Default quota allows roughly 6 uploads/day. It resets at midnight Pacific.',
-          { blocker: 'YouTube API quota', planItem: '2.1' }
+          { blocker: 'YouTube API quota', planItem: '2.1', code: 'upload' }
         );
       }
 

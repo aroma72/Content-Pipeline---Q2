@@ -173,8 +173,9 @@ function build() {
             + '`confirmLessons` matching the plan, because this spends real money.' },
         { method: 'GET', path: '/api/v1/courses/:courseId', auth: true,
           description: 'Build progress, and which lesson is waiting for approval. A lesson '
-            + 'carries `runId`, a `reason` while blocked and an `error` when it failed, so a '
-            + 'consumer can say why rather than only that.' },
+            + 'carries `runId`, a `reason` and a `blockedBy` while blocked, an `error` when it '
+            + 'failed, and when done its `path` (the key into GET /api/v1/videos) plus its '
+            + '`youtube` URL and `youtubeVideoId`.' },
         { method: 'POST', path: '/api/v1/courses/:courseId/lessons/:lessonId/approve',
           auth: true,
           description: 'Publish a built lesson and release the next one. Courses build '
@@ -182,6 +183,11 @@ function build() {
         { method: 'POST', path: '/api/v1/courses/:courseId/lessons/:lessonId/reject',
           auth: true,
           description: 'Reject a built lesson. The course stops; nothing after it is built.' },
+        { method: 'POST', path: '/api/v1/courses/:courseId/lessons/:lessonId/requeue',
+          auth: true,
+          description: 'Retry ONE failed lesson, leaving the rest of the course alone. '
+            + 'Refuses anything that is not failed, and buys another render -- call it '
+            + 'from an explicit human action, never automatically.' },
       ],
       demo: `${req.protocol}://${req.get('host')}/demo/quiz`,
       howTheQuestionBehaves: {
@@ -452,6 +458,32 @@ function build() {
         // already moved past.
         ...(i.status === 'failed' && i.error ? { error: i.error } : {}),
         ...(i.status === 'blocked' && i.reason ? { reason: i.reason } : {}),
+        // Which blocked this is. `reason` is free text written by whatever stopped
+        // the lesson -- sometimes a sentence a model wrote -- so a caller that has
+        // one Approve button cannot tell "waiting for a person" from "a judge
+        // flagged the finished video" without matching on prose. This is a closed
+        // set: review | post-render-check | spend-approval | upload | nazim |
+        // interrupted. Defaulted here as well as at queue.block() so items blocked
+        // before this field existed still read as the normal case.
+        ...(i.status === 'blocked' ? { blockedBy: i.blockedBy || 'review' } : {}),
+        // What the lesson actually produced. A finished lesson used to say only
+        // that it succeeded, so the caller knew a video existed and could not say
+        // which one -- there was no way to drop it into the block waiting for it.
+        //
+        // `path` is not reconstructed from series + slug: the item's own id IS the
+        // catalogue path, minted as `${series}/${slug}` at queue.js:118 and filed
+        // under the same string at checkpoints.js:533. It joins to a row in
+        // GET /api/v1/videos, and from there to that video's checkpoints.
+        ...(i.status === 'done' ? {
+          path: i.id,
+          // The answer directly, skipping the join. queue.done() stores the run's
+          // artifacts on the item and courses stop after `upload` (config.js:80),
+          // so a finished course lesson already knows its own URL. Absent if the
+          // run stopped earlier than upload -- `path` still resolves it.
+          ...(i.artifacts && i.artifacts.upload && i.artifacts.upload.url
+            ? { youtube: i.artifacts.upload.url, youtubeVideoId: i.artifacts.upload.videoId }
+            : {}),
+        } : {}),
       }));
     if (!items.length) {
       // Report durability; do not assert the worst case. This used to tell every
@@ -505,7 +537,8 @@ function build() {
    */
   router.post('/courses/:courseId/lessons/:lessonId(*)/approve', requireToken, (req, res) => {
     const by = (req.body && req.body.by) || 'Aroma';
-    const r = require('./course-worker').approve(req.params.lessonId, by);
+    const r = require('./course-worker')
+      .approve(req.params.lessonId, by, req.params.courseId);
     if (!r.ok) return res.status(409).json({ error: 'cannot_approve', message: r.why });
     res.status(202).json({
       approved: req.params.lessonId,
@@ -518,11 +551,37 @@ function build() {
   /** Reject a built lesson. The course stops here; nothing after it is built. */
   router.post('/courses/:courseId/lessons/:lessonId(*)/reject', requireToken, (req, res) => {
     const why = (req.body && req.body.why) || '';
-    const r = require('./course-worker').reject(req.params.lessonId, why);
+    const r = require('./course-worker')
+      .reject(req.params.lessonId, why, req.params.courseId);
     if (!r.ok) return res.status(409).json({ error: 'cannot_reject', message: r.why });
     res.status(202).json({
       rejected: req.params.lessonId,
       note: 'Nothing further will be built for this course. The video was not published.',
+    });
+  });
+
+  /**
+   * Retry one failed lesson.
+   *
+   * A course is many lessons and one failing does not make the other nine wrong.
+   * Rebuilding the course is not the workaround it looks like: enqueue() rejects
+   * the duplicate slugs, so it would buy fresh videos for the lessons that
+   * already worked and refuse the one that did not.
+   *
+   * This buys another render, so it refuses anything that is not `failed` and
+   * exists to be called from a person's click -- nothing in this service calls
+   * it on its own, and nothing should.
+   */
+  router.post('/courses/:courseId/lessons/:lessonId(*)/requeue', requireToken, (req, res) => {
+    const by = (req.body && req.body.by) || 'Aroma';
+    const r = require('./course-worker')
+      .requeue(req.params.lessonId, by, req.params.courseId);
+    if (!r.ok) return res.status(409).json({ error: 'cannot_requeue', message: r.why });
+    res.status(202).json({
+      requeued: req.params.lessonId,
+      by,
+      note: 'Building this lesson again from the start. It is a new render and it costs '
+        + 'again -- the previous attempt bought nothing that survives.',
     });
   });
 

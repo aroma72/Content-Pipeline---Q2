@@ -44,12 +44,14 @@ module.exports = {
   maxAttempts: 2,
 
   async run(ctx) {
-    const { artifacts, opts, log } = ctx;
+    const { artifacts, opts, log, state: st } = ctx;
     const script = artifacts.script;
     log(`gating ${script.beatCount} beats`);
 
     const result = await askJson({
       log,
+      state: st,
+      stage: 'gate',
       promptName: 'script_gate',
       input: JSON.stringify({ title: script.title, beats: script.beats }, null, 2),
       schema: SCHEMA,

@@ -80,10 +80,19 @@ for (const e of events) {
   byId.get(e.id).push(e);
 }
 
-// The run log is the ONLY place a course run's cost is written, and it is not on
-// the volume -- .beads lives on the container filesystem. A redeploy since the
-// run means the figure is gone, and saying so is the honest answer.
-const runs = fs.existsSync(PATHS.runsLog) ? jsonl.readValid(PATHS.runsLog) : [];
+// The run log is the only place a course run's cost is written. It is written
+// twice: to .beads on the container filesystem, and -- since a redeploy takes
+// that copy with it while the course itself survives -- to the durable job
+// store. Read both. If neither has it, the figure really is gone, and saying so
+// is the honest answer.
+const runLogs = [PATHS.runsLog];
+try {
+  const store = require('../server/lib/job-store').shared();
+  if (store && store.dir) runLogs.push(path.join(store.dir, 'runs.jsonl'));
+} catch { /* no store -- .beads is all there is */ }
+const runs = runLogs
+  .filter((p) => fs.existsSync(p))
+  .flatMap((p) => jsonl.readValid(p));
 
 for (const [id, evs] of byId) {
   console.log(`\n${'='.repeat(72)}\n${id}\n${'='.repeat(72)}`);
@@ -100,9 +109,9 @@ for (const [id, evs] of byId) {
   for (const runId of runIds) {
     const matches = runs.filter((r) => r.runId === runId);
     if (!matches.length) {
-      console.log(`\n  run ${runId}: no row in ${PATHS.runsLog}`);
-      console.log('    Spend UNKNOWN, not zero. The run log is on the container filesystem,');
-      console.log('    not the volume, so a redeploy since the run took it with it.');
+      console.log(`\n  run ${runId}: no row in ${runLogs.join(' or ')}`);
+      console.log('    Spend UNKNOWN, not zero. Runs from before the log was also written to the');
+      console.log('    durable store only ever existed in .beads, which a redeploy takes.');
       continue;
     }
     const r = matches[matches.length - 1];

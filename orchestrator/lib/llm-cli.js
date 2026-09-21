@@ -501,6 +501,10 @@ async function askJson({
   dryRunValue = null,
   timeoutMs = 5 * 60 * 1000,   // calls take 60-90s; a 15-min ceiling made one hang cost a quarter hour
   log = null,
+  // Optional, same as the SDK backend: with a run state in hand this call's cost
+  // goes on the run instead of only being printed.
+  state = null,
+  stage = null,
 }) {
   if (dryRun) return { dryRun: true, ...(dryRunValue || {}) };
 
@@ -619,6 +623,24 @@ async function askJson({
     log(`claude -p: ${MODEL}, ~$${envelope.total_cost_usd.toFixed(4)} against your plan`);
   }
 
+  // The envelope's own figure, per call -- each askJson spawns a fresh `claude -p`
+  // session, so it is this call's cost and not a running total. It was logged and
+  // discarded, which is why research, script, gate and qa spend never appeared in
+  // any lesson's cost. Best-effort: accounting must not fail a run.
+  if (state && typeof envelope.total_cost_usd === 'number' && envelope.total_cost_usd > 0) {
+    try {
+      const u = envelope.usage || {};
+      require('./state').recordSpend(state, {
+        stage: stage || 'llm',
+        kind: 'model',
+        usd: Number(envelope.total_cost_usd.toFixed(4)),
+        detail: `${MODEL} via claude -p: ${u.input_tokens || 0} in / ${u.output_tokens || 0} out`,
+      });
+    } catch (e) {
+      if (log) log(`could not record model spend: ${e.message}`);
+    }
+  }
+
   // On a parse failure, say how much came back and how it ended. "Unbalanced JSON"
   // alone cannot distinguish a truncated reply from a chatty one, and those need
   // opposite fixes (shorter requested output vs. firmer formatting instruction).
@@ -647,6 +669,10 @@ async function askJson({
       if (log) log('reply was not valid JSON -- asking for it back, corrected');
       const fixed = await askJson({
         log: null,
+        // The repair is a second paid call. Carrying the run state means it is
+        // counted; without this it was an envelope thrown away in silence.
+        state,
+        stage,
         promptName: 'json_repair',
         input: [
           'The JSON below is malformed. Return it corrected and nothing else.',

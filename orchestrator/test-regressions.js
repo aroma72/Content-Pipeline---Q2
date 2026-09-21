@@ -1260,6 +1260,31 @@ async function beatChecks() {
   // heard. 25 minutes and $0.598, and the finished _final.mp4 was left on disk while
   // the run was settled `failed`. The gate keeps its verdict; it no longer gets to
   // throw the video away on its own.
+  // `.beads/runs.jsonl` is the only record of what a course run cost -- the tenant
+  // ledger never sees a course at all. So an unrecorded purchase is not a logging gap,
+  // it is an under-read invoice. repairArt() bought up to 2 x N images with `--yes` and
+  // recorded only an intervention, and estimateSpend cannot catch it either: a repaired
+  // image keeps its prompt sidecar, so the cache correctly considers it already bought.
+  check('every paid generator call in produce records what it spent', () => {
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'produce.js'), 'utf8');
+    const lines = src.split(/\r?\n/);
+    // `--yes` is what turns off the generators' own spend guard (templates/lib/config.js
+    // guardSpend), so it marks exactly the lines that can charge the account.
+    const paid = lines
+      .map((l, i) => ({ l, i }))
+      .filter(({ l }) => /run\('node',/.test(l) && /'--yes'/.test(l));
+    assert(paid.length >= 5,
+      `expected at least 5 paid call sites in produce.js, found ${paid.length} -- ` +
+      'if one was removed, update this test deliberately rather than losing the guard');
+    const WINDOW = 30;
+    const unrecorded = paid.filter(({ i }) =>
+      !lines.slice(i, i + WINDOW).some((l) => /state\.recordSpend\(/.test(l)));
+    assert(unrecorded.length === 0,
+      'these paid calls spend without recording it, so the run ledger under-reads: ' +
+      unrecorded.map(({ i, l }) => `produce.js:${i + 1} ${l.trim()}`).join('; '));
+    return `${paid.length} paid call sites, all recorded`;
+  });
+
   check('a finding AFTER the render parks the video for a person instead of killing the run', () => {
     const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'produce.js'), 'utf8');
 
@@ -2477,6 +2502,77 @@ async function courseChecks() {
     assert(queue.get('demo/normal').reviewApproved === 'Aroma',
       'a normally-built lesson lost its approval and would re-render');
     return 'resumes to publish';
+  });
+
+
+  // A lesson that was approved, rendered, and THEN failed still carries
+  // reviewApproved: currentItems() is a shallow fold that never deletes a key.
+  // A bare status flip back to queued would resume it straight past human review
+  // and publish a video nobody watched.
+  check('requeueing a lesson clears the approval its last attempt carried', () => {
+    freshQueue();
+    queue.enqueue({ topic: 'Lesson seven', series: 'demo', slug: 'retried', source: 'course-builder' });
+    queue.block('demo/retried', 'run-1', 'awaiting human review', 'review');
+    queue.setStatus('demo/retried', queue.ITEM_STATUS.QUEUED, { reviewApproved: 'Aroma' });
+    queue.fail('demo/retried', 'run-2', 'the upload died');
+
+    queue.requeue('demo/retried');
+    const item = queue.get('demo/retried');
+    assert(item.status === 'queued', `requeue left it '${item.status}'`);
+    assert(!item.reviewApproved,
+      'the retried lesson kept its old approval, so the rebuild would publish without anyone watching it');
+    assert(!item.error, 'the retried lesson still reports the failure it is being retried past');
+    assert(!item.blockedBy, 'the retried lesson still names what blocked a previous attempt');
+    return 'approval, error and blockedBy all cleared';
+  });
+
+  // Rejecting means "do not publish this". There was no status guard at all, so
+  // a lesson already on YouTube could be marked failed after the fact, leaving
+  // the course's record disagreeing with the catalogue.
+  check('a published lesson cannot be rejected after the fact', () => {
+    freshQueue();
+    const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+    queue.enqueue({ topic: 'Lesson eight', series: 'demo', slug: 'published', source: 'course-builder' });
+    queue.done('demo/published', 'run-1', { upload: { url: 'https://youtu.be/x', videoId: 'x' } });
+    const r = cw.reject('demo/published', 'changed my mind');
+    assert(r.ok === false, 'a published lesson was rejected');
+    assert(queue.get('demo/published').status === 'done', 'a published lesson was marked failed');
+    return 'refused';
+  });
+
+  // Only a failed lesson may be retried: a retry buys another render, and one
+  // that is merely waiting for a person should be approved or rejected instead.
+  check('only a failed lesson can be requeued', () => {
+    freshQueue();
+    const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+    queue.enqueue({ topic: 'Lesson nine', series: 'demo', slug: 'waiting', source: 'course-builder' });
+    queue.block('demo/waiting', 'run-1', 'awaiting human review', 'review');
+    assert(cw.requeue('demo/waiting').ok === false, 'a lesson waiting for a person was requeued');
+    assert(queue.get('demo/waiting').status === 'blocked', 'the waiting lesson was moved anyway');
+    return 'refused';
+  });
+
+  // The budget is a ceiling on what a video BUYS -- images, speech, motion. Model
+  // spend is now counted on the run too, and letting it into this comparison
+  // would spend the art budget on research and ship a stills-only video instead.
+  check('the budget gate measures paid media, not the model calls that led to it', () => {
+    const state = require(path.join(__dirname, 'lib', 'state'));
+    const st = { spend: { usd: 0, calls: [] }, stages: {}, interventions: [] };
+    // save() writes to disk; these are folded by hand so the check stays a unit.
+    st.spend.calls.push({ usd: 0.60, kind: 'model', stage: 'script' });
+    st.spend.calls.push({ usd: 0.40, kind: 'media', stage: 'produce' });
+    st.spend.calls.push({ usd: 0.10, stage: 'produce' });   // recorded before `kind` existed
+    st.spend.usd = 1.10;
+
+    assert(state.mediaSpend(st) === 0.5,
+      `media spend is ${state.mediaSpend(st)} -- a model call is being charged against the art budget`);
+    assert(state.spendOfKind(st, 'model') === 0.6, 'model spend is not counted');
+
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'produce.js'), 'utf8');
+    const gate = src.slice(src.indexOf('const spendApproved'), src.indexOf('const spendApproved') + 300);
+    assert(!/st\.spend\.usd/.test(gate),
+      'the spend gate is back on the run total, so token spend now eats the art budget');
+    return 'media only, and an untagged call still counts as media';
   });
 
   // buildOne() reaches the script stage, which writes into explainer-videos/.

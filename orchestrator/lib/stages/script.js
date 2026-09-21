@@ -293,7 +293,7 @@ module.exports = {
   name: 'script',
   maxAttempts: 3,
 
-  async run({ item, artifacts, opts, log }) {
+  async run({ item, state: st, artifacts, opts, log }) {
     const brief = artifacts.research;
 
     // A redraft round (ILHAM 3.3): the gate sent this back with a critique, so the
@@ -314,6 +314,8 @@ module.exports = {
 
     const raw = await askJson({
       log,
+      state: st,
+      stage: 'script',
       promptName: 'video_script',
       input: JSON.stringify({
         topic: item.topic,

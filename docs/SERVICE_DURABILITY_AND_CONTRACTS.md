@@ -1,6 +1,6 @@
 ---
 type: reference
-last_verified: 2026-09-20
+last_verified: 2026-09-21
 owner: Aroma Tahir
 ---
 
@@ -110,7 +110,7 @@ is not a spend we accept.
 |---|---|
 | `queued` | Waiting. Nothing spent on it. |
 | `claimed` | Being built right now. |
-| `blocked` | **Waiting for a person.** This is the pause the design exists for. |
+| `blocked` | **Waiting for a person.** This is the pause the design exists for. `blockedBy` says which kind: `review` (the normal pause), `post-render-check` (a judge flagged a finished, paid-for video), `spend-approval`, `upload`, `produce-input`, `nazim`, `interrupted`. Closed set, defaults to `review`. |
 | `done` | Built, approved, published. |
 | `failed` | Failed QA, or rejected by a human. |
 
@@ -345,7 +345,17 @@ same rules before the paste. It never prints a token.
 - **Rate limits** — keyed on **tenant**, not IP. A per-IP limit is a
   per-organisation limit for anyone behind one egress. Per-IP survives only as a
   backstop for anonymous callers.
-- **Real cost** is roughly **$1.50 per lesson**. A $10/month cap buys about six.
+- **Real cost.** Measured media spend (art + speech + animation) on completed runs is
+  **$0.56–$0.64** for a still-heavy lesson. It is not a flat figure: animation is priced
+  at `$0.05/second`, so one 15-second animated beat is `$0.75` — more than an entire
+  still-only lesson — and a lesson with several moving beats costs multiples of one
+  without. Model spend is counted separately as of 2026-09-21 and has no measured
+  figure yet. **Keep authorising $1.50 per lesson** until a run reports both halves;
+  it is the conservative direction, and a $10/month cap buying about six lessons is
+  still the right thing to tell a person.
+- The budget gate (`PIPELINE_BUDGET_USD`) measures **media spend only**, deliberately:
+  folding token spend into the number it checks would eat headroom sized for art and
+  silently ship a stills-only video.
 
 ---
 
@@ -471,7 +481,9 @@ not live evidence, for those items.
 | Plans cannot be edited | Accept or re-plan |
 | Course spend is not in `/demo/spend` | Courses create **queue items, not jobs**, and `ledger.js` builds its summary from job records — so a course never reserves, never settles, and never counts against a tenant's `monthlyUsd`. `/demo/spend` reporting `0` after a course is **not** evidence that nothing was spent. The cost exists only in `.beads/runs.jsonl`, keyed by the lesson's `runId`, which the course payload now carries. |
 | An LLM judge can disagree with itself | `eval-text.js` passed a line before the spend and failed the same line after the render. It can no longer end a run (§3.1b), but it can still park a good video for a human to clear. |
-| `.beads/runs.jsonl` is not on the volume | So a course run's cost — unlike the course itself — does not survive a redeploy. `scripts/diagnose-course-lesson.js` says "unknown, not zero" rather than reporting `0`. |
+| `.beads/runs.jsonl` is not on the volume | **Fixed 2026-09-21.** `state.appendRunLog()` now writes the same row to the job store as well, so a run's cost outlives a redeploy the way the course does. `scripts/diagnose-course-lesson.js` reads both. Rows written before that date existed only in `.beads` and are gone. |
+| `spendUsd` counted media only | **Fixed 2026-09-21.** Art, speech and animation were counted; every model call in research, script, gate and qa was not, so a lesson's stated cost was part of its cost. Model spend is now recorded as `kind: 'model'` and reported as `spendModelUsd`. The `$1.50` planning figure and the measured `$0.598` were both honest about different things. The budget gate still measures media only — see §5.3. |
+| Gemini sensor spend is still uncounted | `eval-text.js` and `qa-art.js` are child processes that discard the `usageMetadata` their responses carry, and no Gemini rate is written down anywhere in this repo. Small next to Opus, but not zero. |
 
 ---
 

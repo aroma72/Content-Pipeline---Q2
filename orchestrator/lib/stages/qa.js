@@ -61,6 +61,8 @@ module.exports = {
 
     const result = await askJson({
       log,
+      state: st,
+      stage: 'qa',
       promptName: 'quality_rating',
       // What the judge can and cannot see is stated explicitly. It has no way to
       // open an MP4, so `video_path` was an invitation to guess -- and it guessed

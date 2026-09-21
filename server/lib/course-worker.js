@@ -47,6 +47,21 @@ const history = [];
 
 const log = (m) => console.log(`[course-worker] ${m}`);
 
+/**
+ * Refuse a lesson that belongs to a different course.
+ *
+ * The lessonId is enough to find the item, so approve/reject/requeue acted on
+ * whatever id was in the URL and never looked at the courseId beside it: any
+ * known lesson could be published or failed through any course's endpoint. Same
+ * predicate GET /courses/:courseId filters on. `null` skips the check, for the
+ * internal callers that have no course in hand.
+ */
+function notThisCourse(item, courseId) {
+  if (!courseId) return null;
+  if (String(item.notes || '').includes(`[${courseId}]`)) return null;
+  return { ok: false, why: `Lesson '${item.id}' does not belong to course '${courseId}'.` };
+}
+
 /** Queued lessons this worker owns. Notion-driven work belongs to dispatch(). */
 function queued() {
   return queue.currentItems()
@@ -59,7 +74,16 @@ function awaitingApproval(courseId = null) {
   return queue.currentItems()
     .filter((i) => i.source === 'course-builder' && i.status === 'blocked')
     .filter((i) => !courseId || String(i.notes || '').includes(`[${courseId}]`))
-    .map((i) => ({ id: i.id, topic: i.topic, reason: i.reason || 'awaiting human review' }));
+    .map((i) => ({
+      id: i.id,
+      topic: i.topic,
+      reason: i.reason || 'awaiting human review',
+      // Not every blocked lesson is waiting for approval. A post-render check can
+      // flag a video that is finished and paid for, and that is a different thing
+      // to put in front of a person than "ready for you". The prose in `reason`
+      // said so and nothing machine-readable did.
+      blockedBy: i.blockedBy || 'review',
+    }));
 }
 
 function status() {
@@ -156,9 +180,11 @@ function kick() {
  * Approve a built lesson: publish it, then release the next one.
  * @returns {{ok:true}|{ok:false, why:string}}
  */
-function approve(lessonId, by = 'Aroma') {
+function approve(lessonId, by = 'Aroma', courseId = null) {
   const item = queue.get(lessonId);
   if (!item) return { ok: false, why: `No lesson '${lessonId}'.` };
+  const wrong = notThisCourse(item, courseId);
+  if (wrong) return wrong;
   if (item.status === 'done') return { ok: false, why: 'That lesson is already published.' };
   if (item.status !== 'blocked') {
     return { ok: false, why: `That lesson is '${item.status}', not waiting for approval. `
@@ -181,14 +207,53 @@ function approve(lessonId, by = 'Aroma') {
 }
 
 /** Reject a built lesson. The course stops; nothing after it is built. */
-function reject(lessonId, why = '') {
+function reject(lessonId, why = '', courseId = null) {
   const item = queue.get(lessonId);
   if (!item) return { ok: false, why: `No lesson '${lessonId}'.` };
+  const wrong = notThisCourse(item, courseId);
+  if (wrong) return wrong;
+  // Rejecting means "do not publish this, stop the course here", which is not a
+  // thing that can be said about a lesson already on YouTube. This had no status
+  // guard at all, so a published lesson could be marked failed after the fact and
+  // the course's own record would then disagree with the catalogue.
+  if (item.status === 'done') {
+    return { ok: false, why: 'That lesson is already published, so it cannot be rejected. '
+      + 'Take the video down on YouTube if it should not be public.' };
+  }
   queue.setStatus(lessonId, queue.ITEM_STATUS.FAILED, {
     rejectedAt: new Date().toISOString(),
     error: `rejected by a human${why ? ': ' + why : ''}`,
   });
   log(`rejected ${lessonId}${why ? ' -- ' + why : ''}`);
+  return { ok: true };
+}
+
+/**
+ * Put one failed lesson back in the queue.
+ *
+ * A course is many lessons and they fail one at a time; rebuilding the course is
+ * not a workaround, because enqueue() rejects the nine duplicate slugs and would
+ * buy nothing but the one that already exists. There was no way to retry just the
+ * broken one.
+ *
+ * Two rules the caller asked to have enforced here rather than trusted to them:
+ * it is never automatic -- nothing in this process calls it, only the route a
+ * person clicks -- and it refuses anything that is not `failed`, so it cannot be
+ * used to re-run a lesson that is merely waiting for someone to watch it.
+ */
+function requeue(lessonId, by = 'Aroma', courseId = null) {
+  const item = queue.get(lessonId);
+  if (!item) return { ok: false, why: `No lesson '${lessonId}'.` };
+  const wrong = notThisCourse(item, courseId);
+  if (wrong) return wrong;
+  if (item.status !== queue.ITEM_STATUS.FAILED) {
+    return { ok: false, why: `That lesson is '${item.status}', not failed. Only a failed lesson `
+      + 'can be retried; a lesson waiting for a person should be approved or rejected, and '
+      + 'retrying one that is building or built would buy a second render of the same video.' };
+  }
+  queue.requeue(lessonId, { requeuedBy: by });
+  log(`requeued ${lessonId} by ${by} -- building it again from the start`);
+  kick();
   return { ok: true };
 }
 
@@ -207,6 +272,7 @@ function restore() {
       interrupted: true,
       interruptedAt: new Date().toISOString(),
       previousRunId: i.runId || null,
+      blockedBy: 'interrupted',
       reason: 'interrupted by a server restart before it finished. Nothing was published, '
         + 'and the partial render did not survive. Approve to rebuild this lesson '
         + '(about $1.50 and 30 minutes), or reject to stop the course.',
@@ -219,4 +285,6 @@ function restore() {
   return { lessons: items.length, interrupted, durability: queue.durability() };
 }
 
-module.exports = { drain, kick, status, approve, reject, queued, awaitingApproval, restore };
+module.exports = {
+  drain, kick, status, approve, reject, requeue, queued, awaitingApproval, restore,
+};

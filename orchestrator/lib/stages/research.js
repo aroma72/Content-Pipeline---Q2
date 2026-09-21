@@ -41,10 +41,13 @@ module.exports = {
   name: 'research',
   maxAttempts: 3,
 
-  async run({ item, opts, log }) {
+  async run({ item, state: st, opts, log }) {
     log(`researching "${item.topic}"`);
     const brief = await askJson({
       log,
+      // So the tokens this costs land on the run rather than nowhere.
+      state: st,
+      stage: 'research',
       promptName: 'video_research',
       input: [
         `Topic: ${item.topic}`,

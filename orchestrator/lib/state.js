@@ -14,6 +14,7 @@
  */
 
 const fs = require('fs');
+const path = require('path');
 const { PATHS, runStatePath, ensureDirs } = require('./paths');
 const jsonl = require('./jsonl');
 
@@ -131,11 +132,34 @@ function recordIntervention(state, { stage, kind, detail }) {
   return save(state);
 }
 
-function recordSpend(state, { stage, usd, detail }) {
+/**
+ * Record money spent during this run.
+ *
+ * `kind` separates what was bought. 'media' is art, speech and animation -- the
+ * things the budget gate was sized for. 'model' is token spend, which used to be
+ * real and uncounted, so a lesson's stated cost was only ever part of its cost.
+ *
+ * They are kept apart rather than merged into one total because the gate in
+ * produce.js compares against the budget: folding model spend into the number it
+ * checks would eat headroom meant for art and silently downgrade a video to
+ * stills over a few Opus calls.
+ */
+function recordSpend(state, { stage, usd, detail, kind = 'media' }) {
   state.spend.usd = Number((state.spend.usd + usd).toFixed(4));
-  state.spend.calls.push({ at: new Date().toISOString(), stage, usd, detail: detail || null });
+  state.spend.calls.push({ at: new Date().toISOString(), stage, usd, kind, detail: detail || null });
   return save(state);
 }
+
+/** Spend of one kind. Calls recorded before `kind` existed were all media. */
+function spendOfKind(state, kind) {
+  const total = (state.spend.calls || [])
+    .filter((c) => (c.kind || 'media') === kind)
+    .reduce((a, c) => a + (c.usd || 0), 0);
+  return Number(total.toFixed(4));
+}
+
+/** What the budget gate measures: paid artefacts, not tokens. */
+const mediaSpend = (state) => spendOfKind(state, 'media');
 
 function finish(state, status) {
   state.status = status;
@@ -146,7 +170,32 @@ function finish(state, status) {
   return state;
 }
 
-/** Flatten a finished run into one line in .beads/runs.jsonl -- the metrics source. */
+/**
+ * Where a finished run gets written.
+ *
+ * `.beads/` is on the container filesystem, so a redeploy takes every run record
+ * with it -- including the cost of a course that is still running, since a course
+ * is measured in hours or days across many pauses. The `runId` on a lesson then
+ * outlives the only thing it is a handle for, and the course can no longer be
+ * reconciled against any figure.
+ *
+ * So the same line also goes to the durable job store when there is one, the way
+ * publish-log.js already reads publish_review.jsonl from both places. The store
+ * is best-effort and in its own try/catch: a run must not fail because a volume
+ * is missing.
+ */
+function runLogTargets() {
+  const out = [PATHS.runsLog];
+  try {
+    const store = require('../../server/lib/job-store').shared();
+    if (store && store.dir && store.dir !== PATHS.beads) {
+      out.push(path.join(store.dir, 'runs.jsonl'));
+    }
+  } catch { /* no store on this machine -- .beads is all there is */ }
+  return out;
+}
+
+/** Flatten a finished run into one line per run log -- the metrics source. */
 function appendRunLog(state) {
   const totalMs = state.finishedAt
     ? new Date(state.finishedAt) - new Date(state.startedAt)
@@ -154,10 +203,15 @@ function appendRunLog(state) {
   const stageMs = {};
   for (const [name, s] of Object.entries(state.stages)) stageMs[name] = s.ms;
 
-  jsonl.append(PATHS.runsLog, {
+  const record = {
     type: 'run',
     runId: state.runId,
     slug: state.item.slug,
+    // Without the series a row cannot be joined back to the lesson it describes:
+    // `slug` alone is ambiguous, while `<series>/<slug>` is the queue item's id
+    // and the catalogue's path. Keeping a cost record that cannot be matched to
+    // a lesson was most of the reason to keep it durably at all.
+    series: state.item.series || null,
     topic: state.item.topic,
     source: state.item.source || 'manual',
     status: state.status,
@@ -172,11 +226,24 @@ function appendRunLog(state) {
     interventionCount: state.interventions.length,
     interventions: state.interventions,
     spendUsd: state.spend.usd,
+    // Split out, because one number could not answer "what does a lesson cost":
+    // the media figure is what the budget gates on, the model figure is the token
+    // spend that no total used to include.
+    spendMediaUsd: spendOfKind(state, 'media'),
+    spendModelUsd: spendOfKind(state, 'model'),
     artifacts: state.artifacts,
-  });
+  };
+
+  for (const target of runLogTargets()) {
+    try {
+      jsonl.append(target, record);
+    } catch (e) {
+      console.error(`[state] could not write the run log to ${target}: ${e.message}`);
+    }
+  }
 }
 
 module.exports = {
   STATUS, create, save, load, list,
-  startStage, finishStage, recordIntervention, recordSpend, finish,
+  startStage, finishStage, recordIntervention, recordSpend, mediaSpend, spendOfKind, finish,
 };

@@ -160,8 +160,32 @@ function setStatus(id, status, extra = {}) {
 const claim   = (id, runId) => setStatus(id, ITEM_STATUS.CLAIMED, { runId });
 const done    = (id, runId, artifacts) => setStatus(id, ITEM_STATUS.DONE, { runId, artifacts });
 const fail    = (id, runId, error) => setStatus(id, ITEM_STATUS.FAILED, { runId, error: String(error) });
-const block   = (id, runId, reason) => setStatus(id, ITEM_STATUS.BLOCKED, { runId, reason });
-const requeue = (id) => setStatus(id, ITEM_STATUS.QUEUED, { requeuedAt: new Date().toISOString() });
+// `blockedBy` is the machine-readable half of a block; `reason` is the prose.
+// A caller with one Approve button has to tell "waiting for a person" apart from
+// "a judge flagged the finished video", and the only other signal was a sentence
+// a model wrote. Closed set, defaulted here so an older caller that blocks
+// without one still records the ordinary case rather than nothing.
+const block   = (id, runId, reason, blockedBy) =>
+  setStatus(id, ITEM_STATUS.BLOCKED, { runId, reason, blockedBy: blockedBy || 'review' });
+
+// Send a lesson back to the queue for another attempt.
+//
+// The clearing is the point, and it is here rather than in the caller because
+// currentItems() is a shallow fold that never deletes a key: a lesson that was
+// approved, rendered, and then failed still carries `reviewApproved`, so a bare
+// status flip would resume it straight PAST human review and publish a video
+// nobody watched. Same for `interrupted`, which would send it down the rebuild
+// branch of approve(), and for `error`/`reason`/`blockedBy`, which would
+// describe the new attempt by the old one's ending.
+const requeue = (id, extra) => setStatus(id, ITEM_STATUS.QUEUED, {
+  requeuedAt: new Date().toISOString(),
+  reviewApproved: false,
+  interrupted: false,
+  error: null,
+  reason: null,
+  blockedBy: null,
+  ...(extra || {}),
+});
 
 module.exports = {
   ITEM_STATUS, slugify, currentItems, enqueue, nextQueued, get,

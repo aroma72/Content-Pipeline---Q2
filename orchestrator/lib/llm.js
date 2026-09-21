@@ -22,6 +22,32 @@ try {
 
 const MODEL = 'claude-opus-5';
 
+/**
+ * Put one model call's cost on the run.
+ *
+ * Best-effort and never fatal: a run must not die because accounting did. Priced
+ * from the usage the response already carries, so it is a measurement rather
+ * than an estimate -- but on a subscription-billed path it is what the tokens
+ * would cost at API rates, not a second invoice.
+ */
+function recordModelSpend({ state, stage, usage, model, log }) {
+  if (!state || !usage) return;
+  try {
+    const runState = require('./state');
+    const prices = require('./prices');
+    const usd = prices.costOf(model, usage);
+    if (!usd) return;
+    runState.recordSpend(state, {
+      stage: stage || 'llm',
+      kind: 'model',
+      usd,
+      detail: `${model}: ${usage.input_tokens || 0} in / ${usage.output_tokens || 0} out`,
+    });
+  } catch (e) {
+    if (log) log(`could not record model spend: ${e.message}`);
+  }
+}
+
 class LlmUnavailableError extends Error {
   constructor(message) {
     super(message);
@@ -58,6 +84,13 @@ async function askJson({
   maxTokens = 8000,
   dryRun = false,
   dryRunValue = null,
+  // Optional. When a stage passes its run state, the tokens this call burns are
+  // recorded against the run -- otherwise the usage the API already returned is
+  // read and thrown away, which is how a lesson came to report art and speech as
+  // though they were its whole cost.
+  state = null,
+  stage = null,
+  log = null,
 }) {
   if (dryRun) return { dryRun: true, ...(dryRunValue || {}) };
 
@@ -82,6 +115,8 @@ async function askJson({
       `Model declined the request (${(message.stop_details && message.stop_details.category) || 'unknown'})`
     );
   }
+
+  recordModelSpend({ state, stage, usage: message.usage, model: MODEL, log });
 
   const text = (message.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
   try {

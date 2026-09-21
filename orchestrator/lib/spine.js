@@ -247,7 +247,9 @@ async function execute(item, opts = {}) {
           });
           log.always(name, `BLOCKED: ${err.message}`);
           state.finish(st, state.STATUS.BLOCKED);
-          settleQueue(log, () => queue.block(item.id, st.runId, err.message), 'block', item.id);
+          settleQueue(log,
+            () => queue.block(item.id, st.runId, err.message, err.code),
+            'block', item.id);
           return st;
         }
 

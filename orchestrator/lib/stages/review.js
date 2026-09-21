@@ -55,6 +55,7 @@ module.exports = {
       `${AWAITING_REVIEW}: the video is finished and has not been approved for upload yet.`,
       {
         blocker: AWAITING_REVIEW,
+        code: 'review',
         planItem: '2.3',
         details: {
           finalPath: produced.finalPath || null,

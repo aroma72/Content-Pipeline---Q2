@@ -586,6 +586,140 @@ async function bridgeChecks() {
       return 'error, reason and runId all survive the projection';
     }); });
 
+  // A finished lesson knew it had succeeded and could not say what it had made,
+  // so an LMS holding an empty content block for it had nothing to put in there
+  // and a person copied video links by eye. The join key is not reconstructed
+  // from series + slug: the queue item's id IS the catalogue path.
+  await check('a finished lesson says which video it is',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      const queue = require(path.join(__dirname, 'lib', 'queue'));
+      require(path.join(__dirname, '..', 'server', 'lib', 'job-store')).reset();
+      queue.resetPathCache();
+      const tag = '[course-test-path]';
+      for (const slug of ['published', 'stopped-early', 'still-going']) {
+        queue.enqueue({ topic: slug, series: 'testing', slug, source: 'course-builder', notes: `${tag} brief` });
+      }
+      // Courses stop after `upload` (config.js:80), so a finished course lesson
+      // carries the upload artifact and already knows its own URL.
+      queue.done('testing/published', 'run-p', {
+        produce: { dir: '/somewhere/testing/published' },
+        upload: { url: 'https://youtu.be/abc123XYZ_1', videoId: 'abc123XYZ_1', privacyStatus: 'unlisted' },
+      });
+      // A run configured to stop before upload still resolves through `path`.
+      queue.done('testing/stopped-early', 'run-q', { produce: { dir: '/somewhere' } });
+
+      const r = await req(port, { path: '/api/v1/courses/course-test-path', headers: { authorization: `Bearer ${LMS_TOKEN}` } });
+      assert(r.status === 200, `expected 200, got ${r.status} ${r.text}`);
+      const byId = Object.fromEntries(r.json.items.map((i) => [i.id, i]));
+
+      assert(byId['testing/published'].path === 'testing/published',
+        `a done lesson does not carry its catalogue path: ${JSON.stringify(byId['testing/published'])}`);
+      assert(byId['testing/published'].youtubeVideoId === 'abc123XYZ_1',
+        'a done lesson does not carry the video id the upload stage already recorded');
+      assert(byId['testing/published'].youtube === 'https://youtu.be/abc123XYZ_1',
+        'a done lesson does not carry its YouTube URL');
+
+      assert(byId['testing/stopped-early'].path === 'testing/stopped-early',
+        'a lesson that stopped before upload lost its path too');
+      assert(!('youtube' in byId['testing/stopped-early']),
+        'a lesson that never uploaded claims a YouTube URL');
+
+      // Gated on done for the same reason error and reason are: the fold never
+      // deletes a key, and an unfinished lesson has not produced anything yet.
+      assert(!('path' in byId['testing/still-going']),
+        'an unfinished lesson already claims to be a video');
+      return 'path, youtube and youtubeVideoId, on done lessons only';
+    }); });
+
+  // `blocked` meant two things -- "a person should watch this" and "a post-render
+  // judge flagged the finished video" -- with only free prose to tell them apart,
+  // and a caller with one Approve button invited someone to publish past a real
+  // finding without registering that anything had been flagged.
+  await check('a blocked lesson says which kind of blocked it is',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      const queue = require(path.join(__dirname, 'lib', 'queue'));
+      require(path.join(__dirname, '..', 'server', 'lib', 'job-store')).reset();
+      queue.resetPathCache();
+      const tag = '[course-test-blocked]';
+      for (const slug of ['waiting', 'flagged', 'legacy']) {
+        queue.enqueue({ topic: slug, series: 'testing', slug, source: 'course-builder', notes: `${tag} brief` });
+      }
+      queue.block('testing/waiting', 'run-a', 'awaiting human review', 'review');
+      queue.block('testing/flagged', 'run-b', 'eval-text.js needs a human decision', 'post-render-check');
+      // Blocked before this field existed: it must read as the ordinary case
+      // rather than as nothing, or every pre-existing lesson changes meaning.
+      queue.setStatus('testing/legacy', queue.ITEM_STATUS.BLOCKED, { runId: 'run-c', reason: 'old' });
+
+      const r = await req(port, { path: '/api/v1/courses/course-test-blocked', headers: { authorization: `Bearer ${LMS_TOKEN}` } });
+      const byId = Object.fromEntries(r.json.items.map((i) => [i.id, i]));
+      assert(byId['testing/waiting'].blockedBy === 'review',
+        `waiting-for-review is not marked as such: ${byId['testing/waiting'].blockedBy}`);
+      assert(byId['testing/flagged'].blockedBy === 'post-render-check',
+        `a flagged render reads as ${byId['testing/flagged'].blockedBy}, so a UI cannot warn about it`);
+      assert(byId['testing/legacy'].blockedBy === 'review',
+        'a lesson blocked before the field existed lost its meaning');
+
+      const waiting = r.json.awaitingApproval.find((l) => l.id === 'testing/flagged');
+      assert(waiting && waiting.blockedBy === 'post-render-check',
+        'awaitingApproval still offers a flagged video as plain "ready for you"');
+      return 'review vs post-render-check, defaulting to review';
+    }); });
+
+  // One lesson failing does not make the other nine wrong, and rebuilding the
+  // course is not the workaround it looks like: enqueue() rejects the duplicate
+  // slugs, so it would buy fresh videos for the ones that already worked.
+  await check('one failed lesson can be retried, and nothing else can',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      const queue = require(path.join(__dirname, 'lib', 'queue'));
+      require(path.join(__dirname, '..', 'server', 'lib', 'job-store')).reset();
+      queue.resetPathCache();
+      const tag = '[course-test-requeue]';
+      for (const slug of ['broke', 'waiting', 'elsewhere']) {
+        queue.enqueue({ topic: slug, series: 'testing', slug, source: 'course-builder',
+          notes: slug === 'elsewhere' ? '[course-other] brief' : `${tag} brief` });
+      }
+      queue.fail('testing/broke', 'run-a', 'a transient render crash');
+      queue.block('testing/waiting', 'run-b', 'awaiting human review', 'review');
+      queue.fail('testing/elsewhere', 'run-c', 'also broke');
+
+      const post = (lesson, course = 'course-test-requeue') => req(port, {
+        method: 'POST',
+        path: `/api/v1/courses/${course}/lessons/${lesson}/requeue`,
+        headers: { authorization: `Bearer ${LMS_TOKEN}` },
+        body: { by: 'test' },
+      });
+
+      // Only the REFUSALS are exercised here, deliberately. A successful requeue
+      // kicks the worker, and the worker runs the real spine -- a test that took
+      // the happy path spent minutes of real model calls inside `npm test`. The
+      // clearing a requeue does is checked in test-regressions.js against
+      // queue.requeue() directly, where nothing can start building.
+
+      // A retry buys another render. A lesson merely waiting for a person must
+      // not be re-runnable through this door.
+      const no = await post('testing/waiting');
+      assert(no.status === 409, `a lesson waiting for review was retried anyway: ${no.status}`);
+      assert(/not failed/.test(JSON.stringify(no.json)), 'the refusal does not say why');
+      assert(queue.get('testing/waiting').status === 'blocked', 'a lesson waiting for a person was moved');
+
+      // The lessonId alone used to be enough to act on any lesson through any course.
+      const wrongCourse = await post('testing/elsewhere');
+      assert(wrongCourse.status === 409,
+        `a lesson from another course was retried through this one: ${wrongCourse.status}`);
+      assert(queue.get('testing/elsewhere').status === 'failed', 'a lesson from another course was moved');
+
+      // Same door, same rule, for the two that were already there.
+      const rejectElsewhere = await req(port, {
+        method: 'POST',
+        path: '/api/v1/courses/course-test-requeue/lessons/testing/elsewhere/reject',
+        headers: { authorization: `Bearer ${LMS_TOKEN}` },
+        body: { why: 'not mine to reject' },
+      });
+      assert(rejectElsewhere.status === 409,
+        `another course's lesson could be rejected through this one: ${rejectElsewhere.status}`);
+      return 'refuses a waiting lesson, and refuses another course entirely';
+    }); });
+
   await check('GET /api/v1/health answers without a credential and leaks nothing',
     () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
       const r = await req(port, { path: '/api/v1/health' });
