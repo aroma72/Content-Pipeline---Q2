@@ -1,6 +1,6 @@
 ---
 type: reference
-last_verified: 2026-09-18
+last_verified: 2026-09-20
 owner: Aroma Tahir
 ---
 
@@ -71,6 +71,7 @@ assumes a single writer.
 |---|---|
 | `CONTENT_API_TOKEN` | The whole API answers 503 `api_not_configured`. Fails closed rather than serving answer keys openly. |
 | `PIPELINE_MAX_APPROVABLE_USD` | Every `/produce` answers 503 `no_budget`. |
+| `PIPELINE_BUDGET_USD` | **Every course lesson blocks at produce** with "Paid art/TTS not approved". Single videos are unaffected — they authorise against `PIPELINE_MAX_APPROVABLE_USD` instead, which is why a deployment can look correct and still build no courses. It was missing from this list until 2026-09-20, which is exactly how that happens. About $1.50 buys one lesson. |
 | `OWNER_COOKIE_SECRET` | Anonymous demo sessions do not survive a restart — a visitor loses the job they just started. 32+ random bytes. |
 
 ### Required before another organisation can create videos
@@ -105,6 +106,10 @@ Rules the loader enforces, all reported on `/health`:
 `CONTENT_API_TOKEN` becomes a tenant called `default`, unmetered unless
 `DEFAULT_TENANT_MONTHLY_USD` is set.
 
+A variable set to an **empty string** counts as unset, not as zero. `Number('')` is
+`0`, so a blank `PIPELINE_BUDGET_USD` used to read as "somebody authorised nothing"
+and silently blocked every lesson while looking configured in the dashboard.
+
 ### Optional
 
 | Variable | Default | Effect |
@@ -116,6 +121,9 @@ Rules the loader enforces, all reported on `/health`:
 | `TENANT_PRODUCE_PER_HOUR` / `_PER_DAY` | `20` / `60` | Defaults when a tenant sets no limits. |
 | `ANON_MAKE_PER_HOUR` | `6` | Scripts per anonymous session per hour. |
 | `CONTENT_API_ORIGINS` | *(unset)* | CORS allowlist. Never a wildcard. |
+| `PIPELINE_COURSE_STOP_AFTER` | `upload` | The last stage a **course** lesson runs. `review` comes first in the stage order regardless, so the lesson is built, pauses for a person, and only publishes once approved — unlisted and flagged for review. Setting this before `review` means no lesson ever pauses and none is ever published; setting it before `upload` means an approved lesson is never published and `youtubeVideoId` stays null. The service warns at boot in the first case. Courses deliberately do **not** read `PIPELINE_STOP_AFTER`, so a change to the single-video path cannot drag them behind `review`. |
+| `PIPELINE_STOP_AFTER` | `qa` | The same, for everything that is not a course. The `qa` **default** is the cautious one for a container with no Google OAuth grant — the video is delivered as a file instead of failing at upload. **Production sets this to `upload`** and has the grant (`YOUTUBE_REFRESH_TOKEN`), so read the variable rather than reasoning from the default. |
+| `PIPELINE_DRY_RUN` | *(unset)* | `1` runs the whole chain without spending or rendering. |
 
 ---
 

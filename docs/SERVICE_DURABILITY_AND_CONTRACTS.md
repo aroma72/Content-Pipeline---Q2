@@ -1,6 +1,6 @@
 ---
 type: reference
-last_verified: 2026-09-18
+last_verified: 2026-09-20
 owner: Aroma Tahir
 ---
 
@@ -119,6 +119,60 @@ per operation (fine at this volume) and buys two things: history survives, and t
 writers cannot silently clobber each other the way a rewritten JSON array would.
 It is appended with `jsonl.appendDurable()` — open, write, **fsync**, close —
 because it is now the record of which lesson was paid for.
+
+### 3.1a Where a course lesson stops — `PIPELINE_COURSE_STOP_AFTER`
+
+The spine runs `research → script → gate → produce → qa → review → upload → nazim`
+and treats reaching its `stopAfter` stage as success: `state.finish(DONE)` and
+`queue.done()`, indistinguishable from running the whole chain.
+
+Courses used to inherit `config.pipeline.stopAfter`, whose **default** is `qa` — one
+stage before `review`. Any deployment that leaves that variable unset therefore builds
+a course lesson, pays for it, marks it `done`, and never pauses for anybody:
+`awaitingApproval` stays `[]` and the approve and reject routes have nothing to act on.
+
+**Production was not in that state.** `PIPELINE_STOP_AFTER` is set to `upload` on
+Railway, so courses ran to `upload`, review did pause them, and publishing worked. The
+LMS read the default and reasonably concluded otherwise — the trap is real, it just was
+not the one that bit them (§3.1b). Stating this precisely matters: their lesson failed
+for an unrelated reason, and chasing the default would have cost them another day.
+
+Courses now resolve their own stage, `config.pipeline.courseStopAfter`, defaulting to
+`upload` — what production already did. Deliberately **not** chained off
+`PIPELINE_STOP_AFTER`: a change to the single-video path must not be able to drag
+courses back behind `review`. `server/index.js` warns at boot if the resolved stage
+sits before `review`, or is not a stage at all.
+
+`upload` publishes unlisted and born-provisional, after `review` has already paused for
+a person — so approval, not the pipeline, is what puts a video on the channel.
+
+`orchestrator/test-regressions.js` §11 records the options the worker hands the spine
+and asserts **both** halves: at or past `review` (it can pause) and at or past `upload`
+(it can publish). It could not have caught this before — the stub replaced
+`spine.execute` with a bare status and discarded the options entirely.
+
+### 3.1b A post-render finding parks the video, it does not destroy it
+
+`produce.js` runs its sensors twice around the spend. Before it, a finding is a redraft
+brief and costs nothing. After the render, `eval-text.js` runs again over the script as
+it actually went out — and that call used to throw `RejectedError`, which `spine.js`
+settles as `queue.fail()`.
+
+On 2026-09-19 that destroyed a finished lesson. `eval-text.js` is an LLM judge
+(`gemini-2.5-flash`); it passed the same `beats.js` before the spend and failed it after
+the render, on `vo: "Then he asks, have I got that right, and he stops talking."` —
+reported speech in narration, where the question mark it demanded cannot be heard. The
+run: 25.3 minutes, **$0.598**, and a complete bumper-wrapped `_final.mp4` left on disk
+while the queue said `failed`.
+
+The post-render call now passes `blockOnFail: true` and throws `BlockedError`, so the
+run is settled `blocked` with the finding as its `reason`. The video survives, a person
+decides, and the LMS gets a state it can act on instead of `"status": "failed"`. Every
+sensor before the spend is unchanged and still rejects — there is no video to save yet,
+so rejecting there is free.
+
+The judge itself was left alone. Narrowing it so a spoken line is never failed for
+punctuation a listener cannot hear is the deeper fix, in a template every video shares.
 
 ### 3.2 Claim before spend
 
@@ -415,12 +469,17 @@ not live evidence, for those items.
 | `youtubeVideoId` | `null` on every row — two publish records exist, neither for a video with a checkpoint |
 | 18 `on-screen` rows serve `video-note` | Content debt: those videos need authored explanations |
 | Plans cannot be edited | Accept or re-plan |
+| Course spend is not in `/demo/spend` | Courses create **queue items, not jobs**, and `ledger.js` builds its summary from job records — so a course never reserves, never settles, and never counts against a tenant's `monthlyUsd`. `/demo/spend` reporting `0` after a course is **not** evidence that nothing was spent. The cost exists only in `.beads/runs.jsonl`, keyed by the lesson's `runId`, which the course payload now carries. |
+| An LLM judge can disagree with itself | `eval-text.js` passed a line before the spend and failed the same line after the render. It can no longer end a run (§3.1b), but it can still park a good video for a human to clear. |
+| `.beads/runs.jsonl` is not on the volume | So a course run's cost — unlike the course itself — does not survive a redeploy. `scripts/diagnose-course-lesson.js` says "unknown, not zero" rather than reporting `0`. |
 
 ---
 
 ## 9. Reading list
 
 - `docs/DEPLOYMENT_PREREQS.md` — environment variables, the volume, rotation
+- `scripts/diagnose-course-lesson.js` — read-only: why a lesson ended where it did
+- `docs/integration-requests/2026-09-20-course-api-reply.md` — what the LMS asked for, and what changed
 - `prototypes/course-builder-technical.html` — the course API handoff sent to the LMS
 - `prototypes/handoff-print.html` — the in-video question handoff
 - `.claude/standards/SCRIPTING_STANDARDS.md` §3b — the checkpoint beat format
