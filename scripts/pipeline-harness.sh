@@ -30,8 +30,13 @@ HARNESS_TAG=content-queen:harness
 # other is the exact fault that cost $2.81: qa-frames' "every beat must show
 # text" rule was reasonable for the text-heavy shape and wrong for the
 # illustration-led one, and nothing ever ran it against the second.
+# Fixtures are videos that SHOULD pass every gate, so a red harness means a gate
+# or the pipeline regressed -- not that an old video predates a newer rule.
+# evals-03 was the first choice and was wrong for exactly that reason: it was made
+# 2026-08-20, before checkpoints were required, so qa-checkpoint failed it
+# correctly and told us nothing about the code under test.
 DEFAULT_FIXTURES=(
-  "explainer-videos/evals/evals-03-what-an-eval-is"          # illustration-led: 14 of 27 beats carry no text
+  "explainer-videos/notion-slack/notion-slack-01-locked-out" # illustration-led: 15 of 24 beats are art, all captioned
   "explainer-videos/notion-slack/ns-01-why-a-chat-window"    # text-heavy: 17 of 23 beats are info
 )
 
