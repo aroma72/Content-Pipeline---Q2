@@ -789,6 +789,24 @@ module.exports = Object.assign(module.exports, {
       }
     }
 
+    // 4a2. judge the clips we just paid for, before they reach the render.
+    //
+    // i2v is the only per-SECOND item in the pipeline: at $0.05/s a handful of
+    // animated beats costs more than every still in the video put together. It was
+    // also the only asset with no gate at all -- qa-clips.js shipped in the
+    // templates, detects the three ways a generated clip ruins a beat (frozen tail,
+    // frozen clip, morphed re-frame) and auto-repairs the first, and NOTHING EVER
+    // CALLED IT. The most expensive output had zero checks while the cheapest had
+    // eight.
+    //
+    // Deterministic: SSIM thresholds and ffprobe durations, no judge, no model call.
+    // Blocks rather than rejects, for the same reason as qa-frames below -- the
+    // clips, art and voice are all bought by this point, so an unusable clip is a
+    // decision for a person, not a reason to bin the lot.
+    if (motionBeats.length) {
+      await sensor('qa-clips.js', 'frozen or morphed i2v clips', { blockOnFail: true });
+    }
+
     // 4b. measure what the frame actually looks like, before paying for the render.
     // qa-frames renders its own frames off lesson.html + durations.json, so it can
     // see an element spilling off 1920x1080 or a beat that never draws while the

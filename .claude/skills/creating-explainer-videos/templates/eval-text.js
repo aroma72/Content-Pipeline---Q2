@@ -10,9 +10,15 @@
  */
 const fs = require('fs');
 const { geminiKey } = require('./lib/config');
+const cache = require('./lib/judge-cache');
+const { demoteInaudible } = require('./lib/spoken-text');
 const beats = require('./beats.js');
 const JUDGE = process.env.JUDGE_MODEL || 'gemini-2.5-flash';
 const key = geminiKey();
+
+// Bump whenever PROMPT or the severity rules below change, or a cached verdict
+// from the old rubric will be served as if the new one agreed with it.
+const PROMPT_VERSION = 2;
 
 // collect human-language strings; skip code (editor lines, tree, terminal), art prompts, ids.
 const SKIP_KEYS = new Set(['art', 'editor', 'tree', 'terminal', 'id', 'mode', 'tpl', 'lang', 'indent', 'tone', 'hi', 'role', 'tag', 'active', 'name']);
@@ -74,18 +80,39 @@ const PROMPT =
   '\n\nSNIPPETS:\n' + JSON.stringify(labelled, null, 0);
 
 (async () => {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${JUDGE}:generateContent`;
-  const res = await fetch(url, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-    body: JSON.stringify({ contents: [{ parts: [{ text: PROMPT }] }], generationConfig: { temperature: 0, responseMimeType: 'application/json' } }),
+  // Ask once per distinct input. The pre-spend and post-render calls hand the judge
+  // the SAME snippets, and asking twice is what let one run both pass and fail.
+  const cacheKey = cache.key({
+    sensor: 'eval-text', judge: JUDGE, promptVersion: PROMPT_VERSION, payload: labelled,
   });
-  // 3 = infrastructure. The judge never rendered a verdict, so there is no
-  // finding here -- only an outage. Exiting 1 made a 503 look like bad grammar.
-  if (!res.ok) { console.error('[eval-text] judge HTTP', res.status, (await res.text()).slice(0, 160)); process.exitCode=3;return; }
-  const j = await res.json();
-  const txt = (j?.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');
-  let issues = [];
-  try { issues = (JSON.parse(txt).issues) || []; } catch { console.error('[eval-text] unparseable judge output:', txt.slice(0, 200)); process.exitCode=3;return; }
+  let issues = cache.get(process.cwd(), cacheKey);
+  const cached = issues !== undefined;
+
+  if (!cached) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${JUDGE}:generateContent`;
+    const res = await fetch(url, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify({ contents: [{ parts: [{ text: PROMPT }] }], generationConfig: { temperature: 0, responseMimeType: 'application/json' } }),
+    });
+    // 3 = infrastructure. The judge never rendered a verdict, so there is no
+    // finding here -- only an outage. Exiting 1 made a 503 look like bad grammar.
+    if (!res.ok) { console.error('[eval-text] judge HTTP', res.status, (await res.text()).slice(0, 160)); process.exitCode=3;return; }
+    const j = await res.json();
+    const txt = (j?.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');
+    try { issues = (JSON.parse(txt).issues) || []; } catch { console.error('[eval-text] unparseable judge output:', txt.slice(0, 200)); process.exitCode=3;return; }
+    // Cached BEFORE the demotion below, so the record is what the judge actually
+    // said. The filtering is ours and is re-applied on every read.
+    cache.put(process.cwd(), cacheKey, issues, { sensor: 'eval-text', judge: JUDGE, snippets: items.length });
+  } else {
+    console.log(`[eval-text] verdict already taken for this exact text — reusing it (${JUDGE}).`);
+  }
+
+  // Enforced here rather than trusted to the prompt -- see lib/spoken-text.js.
+  issues = demoteInaudible(issues, (t) => strings.get(t));
+  const demoted = issues.filter((i) => i.demoted).length;
+  if (demoted) {
+    console.log(`[eval-text] ${demoted} finding(s) demoted: punctuation on spoken lines, which nobody hears.`);
+  }
 
   const errors = issues.filter((i) => i.severity === 'error');
   const nits = issues.filter((i) => i.severity !== 'error');

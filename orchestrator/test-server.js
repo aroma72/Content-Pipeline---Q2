@@ -544,6 +544,40 @@ async function bridgeChecks() {
   // reason durably and this endpoint threw it away one step later: a lesson that
   // failed said only "failed", and nobody could tell an instructor anything or
   // judge whether re-running was sensible. The LMS asked for this by name.
+  // An LMS authorises `lessons x estimate` before calling us and had nothing to
+  // settle against: /demo/spend is built from JOB records and a course creates queue
+  // items, so it structurally cannot see a course and reports 0. Theirs held $1.50
+  // for a lesson that really cost $0.598.
+  await check('a course can be reconciled against what it actually spent',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      const queue = require(path.join(__dirname, 'lib', 'queue'));
+      require(path.join(__dirname, '..', 'server', 'lib', 'job-store')).reset();
+      queue.resetPathCache();
+      const tag = '[course-spend]';
+      for (const slug of ['cheap', 'retried']) {
+        queue.enqueue({ topic: slug, series: 'testing', slug, source: 'course-builder', notes: `${tag} brief` });
+      }
+      queue.done('testing/cheap', 'run-1', {}, 0.598);
+      // Failed once, then rebuilt. The instructor paid for both attempts.
+      queue.fail('testing/retried', 'run-2', 'died in produce', 0.25);
+      queue.done('testing/retried', 'run-3', {}, 0.40);
+
+      const r = await req(port, { path: '/api/v1/courses/course-spend', headers: { authorization: `Bearer ${LMS_TOKEN}` } });
+      assert(r.status === 200, `expected 200, got ${r.status} ${r.text}`);
+      const byId = Object.fromEntries(r.json.items.map((i) => [i.id, i]));
+
+      assert(byId['testing/cheap'].spendUsd === 0.598,
+        `this run's cost is wrong: ${byId['testing/cheap'].spendUsd}`);
+      // The retried lesson cost both attempts, not just the one that worked --
+      // keeping only the last would silently forget every failed attempt's spend.
+      assert(byId['testing/retried'].spendUsd === 0.40,
+        `last attempt should be 0.40, got ${byId['testing/retried'].spendUsd}`);
+      assert(byId['testing/retried'].spendUsdTotal === 0.65,
+        `lesson total should be 0.65 across both attempts, got ${byId['testing/retried'].spendUsdTotal}`);
+      assert(r.json.spentUsd === 1.248, `course total should be 1.248, got ${r.json.spentUsd}`);
+      return 'per-run, per-lesson and per-course all settle';
+    }); });
+
   await check('a course says WHY a lesson failed or is waiting, not just that it did',
     () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
       const queue = require(path.join(__dirname, 'lib', 'queue'));

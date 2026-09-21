@@ -12,6 +12,9 @@
 const { askJson } = require('../llm-router');
 const { RejectedError, RedraftError } = require('../spine-errors');
 const state = require('../state');
+const path = require('path');
+const jsonl = require('../jsonl');
+const { PATHS } = require('../paths');
 
 const SCHEMA = {
   type: 'object',
@@ -65,6 +68,35 @@ module.exports = {
     const fixes = result.fixes || [];
     const blockers = fixes.filter((f) => f.severity === 'blocker');
     const minors = fixes.filter((f) => f.severity !== 'blocker');
+
+    // Every verdict, recorded.
+    //
+    // The coercion below exists because this gate returned READY exactly zero times
+    // across 10 drafts and ~33 redrafts. That number is the only reason we know the
+    // gate was broken -- and it lived in a comment, counted by hand, once. A patch
+    // that load-bearing has to be watched, not remembered: if raw READYs stay at
+    // zero the gate is still a reviewer nothing can satisfy, and if coercions fall
+    // to zero the patch is dead weight that should come out.
+    //
+    // Written before the throws below, so a NEEDS WORK or NOT READY is logged too.
+    // Failing to log must never fail a run: this is measurement, not a gate.
+    if (!opts.dryRun) {
+      try {
+        jsonl.append(path.join(PATHS.beads, 'gate_verdicts.jsonl'), {
+          type: 'gate_verdict',
+          at: new Date().toISOString(),
+          runId: st && st.runId,
+          videoId: ctx.item && ctx.item.id,
+          verdict: result.verdict,
+          blockers: blockers.length,
+          minors: minors.length,
+          // True when the coercion turned a NEEDS WORK into a READY -- the rate of
+          // this against raw READYs is the health of the gate.
+          coerced: result.verdict === 'NEEDS WORK' && blockers.length === 0 && fixes.length > 0,
+          redraftRound: (st && st.redrafts) || 0,
+        });
+      } catch { /* measurement must not be able to stop a video */ }
+    }
 
     // A reviewer with a zero-defect bar never terminates. Measured: across 10 first
     // drafts and ~33 redrafts this gate returned READY exactly zero times, while

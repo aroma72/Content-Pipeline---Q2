@@ -17,7 +17,7 @@
  */
 
 const { askJson } = require('../llm-router');
-const { RejectedError } = require('../spine-errors');
+const { RejectedError, BlockedError } = require('../spine-errors');
 const jsonl = require('../jsonl');
 const { PATHS } = require('../paths');
 
@@ -28,20 +28,75 @@ const FACTORS = [
   'storytelling', 'voiceover_quality', 'qa_at_each_step',
 ];
 
+// VISUALS is not one of them any more.
+//
+// The judge is told plainly that it cannot watch the video, and was then asked to
+// rate what the video looks like. Across the ratings on file it hedged about
+// unobservability in 6 of 7 notes, scored `visuals` lowest of any factor (mean
+// 0.671) and named it weakest most often -- and one run scored four factors at 0.0
+// purely because they could not be observed, landing 2.2/7.0 and killing a sound
+// video. A guess dressed as a score is worse than an absent score.
+//
+// So `visuals` is now DERIVED from the gates that actually looked: qa-art is a
+// vision judge that saw every image, qa-frames measured the rendered frame in a
+// browser. If neither ran, visuals is not assessable and is excluded rather than
+// guessed.
+const JUDGED_FACTORS = FACTORS.filter((f) => f !== 'visuals');
+
+// Gates whose verdict IS the visual evidence, in the order their word counts.
+const VISUAL_SENSORS = ['qa-art.js', 'qa-frames.js', 'qa-visuals.js', 'qa-cutouts.js'];
+
+/**
+ * Score `visuals` from observation instead of from inference.
+ * Returns null when nothing observed it -- which the caller excludes, never guesses.
+ */
+function deriveVisuals(sensorResults) {
+  const seen = (sensorResults || []).filter((r) => r && VISUAL_SENSORS.includes(r.sensor));
+  if (!seen.length) return null;                       // nobody looked; do not pretend
+  if (seen.some((r) => r.ok === false && !r.accepted)) return 0.4;  // a gate objected
+  if (seen.some((r) => r.accepted)) return 0.6;        // carried through under lenient
+  if (seen.every((r) => r.ok === null)) return null;   // every gate was unavailable
+  return seen.some((r) => r.ok === true) ? 1.0 : null;
+}
+
+/**
+ * Turn per-factor scores into one number, excluding what could not be assessed.
+ *
+ * The old instruction was "score it neutrally (0.7) and say so". Neutral is still a
+ * score: seven factors of hedge produce 4.9 exactly, so an entirely unobserved video
+ * landed on the pass line by arithmetic. Scoring it low instead is worse -- that is
+ * the 2.2 that killed a good lesson. Excluding it and scaling the rest keeps the
+ * result on the familiar 0-7 scale, so the 4.9 bar and every historical rating still
+ * mean what they meant, while an unobservable factor neither rescues nor condemns.
+ */
+function combine(scores) {
+  const assessed = Object.entries(scores).filter(([, v]) => typeof v === 'number');
+  const excluded = Object.entries(scores).filter(([, v]) => typeof v !== 'number').map(([k]) => k);
+  if (!assessed.length) return { score: null, excluded };
+  const mean = assessed.reduce((a, [, v]) => a + v, 0) / assessed.length;
+  return { score: Number((mean * FACTORS.length).toFixed(2)), excluded };
+}
+
 const SCHEMA = {
   type: 'object',
   properties: {
     factors: {
       type: 'object',
-      properties: Object.fromEntries(FACTORS.map((f) => [f, { type: 'number' }])),
-      required: FACTORS,
+      properties: Object.fromEntries(JUDGED_FACTORS.map((f) => [f, { type: 'number' }])),
+      required: JUDGED_FACTORS,
       additionalProperties: false,
+    },
+    // Named, not implied. A judge that cannot assess something has to SAY so, rather
+    // than expressing it as a middling number that reads exactly like a real score.
+    not_assessable: {
+      type: 'array',
+      items: { type: 'string', enum: JUDGED_FACTORS },
     },
     combined_score: { type: 'number' },
     weakest_factor: { type: 'string' },
     notes: { type: 'string' },
   },
-  required: ['factors', 'combined_score', 'weakest_factor', 'notes'],
+  required: ['factors', 'not_assessable', 'combined_score', 'weakest_factor', 'notes'],
   additionalProperties: false,
 };
 
@@ -53,7 +108,10 @@ module.exports = {
   // proving only that some 4.9 exists somewhere.
   THRESHOLD,
   FACTORS,
+  JUDGED_FACTORS,
   SCHEMA,
+  // Exported so the suite can test the arithmetic without a model call.
+  _internals: { deriveVisuals, combine },
 
   async run({ item, state: st, artifacts, opts, log }) {
     const produced = artifacts.produce;
@@ -79,8 +137,12 @@ module.exports = {
           'VISUALS: score from quality_sensors, not from guesswork. qa-art is a vision',
           'judge that DID look at every generated image; qa-visuals and qa-cutouts',
           'checked the visual plan. All passing is real evidence the visuals are sound.',
-          'If a factor genuinely cannot be assessed from this evidence, score it',
-          'neutrally (0.7) and say so in notes rather than scoring it low.',
+          'VISUALS is NOT yours to score -- it is derived from the gates that actually',
+          'looked at the pictures, and is not in your output schema at all.',
+          'If a factor genuinely cannot be assessed from this evidence, LIST IT IN',
+          'not_assessable and omit it from your reasoning. Do not score it neutrally',
+          'and do not score it low: both are guesses, and one of them has already',
+          'failed a sound video.',
         ].join(' '),
         mechanical_checks: produced.verifyChecks || [],
         // Verdicts from the four quality sensors that ran during produce. Without
@@ -101,21 +163,42 @@ module.exports = {
       maxTokens: 8000,
       dryRun: opts.dryRun,
       dryRunValue: {
-        factors: Object.fromEntries(FACTORS.map((f) => [f, 0.8])),
+        factors: Object.fromEntries(JUDGED_FACTORS.map((f) => [f, 0.8])),
+        not_assessable: [],
         combined_score: 5.6,
         weakest_factor: '(dry run)',
         notes: '(dry run -- not actually scored)',
       },
     });
 
-    // Trust the per-factor scores over the model's own arithmetic.
-    const summed = Number(FACTORS.reduce((a, f) => a + (result.factors[f] || 0), 0).toFixed(2));
-    if (Math.abs(summed - result.combined_score) > 0.05) {
-      log(`combined_score ${result.combined_score} disagrees with the factor sum ${summed}; using the sum`);
+    // Assemble the seven: six judged, one observed.
+    const unassessable = new Set(result.not_assessable || []);
+    const factors = {};
+    for (const f of JUDGED_FACTORS) {
+      factors[f] = unassessable.has(f) ? null : (result.factors[f] ?? null);
     }
-    const score = summed;
+    factors.visuals = deriveVisuals(produced.sensorResults);
+
+    // Trust the per-factor scores over the model's own arithmetic.
+    const { score, excluded } = combine(factors);
+    if (excluded.length) {
+      log(`not assessable from this evidence, excluded rather than guessed: ${excluded.join(', ')}`);
+    }
+    if (score === null) {
+      // Nothing at all could be assessed. Failing it would repeat the 2.2; passing it
+      // would ship on no evidence. Neither is ours to decide.
+      throw new BlockedError(
+        'QA could not assess a single factor from the evidence available, so there is no '
+        + 'score to compare against the bar. The video needs a person, not a number.',
+        { blocker: 'no assessable QA evidence', code: 'qa-no-evidence', details: { factors } }
+      );
+    }
+    if (typeof result.combined_score === 'number' && Math.abs(score - result.combined_score) > 0.5) {
+      log(`combined_score ${result.combined_score} disagrees with the computed ${score}; using ours`);
+    }
     const status = score >= THRESHOLD ? 'PASS' : 'FAIL';
-    log(`score ${score}/7.0 -- ${status} (threshold ${THRESHOLD})`);
+    log(`score ${score}/7.0 -- ${status} (threshold ${THRESHOLD}`
+      + `${excluded.length ? `, ${excluded.length} factor(s) excluded` : ''})`);
 
     if (!opts.dryRun) {
       jsonl.append(PATHS.qaRatingsLog, {
@@ -123,7 +206,11 @@ module.exports = {
         at: new Date().toISOString(),
         runId: st.runId,
         videoId: item.id,
-        factors: result.factors,
+        factors,
+        // What could not be seen, kept in the record. A score of 5.6 over four
+        // factors is not the same claim as 5.6 over seven, and the log could not
+        // previously tell them apart.
+        notAssessable: excluded,
         combinedScore: score,
         threshold: THRESHOLD,
         status,
