@@ -28,6 +28,11 @@
  */
 
 const express = require('express');
+// Streaming a deliverable off the volume needs the filesystem: see the lesson
+// /file route. It was absent, and a missing require here fails at REQUEST time
+// rather than at load, so the route would have 500'd for the LMS and looked fine
+// in every startup check.
+const fs = require('fs');
 const checkpoints = require('./checkpoints');
 
 const tenants = require('./tenants');
@@ -650,6 +655,83 @@ function build() {
       by,
       note: 'Building this lesson again from the start. It is a new render and it costs '
         + 'again -- the previous attempt bought nothing that survives.',
+    });
+  });
+
+  /**
+   * The bytes of a finished lesson, before anyone publishes it.
+   *
+   * Asked for by the LMS on 2026-09-22 after they lost a paid video to a
+   * redeploy: they want to archive a copy to their own storage before
+   * publication, which is the only thing that makes a render durable on their
+   * side. Scoped to the course exactly as approve/reject/requeue are.
+   *
+   * Served from the VOLUME, not the render directory. The render directory is
+   * excluded from the image, so on the container the file exists only until the
+   * next deploy -- serving from there would hand them a URL that works right up
+   * until the moment it matters.
+   */
+  router.get('/courses/:courseId/lessons/:lessonId(*)/file', requireToken, (req, res) => {
+    const queue = require('../../orchestrator/lib/queue');
+    const item = queue.get(req.params.lessonId);
+    if (!item) return res.status(404).json({ error: 'no_such_lesson' });
+    if (!(item.notes || '').includes(`[${req.params.courseId}]`)) {
+      return res.status(404).json({ error: 'no_such_lesson' });
+    }
+
+    const found = require('../../orchestrator/lib/deliverables').find(item.series, item.slug);
+    if (!found) {
+      // Absent is not the same as never made, and saying which saves an hour.
+      return res.status(404).json({
+        error: 'no_deliverable',
+        message: item.status === 'done'
+          ? 'This lesson finished, but no copy was kept on the durable volume. Lessons built '
+            + 'before deliverable persistence shipped exist only on a container and are gone '
+            + 'after a redeploy.'
+          : `This lesson is '${item.status}', so there is no finished video yet.`,
+      });
+    }
+
+    const stat = fs.statSync(found.file);
+    const range = req.headers.range;
+    res.setHeader('Content-Type', 'video/mp4');
+    res.setHeader('Accept-Ranges', 'bytes');
+    if (range) {
+      const m = /bytes=(\d*)-(\d*)/.exec(range);
+      const start = m && m[1] ? parseInt(m[1], 10) : 0;
+      const end = m && m[2] ? parseInt(m[2], 10) : stat.size - 1;
+      if (Number.isNaN(start) || start >= stat.size || end >= stat.size || start > end) {
+        res.setHeader('Content-Range', `bytes */${stat.size}`);
+        return res.status(416).end();
+      }
+      res.status(206);
+      res.setHeader('Content-Range', `bytes ${start}-${end}/${stat.size}`);
+      res.setHeader('Content-Length', end - start + 1);
+      return fs.createReadStream(found.file, { start, end }).pipe(res);
+    }
+    res.setHeader('Content-Length', stat.size);
+    return fs.createReadStream(found.file).pipe(res);
+  });
+
+  /**
+   * Drop our copy, once theirs is safe.
+   *
+   * ONLY on this explicit call. Never inferred from a successful GET: a download
+   * that failed halfway would otherwise destroy the last remaining copy, which is
+   * the exact failure the volume was added to prevent.
+   */
+  router.delete('/courses/:courseId/lessons/:lessonId(*)/file', requireToken, (req, res) => {
+    const queue = require('../../orchestrator/lib/queue');
+    const item = queue.get(req.params.lessonId);
+    if (!item) return res.status(404).json({ error: 'no_such_lesson' });
+    if (!(item.notes || '').includes(`[${req.params.courseId}]`)) {
+      return res.status(404).json({ error: 'no_such_lesson' });
+    }
+    const r = require('../../orchestrator/lib/deliverables').forget(item.series, item.slug);
+    if (!r.ok) return res.status(404).json({ error: 'no_deliverable', message: r.why });
+    res.status(200).json({
+      deleted: req.params.lessonId,
+      note: 'Our copy is gone. Yours is now the only one unless the lesson was published.',
     });
   });
 

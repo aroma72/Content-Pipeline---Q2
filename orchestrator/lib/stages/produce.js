@@ -945,6 +945,18 @@ module.exports = Object.assign(module.exports, {
       throw new Error(`verify.js passed but ${final} is missing -- refusing to report success`);
     }
 
-    return { dir, finalPath, title, bare: path.join(dir, bare), verifyChecks, sensorResults };
+    // Copy it somewhere a redeploy cannot reach BEFORE anything else happens to
+    // it. Up to this line the only copy of a paid render lives in a directory
+    // .dockerignore excludes, so the next deploy deletes it -- which is exactly
+    // how the LMS lost a lesson an instructor had paid for. Fail-soft: a lesson
+    // that rendered correctly is never failed by a copy.
+    let persisted = null;
+    if (!opts.dryRun) {
+      persisted = require('../deliverables').persist({
+        series: item.series, slug: item.slug, finalPath, videoDir: dir, log,
+      });
+    }
+
+    return { dir, finalPath, title, bare: path.join(dir, bare), verifyChecks, sensorResults, persisted };
   },
 });

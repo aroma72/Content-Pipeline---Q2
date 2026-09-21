@@ -2718,6 +2718,80 @@ function browserChecks() {
     return `${files.length} frame gate(s) can find a browser`;
   });
 
+  check('a finished lesson is copied somewhere a redeploy cannot reach', () => {
+    // The failure this prevents actually happened: a lesson an instructor paid for
+    // lived only in a directory .dockerignore excludes, a redeploy landed, and the
+    // video and its questions went together with no copy anywhere.
+    const os = require('os');
+    const { execFileSync } = require('child_process');
+    const store = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cqvol-')), 'cq-jobs');
+
+    // A fresh module registry, so the job store resolves against this fake volume
+    // rather than whatever the suite has already cached.
+    const run = (code) => {
+      const out = execFileSync(process.execPath, ['-e', code], {
+        env: { ...process.env, JOB_STORE_DIR: store, JOB_STORE_DURABLE: '1' },
+        cwd: PATHS_REPO, encoding: 'utf8',
+      });
+      return JSON.parse(out.trim().split('\n').pop());
+    };
+
+    const vid = fs.mkdtempSync(path.join(os.tmpdir(), 'vid-'));
+    fs.writeFileSync(path.join(vid, 'x_final.mp4'), Buffer.alloc(2048, 3));
+    fs.writeFileSync(path.join(vid, 'beats.js'), 'module.exports=[];');
+    fs.writeFileSync(path.join(vid, 'durations.json'), '{}');
+
+    const j = JSON.stringify;
+    const saved = run(`const d=require('./orchestrator/lib/deliverables');`
+      + `const r=d.persist({series:'s',slug:'g',finalPath:${j(path.join(vid, 'x_final.mp4'))},`
+      + `videoDir:${j(vid)}});console.log(JSON.stringify({ok:r.ok,files:r.files}))`);
+    assert(saved.ok, 'a finished lesson was not persisted to a durable store');
+
+    // beats.js as well as the mp4. A video whose beats.js died is playable and
+    // unanswerable -- that is how a catalogue row disappears rather than going stale.
+    for (const f of ['x_final.mp4', 'beats.js', 'durations.json']) {
+      assert(saved.files.includes(f), `${f} was not kept -- the questions or timing would be lost`);
+    }
+
+    // Survives the render directory being destroyed, which is what a redeploy does.
+    fs.rmSync(vid, { recursive: true, force: true });
+    const found = run(`const d=require('./orchestrator/lib/deliverables');`
+      + `console.log(JSON.stringify({found:Boolean(d.find('s','g'))}))`);
+    assert(found.found, 'the copy did not survive the render directory being deleted');
+
+    const gone = run(`const d=require('./orchestrator/lib/deliverables');d.forget('s','g');`
+      + `console.log(JSON.stringify({found:Boolean(d.find('s','g'))}))`);
+    assert(!gone.found, 'forget() left the copy behind');
+
+    fs.rmSync(store, { recursive: true, force: true });
+    return 'mp4 + beats + durations kept, survive the render dir, and can be dropped';
+  });
+
+  check('nothing is persisted to a store that is not durable', () => {
+    // Copying to a container path costs disk and buys nothing, and reporting
+    // success for it is how somebody comes to believe a video is safe when the
+    // next deploy will take it.
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'deliverables.js'), 'utf8');
+    assert(/durability !== 'volume'/.test(src), 'it no longer checks for a real volume');
+    assert(/writable === false/.test(src), 'a read-only volume would be treated as writable');
+    assert(/NOT persisted/.test(src), 'a skip is silent -- it must say so');
+    return 'volume-only, writable-only, and it says when it declines';
+  });
+
+  check('our copy is dropped only when the consumer says so', () => {
+    // The whole point of keeping it. A GET that failed halfway must never be read
+    // as "they have it now" -- that would destroy the last copy of a paid render.
+    const src = fs.readFileSync(path.join(PATHS_REPO, 'server', 'lib', 'api.js'), 'utf8');
+    assert(/router\.delete\('\/courses\/:courseId\/lessons\/:lessonId\(\*\)\/file'/.test(src),
+      'there is no explicit delete for a collected deliverable');
+    const getIdx = src.indexOf("router.get('/courses/:courseId/lessons/:lessonId(*)/file'");
+    const delIdx = src.indexOf("router.delete('/courses/:courseId/lessons/:lessonId(*)/file'");
+    assert(getIdx > 0 && delIdx > getIdx, 'expected the GET and DELETE routes to both exist');
+    const getBody = src.slice(getIdx, delIdx);
+    assert(!/forget\(/.test(getBody), 'the GET route deletes the copy -- a failed download loses it');
+    return 'GET never forgets; DELETE is explicit';
+  });
+
   check('a course script can put words on an illustration beat', () => {
     // The defect that blocked every course lesson, and it was NOT a bad gate.
     // animation/lesson.html draws an `ali`/`scene` beat as art and nothing else
