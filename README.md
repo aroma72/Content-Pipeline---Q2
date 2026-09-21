@@ -25,7 +25,7 @@
 ### Key Stats
 - **14-week course plan** with weekly video deliverables
 - **7-stage production pipeline** with human review gates at each step
-- **Quality gates**: 7-factor QA rubric, minimum 6.0/7.0 to publish
+- **Quality gates**: 7-factor QA rubric, minimum 4.9/7.0 to publish
 - **Infrastructure**: Python orchestrators + Remotion (React video framework)
 - **Tech Stack**: Claude API, Whisper, ffmpeg, Remotion, ElevenLabs (voice-over)
 
@@ -59,7 +59,7 @@
 | Extract SYSTEM_PROMPT to `prompts/{name}.txt`, use `_load_prompt()` | Enable prompt versioning & review |
 | Always commit submodule FIRST, then main repo pointer | Prevents orphaned commits |
 | Frame count = `VO_seconds × 30fps` (max +30 buffer) | Prevents blank slides at end |
-| Every video MUST pass QA before publish | Minimum 6.0/7.0 combined score |
+| Every video MUST pass QA before publish | Minimum 4.9/7.0 combined score |
 | No scripts with only Taleemabad examples | Requires 3+ diverse domains |
 | Never force-push to main | Preserve history & collab work |
 
@@ -85,7 +85,7 @@ Session Recording
 [6] AUDIO-VIDEO SYNC (ffmpeg mux)
     ↓ (REVIEWER GATE: sync checked?)
 [7] QUALITY ASSURANCE (7-factor rubric)
-    ↓ (QA PASS? min 6.0/7.0)
+    ↓ (QA PASS? min 4.9/7.0)
 PUBLISH → Taleemabad LMS
 ```
 
@@ -154,16 +154,19 @@ ls src/agents/
 
 Every video is evaluated on **7 factors** (0.0–7.0 scale):
 
-1. **Concept Clarity** — Is the core idea clear?
-2. **Example Relevance** — Do examples illustrate the concept?
-3. **Pacing** — Is the pace deliberate or rushed?
-4. **Visual-Audio Sync** — Do slides match voiceover content?
-5. **Production Quality** — Video/audio technical quality
-6. **Learner Engagement** — Does it hold attention?
-7. **Actionability** — Can learners apply what they learned?
+1. **Accuracy** — Are all claims correct and supported by the script?
+2. **Objectives Coverage** — Is every stated learning outcome actually taught?
+3. **Post-Production** — Clean audio, correct encode, no artefacts
+4. **Visuals** — Readable text, safe zones, clear diagrams, sound composition
+5. **Storytelling** — One protagonist followed in depth; WHY and HOW explained
+6. **Voice-Over Quality & Accuracy** — Clear delivery, pacing, tight sync
+7. **QA at Each Step** — Were the pre-render gates actually run?
 
-**Minimum Combined Score: 6.0/7.0** → Pass and publish  
-**Below 6.0:** FAIL → Remake video
+These are the factor keys `orchestrator/lib/stages/qa.js` scores and logs; the full
+rubric with per-band anchors is in `.claude/standards/QA_RATING_SYSTEM.md`.
+
+**Minimum Combined Score: 4.9/7.0** → Pass and publish  
+**Below 4.9:** FAIL → Remake video
 
 ---
 
@@ -238,7 +241,7 @@ See `.claude/standards/REVIEWER_GATED_PIPELINE.md` for feedback workflow.
 All changes require:
 1. ✅ Pass pre-commit hooks (no hardcoded prompts, pytest in requirements.txt)
 2. ✅ Reviewer approval (see REVIEWER_GATED_PIPELINE.md)
-3. ✅ QA pass (min 6.0/7.0 for video changes)
+3. ✅ QA pass (min 4.9/7.0 for video changes)
 4. ✅ Updated `.beads/status.jsonl` with work log
 
 ---

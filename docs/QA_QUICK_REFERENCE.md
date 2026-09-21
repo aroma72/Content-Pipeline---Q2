@@ -127,7 +127,7 @@ One-page guide to the 7-factor quality rating system.
 
 ## Remediation Workflow
 
-**Video Scores: 5.2/7.0 → FAIL (below 6.0 threshold)**
+**Video Scores: 4.3/7.0 → FAIL (below the 4.9 threshold)**
 
 1. **Identify failing factors** (those <0.6)
    - Example: Storytelling 0.5, Visuals 0.7, VO Quality 0.6
@@ -145,7 +145,7 @@ One-page guide to the 7-factor quality rating system.
 4. **Fix & re-rate:**
    - Rewrite, re-render, rerun QA
    - Submit for re-evaluation
-   - Must reach ≥6.0 minimum to proceed
+   - Must reach ≥4.9 minimum to proceed
    
 5. **If still failing after 2 attempts:**
    - Escalate to design review
@@ -175,7 +175,7 @@ One-page guide to the 7-factor quality rating system.
 - Video unplayable or corrupted
 - Script obviously unreviewed/incomplete
 
-⚠️ **Likely Fail (<4.5):**
+⚠️ **Likely Fail (<4.9):**
 - Only Taleemabad example shown (Storytelling max 0.5)
 - 2+ factors scoring <0.4
 - Same factor fails twice (systemic issue)
@@ -205,9 +205,9 @@ Before submitting a video for QA evaluation:
 **All 7 factors at 1.0 = 7.0:**
 - Very rare. Requires perfection across all dimensions.
 
-**Most videos score 4.9–6.0:**
+**Most videos score 4.9–6.5:**
 - 5.0–5.5: Acceptable, publishable quality (minimum viable)
-- 5.5–6.0: Good quality, no major issues
+- 5.5–6.5: Good quality, no major issues
 
 **Video is viable for publication at 4.9+:**
 - Below 4.9: Critical gaps, must remediate

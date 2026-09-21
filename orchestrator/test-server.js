@@ -553,7 +553,11 @@ async function bridgeChecks() {
       for (const slug of ['broke', 'waiting', 'retried']) {
         queue.enqueue({ topic: slug, series: 'testing', slug, source: 'course-builder', notes: `${tag} brief` });
       }
-      queue.fail('testing/broke', 'run-a', 'QA scored 3.8, below the 4.9 threshold');
+      // Derived, not typed: this used to hardcode "4.9" in both the fixture and the
+      // assertion below, so it proved only that a string survives the fold -- it
+      // would have kept passing with the bar set to anything at all.
+      const { THRESHOLD } = require('./lib/stages/qa');
+      queue.fail('testing/broke', 'run-a', `QA scored 3.8, below the ${THRESHOLD} threshold`);
       queue.block('testing/waiting', 'run-b', 'awaiting human review');
       // Failed once, then rebuilt and finished. currentItems() is a shallow fold
       // that never deletes a key, so the first attempt's `error` is still on the
@@ -565,7 +569,7 @@ async function bridgeChecks() {
       assert(r.status === 200, `expected 200, got ${r.status} ${r.text}`);
       const byId = Object.fromEntries(r.json.items.map((i) => [i.id, i]));
 
-      assert(/below the 4.9 threshold/.test(byId['testing/broke'].error || ''),
+      assert(byId['testing/broke'].error && byId['testing/broke'].error.includes(`below the ${THRESHOLD} threshold`),
         'a failed lesson still reports no error, so the LMS cannot say why');
       assert(/awaiting human review/.test(byId['testing/waiting'].reason || ''),
         'a blocked lesson reports no reason');

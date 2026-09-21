@@ -15,7 +15,7 @@ Internal QA framework for evaluating all content videos before publication.
 ### Scoring Structure
 - **7 Quality Factors** — each rated independently 0.0 to 1.0
 - **Combined Score** — sum of all 7 factors = **0.0 to 7.0** (maximum possible: 7.0)
-- **Minimum Acceptable Rating** — set per course/context (typically 5.5–6.0)
+- **Minimum Acceptable Rating** — **4.9** for all content types (see Quality Thresholds below)
 - **Fail Threshold** — any video scoring below minimum must be **remade or substantially revised**
 
 ### The 7 Quality Factors
@@ -269,12 +269,11 @@ Internal QA framework for evaluating all content videos before publication.
 2. **Score each of 7 factors** independently (don't let one factor bias others)
 3. **Document evidence** for any score <0.8 (cite timestamp, description)
 4. **Sum all factors** → combined score
-5. **Compare to minimum threshold** → PASS/FAIL/CONDITIONAL
+5. **Compare to minimum threshold** → PASS/FAIL
 
 ### Step 3: Decision & Documentation
 - **PASS:** Log in `.beads/qa_ratings.jsonl` → proceed to publish
 - **FAIL:** Create remediation ticket → return to production
-- **CONDITIONAL:** Flag for post-publication audit
 
 ---
 
@@ -299,7 +298,7 @@ Internal QA framework for evaluating all content videos before publication.
   },
   "combined_score": 6.4,
   "status": "PASS",
-  "minimum_threshold": 6.0,
+  "minimum_threshold": 4.9,
   "notes": "Minor color grading inconsistency frames 45-60. Post-production 0.85 instead of 1.0. All other factors exemplary.",
   "passing_factors": 7,
   "failing_factors": 0,
@@ -319,9 +318,8 @@ Internal QA framework for evaluating all content videos before publication.
 │ Week of 2026-06-02                           │
 ├──────────────────────────────────────────────┤
 │ Videos Evaluated:     12                      │
-│ Passed (≥6.0):        9 (75%)                │
-│ Conditional Pass:     2 (16%)                │
-│ Failed (<4.5):        1 (8%)                 │
+│ Passed (≥4.9):       11 (91%)                │
+│ Failed (<4.9):        1 (8%)                 │
 │                                              │
 │ Average Score:        6.2/7.0                │
 │ Median Score:         6.3/7.0                │

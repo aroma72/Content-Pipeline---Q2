@@ -114,9 +114,10 @@ orchestrator/
 per CLAUDE.md. This session added `video_research.txt`, `video_script.txt`, and `script_gate.txt`;
 `qa` uses the existing `quality_rating.txt`.
 
-**Known drift:** `prompts/quality_rating.txt` still names 6.0 as its default threshold. The
-authoritative bar is **4.9** and is enforced in `stages/qa.js`, so the two cannot disagree in
-practice — but the prompt text should be corrected when someone next touches it.
+The bar is **4.9/7.0**, declared once as `THRESHOLD` in `stages/qa.js` and stated nowhere
+else in code. `test-regressions.js` asserts the prompt and the standards docs name that same
+number, so the drift that used to live here — the prompt saying 6.0 while the stage enforced
+4.9, and the judge being handed both — now fails the suite instead of going unnoticed.
 
 ## YouTube publishing (ILHAM 2.1 + 2.3)
 

@@ -16,7 +16,7 @@ Your internal video quality assurance framework. Every video rated on 7 factors 
 - **`.claude/standards/QA_RATING_SYSTEM.md`** — Complete 7-factor rubric with detailed scoring (0.0–1.0 per factor)
   - Accuracy, Objectives Coverage, Post-Production, Visuals, Storytelling, Voice-Over Quality, QA at Each Step
   - Scoring guidance for each factor (1.0 = perfect, 0.5 = poor, 0.0 = unacceptable)
-  - Minimum threshold: **6.0/7.0** (default, adjustable per course)
+  - Minimum threshold: **4.9/7.0** (all content types)
   - Remediation workflow (what to do if video fails)
 
 ### 📚 **Quick References**
@@ -26,11 +26,9 @@ Your internal video quality assurance framework. Every video rated on 7 factors 
 
 ### 🔧 **Automation & Tools**
 - **`prompts/quality_rating.txt`** — Claude's evaluation prompt (rates videos against rubric)
-- **`skills/quality_rating.py`** — Python skill to:
-  - `rate_video()` — Evaluate a video, return 7 factor scores + combined score
-  - `check_video_gate()` — Full QA gate (rate + determine pass/fail)
-  - `log_rating()` — Append rating to `.beads/qa_ratings.jsonl` (audit trail)
-  - `generate_weekly_report()` — Create weekly quality metrics report
+- **`orchestrator/lib/stages/qa.js`** — the QA stage itself, and the only place the
+  threshold exists. Scores the 7 factors, recomputes the total from them, appends to
+  `.beads/qa_ratings.jsonl`, and rejects the run below the bar.
 
 ### 📊 **Logging & Reporting**
 - **`.beads/qa_ratings.jsonl`** — Append-only log. One JSON per line, one rating per video.
@@ -94,10 +92,10 @@ Your internal video quality assurance framework. Every video rated on 7 factors 
 - Pre-render checks: **all documented**
 - Git commits: **submodule FIRST, then main**
 
-### 🚫 Minimum Threshold: 6.0/7.0
-- Below 6.0: **cannot publish** (score <5.5 = immediate fail)
-- 6.0–6.4: **acceptable** (pass with notes)
-- 6.5+: **exemplary** (publish immediately)
+### 🚫 Minimum Threshold: 4.9/7.0
+- Below 4.9: **cannot publish** — the run is rejected and the video remade
+- 4.9–5.4: **acceptable** (publish with notes, monitor)
+- 5.5+: **good** (publish immediately)
 
 ---
 
@@ -143,38 +141,48 @@ Publish to Taleemabad
 5. Compare to minimum threshold
 6. Log result (or pass to skill for formal rating)
 
-### Formal Rating (Python Skill)
+### Formal Rating (the live path)
 
-```python
-from skills.quality_rating import check_video_gate
+Rating is not something you call by hand. The `qa` stage runs inside the
+orchestrator spine after `produce` and before `review`
+(`orchestrator/lib/stages/qa.js`). It scores the seven factors with an LLM judge,
+recomputes the total from the factors rather than trusting the model's arithmetic,
+and throws `RejectedError` below the bar — which the spine settles as a failed run,
+so the video is never published.
 
-passes_gate, rating = check_video_gate(
-    video_id="my_video_id",
-    video_path="path/to/video.mp4",
-    learning_outcomes=["objective 1", "objective 2"],
-    script_text="full narration script",
-    minimum_threshold=6.0
-)
-
-if passes_gate:
-    print(f"✅ Approved (score: {rating['combined_score']}/7.0)")
-else:
-    print(f"❌ Rejected (score: {rating['combined_score']}/7.0)")
-    print(f"Fix: {rating['low_scoring_factors']}")
 ```
+node orchestrator/run.js <slug>      # qa runs as part of the pipeline
+```
+
+Every rating is appended to `.beads/qa_ratings.jsonl` as
+`{type, at, runId, videoId, factors, combinedScore, threshold, status, weakestFactor, notes}`.
+
+The threshold lives in exactly one place — `THRESHOLD` in
+`orchestrator/lib/stages/qa.js` — and `orchestrator/test-regressions.js` asserts that
+the judge prompt and the standards docs state that same number. There is no Python
+entry point; `skills/quality_rating.py` was deleted in 2026-09 because it was
+imported by nothing, disagreed with the enforced bar, and wrote this log in a third
+incompatible shape.
 
 ### Weekly Quality Report
 
-```python
-from skills.quality_rating import generate_weekly_report
+There is no report generator. `.beads/qa_ratings.jsonl` is the audit trail; read it
+directly:
 
-report = generate_weekly_report("2026-06-02")
-print(report)  # Markdown report with metrics
+```bash
+jq -s '[.[] | select(.type == "qa_rating")]
+       | {n: length,
+          passed: [.[] | select(.status == "PASS")] | length,
+          avg: (map(.combinedScore) | add / length)}' .beads/qa_ratings.jsonl
 ```
+
+Note the file carries one hand-written legacy row from before the stage existed,
+which uses `combined_score`/`verdict` instead of `combinedScore`/`status` — hence
+the `select(.type == "qa_rating")`.
 
 ---
 
-## When a Video Fails (Score <6.0)
+## When a Video Fails (Score <4.9)
 
 ### Step 1: Identify Issues
 - **Failing factors:** those scoring <0.6
@@ -199,7 +207,7 @@ Create ticket with:
 
 ### Step 4: Fix & Re-Rate
 - Implement fix
-- Re-rate (must reach ≥6.0)
+- Re-rate (must reach ≥4.9)
 - If 2+ failures: escalate to design review
 
 ---
@@ -239,7 +247,7 @@ Remediation: [1 video requires fixes]
 ```
 
 ### Tracking Metrics
-- Pass rate (% scoring ≥6.0)
+- Pass rate (% scoring ≥4.9)
 - Factor health (avg per factor)
 - Failure rate trends
 - Remediation count
@@ -252,7 +260,7 @@ Remediation: [1 video requires fixes]
 ### Core System
 - **`.claude/standards/QA_RATING_SYSTEM.md`** — Full rubric (detailed)
 - **`prompts/quality_rating.txt`** — Claude's evaluation prompt
-- **`skills/quality_rating.py`** — Python skill (orchestration)
+- **`orchestrator/lib/stages/qa.js`** — the stage that scores and gates (owns `THRESHOLD`)
 
 ### Quick Guides
 - **`docs/QA_QUICK_REFERENCE.md`** — One-page checklist
@@ -285,13 +293,15 @@ Your QA system is working when:
 
 ## Next Steps
 
-1. **First video:** Rate manually using `docs/QA_QUICK_REFERENCE.md`
-2. **Second video:** Use Python skill `check_video_gate()`
-3. **Weekly:** Generate report with `generate_weekly_report()`
-4. **Monthly:** Review trends, adjust if needed
+1. **Spot-check by hand** with `docs/QA_QUICK_REFERENCE.md` when a score looks wrong
+2. **Trust the stage** for everything else — it runs on every pipeline execution
+3. **Weekly:** read `.beads/qa_ratings.jsonl` (see the jq above)
+4. **Monthly:** review trends; if the bar itself should move, change `THRESHOLD` in
+   `orchestrator/lib/stages/qa.js` — the regression suite will then tell you every
+   document that needs updating with it
 
 ---
 
 *Built: 2026-06-02*
-*Minimum Threshold: 6.0/7.0*
-*Remediation Required: Yes (if score <6.0)*
+*Minimum Threshold: 4.9/7.0*
+*Remediation Required: Yes (if score <4.9)*

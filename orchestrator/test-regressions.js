@@ -2045,6 +2045,61 @@ async function integrationChecks() {
     return 'scores from evidence';
   });
 
+  // The gate never drifted -- qa.js has always enforced 4.9. What drifted was
+  // everything that TELLS the judge what the bar is. qa.js:85 hands it
+  // threshold: 4.9 in the input while the system prompt said the default was 6.0
+  // and asked for a CONDITIONAL_PASS band at 4.5 that no live code can even accept.
+  // Two numbers, one model, every run. Nothing caught it because no test had ever
+  // asserted the value -- changing THRESHOLD broke nothing.
+  const qaStage = require('./lib/stages/qa');
+  const promptSrc = fs.readFileSync(path.join(__dirname, '..', 'prompts', 'quality_rating.txt'), 'utf8');
+
+  check('the judge prompt states the threshold the code enforces, and no other', () => {
+    assert(typeof qaStage.THRESHOLD === 'number', 'qa.js no longer exports THRESHOLD');
+    assert(promptSrc.includes(String(qaStage.THRESHOLD)),
+      `the prompt never states the enforced bar ${qaStage.THRESHOLD}`);
+    // Any other bar-shaped number in the prompt is a second instruction to the judge.
+    for (const stale of ['6.0', '4.5']) {
+      assert(!promptSrc.includes(stale),
+        `the prompt still names ${stale} as a bar -- the judge is told two different thresholds`);
+    }
+    assert(!/CONDITIONAL/i.test(promptSrc),
+      'the prompt asks for a CONDITIONAL_PASS again; qa.js is strictly PASS/FAIL');
+    // Assert the SHAPE, not the prose: qa.js's own comment discusses CONDITIONAL_PASS
+    // as history, and a string match would fail on the explanation of the bug. What
+    // matters is that the schema cannot carry a verdict at all -- the model scores,
+    // the caller decides.
+    assert(!('status' in qaStage.SCHEMA.properties),
+      'the schema accepts a status field again -- the judge should score, not rule');
+    return `one bar: ${qaStage.THRESHOLD}`;
+  });
+
+  check('the prompt asks for exactly the fields the schema accepts', () => {
+    for (const k of qaStage.SCHEMA.required) {
+      assert(promptSrc.includes(`- ${k}:`),
+        `the schema requires ${k} but the prompt never asks for it -- weakest_factor went unexplained for months`);
+    }
+    // Fields the prompt used to demand that qa.js silently drops.
+    for (const ghost of ['minimum_threshold', 'remediation_required', 'passing_factors',
+      'low_scoring_factors', 'failing_factors']) {
+      assert(!promptSrc.includes(ghost),
+        `the prompt still asks for ${ghost}, which the schema forbids -- two output contracts in one context`);
+    }
+    return `${qaStage.SCHEMA.required.length} fields, matched`;
+  });
+
+  check('the standards agree with the code about the bar', () => {
+    const bar = String(qaStage.THRESHOLD);
+    for (const rel of [['..', 'CLAUDE.md'], ['..', '.claude', 'standards', 'QA_RATING_SYSTEM.md']]) {
+      const p = path.join(__dirname, ...rel);
+      const src = fs.readFileSync(p, 'utf8');
+      assert(src.includes(bar), `${rel[rel.length - 1]} does not state the enforced bar ${bar}`);
+      assert(!/minimum 6\.0|≥6\.0|6\.0\/7\.0/.test(src),
+        `${rel[rel.length - 1]} still states 6.0 as the minimum`);
+    }
+    return `CLAUDE.md + QA_RATING_SYSTEM.md at ${bar}`;
+  });
+
   check('produce captures verify.js findings as structured evidence', () => {
     const prodSrc = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'produce.js'), 'utf8');
     assert(/verifyChecks/.test(prodSrc), 'verify output is discarded');

@@ -29,63 +29,29 @@ How to evaluate videos using the quality rating system.
 
 4. **Sum factors:** 1.0 + 1.0 + 0.95 + 1.0 + 0.90 + 0.95 + 1.0 = **6.8/7.0**
 
-5. **Compare to threshold:** 6.8 ≥ 6.0 ✅ **PASS** → Approve for publication
+5. **Compare to threshold:** 6.8 ≥ 4.9 ✅ **PASS** → Approve for publication
 
 ---
 
-## Example 2: Formal Rating with Python Skill
+## Example 2: Formal Rating (what the pipeline actually does)
 
-**Scenario:** You need a formal quality evaluation with documentation.
+**Scenario:** You want the formal evaluation. You do not call it — the `qa` stage
+runs automatically after `produce` and before `review`.
 
-```python
-from skills.quality_rating import rate_video, log_rating, check_video_gate
-
-# Define your video
-video_id = "autonomous_systems_part1"
-video_path = "updated/autonomous_part1.mp4"
-learning_outcomes = [
-    "Explain autonomous system architecture",
-    "Identify key components and their roles",
-    "Describe feedback loops and control mechanisms"
-]
-script_text = """
-Today we're exploring autonomous systems...
-[full script here]
-"""
-context = {
-    "course": "Autonomous Systems 101",
-    "learner_level": "intermediate"
-}
-
-# Rate the video
-rating = rate_video(
-    video_id=video_id,
-    video_path=video_path,
-    learning_outcomes=learning_outcomes,
-    script_text=script_text,
-    context=context,
-    minimum_threshold=6.0
-)
-
-# Log the rating
-log_rating(rating)
-
-# Check if it passes the publication gate
-passes_gate, rating_data = check_video_gate(
-    video_id=video_id,
-    video_path=video_path,
-    learning_outcomes=learning_outcomes,
-    script_text=script_text,
-    context=context,
-    minimum_threshold=6.0
-)
-
-if passes_gate:
-    print(f"✅ Video approved for publication (score: {rating['combined_score']}/7.0)")
-else:
-    print(f"❌ Video requires remediation (score: {rating['combined_score']}/7.0)")
-    print(f"Failing factors: {rating['low_scoring_factors']}")
+```bash
+node orchestrator/run.js autonomous-systems-part1
 ```
+
+The stage (`orchestrator/lib/stages/qa.js`) hands the judge the evidence it can
+actually use — mechanical measurements of the finished file, the verdicts of the
+production sensors, the learning outcomes, the script and the beat plan — and gets
+back four fields: `factors`, `combined_score`, `weakest_factor`, `notes`. It then
+recomputes the total from the factors rather than trusting the model's arithmetic,
+compares it to `THRESHOLD`, appends the result to `.beads/qa_ratings.jsonl`, and
+throws `RejectedError` if it is short. A rejected run never reaches upload.
+
+The judge is never given the MP4. It cannot open one, and when it was handed a path
+it guessed and scored sound videos low.
 
 **Output:**
 ```json
@@ -101,13 +67,8 @@ else:
     "qa_at_each_step": 1.0
   },
   "combined_score": 6.4,
-  "status": "PASS",
-  "minimum_threshold": 6.0,
-  "passing_factors": 7,
-  "failing_factors": 0,
-  "low_scoring_factors": ["post_production (0.85)"],
-  "remediation_required": false,
-  "notes": "Minor color grading inconsistency frames 45-60. All other factors exemplary."
+  "weakest_factor": "post_production",
+  "notes": "Minor colour grading inconsistency around beat 06. All other factors exemplary."
 }
 ```
 
@@ -181,11 +142,11 @@ else:
 
 **Scenario:** End of week. You want to see quality metrics across all videos published this week.
 
-```python
-from skills.quality_rating import generate_weekly_report
-
-report = generate_weekly_report("2026-06-02")
-print(report)
+```bash
+jq -s '[.[] | select(.type == "qa_rating")]
+       | {n: length,
+          passed: [.[] | select(.status == "PASS")] | length,
+          avg: (map(.combinedScore) | add / length)}' .beads/qa_ratings.jsonl
 ```
 
 **Output:**
@@ -194,9 +155,8 @@ print(report)
 
 ## Summary
 - **Total Videos Evaluated:** 12
-- **Passed (≥6.0):** 9 (75%)
-- **Conditional Pass:** 2 (16%)
-- **Failed (<4.5):** 1 (8%)
+- **Passed (≥4.9):** 11 (91%)
+- **Failed (<4.9):** 1 (8%)
 
 ## Quality Scores
 - **Average Combined Score:** 6.2/7.0

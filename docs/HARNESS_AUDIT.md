@@ -1,13 +1,14 @@
 ---
 type: reference
-last_verified: 2026-09-20
+last_verified: 2026-09-21
 owner: Aroma Tahir
 ---
 
 # Harness audit — what is here, and what of it was running
 
 Measured 2026-09-20 against commit `d584618`, by reading the files and running
-them, not by reading the documents that describe them. Where a claim here says a
+them, not by reading the documents that describe them. Updated 2026-09-21 with the
+QA-threshold fix (§3) and the hook-path fix. Where a claim here says a
 thing did not run, that was checked by grepping for every call site.
 
 The short version: this repo's guardrails are real and mostly well built. Three
@@ -127,19 +128,41 @@ sentence for the guarantee.
 | `frames = VO_seconds × 30` | CLAUDE.md:69 | `smoke-test.sh:176-207` warns, never fails, and skips entirely when `video_production/voiceovers/` is absent |
 | Reviewer comments → `REVIEW_LOG.md` | CLAUDE.md:82, `REVIEWER_GATED_PIPELINE.md` | `grep REVIEW_LOG` across all `.js`/`.py` returns **zero** hits |
 
-### The QA threshold disagrees with itself in five places
+### The QA threshold disagreed with itself — fixed 2026-09-21
 
-`orchestrator/lib/stages/qa.js:19` enforces **4.9** and is the only one that runs —
-it recomputes the factor sum rather than trusting the model's arithmetic
-(`qa.js:97-101`) and throws `RejectedError` on FAIL. Around it:
+`orchestrator/lib/stages/qa.js` enforces **4.9** and is the only one that runs — it
+recomputes the factor sum rather than trusting the model's arithmetic
+(`qa.js:97-101`) and throws `RejectedError` on FAIL.
 
-- `prompts/quality_rating.txt` contradicts itself — 6.0 at L23, 4.9 at L108
-- `skills/quality_rating.py:31` defaults to 6.0, and adds a `CONDITIONAL_PASS` band
-  at 4.5 that appears in no standard
-- `QA_RATING_SYSTEM.md` states 4.9 but its own sample output still shows 6.0
-- `skills/quality_rating.py` is imported by nothing, tested by nothing, and passes
-  `video_path` to a model that cannot open an MP4 — the exact failure `qa.js:53-57`
-  documents having fixed
+The full count was worse than five: **4.9 in ~48 statements, 6.0 in ~30, and a
+`CONDITIONAL_PASS` band at 4.5 in 5.** And it was not only prose. `qa.js:85` hands the
+judge `threshold: 4.9` in its input while the system prompt told it the default was
+6.0 and asked for a `CONDITIONAL_PASS` the schema cannot carry — two bars, one model,
+every run. The prompt's whole output contract also disagreed with the enforced schema
+(it demanded `status`, `minimum_threshold`, `passing_factors`, `remediation_required`,
+`timestamps`; it never mentioned `weakest_factor`, which the schema *requires*), and
+`llm-cli.js:508` appends that schema to the prompt, so the model received both.
+
+What was done:
+
+- `THRESHOLD`, `FACTORS` and `SCHEMA` are exported from `qa.js` — the single source.
+- `prompts/quality_rating.txt` now states 4.9 and no other bar, asks for exactly the
+  four fields the schema accepts, documents `weakest_factor`, and no longer tells the
+  judge to watch a video it cannot open.
+- `skills/quality_rating.py` **deleted** — imported by nothing, defaulted to 6.0, and
+  wrote this log in a third incompatible shape that would have crashed its own
+  weekly-report function on the existing file.
+- `README.md` also listed **seven entirely different factor names** (Concept Clarity,
+  Example Relevance, Pacing…) matching nothing in the code. Corrected.
+- Four regression checks now assert the prompt, `CLAUDE.md` and `QA_RATING_SYSTEM.md`
+  state the number `qa.js` enforces, and that the prompt's fields equal
+  `SCHEMA.required`. Negative-tested: reintroducing 6.0, `CONDITIONAL_PASS`, a missing
+  `weakest_factor` or a resurrected `minimum_threshold` each fails the suite.
+
+Still open, deliberately: `docs/QA_SYSTEM_OVERVIEW.md` and `docs/QA_QUICK_REFERENCE.md`
+score Storytelling by "3+ diverse examples", the rule CLAUDE.md records as **superseded**
+by the single-protagonist standard. Same factor name, opposite criterion — a rubric
+change for Aroma to make, not a threshold one.
 
 ---
 

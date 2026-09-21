@@ -2,9 +2,14 @@
 /**
  * qa -- score the finished video against the 7-factor rubric before it ships.
  *
- * Threshold is 4.9/7.0 per CLAUDE.md and QA_RATING_SYSTEM.md. Note the existing
- * prompts/quality_rating.txt still names 6.0 as its default threshold; the
- * authoritative number is enforced here in code so the two cannot drift.
+ * Threshold is 4.9/7.0 per CLAUDE.md and QA_RATING_SYSTEM.md, and THRESHOLD below
+ * is the only copy that executes. It used to be the only copy that was RIGHT:
+ * prompts/quality_rating.txt named 6.0 as its default and asked for a
+ * CONDITIONAL_PASS band at 4.5, while this file handed the judge threshold: 4.9 in
+ * the same breath (see the input payload). Enforcing the number here stopped the
+ * GATE drifting; it did nothing about the judge being told two different bars
+ * before it scored. The prompt now states this number and no other, and
+ * test-regressions.js asserts the two agree, so the next edit to either fails loudly.
  *
  * ILHAM plan 3.4 extends this to regenerate the weakest stage on a fail. Today
  * a fail is terminal and loud -- which is the correct default, because the
@@ -43,6 +48,12 @@ const SCHEMA = {
 module.exports = {
   name: 'qa',
   maxAttempts: 2,
+  // Exported so the regression suite can assert the prompt and the standards docs
+  // state THIS number, rather than regex-matching a literal out of the source and
+  // proving only that some 4.9 exists somewhere.
+  THRESHOLD,
+  FACTORS,
+  SCHEMA,
 
   async run({ item, state: st, artifacts, opts, log }) {
     const produced = artifacts.produce;

@@ -159,7 +159,7 @@ This is the path used for the Consumer→Producer series, Course Overview, "Why 
 
 ## Stage 4 — Observe (Quality Gate)
 
-**Runs:** `agents/video_quality_gate_agent.py` (Haiku, ~5–15 min) + `QA_RATING_SYSTEM.md` scoring
+**Runs:** `orchestrator/lib/stages/qa.js` — the 7-factor judge, scored against `QA_RATING_SYSTEM.md`, gated at 4.9/7.0
 **Input:** the edit/clips (3A) or the `_WITH_AUDIO.mp4` (3B)
 
 **Sub-steps**
