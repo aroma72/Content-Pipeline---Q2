@@ -363,6 +363,32 @@ module.exports = Object.assign(module.exports, {
     if (opts.dryRun) {
       log('dry run -- skipping filesystem preconditions and every pipeline command');
     } else {
+      // Can this machine finish what it is about to be paid to do?
+      //
+      // Asked here because everything below this line costs money. Twice in two
+      // days a run bought art and voice and then stopped on something that was
+      // already false before it started -- a Chrome that was never installed --
+      // and the failure arrived AFTER the spend, dressed as a finding a person was
+      // asked to rule on. Every one of those facts was knowable for nothing.
+      //
+      // BlockedError with an infrastructure code, never post-render-check: a
+      // broken deploy is not a judgement about the video, and telling them apart
+      // is what makes a blocked lesson actionable.
+      const preflight = require('../preflight');
+      const pf = await preflight.check({ videoDir: dir });
+      log(`preflight:\n${preflight.format(pf)}`);
+      if (!pf.ok) {
+        throw new BlockedError(
+          'This container cannot finish a render, so nothing was bought:\n'
+          + pf.failed.map((f) => `  - ${f.name}: ${f.why}${f.fix ? `\n    fix: ${f.fix}` : ''}`).join('\n'),
+          {
+            blocker: 'the machine cannot render',
+            code: 'preflight',
+            details: { failed: pf.failed, unknown: pf.unknown },
+          }
+        );
+      }
+
       // Scaffold from the skill templates. Mechanical and safe: copy only files
       // that are MISSING, so a re-run never clobbers a beats.js the script stage
       // just wrote or art already paid for.

@@ -76,6 +76,8 @@ class RedraftError extends Error {
  * orchestrator/lib is a member of this map.
  */
 const BLOCKED_BY = {
+  /** The container cannot render at all -- a broken deploy, not a bad video. */
+  PREFLIGHT: 'preflight',
   /** A person must watch the video and approve it. The ordinary case. */
   REVIEW: 'review',
   /** A sensor on the finished render disagreed with the script. */

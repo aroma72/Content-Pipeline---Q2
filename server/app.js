@@ -95,6 +95,31 @@ function createApp(opts = {}) {
     });
   });
 
+  /**
+   * Can this container render, right now, without spending anything to find out?
+   *
+   * Separate from /health because it launches a browser and shells out three
+   * times -- a second or two, too slow for a liveness probe that runs constantly,
+   * and far too useful to bury inside one. This is the question to ask straight
+   * after a deploy, and the answer it gives is the same one produce asks itself
+   * before it buys anything.
+   */
+  app.get('/health/render', async (_req, res) => {
+    try {
+      const preflight = require('../orchestrator/lib/preflight');
+      const r = await preflight.check();
+      res.status(r.ok ? 200 : 503).json({
+        ok: r.ok,
+        checks: r.results,
+        note: r.ok
+          ? 'This container can render. A run that fails now is about the video, not the machine.'
+          : 'A render would fail AFTER buying art and speech. Fix these first.',
+      });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
   app.get('/', (_req, res) => res.type('text').send('Drawing Room agent. Mention me in Slack, or file a ticket in Notion.'));
 
   // ─── Checkpoint API + demo (Taleemabad University integration) ────────────────

@@ -2718,6 +2718,49 @@ function browserChecks() {
     return `${files.length} frame gate(s) can find a browser`;
   });
 
+  check('nothing is bought before the machine is asked if it can render', () => {
+    // Twice in two days a run bought art and voice and then stopped on something
+    // that was already false before it started -- a Chrome nobody had installed.
+    // Every one of those facts was knowable for nothing, so they are now asked
+    // first, and the check sits ABOVE every paid call in produce.
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'produce.js'), 'utf8');
+
+    const pf = src.indexOf("require('../preflight')");
+    assert(pf > 0, 'produce no longer runs a preflight');
+
+    // Above the money. If a paid call can run first, the guard is decoration.
+    for (const paid of ['generate-lesson-art', 'tts-lesson.js']) {
+      const at = src.indexOf(paid);
+      assert(at < 0 || pf < at, `preflight runs AFTER ${paid} -- the spend would already have happened`);
+    }
+
+    // And it must stop the run, not merely log.
+    const after = src.slice(pf, pf + 1200);
+    assert(/BlockedError/.test(after), 'a failed preflight does not stop the run');
+    assert(/code: 'preflight'/.test(after),
+      'a failed preflight does not carry its own code -- a broken deploy would read as a video problem');
+    return 'preflight runs first, blocks, and is coded as infrastructure';
+  });
+
+  check('the preflight checks the things that actually broke', () => {
+    // Written against the real failures rather than a guess at what might break:
+    // a browser Puppeteer could not resolve, and a store that looked durable and
+    // was not. A launch, not a `which` -- the binary was never missing, the
+    // RESOLUTION was, because Puppeteer reads PUPPETEER_EXECUTABLE_PATH and the
+    // image set CHROME_PATH.
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'preflight.js'), 'utf8');
+    assert(/puppeteer\.launch/.test(src), 'it does not actually launch a browser');
+    assert(/PUPPETEER_EXECUTABLE_PATH/.test(src), 'it does not check the variable Puppeteer reads');
+    assert(/ffmpeg/i.test(src) && /python/i.test(src), 'ffmpeg or python is unchecked');
+    assert(/durability === 'volume'/.test(src), 'it does not notice a non-durable store');
+
+    // A third outcome, so "could not measure" never reads as "fine". The suite
+    // learned this the hard way: a skip that counts as a pass is how a check
+    // quietly stops checking.
+    assert(/ok: null/.test(src), 'every check is pass/fail -- unknown must be its own answer');
+    return 'launches a browser, checks ffmpeg/python/store, and reports unknown as unknown';
+  });
+
   check('a finished lesson is copied somewhere a redeploy cannot reach', () => {
     // The failure this prevents actually happened: a lesson an instructor paid for
     // lived only in a directory .dockerignore excludes, a redeploy landed, and the
