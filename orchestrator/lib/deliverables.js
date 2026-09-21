@@ -98,20 +98,19 @@ function persist({ series, slug, finalPath, videoDir, log = () => {} }) {
   try {
     fs.mkdirSync(dest, { recursive: true });
 
+    // Nothing here is required, because persist() is called TWICE: once before the
+    // blocking gates, when only beats.js and durations.json exist, and again once
+    // the branded deliverable does. The early call is what lets a lesson that
+    // blocked after the spend be understood without paying for another render --
+    // on 2026-09-21 the findings named beats nobody could go and look at.
     const wanted = [
-      { from: finalPath, to: path.basename(finalPath || ''), required: true },
+      { from: finalPath, to: finalPath ? path.basename(finalPath) : null },
       { from: videoDir && path.join(videoDir, 'beats.js'), to: 'beats.js' },
       { from: videoDir && path.join(videoDir, 'durations.json'), to: 'durations.json' },
     ];
 
     for (const w of wanted) {
-      if (!w.from || !fs.existsSync(w.from)) {
-        if (w.required) {
-          log(`deliverable NOT persisted: ${w.from || '(no path)'} does not exist`);
-          return SKIPPED('deliverable missing');
-        }
-        continue;
-      }
+      if (!w.from || !w.to || !fs.existsSync(w.from)) continue;
       // copyFile, not rename: the render directory is still the working copy for
       // this run, and moving the file out from under a later stage would break
       // upload, which reads finalPath again.

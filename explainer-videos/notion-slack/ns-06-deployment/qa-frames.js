@@ -140,18 +140,34 @@ catch { console.log('[qa-frames] ⏭  puppeteer not installed here.'); process.e
       const brokenImgs = imgs.filter((im) => im.complete && !im.naturalWidth).length;
       const hasWindow = Boolean(layer.querySelector(STRUCTURED));
       const sizes = texts.map((t) => t.size).filter((n) => n > 0);
-      const rects = [...layer.querySelectorAll('*')].filter((el) => {
+      // WHICH elements spill, not just how many. A bare count ("153 element(s)
+      // spill outside 1920x1080") is unactionable: it cannot distinguish one
+      // mis-sized container dragging its whole subtree out of frame from 153
+      // independent layout faults, and the first is overwhelmingly more likely.
+      // Naming the worst offenders turns a re-render into a read.
+      const spills = [...layer.querySelectorAll('*')].map((el) => {
         const cs = getComputedStyle(el);
-        if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+        if (cs.display === 'none' || cs.visibility === 'hidden') return null;
         const r = el.getBoundingClientRect();
-        return r.width > 2 && r.height > 2 && (r.left < -8 || r.top < -8 || r.right > 1928 || r.bottom > 1088);
-      }).length;
+        if (!(r.width > 2 && r.height > 2)) return null;
+        const over = Math.max(-r.left, -r.top, r.right - 1920, r.bottom - 1080, 0);
+        if (over <= 8) return null;
+        const cls = (el.className && String(el.className).split(/\s+/)[0]) || '';
+        return { sel: el.tagName.toLowerCase() + (cls ? '.' + cls : ''), over: Math.round(over) };
+      }).filter(Boolean);
+      const rects = spills.length;
+      // Worst first, de-duplicated by selector: 153 rows of the same class is one
+      // fault repeated, and saying so is the whole point.
+      const byWorst = {};
+      for (const s of spills) byWorst[s.sel] = Math.max(byWorst[s.sel] || 0, s.over);
+      const spillTop = Object.entries(byWorst).sort((a, b) => b[1] - a[1]).slice(0, 3)
+        .map(([sel, over]) => `${sel} by ${over}px`);
       out.push({
         i, hasWindow, count: texts.length, imgs: imgs.length, brokenImgs,
         min: sizes.length ? Math.min(...sizes) : 0,
         max: sizes.length ? Math.max(...sizes) : 0,
         smallest: texts.slice().sort((a, b) => a.size - b.size)[0] || null,
-        overflow: rects,
+        overflow: rects, spillTop,
       });
       layer.style.opacity = 0;
     });
@@ -199,7 +215,10 @@ catch { console.log('[qa-frames] ⏭  puppeteer not installed here.'); process.e
       problems.push(`${id}: text-only slide but the largest text is ${f.max.toFixed(0)}px — a bare `
         + `sentence must lead at >= ${MIN_TEXT_ONLY}px, centred, so it carries the frame.`);
     }
-    if (f.overflow) problems.push(`${id}: ${f.overflow} element(s) spill outside 1920x1080`);
+    if (f.overflow) {
+      problems.push(`${id}: ${f.overflow} element(s) spill outside 1920x1080`
+        + (f.spillTop && f.spillTop.length ? ` -- worst: ${f.spillTop.join(', ')}` : ''));
+    }
     notes.push(`${id}: ${f.count} text node(s), ${f.min.toFixed(0)}–${f.max.toFixed(0)}px`
       + (f.hasWindow ? ', has a visual' : ', text only'));
   });

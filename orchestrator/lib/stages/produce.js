@@ -858,6 +858,23 @@ module.exports = Object.assign(module.exports, {
     // templates and referenced by reviewing-explainer-scripts/SKILL.md, and run by
     // nothing. Block rather than reject: the art and voice are already bought, so a
     // finding here goes to a person instead of discarding them.
+    // Keep what makes this lesson DIAGNOSABLE before anything can block on it.
+    //
+    // qa-frames blocks after the art and voice are bought but before the branded
+    // deliverable exists, so a lesson can stop here having spent real money and
+    // leave nothing behind: the render directory is excluded from the image, and
+    // the next redeploy takes beats.js with it. That is what happened on
+    // 2026-09-21 -- the findings named beats nobody could go and look at, and
+    // answering "which element spills?" would have cost another full render.
+    //
+    // beats.js and durations.json are kilobytes. Copying them now means a blocked
+    // lesson can be understood for nothing, and the same call later adds the mp4.
+    if (!opts.dryRun) {
+      require('../deliverables').persist({
+        series: item.series, slug: item.slug, videoDir: dir, log,
+      });
+    }
+
     await sensor('qa-frames.js', 'what the rendered frame actually looks like',
       { blockOnFail: true });
 

@@ -48,6 +48,23 @@ function validateBeats(beats, videoDir, opts = {}) {
     if (seenIds.has(b.id)) errors.push(`${at}: duplicate id`);
     seenIds.add(b.id);
 
+    // An illustration beat has to carry words of its own.
+    //
+    // animation/lesson.html draws an `ali` or `scene` beat as its art and NOTHING
+    // else unless the beat has a `cap` or an `overlay`. The prompt asks for one,
+    // and on the first real run the model supplied 11 of 14 and skipped 3 -- so
+    // the rule is enforced here rather than hoped for. A beat that reaches produce
+    // without words costs a full render before qa-frames refuses it, and the
+    // redraft this triggers is free.
+    //
+    // strictCanon only: before art is bought a missing caption is a rewrite; after
+    // it, throwing the render away over one would cost more than the fault.
+    if ((b.mode === 'ali' || b.mode === 'scene') && !b.cap && !b.overlay) {
+      const msg = `${at}: an ${b.mode} beat draws art and no text. Add a short 'cap' `
+        + '(<= 8 words) or an overlay, or the frame carries no words at all.';
+      if (strictCanon) errors.push(msg); else warnings.push(msg);
+    }
+
     // A checkpoint is never spoken, so an empty vo is correct for it and a
     // FILLED one is the bug -- a voiced checkpoint reads the question aloud to a
     // learner who is about to be asked it in a popup.
