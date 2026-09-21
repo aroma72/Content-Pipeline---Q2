@@ -82,7 +82,7 @@ function awaitingApproval(courseId = null) {
       // flag a video that is finished and paid for, and that is a different thing
       // to put in front of a person than "ready for you". The prose in `reason`
       // said so and nothing machine-readable did.
-      blockedBy: i.blockedBy || 'review',
+      blockedBy: i.blockedBy || queue.DEFAULT_BLOCKED_BY,
     }));
 }
 

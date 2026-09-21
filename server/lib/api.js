@@ -170,12 +170,18 @@ function build() {
             + 'and nothing else.' },
         { method: 'POST', path: '/api/v1/courses/build', auth: true,
           description: 'Queues every lesson in a plan as a video. Refuses without '
-            + '`confirmLessons` matching the plan, because this spends real money.' },
+            + '`confirmLessons` matching the plan, because this spends real money. '
+            + 'Optional `references: true` adds two or three verified external reading '
+            + 'links to each finished lesson.' },
         { method: 'GET', path: '/api/v1/courses/:courseId', auth: true,
           description: 'Build progress, and which lesson is waiting for approval. A lesson '
             + 'carries `runId`, a `reason` and a `blockedBy` while blocked, an `error` when it '
             + 'failed, and when done its `path` (the key into GET /api/v1/videos) plus its '
-            + '`youtube` URL and `youtubeVideoId`.' },
+            + '`youtube` URL and `youtubeVideoId`. Spend is split into `spendMediaUsd` '
+            + '(art and speech) and `spendModelUsd` (tokens); the `Total` variants of all '
+            + 'three accumulate across retries. `references` appears on a done lesson only '
+            + 'when the course asked for them AND the links resolved when we fetched them -- '
+            + 'absent means none were verified, never that none were sought.' },
         { method: 'POST', path: '/api/v1/courses/:courseId/lessons/:lessonId/approve',
           auth: true,
           description: 'Publish a built lesson and release the next one. Courses build '
@@ -189,6 +195,13 @@ function build() {
             + 'Refuses anything that is not failed, and buys another render -- call it '
             + 'from an explicit human action, never automatically.' },
       ],
+      // The closed set of `blockedBy`, served rather than documented. It is here
+      // because a comment is not something a consumer can pin a test against: this
+      // set drifted to six values in one comment, seven in another, and nine in the
+      // code, and the LMS gave up matching on the field at all rather than go quiet
+      // the day we added a tenth. Adding a value means adding it to BLOCKED_BY in
+      // orchestrator/lib/spine-errors.js, which is what this reads.
+      blockedBy: require('../../orchestrator/lib/queue').BLOCKED_BY_VALUES,
       demo: `${req.protocol}://${req.get('host')}/demo/quiz`,
       howTheQuestionBehaves: {
         summary: 'Nothing about the question is in the video. At atSeconds you PAUSE '
@@ -400,15 +413,31 @@ function build() {
     const courseId = `course-${Date.now().toString(36)}`;
     const queued = [];
     const rejected = [];
+    // The ONE scenario Ali is followed through for the whole course. The planner has
+    // produced it since it was written (course-planner.js SCHEMA) and this loop threw it
+    // away, so cross-lesson continuity existed only where a lesson's own brief happened
+    // to restate it -- which made a "course" a bag of unrelated videos sharing a title.
+    // It rides in `notes`, which research.js already reads into every downstream prompt.
+    const scenario = String((body.plan && body.plan.protagonist_scenario) || '').trim();
+    // Opt-in, per course. Off by default: it buys a web search per lesson, and a
+    // caller that did not ask for reading should not be charged for looking.
+    const wantReferences = body.references === true;
     for (const l of lessons) {
       try {
         const item = queue.enqueue({
           topic: l.title,
           series,
-          notes: `[${courseId}] ${l.brief}\nSLO: ${l.slo}`,
+          // The [courseId] tag stays FIRST: course membership is a substring match on
+          // notes, and so is the check that refuses a brief carrying someone else's tag.
+          notes: [
+            `[${courseId}] ${l.brief}`,
+            `SLO: ${l.slo}`,
+            scenario ? `Running scenario for this course: ${scenario}` : null,
+          ].filter(Boolean).join('\n'),
           module: l.module,
           moduleTopic: l.moduleTitle,
           source: 'course-builder',
+          wantReferences,
         });
         queued.push(item.id);
       } catch (e) {
@@ -462,10 +491,12 @@ function build() {
         // the lesson -- sometimes a sentence a model wrote -- so a caller that has
         // one Approve button cannot tell "waiting for a person" from "a judge
         // flagged the finished video" without matching on prose. This is a closed
-        // set: review | post-render-check | spend-approval | upload | nazim |
-        // interrupted. Defaulted here as well as at queue.block() so items blocked
-        // before this field existed still read as the normal case.
-        ...(i.status === 'blocked' ? { blockedBy: i.blockedBy || 'review' } : {}),
+        // set, published as `blockedBy` on GET /api/v1 so a caller can pin a test
+        // against it rather than against this comment -- which is how it drifted to
+        // six values here and nine in the code. Defaulted as well as at
+        // queue.block() so items blocked before this field existed still read as
+        // the normal case.
+        ...(i.status === 'blocked' ? { blockedBy: i.blockedBy || queue.DEFAULT_BLOCKED_BY } : {}),
         // What the lesson actually produced. A finished lesson used to say only
         // that it succeeded, so the caller knew a video existed and could not say
         // which one -- there was no way to drop it into the block waiting for it.
@@ -483,7 +514,39 @@ function build() {
           ...(i.artifacts && i.artifacts.upload && i.artifacts.upload.url
             ? { youtube: i.artifacts.upload.url, youtubeVideoId: i.artifacts.upload.videoId }
             : {}),
+          // External reading, when the course asked for it and the links survived
+          // being fetched. ABSENT means none were verified -- never "we did not
+          // look", and never a link we could not open ourselves. The consumer said
+          // it would not render an unverified list, which is the whole contract:
+          // an empty answer here is a correct answer.
+          ...(i.artifacts && i.artifacts.references
+            && Array.isArray(i.artifacts.references.references)
+            && i.artifacts.references.references.length
+            ? { references: i.artifacts.references.references }
+            : {}),
         } : {}),
+        // What it cost. A course creates queue items, never jobs, and the tenant
+        // ledger is built from job records -- so GET /demo/spend structurally cannot
+        // see a course, and reporting 0 there is not evidence that nothing was spent.
+        // This is the only figure an LMS can settle an authorisation against.
+        //
+        // Settle against `spendUsdTotal`: it accumulates across retries, so it is what
+        // the lesson has really cost. `spendUsd` is the last attempt alone, which is
+        // what reconciles against `runId` on the same row.
+        ...(Number.isFinite(i.spendUsd) ? { spendUsd: i.spendUsd } : {}),
+        ...(Number.isFinite(i.spendUsdTotal) ? { spendUsdTotal: i.spendUsdTotal } : {}),
+        // And what it was spent ON. Media is art and speech -- the part that scales
+        // with how long the video is and the only part the budget gate measures.
+        // Model is tokens: research, script, the gate, QA and every redraft.
+        //
+        // The pair above is NOT this split, which is what it was being read as. Both
+        // of those are totals; these two divide one. Absent on lessons that finished
+        // before this shipped: the per-call breakdown lives in run state, not on the
+        // queue item, so it cannot be back-filled -- absent means unknown, not zero.
+        ...(Number.isFinite(i.spendMediaUsd) ? { spendMediaUsd: i.spendMediaUsd } : {}),
+        ...(Number.isFinite(i.spendModelUsd) ? { spendModelUsd: i.spendModelUsd } : {}),
+        ...(Number.isFinite(i.spendMediaUsdTotal) ? { spendMediaUsdTotal: i.spendMediaUsdTotal } : {}),
+        ...(Number.isFinite(i.spendModelUsdTotal) ? { spendModelUsdTotal: i.spendModelUsdTotal } : {}),
       }));
     if (!items.length) {
       // Report durability; do not assert the worst case. This used to tell every
@@ -518,6 +581,11 @@ function build() {
       // different words in front of an instructor.
       blocked: by('blocked'),
       inProgress: items.length - by('done') - by('failed') - by('blocked'),
+      // The course's bill so far, summed from the lessons that have settled. An LMS
+      // authorises `lessons x estimate` before calling us and has had nothing to
+      // converge on since: ours held $1.50 for a lesson that cost $0.598. Lessons
+      // still building contribute nothing yet, so this only ever rises.
+      spentUsd: Number(items.reduce((a, i) => a + (Number(i.spendUsdTotal) || 0), 0).toFixed(4)),
       // What the machine is doing this second, so a stalled build is visible
       // rather than looking identical to a slow one.
       // One lesson is built at a time and then waits. This is the field the UI

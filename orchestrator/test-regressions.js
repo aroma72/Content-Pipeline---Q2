@@ -1035,6 +1035,42 @@ async function beatChecks() {
     return 'reason + outcome survive quiet';
   });
 
+  // Measured: 17 failed runs burned 23.4 hours between them, the worst single run
+  // 19.4 hours. Every stage had its own timeout the whole time -- they cannot see a
+  // redraft loop, which restarts the clock on each stage it rewinds to.
+  await checkAsync('a run that has been going for hours is stopped for a person', async () => {
+    const spine = require('./lib/spine');
+    const item = { id: 'testing/time-ceiling', series: 'testing', slug: 'time-ceiling', topic: 't' };
+    const state = require('./lib/state');
+    const st = state.create(item);
+    // Pretend this run started four hours ago; the ceiling is 180 minutes.
+    st.startedAt = new Date(Date.now() - 240 * 60000).toISOString();
+    let ran = false;
+    const shouldNotRun = { name: 'research', maxAttempts: 1, async run() { ran = true; return { ok: 1 }; } };
+    const out = await spine.execute(item, {
+      quiet: true, resumeState: st, stopAfter: 'research',
+      stageOverrides: { research: shouldNotRun },
+    });
+    assert(!ran, 'the next stage started anyway, so the ceiling buys nothing');
+    // BLOCKED, not FAILED: art and voice are usually already bought by this point,
+    // and `failed` would tell the LMS to give up on something a person can rescue.
+    assert(out.status === 'blocked', `expected blocked, got ${out.status}`);
+    return 'stopped before the next stage, parked as blocked';
+  });
+
+  await checkAsync('a normal-length run is not touched by the ceiling', async () => {
+    const spine = require('./lib/spine');
+    const item = { id: 'testing/time-ok', series: 'testing', slug: 'time-ok', topic: 't' };
+    let ran = false;
+    const ok = { name: 'research', maxAttempts: 1, async run() { ran = true; return { ok: 1 }; } };
+    const out = await spine.execute(item, {
+      quiet: true, stopAfter: 'research', stageOverrides: { research: ok },
+    });
+    assert(ran, 'the ceiling blocked a run that had only just started');
+    assert(out.status === 'done', `expected done, got ${out.status}`);
+    return 'unaffected';
+  });
+
   check('stage chatter is still suppressed, so the log stays readable', () => {
     // The point of quiet was ffmpeg/npm/puppeteer spam; promoting EVERYTHING
     // would trade one unreadable log for another.
@@ -1265,6 +1301,141 @@ async function beatChecks() {
   // it is an under-read invoice. repairArt() bought up to 2 x N images with `--yes` and
   // recorded only an intervention, and estimateSpend cannot catch it either: a repaired
   // image keeps its prompt sidecar, so the cache correctly considers it already bought.
+  // The same prices live in two files: produce.js prices the run for the budget gate,
+  // and templates/lib/config.js prices it for the generators' own guard. They cannot be
+  // a shared import -- the template is COPIED standalone into every video folder, and
+  // requiring it here would run its loadDotenv() as a side effect of pricing a video.
+  // So the coupling is enforced here instead: an understated estimate would walk a run
+  // straight through the budget that was meant to stop it.
+  // i2v is the only per-second item: at $0.05/s a few animated beats cost more than
+  // every still in the video. qa-clips.js -- which catches frozen and morphed clips --
+  // shipped in the templates and was called by nothing, so the most expensive asset was
+  // the only ungated one.
+  // --- the judge that destroyed a finished lesson ------------------------------
+  // 2026-09-19: eval-text.js PASSED a line before the spend and FAILED the same line
+  // after the render -- same text, same model, temperature 0 -- and the run was
+  // settled `failed` with a complete _final.mp4 sitting on disk. 25.3 min, $0.598.
+  // Two independent guards, because either alone would have saved that lesson and
+  // neither alone is enough: the cache stops the second ask, the demotion stops the
+  // finding mattering.
+  const TPL_LIB = path.join(__dirname, '..', '.claude', 'skills', 'creating-explainer-videos',
+    'templates', 'lib');
+
+  check('a question mark nobody can hear cannot fail a build', () => {
+    const { demoteInaudible } = require(path.join(TPL_LIB, 'spoken-text'));
+    // The exact line and the exact verdict, from the queue event.
+    const LINE = 'Then he asks, have I got that right, and he stops talking.';
+    const kindOf = (t) => (t === LINE ? 'spoken' : 'shown');
+    const out = demoteInaudible([{
+      text: LINE, severity: 'error',
+      problem: 'The sentence is a question but lacks a question mark.',
+      suggestion: 'Then he asks, have I got that right?, and he stops talking.',
+    }], kindOf);
+    assert(out[0].severity === 'nit',
+      'the finding that destroyed the LMS lesson is still an error, so it can still kill a run');
+    assert(out[0].demoted === true, 'the demotion is not recorded, so nobody can see it happened');
+    // Kept, not deleted: a judge that has started flagging inaudible punctuation is
+    // itself worth seeing.
+    assert(out.length === 1, 'the finding was dropped rather than demoted');
+    return 'demoted to a nit, and still reported';
+  });
+
+  check('a real error in speech, and any error in drawn text, still fails', () => {
+    const { demoteInaudible } = require(path.join(TPL_LIB, 'spoken-text'));
+    const SPOKEN = 'proof one change helped';
+    const SHOWN = 'Have I got that right';
+    const kindOf = (t) => (t === SPOKEN ? 'spoken' : 'shown');
+    const out = demoteInaudible([
+      // A dropped word IS audible -- the demotion must not reach it.
+      { text: SPOKEN, severity: 'error', problem: 'dropped that', suggestion: 'proof that one change helped' },
+      // On a drawn card the viewer READS it, so punctuation counts normally.
+      { text: SHOWN, severity: 'error', problem: 'missing question mark', suggestion: 'Have I got that right?' },
+    ], kindOf);
+    assert(out[0].severity === 'error', 'a dropped word in narration was demoted -- that IS audible');
+    assert(out[1].severity === 'error', 'punctuation was demoted on text the viewer reads');
+    return 'audible errors and drawn text are untouched';
+  });
+
+  check('the same text is never judged twice with two different answers', () => {
+    const cache = require(path.join(TPL_LIB, 'judge-cache'));
+    const os = require('os');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cq-judge-'));
+    const payload = [{ kind: 'spoken', text: 'a line' }];
+    const k = cache.key({ sensor: 'eval-text', judge: 'g', promptVersion: 1, payload });
+
+    assert(cache.get(dir, k) === undefined, 'a cold cache claimed to have a verdict');
+    cache.put(dir, k, [], { sensor: 'eval-text' });
+    // The post-render ask, with the same input: it must get the pre-spend answer.
+    assert(JSON.stringify(cache.get(dir, k)) === '[]', 'the second ask did not reuse the first verdict');
+
+    // Key order must not matter, or the same payload would miss its own entry.
+    const k2 = cache.key({ payload, promptVersion: 1, judge: 'g', sensor: 'eval-text' });
+    assert(k2 === k, 'the key depends on property order, so identical input can miss');
+
+    // Everything that could change the answer must change the key. A cached verdict
+    // served after a prompt rewrite would look like the new rubric agreed with it.
+    const changed = [
+      ['prompt', { sensor: 'eval-text', judge: 'g', promptVersion: 2, payload }],
+      ['model', { sensor: 'eval-text', judge: 'other', promptVersion: 1, payload }],
+      ['input', { sensor: 'eval-text', judge: 'g', promptVersion: 1, payload: [{ kind: 'spoken', text: 'b' }] }],
+      ['sensor', { sensor: 'qa-art', judge: 'g', promptVersion: 1, payload }],
+    ];
+    for (const [what, args] of changed) {
+      assert(cache.key(args) !== k, `changing the ${what} did not change the cache key`);
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
+    return 'one verdict per input, invalidated by prompt, model and input';
+  });
+
+  check('eval-text asks once and enforces the spoken rule in code', () => {
+    const src = fs.readFileSync(path.join(TPL_LIB, '..', 'eval-text.js'), 'utf8');
+    assert(/cache\.get\(/.test(src) && /cache\.put\(/.test(src),
+      'eval-text does not consult the verdict cache, so it can still answer twice');
+    assert(/demoteInaudible\(/.test(src),
+      'eval-text relies on the prompt alone to spare spoken punctuation -- it did not hold');
+    // The prompt says it too, and should keep saying it; the code is the backstop.
+    assert(/Punctuation is inaudible/.test(src), 'the prompt lost its spoken-text rule');
+    return 'cached, and enforced in code as well as in the prompt';
+  });
+
+  check('the clips we pay per second for are actually checked', () => {
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'produce.js'), 'utf8');
+    assert(/sensor\('qa-clips\.js'/.test(src),
+      'qa-clips.js is never called, so a frozen or morphed clip reaches the learner');
+    // It must not be able to DISCARD them: art, voice and the clips themselves are all
+    // bought by the time it runs.
+    const call = src.match(/sensor\('qa-clips\.js'[^;]*;/);
+    assert(call && /blockOnFail:\s*true/.test(call[0]),
+      'qa-clips can end the run, discarding paid-for art, voice and clips over one bad clip');
+    // And it has to exist where the sensor will look for it.
+    const tpl = path.join(__dirname, '..', '.claude', 'skills', 'creating-explainer-videos',
+      'templates', 'qa-clips.js');
+    assert(fs.existsSync(tpl), 'qa-clips.js is wired in but missing from the templates');
+    return 'wired, and blocks rather than discards';
+  });
+
+  check('the two copies of the cost table cannot drift apart', () => {
+    const grabCost = (file) => {
+      const src = fs.readFileSync(file, 'utf8');
+      const m = src.match(/const COST = (\{[^}]*\})/);
+      assert(m, `no COST table found in ${file}`);
+      return eval(`(${m[1]})`);
+    };
+    const a = grabCost(path.join(__dirname, 'lib', 'stages', 'produce.js'));
+    const b = grabCost(path.join(__dirname, '..', '.claude', 'skills',
+      'creating-explainer-videos', 'templates', 'lib', 'config.js'));
+    const keys = [...new Set([...Object.keys(a), ...Object.keys(b)])].sort();
+    const drift = keys.filter((k) => a[k] !== b[k]);
+    assert(drift.length === 0,
+      'produce.js and templates/lib/config.js disagree on price: ' +
+      drift.map((k) => `${k} ${a[k]} vs ${b[k]}`).join(', '));
+    // i2v is the only per-SECOND item and the one that can run away, so it is named
+    // explicitly rather than trusted to the loop above.
+    assert(typeof a.i2vPerSecond === 'number' && a.i2vPerSecond > 0,
+      'i2vPerSecond is missing or zero, so animation would price as free');
+    return `${keys.length} prices agree ($${a.imagePerImage}/img, $${a.i2vPerSecond}/s i2v)`;
+  });
+
   check('every paid generator call in produce records what it spent', () => {
     const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'produce.js'), 'utf8');
     const lines = src.split(/\r?\n/);
@@ -2099,6 +2270,61 @@ async function integrationChecks() {
     return `one bar: ${qaStage.THRESHOLD}`;
   });
 
+  // Across the ratings on file the judge hedged about unobservability in 6 of 7
+  // notes; `visuals` was the lowest-mean factor and most often named weakest -- the
+  // one factor it was structurally unable to observe. Both escapes it was offered
+  // were wrong: neutral 0.7s across seven factors sum to 4.9, the pass mark exactly,
+  // and scoring the unobservable at 0.0 failed a sound video at 2.2/7.0.
+  check('a factor nobody could assess neither rescues nor condemns a video', () => {
+    const { combine } = qaStage._internals;
+
+    // Seven hedges used to land exactly on the bar. Now four real scores decide it.
+    const hedged = combine({
+      accuracy: 0.9, objectives_coverage: 0.9, storytelling: 0.9, qa_at_each_step: 0.9,
+      post_production: null, voiceover_quality: null, visuals: null,
+    });
+    assert(hedged.score === 6.3, `expected the assessed mean scaled to 7, got ${hedged.score}`);
+    assert(hedged.excluded.length === 3, 'the excluded factors are not reported');
+
+    // And the 2.2: four factors zeroed purely for being unobservable.
+    const zeroed = combine({
+      accuracy: 0.9, objectives_coverage: 0.7, storytelling: 0.6,
+      post_production: null, visuals: null, voiceover_quality: null, qa_at_each_step: null,
+    });
+    assert(zeroed.score >= qaStage.THRESHOLD,
+      `a video with three sound scores still fails at ${zeroed.score} -- this is the 2.2 again`);
+
+    // A genuinely weak video must still fail. The exclusion is not a way through.
+    const weak = combine({ accuracy: 0.3, objectives_coverage: 0.3, storytelling: 0.4, visuals: null });
+    assert(weak.score < qaStage.THRESHOLD, `a weak video passed at ${weak.score}`);
+
+    // Nothing assessable at all is not a score. The caller blocks instead.
+    assert(combine({ accuracy: null, visuals: null }).score === null,
+      'with no evidence at all it still produced a number');
+    return 'excluded, not guessed; the scale still reads out of 7';
+  });
+
+  check('visuals is scored by the gates that looked, not by the judge that could not', () => {
+    const { deriveVisuals } = qaStage._internals;
+    assert(!qaStage.JUDGED_FACTORS.includes('visuals'),
+      'the judge is still asked to score what it is told it cannot see');
+    assert(!('visuals' in qaStage.SCHEMA.properties.factors.properties),
+      'the schema still accepts a visuals score from the judge');
+    assert(qaStage.FACTORS.includes('visuals'),
+      'visuals vanished from the rubric entirely -- it should be derived, not dropped');
+
+    assert(deriveVisuals([{ sensor: 'qa-art.js', ok: true }]) === 1.0, 'a clean vision verdict did not score');
+    assert(deriveVisuals([{ sensor: 'qa-art.js', ok: true }, { sensor: 'qa-frames.js', ok: false }]) === 0.4,
+      'a gate objected to the pictures and visuals still scored clean');
+    assert(deriveVisuals([{ sensor: 'qa-art.js', ok: false, accepted: true }]) === 0.6,
+      'a finding carried through under lenient should not read as a clean pass');
+    // Nobody looked, or every gate was unavailable: excluded, never invented.
+    assert(deriveVisuals([]) === null, 'visuals was scored with no visual evidence at all');
+    assert(deriveVisuals([{ sensor: 'qa-art.js', ok: null }]) === null,
+      'an unavailable judge was read as evidence about the pictures');
+    return 'derived from qa-art and qa-frames, or excluded';
+  });
+
   check('the prompt asks for exactly the fields the schema accepts', () => {
     for (const k of qaStage.SCHEMA.required) {
       assert(promptSrc.includes(`- ${k}:`),
@@ -2319,6 +2545,221 @@ async function llmChecks() {
 //     first attempt's ~$1.50 vanished with no record;
 //   - queue.setStatus was never exported, so approve() and reject() -- the whole
 //     point of a course pausing for a human -- threw TypeError on every call.
+
+async function referenceChecks() {
+  const refs = require('./lib/stages/references');
+  const { validateReferences } = require('./lib/validate-references');
+  const { validateReferenceUrl } = require('./lib/verify-url');
+
+  const ctx = (item, extra) => ({
+    item,
+    state: { spend: { usd: 0, calls: [] } },
+    artifacts: { research: { slo: 'x' }, script: { title: 'A subtopic' } },
+    opts: { dryRun: false },
+    log: () => {},
+    ...(extra || {}),
+  });
+
+  await checkAsync('a lesson that did not ask for references buys no search', async () => {
+    // The guard that keeps this feature free for every course that never wanted
+    // it. If this regresses, every lesson on the platform starts paying for a web
+    // search nobody asked for -- and it would not show up as a failure, only as a
+    // bill.
+    let searched = false;
+    const llm = require('./lib/llm');
+    const real = llm.askWithSearch;
+    llm.askWithSearch = async () => { searched = true; return { text: 'x', searches: 1 }; };
+    try {
+      const out = await refs.run(ctx({ topic: 't' }));
+      assert(!searched, 'it searched for a lesson that never asked');
+      assert(Array.isArray(out.references) && out.references.length === 0, 'returned references anyway');
+      assert(out.skipped === 'not requested', 'did not say why it skipped');
+    } finally {
+      llm.askWithSearch = real;
+    }
+    return 'no search, empty list';
+  });
+
+  await checkAsync('references never fail a lesson, whatever goes wrong', async () => {
+    // The stage sits before produce. A throw here would stop a build that was
+    // about to succeed, over a feature whose absence costs a learner nothing.
+    const llm = require('./lib/llm');
+    const real = llm.askWithSearch;
+    const failures = [
+      new Error('network is down'),
+      new llm.LlmUnavailableError('no credential'),
+    ];
+    try {
+      for (const err of failures) {
+        llm.askWithSearch = async () => { throw err; };
+        const out = await refs.run(ctx({ topic: 't', wantReferences: true }));
+        assert(Array.isArray(out.references), `threw instead of returning on: ${err.message}`);
+        assert(out.references.length === 0, 'invented references out of a failure');
+      }
+    } finally {
+      llm.askWithSearch = real;
+    }
+    return 'every failure returns an empty list';
+  });
+
+  await checkAsync('an answer produced without searching is thrown away', async () => {
+    // The whole feature rests on the URLs having been looked up. A model that
+    // answers from memory returns plausible, well-formed, dead links -- which is
+    // the exact outcome the consumer said would make them keep the toggle off.
+    const llm = require('./lib/llm');
+    const real = llm.askWithSearch;
+    llm.askWithSearch = async () => ({
+      text: 'Some Real Looking Doc\nhttps://example.com/a\ndocs\nBecause it is good.',
+      searches: 0,
+    });
+    try {
+      const out = await refs.run(ctx({ topic: 't', wantReferences: true }));
+      assert(out.references.length === 0, 'kept references from a model that never searched');
+      assert(out.skipped === 'did not search', 'did not record why');
+    } finally {
+      llm.askWithSearch = real;
+    }
+    return 'unsearched answers are discarded';
+  });
+
+  check('a reference that is not the right shape never reaches the network', () => {
+    const { references, dropped } = validateReferences([
+      { title: 'Good', url: 'https://example.com/a', why: 'Worth it.', kind: 'docs' },
+      { title: 'No url', why: 'x', kind: 'docs' },
+      { title: 'No reason', url: 'https://example.com/b', kind: 'docs' },
+      { title: 'Odd kind', url: 'https://example.com/c', why: 'x', kind: 'newsletter' },
+      { title: 'Dupe', url: 'https://example.com/a/', why: 'x', kind: 'docs' },
+      'not an object',
+    ]);
+    assert(references.length === 2, `kept ${references.length}, expected 2`);
+    assert(references[1].kind === 'article', 'an unknown kind was not mapped onto a known one');
+    assert(dropped.some((d) => d.why === 'duplicate url'), 'the duplicate url survived');
+    return '2 kept, unknown kind mapped, duplicate dropped';
+  });
+
+  check('a URL we would be unsafe to fetch is refused before any request', () => {
+    // These are attacker-chosen strings: they come out of a model, and we fetch
+    // them from our own server. 169.254.169.254 is the cloud metadata address.
+    const unsafe = [
+      'http://example.com/x',
+      'https://user:pw@example.com/',
+      'https://example.com:8080/x',
+      'https://127.0.0.1/x',
+      'https://169.254.169.254/latest/meta-data/',
+      'https://10.0.0.5/internal',
+      'nonsense',
+    ];
+    for (const u of unsafe) {
+      assert(!validateReferenceUrl(u).ok, `would have fetched ${u}`);
+    }
+    assert(validateReferenceUrl('https://example.com/ok').ok, 'refused an ordinary https URL');
+    return `${unsafe.length} refused, a normal URL allowed`;
+  });
+
+  check('the references stage cannot block or fail a run', () => {
+    // maxAttempts 1 and no BlockedError anywhere: a retry would buy a second
+    // search for the same answer, and a block would park a lesson for a person
+    // over a reading list.
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'references.js'), 'utf8');
+    assert(/maxAttempts:\s*1/.test(src), 'references retries, and a retry re-buys the search');
+    assert(!/BlockedError|RejectedError|RedraftError/.test(src), 'references can stop a run');
+    const spine = fs.readFileSync(path.join(__dirname, 'lib', 'spine.js'), 'utf8');
+    assert(/'gate', 'references', 'produce'/.test(spine),
+      'references is not between the gate and produce');
+    return 'one attempt, no control-flow errors, placed before the money';
+  });
+}
+
+function contractChecks() {
+  check('every blockedBy a stage can throw is in the published set', () => {
+    // This drifted for months in three directions at once: the comment on
+    // BlockedError named six values, the API description named seven, and the code
+    // threw nine. The consumer downstream read all three, concluded there was no
+    // enum, and stopped matching on the field -- so the machine-readable half of a
+    // block was dead in the only place it mattered. A comment cannot be tested;
+    // this can.
+    const { BLOCKED_BY_VALUES } = require('./lib/spine-errors');
+    const known = new Set(BLOCKED_BY_VALUES);
+
+    const roots = [path.join(__dirname, 'lib'), path.join(PATHS_REPO, 'server', 'lib')];
+    const files = [];
+    const walk = (d) => {
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        const p = path.join(d, e.name);
+        if (e.isDirectory()) walk(p);
+        else if (e.name.endsWith('.js')) files.push(p);
+      }
+    };
+    for (const r of roots) walk(r);
+
+    const found = new Set();
+    for (const p of files) {
+      const src = fs.readFileSync(p, 'utf8');
+      for (const m of src.matchAll(/\bcode:\s*'([a-z-]+)'/g)) found.add(m[1]);
+      for (const m of src.matchAll(/blockedBy:\s*'([a-z-]+)'/g)) found.add(m[1]);
+    }
+    assert(found.size > 0, 'found no blockedBy codes at all -- the scan is broken, not the code');
+
+    const unpublished = [...found].filter((c) => !known.has(c));
+    assert(!unpublished.length,
+      `thrown but not in BLOCKED_BY: ${unpublished.join(', ')} -- add them to spine-errors.js`);
+
+    // And the other direction: a value nobody can reach is a promise we cannot keep.
+    const unreachable = BLOCKED_BY_VALUES.filter((v) => !found.has(v));
+    assert(!unreachable.length, `published but never thrown: ${unreachable.join(', ')}`);
+    return `${BLOCKED_BY_VALUES.length} values, all thrown and all published`;
+  });
+
+  check('nothing defaults a block to a bare string any more', () => {
+    // Three files independently wrote `|| 'review'`. Three literals is how a closed
+    // set stops being closed.
+    const srcs = [
+      path.join(__dirname, 'lib', 'queue.js'),
+      path.join(PATHS_REPO, 'server', 'lib', 'api.js'),
+      path.join(PATHS_REPO, 'server', 'lib', 'course-worker.js'),
+    ].map((p) => fs.readFileSync(p, 'utf8'));
+    for (const src of srcs) {
+      assert(!/blockedBy:\s*\|\|\s*'review'|blockedBy:\s*[\w.]+\s*\|\|\s*'review'/.test(src),
+        "a literal review default survives; use DEFAULT_BLOCKED_BY");
+    }
+    return 'all three defaults name the constant';
+  });
+
+  check('a settled lesson says what its money was spent on, not just how much', () => {
+    // The consumer was reading spendUsd/spendUsdTotal as a media/model split. They
+    // are this-attempt and all-attempts; a lesson that failed once and succeeded on
+    // retry reports a bigger total for that reason alone. The real split was already
+    // recorded on every call and thrown away at the queue boundary.
+    const queue = require('./lib/queue');
+    const fields = queue.spendFields('nonexistent/item', { usd: 1.5, media: 1.2, model: 0.3 });
+    assert(fields.spendUsd === 1.5, 'total lost');
+    assert(fields.spendMediaUsd === 1.2, 'media lost');
+    assert(fields.spendModelUsd === 0.3, 'model lost');
+    assert(Math.abs((fields.spendMediaUsd + fields.spendModelUsd) - fields.spendUsd) < 0.0001,
+      'the split does not reconcile to the total');
+
+    // A bare number still settles, because old events replay through the fold and
+    // must not start claiming their whole cost was media.
+    const legacy = queue.spendFields('nonexistent/item', 0.9);
+    assert(legacy.spendUsd === 0.9, 'a plain number no longer settles');
+    assert(!('spendMediaUsd' in legacy), 'a plain number invented a media figure');
+    return 'breakdown reconciles, and a bare number is still accepted';
+  });
+
+  check('a course carries its running scenario into every lesson', () => {
+    // The planner produced protagonist_scenario and /courses/build read only the
+    // per-lesson fields, so it never reached a run: a "course" was videos sharing a
+    // title and nothing else.
+    const src = fs.readFileSync(path.join(PATHS_REPO, 'server', 'lib', 'api.js'), 'utf8');
+    assert(/protagonist_scenario/.test(src), '/courses/build still drops the scenario');
+    assert(/Running scenario for this course/.test(src), 'the scenario is not written into notes');
+    const tagFirst = src.indexOf('`[${courseId}] ${l.brief}`');
+    const scenarioAt = src.indexOf('Running scenario for this course');
+    assert(tagFirst > 0 && tagFirst < scenarioAt,
+      'the [courseId] tag must stay first in notes -- membership is a substring match');
+    return 'scenario rides in notes, behind the course tag';
+  });
+}
 
 async function courseChecks() {
   console.log('');
@@ -2605,6 +3046,8 @@ async function courseChecks() {
   await integrationChecks();
   await redraftChecks();
   namingChecks();
+  contractChecks();
+  await referenceChecks();
   await courseChecks();
 
   console.log(`\n${'-'.repeat(64)}`);

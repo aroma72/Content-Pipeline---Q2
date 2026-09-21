@@ -46,6 +46,22 @@ const { BlockedError, RejectedError, RedraftError } = require('./spine-errors');
 // point the first two had not, and each one re-ran the writer, the gate and a
 // slice of produce. After this the reviewer accepts with a warning rather than
 // ending the run -- see the lenient pass below.
+// A ceiling on the WALL CLOCK of a whole run, not of any one stage.
+//
+// Every stage already has its own timeout, and none of them stopped this: measured
+// across 34 real runs, 17 failed ones burned 23.4 hours between them and the worst
+// single run ran 19.4 HOURS before failing. Per-stage timeouts cannot see that,
+// because a redraft loop restarts the clock on every stage it rewinds to -- six
+// redraft rounds of a 90-minute render is nine hours nobody authorised.
+//
+// Deliberately BLOCKED, not failed: at this point art and voice are usually bought,
+// so a person should decide, and `blocked` is the state that says so. Nineteen hours
+// is not a slow build, it is an incident, and it should reach someone while the
+// working directory still exists.
+const MAX_RUN_MINUTES = Number(process.env.PIPELINE_MAX_RUN_MINUTES) > 0
+  ? Number(process.env.PIPELINE_MAX_RUN_MINUTES)
+  : 180;
+
 const MAX_REDRAFTS = 2;
 
 // And a ceiling across all of them, so two reviewers cannot hand the same script
@@ -64,13 +80,17 @@ const RETRY_BACKOFF_MS = [5000, 15000, 30000];
  *   }
  * `output` is persisted to state.artifacts[name] and passed to later stages.
  */
-const STAGE_ORDER = ['research', 'script', 'gate', 'produce', 'qa', 'review', 'upload', 'nazim'];
+const STAGE_ORDER = ['research', 'script', 'gate', 'references', 'produce', 'qa', 'review', 'upload', 'nazim'];
 
 function loadStages(overrides = {}) {
   const stages = {
     research: require('./stages/research'),
     script:   require('./stages/script'),
     gate:     require('./stages/gate'),
+    // After the gate so it sees the subtopic the script settled on, and before
+    // produce so a lesson nobody asked references for pays nothing for them.
+    // Fail-soft: it cannot stop a build.
+    references: require('./stages/references'),
     produce:  require('./stages/produce'),
     qa:       require('./stages/qa'),
     // Between QA and upload: a person watches it before it reaches YouTube.
@@ -106,6 +126,20 @@ function loadStages(overrides = {}) {
  * The queue is a convenience index; the run state is the record of truth. So a
  * bookkeeping failure is logged and stepped over, never propagated.
  */
+// What this run has spent so far, for the queue event that settles it. A course's
+// cost exists nowhere else -- see queue.spendFields.
+//
+// Broken down as well as totalled. The split already exists on every recorded call
+// (state.recordSpend tags each one media or model) and is already written to the run
+// log, but it died here: this returned one scalar, so a caller reconciling a lesson
+// could see what it cost and never what it was spent ON. Returned as an object so
+// the seven settle sites below keep passing one value.
+const spentSoFar = (st) => ({
+  usd: (st.spend && Number(st.spend.usd)) || 0,
+  media: st.spend ? state.spendOfKind(st, 'media') : 0,
+  model: st.spend ? state.spendOfKind(st, 'model') : 0,
+});
+
 function settleQueue(log, fn, what, id) {
   try {
     fn();
@@ -193,6 +227,35 @@ async function execute(item, opts = {}) {
       continue;
     }
 
+    // Checked between stages rather than inside one: interrupting a paid call
+    // mid-flight would spend the money and lose the artefact, which is the outcome
+    // this is here to prevent. The next stage simply never starts.
+    const runMinutes = (Date.now() - new Date(st.startedAt).getTime()) / 60000;
+    if (runMinutes > MAX_RUN_MINUTES) {
+      const err = new BlockedError(
+        `This run has been going for ${Math.round(runMinutes)} minutes, past the `
+        + `${MAX_RUN_MINUTES}-minute ceiling, and was about to start '${name}'. Stopped for a `
+        + 'person rather than left running. Nothing already built has been discarded.',
+        {
+          blocker: 'run exceeded its time ceiling',
+          // Its own code, not the default 'review': a caller with one Approve button
+          // must not offer to approve a video that was never finished.
+          code: 'time-ceiling',
+          details: { runMinutes: Math.round(runMinutes), nextStage: name },
+        }
+      );
+      state.recordIntervention(st, {
+        stage: name,
+        kind: 'run_time_ceiling',
+        detail: `${Math.round(runMinutes)} min elapsed (ceiling ${MAX_RUN_MINUTES}); stopped before '${name}'.`,
+      });
+      log.always(name, `BLOCKED: ${err.message}`);
+      state.finish(st, state.STATUS.BLOCKED);
+      settleQueue(log, () => queue.block(item.id, st.runId, err.message, err.code, spentSoFar(st)),
+        'block', item.id);
+      return st;
+    }
+
     // Resume: skip stages already completed in a previous attempt.
     const prior = st.stages[name];
     if (prior && prior.status === state.STATUS.DONE) {
@@ -248,7 +311,7 @@ async function execute(item, opts = {}) {
           log.always(name, `BLOCKED: ${err.message}`);
           state.finish(st, state.STATUS.BLOCKED);
           settleQueue(log,
-            () => queue.block(item.id, st.runId, err.message, err.code),
+            () => queue.block(item.id, st.runId, err.message, err.code, spentSoFar(st)),
             'block', item.id);
           return st;
         }
@@ -294,7 +357,7 @@ async function execute(item, opts = {}) {
             recordFailure(st, name, giveUp);
             log.always(name, `REJECTED: ${spent}: ${err.message}`);
             state.finish(st, state.STATUS.FAILED);
-            settleQueue(log, () => queue.fail(item.id, st.runId, giveUp.message), 'fail', item.id);
+            settleQueue(log, () => queue.fail(item.id, st.runId, giveUp.message, spentSoFar(st)), 'fail', item.id);
             return st;
           }
 
@@ -363,7 +426,7 @@ async function execute(item, opts = {}) {
           recordFailure(st, name, err);
           log.always(name, `REJECTED: ${err.message}`);
           state.finish(st, state.STATUS.FAILED);
-          settleQueue(log, () => queue.fail(item.id, st.runId, err.message), 'fail', item.id);
+          settleQueue(log, () => queue.fail(item.id, st.runId, err.message, spentSoFar(st)), 'fail', item.id);
           return st;
         }
 
@@ -380,7 +443,7 @@ async function execute(item, opts = {}) {
     if (!succeeded) {
       recordFailure(st, name, lastErr);
       state.finish(st, state.STATUS.FAILED);
-      settleQueue(log, () => queue.fail(item.id, st.runId, lastErr ? lastErr.message : 'unknown error'), 'fail', item.id);
+      settleQueue(log, () => queue.fail(item.id, st.runId, lastErr ? lastErr.message : 'unknown error', spentSoFar(st)), 'fail', item.id);
       log.always('spine', `FAILED at ${name} after ${maxAttempts} attempt(s)`);
       return st;
     }
@@ -388,13 +451,13 @@ async function execute(item, opts = {}) {
     if (stopAfter && name === stopAfter) {
       log.always('spine', `stopping after '${stopAfter}' as requested`);
       state.finish(st, state.STATUS.DONE);
-      settleQueue(log, () => queue.done(item.id, st.runId, st.artifacts), 'done', item.id);
+      settleQueue(log, () => queue.done(item.id, st.runId, st.artifacts, spentSoFar(st)), 'done', item.id);
       return st;
     }
   }
 
   state.finish(st, state.STATUS.DONE);
-  settleQueue(log, () => queue.done(item.id, st.runId, st.artifacts), 'done', item.id);
+  settleQueue(log, () => queue.done(item.id, st.runId, st.artifacts, spentSoFar(st)), 'done', item.id);
   log.always('spine', 'complete');
   return st;
 }

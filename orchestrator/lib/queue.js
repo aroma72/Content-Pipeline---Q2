@@ -18,6 +18,7 @@
 const path = require('path');
 const fs = require('fs');
 const { PATHS } = require('./paths');
+const { BLOCKED_BY, DEFAULT_BLOCKED_BY, BLOCKED_BY_VALUES } = require('./spine-errors');
 const jsonl = require('./jsonl');
 
 // ── where the queue lives ────────────────────────────────────────────────────
@@ -111,6 +112,9 @@ function enqueue({
   // title and the review log. Omitted values fall back to the series->module map
   // in lib/naming.js; an unmapped series produces a warning, never a guess.
   module: moduleNumber = null, moduleTopic = null,
+  // Whether this lesson should carry external reading. Off unless asked for:
+  // it buys a web search per lesson, and most courses do not want one.
+  wantReferences = false,
 }) {
   if (!topic) throw new Error('enqueue requires a topic');
   if (!series) throw new Error('enqueue requires a series (the explainer-videos subfolder)');
@@ -129,6 +133,7 @@ function enqueue({
     id, topic, series, slug: finalSlug, source, recommendationId, priority, notes,
     module: moduleNumber === null ? null : Number(moduleNumber),
     moduleTopic,
+    wantReferences: Boolean(wantReferences),
     status: ITEM_STATUS.QUEUED,
     enqueuedAt: new Date().toISOString(),
   };
@@ -157,16 +162,68 @@ function setStatus(id, status, extra = {}) {
   return { ...item, ...ev };
 }
 
+/**
+ * What this attempt cost, and what the lesson has cost in total.
+ *
+ * A course creates queue items, never jobs, and the tenant ledger is built from job
+ * records -- so this is the ONLY place a course's spend is durably written. Without
+ * it an LMS holds an authorisation it can never settle: ours held $1.50 against an
+ * instructor for a lesson that really cost $0.598, and could not find that out.
+ *
+ * Both numbers, because they answer different questions. `spendUsd` is this run --
+ * what to reconcile against this runId. `spendUsdTotal` accumulates across retries,
+ * which is what the instructor was actually charged for the lesson; keeping only the
+ * former would silently forget the cost of every failed attempt before it.
+ *
+ * NOTE for anyone reconciling: neither of these is a media/model split. They are
+ * this-attempt and all-attempts. The split is `spendMediaUsd` / `spendModelUsd`,
+ * added here because a consumer was reading the pair above as one -- a lesson that
+ * failed once and succeeded on retry reports a larger total for that reason alone.
+ *
+ * Accepts a plain number as well as the breakdown, because items settled before the
+ * breakdown existed passed one, and an old event replayed through the fold must not
+ * start claiming its whole cost was media.
+ */
+function spendFields(id, spend) {
+  const isBreakdown = spend && typeof spend === 'object';
+  const spendUsd = isBreakdown ? Number(spend.usd) : spend;
+  if (!Number.isFinite(spendUsd)) return {};
+
+  const prior = get(id);
+  const before = (prior && Number(prior.spendUsdTotal)) || 0;
+  const fields = { spendUsd, spendUsdTotal: Number((before + spendUsd).toFixed(4)) };
+  if (!isBreakdown) return fields;
+
+  const media = Number(spend.media);
+  const model = Number(spend.model);
+  if (Number.isFinite(media)) {
+    const mBefore = (prior && Number(prior.spendMediaUsdTotal)) || 0;
+    fields.spendMediaUsd = media;
+    fields.spendMediaUsdTotal = Number((mBefore + media).toFixed(4));
+  }
+  if (Number.isFinite(model)) {
+    const mBefore = (prior && Number(prior.spendModelUsdTotal)) || 0;
+    fields.spendModelUsd = model;
+    fields.spendModelUsdTotal = Number((mBefore + model).toFixed(4));
+  }
+  return fields;
+}
+
 const claim   = (id, runId) => setStatus(id, ITEM_STATUS.CLAIMED, { runId });
-const done    = (id, runId, artifacts) => setStatus(id, ITEM_STATUS.DONE, { runId, artifacts });
-const fail    = (id, runId, error) => setStatus(id, ITEM_STATUS.FAILED, { runId, error: String(error) });
+const done    = (id, runId, artifacts, spendUsd) =>
+  setStatus(id, ITEM_STATUS.DONE, { runId, artifacts, ...spendFields(id, spendUsd) });
+const fail    = (id, runId, error, spendUsd) =>
+  setStatus(id, ITEM_STATUS.FAILED, { runId, error: String(error), ...spendFields(id, spendUsd) });
 // `blockedBy` is the machine-readable half of a block; `reason` is the prose.
 // A caller with one Approve button has to tell "waiting for a person" apart from
 // "a judge flagged the finished video", and the only other signal was a sentence
-// a model wrote. Closed set, defaulted here so an older caller that blocks
-// without one still records the ordinary case rather than nothing.
-const block   = (id, runId, reason, blockedBy) =>
-  setStatus(id, ITEM_STATUS.BLOCKED, { runId, reason, blockedBy: blockedBy || 'review' });
+// a model wrote. The closed set is BLOCKED_BY in spine-errors.js; defaulted here
+// so an older caller that blocks without one still records the ordinary case
+// rather than nothing.
+const block   = (id, runId, reason, blockedBy, spendUsd) =>
+  setStatus(id, ITEM_STATUS.BLOCKED, {
+    runId, reason, blockedBy: blockedBy || DEFAULT_BLOCKED_BY, ...spendFields(id, spendUsd),
+  });
 
 // Send a lesson back to the queue for another attempt.
 //
@@ -188,11 +245,19 @@ const requeue = (id, extra) => setStatus(id, ITEM_STATUS.QUEUED, {
 });
 
 module.exports = {
-  ITEM_STATUS, slugify, currentItems, enqueue, nextQueued, get,
+  ITEM_STATUS,
+  // Re-exported from spine-errors.js, which is where the throwers live. The
+  // server side reads the queue and not the spine, so without this the only way
+  // to name a block was a string literal -- which is how the set drifted.
+  BLOCKED_BY, DEFAULT_BLOCKED_BY, BLOCKED_BY_VALUES,
+  slugify, currentItems, enqueue, nextQueued, get,
   // setStatus is the primitive the named helpers wrap. It is exported because
   // approving a lesson has to carry fields none of them do (reviewApproved,
   // approvedAt) -- course-worker called it for months while it was private, so
   // every approve and reject threw.
   setStatus, claim, done, fail, block, requeue,
+  // Exported so the split it produces can be tested without settling a real
+  // lesson: the media/model breakdown is a published contract now.
+  spendFields,
   queueFile, durability, durableSince, resetPathCache,
 };

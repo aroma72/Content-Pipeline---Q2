@@ -21,7 +21,10 @@ class BlockedError extends Error {
     // of this error that survives to the queue and out through the API, because
     // a caller deciding what to show cannot match on a sentence a model wrote.
     //
-    // review | post-render-check | spend-approval | upload | nazim | interrupted
+    // The closed set is BLOCKED_BY below -- use it rather than a literal, because
+    // this list drifted for months: the prose here named six values, the API
+    // description named seven, and the code threw nine. A consumer downstream
+    // wrote off matching on it entirely for that reason.
     this.code = code || null;
     // Anything the blocker's handler needs to act (a file to post, a score to
     // quote). Named keys passed as siblings are silently dropped by this
@@ -60,4 +63,52 @@ class RedraftError extends Error {
   }
 }
 
-module.exports = { BlockedError, RejectedError, RedraftError };
+/**
+ * Every value `BlockedError.code` can take, and the one a block defaults to.
+ *
+ * It lives here rather than in queue.js because the throwers are the stages and
+ * the spine, which already require this module and do not require the queue. The
+ * queue re-exports it for the server side.
+ *
+ * This is a PUBLISHED contract: it is served on the API index so a caller can pin
+ * a test against it instead of reading our comments. Adding a value means adding
+ * it here first -- test-regressions asserts that every `code:` thrown under
+ * orchestrator/lib is a member of this map.
+ */
+const BLOCKED_BY = {
+  /** A person must watch the video and approve it. The ordinary case. */
+  REVIEW: 'review',
+  /** A sensor on the finished render disagreed with the script. */
+  POST_RENDER_CHECK: 'post-render-check',
+  /** Money is needed and no budget was pre-approved. */
+  SPEND_APPROVAL: 'spend-approval',
+  /** produce could not start: beats.js was missing. */
+  PRODUCE_INPUT: 'produce-input',
+  /** YouTube would not take it -- credentials, consent, API, or quota. */
+  UPLOAD: 'upload',
+  /** The NAZIM content-write hand-off, which is not built. */
+  NAZIM: 'nazim',
+  /** The worker died mid-run; the lesson needs rebuilding, not approving. */
+  INTERRUPTED: 'interrupted',
+  /** The run hit the wall-clock ceiling. */
+  TIME_CEILING: 'time-ceiling',
+  /** QA had nothing assessable to score. */
+  QA_NO_EVIDENCE: 'qa-no-evidence',
+};
+
+/**
+ * What a block records when the thrower did not say why.
+ *
+ * 'review' and not 'unknown': every caller has one Approve button, and the
+ * ordinary meaning of a block is "a person must look". Defaulting to a value
+ * nobody handles would be worse than defaulting to the common case.
+ */
+const DEFAULT_BLOCKED_BY = BLOCKED_BY.REVIEW;
+
+/** Every value, for validation and for serving on the API index. */
+const BLOCKED_BY_VALUES = Object.freeze(Object.values(BLOCKED_BY));
+
+module.exports = {
+  BlockedError, RejectedError, RedraftError,
+  BLOCKED_BY, DEFAULT_BLOCKED_BY, BLOCKED_BY_VALUES,
+};
