@@ -2718,6 +2718,75 @@ function browserChecks() {
     return `${files.length} frame gate(s) can find a browser`;
   });
 
+  check('a course script can put words on an illustration beat', () => {
+    // The defect that blocked every course lesson, and it was NOT a bad gate.
+    // animation/lesson.html draws an `ali`/`scene` beat as art and nothing else
+    // unless the beat carries `cap` or `overlay`. 909 of the 1276 beats in the
+    // shipped library carry a caption -- but the course script SCHEMA had no
+    // `cap` field and additionalProperties:false, so a course video could not
+    // produce one. Every illustration beat rendered wordless, qa-frames refused
+    // it, and the refusal was read as a broken gate for a day.
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'script.js'), 'utf8');
+
+    // Three schema blocks: the writer's, and the redraft patcher's edits +
+    // new_beats. A field added to one and not the others is silently dropped on
+    // any redraft, which is the hardest version of this bug to see.
+    const blocks = src.split(/holdAfter:\s*\{/).length - 1;
+    const caps = src.split(/\n\s+cap:\s*\{/).length - 1;
+    assert(blocks >= 3, `expected 3 beat schema blocks, found ${blocks}`);
+    assert(caps === blocks,
+      `cap is in ${caps} of ${blocks} beat schemas -- a redraft would drop it`);
+
+    // And it must survive being written out. renderBeatsFile is the only thing
+    // that puts a field into beats.js; a field it omits never reaches the
+    // renderer no matter how well the model filled it in.
+    assert(/b\.cap \?/.test(src), 'renderBeatsFile drops cap, so the renderer never sees it');
+
+    const prompt = fs.readFileSync(path.join(PATHS_REPO, 'prompts', 'video_script.txt'), 'utf8');
+    assert(/\bcap\b/.test(prompt), 'the writer prompt never asks for a caption');
+    return `cap in ${caps} schema block(s), serialised, and required by the prompt`;
+  });
+
+  check('the frame gate tells a wordless beat apart from a blank one', () => {
+    // The old rule called any beat with no text "a blank frame". An illustration
+    // beat is not blank, and that wording cost an hour of chasing the wrong fault.
+    // It also could not see the thing it was named for: a broken <img> keeps its
+    // box, so only naturalWidth distinguishes art-that-failed from art-that-drew.
+    const gate = fs.readFileSync(path.join(PATHS_REPO, '.claude', 'skills',
+      'creating-explainer-videos', 'templates', 'qa-frames.js'), 'utf8');
+
+    assert(/naturalWidth/.test(gate), 'the gate still cannot detect an image that failed to load');
+    assert(!/renders NO visible text — a blank frame/.test(gate),
+      'the misleading "blank frame" wording is back');
+    assert(/draws art but NO words/.test(gate), 'a wordless illustration beat is no longer named');
+
+    // The image wait is load-bearing: layers are built from window.__DATA AFTER
+    // `load` fires, so without it a still-loading image reads as a broken one and
+    // the new check becomes the next false alarm.
+    assert(/document\.images/.test(gate) && /onerror/.test(gate),
+      'the gate measures images without waiting for them to load');
+
+    // Every copy in a video folder must match, or a re-render of an old video
+    // runs a gate nobody has fixed.
+    const stale = [];
+    const vids = path.join(PATHS_REPO, 'explainer-videos');
+    const walk = (d, depth) => {
+      if (depth > 3 || !fs.existsSync(d)) return;
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        if (!e.isDirectory() || e.name === 'node_modules') continue;
+        const p = path.join(d, e.name);
+        const g = path.join(p, 'qa-frames.js');
+        if (fs.existsSync(g) && !/naturalWidth/.test(fs.readFileSync(g, 'utf8'))) {
+          stale.push(path.relative(PATHS_REPO, g).split(path.sep).join('/'));
+        }
+        walk(p, depth + 1);
+      }
+    };
+    walk(vids, 1);
+    assert(!stale.length, `qa-frames copies not synced from the template: ${stale.join(', ')}`);
+    return 'wordless vs blank separated, broken images caught, all copies synced';
+  });
+
   check('a gate that could not RUN is never reported as a finding', () => {
     // The whole reason this was invisible for days. A finding parks the lesson for
     // a person; nobody can rule on a missing binary. Tested with the exact stderr

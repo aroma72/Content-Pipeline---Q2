@@ -35,6 +35,15 @@ const SCHEMA = {
           // Seconds of extra silence AFTER this beat. tts-lesson.js adds it to the
           // clip's trailing pause -- this is what gives the viewer time to answer
           // the quiz question before the next beat reveals it.
+          // A one-line caption drawn under the illustration. Required in practice
+          // on any beat that draws art and nothing else, because the renderer
+          // (animation/lesson.html) puts NO text on an `ali` or `scene` beat
+          // otherwise -- and 909 of the 1276 beats in the shipped corpus carry
+          // one. The course script schema omitted it, so every course video
+          // rendered illustration beats with nothing on screen and qa-frames
+          // correctly refused them. A learner watching with the sound off got a
+          // picture and no point.
+          cap: { type: 'string', description: 'short on-screen caption, <= 8 words; REQUIRED on ali/scene beats that have no overlay' },
           holdAfter: { type: 'number', description: 'seconds of silence after this beat; use 2 on the quiz beat' },
           // Real image-to-video motion on this beat. Lives ON the beat, never in a
           // per-video map: beat ids repeat across videos, so a copied map animates
@@ -111,6 +120,10 @@ function renderBeatsFile(script) {
       b.info ? `    info: ${JSON.stringify(b.info)}` : null,
       b.quiz ? `    quiz: ${JSON.stringify(b.quiz)}` : null,
       b.overlay ? `    overlay: ${JSON.stringify(b.overlay)}` : null,
+      // Same reason as holdAfter: this function is the ONLY thing that puts a
+      // field into beats.js, so a caption the model wrote is lost here unless it
+      // is written out -- and the renderer draws captions from beats.js alone.
+      b.cap ? `    cap: ${JSON.stringify(b.cap)}` : null,
       // Must be written out, or the quiz beat's thinking pause is silently lost:
       // tts-lesson.js reads holdAfter off the beat in beats.js, and this function
       // is the only thing that puts it there.
@@ -149,6 +162,15 @@ const EDIT_SCHEMA = {
           // Seconds of extra silence AFTER this beat. tts-lesson.js adds it to the
           // clip's trailing pause -- this is what gives the viewer time to answer
           // the quiz question before the next beat reveals it.
+          // A one-line caption drawn under the illustration. Required in practice
+          // on any beat that draws art and nothing else, because the renderer
+          // (animation/lesson.html) puts NO text on an `ali` or `scene` beat
+          // otherwise -- and 909 of the 1276 beats in the shipped corpus carry
+          // one. The course script schema omitted it, so every course video
+          // rendered illustration beats with nothing on screen and qa-frames
+          // correctly refused them. A learner watching with the sound off got a
+          // picture and no point.
+          cap: { type: 'string', description: 'short on-screen caption, <= 8 words; REQUIRED on ali/scene beats that have no overlay' },
           holdAfter: { type: 'number', description: 'seconds of silence after this beat; use 2 on the quiz beat' },
           // Real image-to-video motion on this beat. Lives ON the beat, never in a
           // per-video map: beat ids repeat across videos, so a copied map animates
@@ -203,6 +225,15 @@ const EDIT_SCHEMA = {
           // Seconds of extra silence AFTER this beat. tts-lesson.js adds it to the
           // clip's trailing pause -- this is what gives the viewer time to answer
           // the quiz question before the next beat reveals it.
+          // A one-line caption drawn under the illustration. Required in practice
+          // on any beat that draws art and nothing else, because the renderer
+          // (animation/lesson.html) puts NO text on an `ali` or `scene` beat
+          // otherwise -- and 909 of the 1276 beats in the shipped corpus carry
+          // one. The course script schema omitted it, so every course video
+          // rendered illustration beats with nothing on screen and qa-frames
+          // correctly refused them. A learner watching with the sound off got a
+          // picture and no point.
+          cap: { type: 'string', description: 'short on-screen caption, <= 8 words; REQUIRED on ali/scene beats that have no overlay' },
           holdAfter: { type: 'number', description: 'seconds of silence after this beat; use 2 on the quiz beat' },
           // Real image-to-video motion on this beat. Lives ON the beat, never in a
           // per-video map: beat ids repeat across videos, so a copied map animates

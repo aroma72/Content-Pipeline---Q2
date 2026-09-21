@@ -12,6 +12,11 @@ Output a JSON object with:
   * art: the image prompt — REQUIRED for "ali" and "scene", omit for "info"
   * info: REQUIRED for "info" beats — {tpl, data}. See the template list below.
   * overlay: optional short on-screen text, only on "ali"/"scene" beats that name a thing
+  * cap: a short caption, <= 8 words — REQUIRED on every "ali"/"scene" beat that has
+    no `overlay`. The renderer draws NOTHING but the illustration on those beats, so
+    without a caption the frame carries no words at all and a learner watching with
+    the sound off gets a picture and no point. 909 of the 1276 beats in the shipped
+    library carry one; write it as the sentence's point, not a label.
 
 An "info" beat WITHOUT a valid `info.tpl` renders as a completely BLANK frame. An
 `overlay` alone does not render anything. Every info beat must pick one of these

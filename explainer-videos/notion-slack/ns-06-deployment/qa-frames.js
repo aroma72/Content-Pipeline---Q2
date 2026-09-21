@@ -82,7 +82,7 @@ catch { console.log('[qa-frames] ⏭  puppeteer not installed here.'); process.e
   // --disable-dev-shm-usage because a container's /dev/shm is small and Chrome
   // crashes writing screenshots into it. Puppeteer's own Docker guidance.
   const browser = await puppeteer.launch({
-    headless: 'new',
+    headless: true,
     args: ['--no-sandbox', '--disable-dev-shm-usage'],
     ...(process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROME_PATH
       ? { executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROME_PATH }
@@ -95,6 +95,15 @@ catch { console.log('[qa-frames] ⏭  puppeteer not installed here.'); process.e
   await page.evaluateOnNewDocument((data) => { window.__DATA = data; }, { beats, durations });
   await page.goto('file:///' + htmlPath.split(path.sep).join('/'), { waitUntil: 'load' });
   await page.waitForFunction(() => window.ready === true, { timeout: 30000 });
+
+  // Wait for the layers' images before measuring anything about them.
+  // `waitUntil: 'load'` above fires BEFORE the renderer builds the layers from
+  // window.__DATA, so every <img> is created after it and none of them are
+  // awaited by it. Measuring here without this would report a still-loading
+  // image as a missing one -- a false alarm indistinguishable from the real
+  // fault, which is the failure mode this gate exists to avoid.
+  await page.evaluate(() => Promise.all([...document.images].map(
+    (i) => (i.complete ? null : new Promise((r) => { i.onload = r; i.onerror = r; })))));
   const built = await page.evaluate(() => document.querySelectorAll('.layer').length);
   if (!built) {
     console.log('[qa-frames] ❌ FAIL — the renderer built 0 layers. It never received the beats.');
@@ -122,6 +131,13 @@ catch { console.log('[qa-frames] ⏭  puppeteer not installed here.'); process.e
       const STRUCTURED = '.win, img, svg, canvas, .cellgrid, .bar-track, .twocard, .fourparts, '
         + '.checks, .bignum, .tally, .bars, .gridwrap, .screen, .promptcard, .quote, .spectrum, '
         + '.gauge, .answers, .piles, .scoresheet, .browser, .dial, .mini-card, .part, .check';
+      // Whether the pictures actually arrived. An <img> whose src 404s still sits
+      // in the DOM with a box, so element counts and selectors cannot tell a drawn
+      // frame from an empty one -- naturalWidth is the only thing that can. This
+      // is what makes rule 3 real: art that failed to generate now fails the gate
+      // instead of shipping as a silent black rectangle.
+      const imgs = [...layer.querySelectorAll('img')];
+      const brokenImgs = imgs.filter((im) => im.complete && !im.naturalWidth).length;
       const hasWindow = Boolean(layer.querySelector(STRUCTURED));
       const sizes = texts.map((t) => t.size).filter((n) => n > 0);
       const rects = [...layer.querySelectorAll('*')].filter((el) => {
@@ -131,7 +147,7 @@ catch { console.log('[qa-frames] ⏭  puppeteer not installed here.'); process.e
         return r.width > 2 && r.height > 2 && (r.left < -8 || r.top < -8 || r.right > 1928 || r.bottom > 1088);
       }).length;
       out.push({
-        i, hasWindow, count: texts.length,
+        i, hasWindow, count: texts.length, imgs: imgs.length, brokenImgs,
         min: sizes.length ? Math.min(...sizes) : 0,
         max: sizes.length ? Math.max(...sizes) : 0,
         smallest: texts.slice().sort((a, b) => a.size - b.size)[0] || null,
@@ -150,7 +166,31 @@ catch { console.log('[qa-frames] ⏭  puppeteer not installed here.'); process.e
     const b = beats[f.i];
     if (!b) return;
     const id = `beat ${b.id}`;
-    if (!f.count) { problems.push(`${id}: renders NO visible text — a blank frame`); return; }
+    // Rule 3, in two parts, because the old single check conflated them and the
+    // message sent a reader after the wrong thing for an hour.
+    //
+    // A layer with no text but a picture is not blank -- that is an illustration
+    // beat, and 909 of the 1276 beats in the shipped library are drawn that way.
+    // What it must NOT be is wordless: the renderer puts nothing on an ali/scene
+    // beat but its art, so a beat with neither a caption nor an overlay leaves a
+    // learner watching with the sound off a picture and no point. Say that, and
+    // say which field is missing, instead of calling a drawn frame blank.
+    if (!f.count) {
+      if (f.hasWindow || f.imgs) {
+        problems.push(`${id}: draws art but NO words — add a \`cap\` (or an \`overlay\`). `
+          + 'The renderer puts no text on an ali/scene beat by itself.');
+      } else {
+        problems.push(`${id}: renders nothing at all — no text and no visual.`);
+      }
+      return;
+    }
+    // A picture that did not load is the genuinely blank frame this gate is named
+    // for, and until now it could not see one: a broken <img> keeps its box, so
+    // only naturalWidth tells the difference.
+    if (f.brokenImgs) {
+      problems.push(`${id}: ${f.brokenImgs} image(s) failed to load — the frame is `
+        + 'missing its art. Usually art generation failed, not a layout problem.');
+    }
     if (f.min && f.min < MIN_ANY) {
       problems.push(`${id}: text at ${f.min.toFixed(0)}px — below the ${MIN_ANY}px floor `
         + `("${f.smallest ? f.smallest.text : ''}"). Usually a missing stylesheet, not a size choice.`);

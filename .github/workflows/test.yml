@@ -114,6 +114,36 @@ jobs:
         # Runs without a .env: the tests that need one skip rather than fail.
         run: npm test
 
+  pipeline-gates:
+    name: Render gates, in the deploy image
+    runs-on: ubuntu-latest
+    # The job that would have saved $2.81. The render gates can only be exercised
+    # against a real video in a real container, and until this existed the only
+    # way to run one was to BUY a lesson: each paid render surfaced exactly one
+    # failure and stopped. Worse, the environment that broke was never the one
+    # under test -- a developer laptop has Chrome, so a missing browser in the
+    # container stayed invisible until production had already spent the money.
+    #
+    # Here the image is the deploy image, the videos are real committed ones, and
+    # the art is flat colour written by scripts/make-fixture-assets.js, so a run
+    # costs nothing and exercises every gate against every fixture.
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          # Puppeteer 25 needs >= 22.12, and the deploy image is node:22. Pinning
+          # 20 here would test a runtime production does not use -- which is the
+          # same class of mistake as testing on a laptop.
+          node-version: '22'
+
+      - name: Run the gates against the fixture corpus
+        # Two shapes on purpose: one illustration-led, one text-heavy. A rule
+        # written against one and never run against the other is exactly the
+        # defect this pack was built to catch.
+        run: bash scripts/pipeline-harness.sh
+
   lint:
     name: Code Quality Checks
     runs-on: ubuntu-latest
