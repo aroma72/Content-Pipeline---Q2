@@ -91,7 +91,11 @@ async function buildOne(item) {
       // Approval rides on the queue item, recorded by approve(). Absent it, the
       // review stage blocks -- which is the pause this worker is built around.
       reviewApproved: item.reviewApproved || false,
-      stopAfter: config.pipeline.stopAfter || null,
+      // Its own stop stage, not the global default. `config.pipeline.stopAfter` is
+      // never empty -- it defaults to 'qa' -- so a `||` fallback here would never
+      // fire, and 'qa' is one stage before the review that this worker is built
+      // around. See config.js `courseStopAfter`.
+      stopAfter: config.pipeline.courseStopAfter,
       dryRun: config.pipeline.dryRun,
       quiet: true,
     });

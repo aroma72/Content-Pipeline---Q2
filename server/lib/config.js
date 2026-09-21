@@ -8,7 +8,17 @@
  * reports its own readiness instead, and /health shows what is live.
  */
 
+/**
+ * A number from the environment, or the fallback.
+ *
+ * The blank check is not defensive tidying. `Number('')` is 0, and 0 is finite, so a
+ * variable set to an empty string in Railway -- which looks configured in the
+ * dashboard -- used to read as a deliberate zero. For PIPELINE_BUDGET_USD that is the
+ * difference between "nobody set a budget" and "somebody authorised nothing", and the
+ * second silently blocks every course lesson at produce.
+ */
 const num = (v, fallback) => {
+  if (v === undefined || v === null || String(v).trim() === '') return fallback;
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
 };
@@ -45,9 +55,29 @@ const config = {
     defaultSeries: process.env.DEFAULT_SERIES || '',
     // produce refuses to spend on art and TTS without a pre-authorised budget.
     budgetUsd: num(process.env.PIPELINE_BUDGET_USD, 0),
-    // upload needs a one-time Google OAuth grant that a fresh container does not
-    // have, so the chain stops at qa and the video is delivered as a file.
+    // Where the chain stops when nobody says otherwise. 'qa' is the cautious
+    // default for a container that has never been given the one-time Google OAuth
+    // grant: the video is delivered as a file rather than failing at upload.
+    // Production sets this to 'upload' and HAS that grant, so the default is the
+    // fallback, not the live behaviour -- check the variable before reasoning from
+    // this line.
     stopAfter: process.env.PIPELINE_STOP_AFTER || 'qa',
+    // Courses resolve their own stop stage instead of inheriting the line above.
+    //
+    // Not a preference -- a fuse. The spine settles reaching stopAfter as `done`,
+    // and 'qa' is one stage BEFORE 'review'. Any deployment that leaves the line
+    // above at its default therefore builds a course lesson, pays for it, marks it
+    // done, and never pauses for a person: awaitingApproval stays empty and the
+    // approve/reject routes have nothing to act on. Production was not in that
+    // state, but it was one variable away from it, and the LMS read the default and
+    // reasonably concluded it was.
+    //
+    // 'upload' is what production already ran courses at, and it keeps publishing
+    // working -- 'review' comes first in STAGE_ORDER regardless, so the lesson still
+    // pauses for approval and only then goes up, unlisted and flagged for a human.
+    // Deliberately NOT chained off PIPELINE_STOP_AFTER: a future change to the
+    // single-video path must not be able to drag courses back behind 'review'.
+    courseStopAfter: process.env.PIPELINE_COURSE_STOP_AFTER || 'upload',
     dryRun: process.env.PIPELINE_DRY_RUN === '1',
     // A video costing more than budgetUsd is not refused outright — it stops and
     // asks. Aroma's rule: never exceed the ceiling without explicit permission,

@@ -172,7 +172,9 @@ function build() {
           description: 'Queues every lesson in a plan as a video. Refuses without '
             + '`confirmLessons` matching the plan, because this spends real money.' },
         { method: 'GET', path: '/api/v1/courses/:courseId', auth: true,
-          description: 'Build progress, and which lesson is waiting for approval.' },
+          description: 'Build progress, and which lesson is waiting for approval. A lesson '
+            + 'carries `runId`, a `reason` while blocked and an `error` when it failed, so a '
+            + 'consumer can say why rather than only that.' },
         { method: 'POST', path: '/api/v1/courses/:courseId/lessons/:lessonId/approve',
           auth: true,
           description: 'Publish a built lesson and release the next one. Courses build '
@@ -433,7 +435,24 @@ function build() {
     const tag = `[${req.params.courseId}]`;
     const items = queue.currentItems()
       .filter((i) => (i.notes || '').includes(tag))
-      .map((i) => ({ id: i.id, topic: i.topic, status: i.status, module: i.module }));
+      .map((i) => ({
+        id: i.id, topic: i.topic, status: i.status, module: i.module,
+        // The run that owns this lesson. It is the only handle that ties a lesson
+        // to what it cost, and without it a course cannot be reconciled against
+        // any spend figure at all.
+        runId: i.runId,
+        // queue.fail() records `error` and queue.block() records `reason` in the
+        // same event that sets the status -- this projection was simply dropping
+        // them, so a failed lesson said only "failed" and nobody could tell an
+        // instructor anything, or whether re-running was sensible.
+        //
+        // Gated on the status each belongs to, because currentItems() is a shallow
+        // fold that never deletes a key: an `error` from a first attempt survives a
+        // later `done`, and reporting it would describe a lesson by a failure it has
+        // already moved past.
+        ...(i.status === 'failed' && i.error ? { error: i.error } : {}),
+        ...(i.status === 'blocked' && i.reason ? { reason: i.reason } : {}),
+      }));
     if (!items.length) {
       // Report durability; do not assert the worst case. This used to tell every
       // caller the queue was not durable and point at a handoff they had never
@@ -462,7 +481,11 @@ function build() {
       lessons: items.length,
       done: by('done'),
       failed: by('failed'),
-      inProgress: items.length - by('done') - by('failed'),
+      // Counted separately rather than folded into inProgress: a blocked lesson is
+      // not work in flight, it is work waiting on a person, and the two need
+      // different words in front of an instructor.
+      blocked: by('blocked'),
+      inProgress: items.length - by('done') - by('failed') - by('blocked'),
       // What the machine is doing this second, so a stalled build is visible
       // rather than looking identical to a slow one.
       // One lesson is built at a time and then waits. This is the field the UI

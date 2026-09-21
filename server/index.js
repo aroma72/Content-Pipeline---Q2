@@ -43,6 +43,22 @@ const server = app.listen(config.port, () => {
   if (!r.model) console.warn(`[server] MODEL UNAVAILABLE — ${r.modelNote}`);
   if (!r.gemini) console.warn('[server] no GEMINI_API_KEY / GOOGLE_STUDIO_API_KEY — no art or voiceover');
   if (!r.budgetAuthorised) console.warn('[server] PIPELINE_BUDGET_USD is 0 — every request will refuse to spend');
+
+  // A course that stops before 'review' can never pause for a person, so the
+  // approve/reject routes are dead and nothing is ever published -- while every
+  // lesson still reports `done`. That is a silent misconfiguration, and it was
+  // the live one until 2026-09-20. Say it at boot rather than let an LMS discover
+  // it by paying for a lesson nobody ever sees.
+  const { STAGE_ORDER } = require('../orchestrator/lib/spine');
+  const courseStop = config.pipeline.courseStopAfter;
+  const stopIdx = STAGE_ORDER.indexOf(courseStop);
+  if (stopIdx === -1) {
+    console.warn(`[server] PIPELINE_COURSE_STOP_AFTER='${courseStop}' is not a stage `
+      + `(${STAGE_ORDER.join(', ')}) — no stage will match it and courses will run the whole chain`);
+  } else if (stopIdx < STAGE_ORDER.indexOf('review')) {
+    console.warn(`[server] PIPELINE_COURSE_STOP_AFTER='${courseStop}' stops before 'review' — `
+      + 'course lessons will be marked done without ever pausing for approval, and never published');
+  }
   if (r.dryRun) console.log('[server] DRY RUN is on — the chain runs but nothing is spent or rendered');
 
   // Say what the job store actually is, at boot, rather than letting a lost job

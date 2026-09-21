@@ -540,6 +540,48 @@ async function bridgeChecks() {
       return `404 with durability: ${r.json.durability}`;
     }); });
 
+  // The projection kept only id/topic/status/module, so queue.fail() wrote the
+  // reason durably and this endpoint threw it away one step later: a lesson that
+  // failed said only "failed", and nobody could tell an instructor anything or
+  // judge whether re-running was sensible. The LMS asked for this by name.
+  await check('a course says WHY a lesson failed or is waiting, not just that it did',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      const queue = require(path.join(__dirname, 'lib', 'queue'));
+      require(path.join(__dirname, '..', 'server', 'lib', 'job-store')).reset();
+      queue.resetPathCache();
+      const tag = '[course-test1]';
+      for (const slug of ['broke', 'waiting', 'retried']) {
+        queue.enqueue({ topic: slug, series: 'testing', slug, source: 'course-builder', notes: `${tag} brief` });
+      }
+      queue.fail('testing/broke', 'run-a', 'QA scored 3.8, below the 4.9 threshold');
+      queue.block('testing/waiting', 'run-b', 'awaiting human review');
+      // Failed once, then rebuilt and finished. currentItems() is a shallow fold
+      // that never deletes a key, so the first attempt's `error` is still on the
+      // item -- reporting it would describe a lesson by a failure it moved past.
+      queue.fail('testing/retried', 'run-c', 'a transient render crash');
+      queue.done('testing/retried', 'run-d', {});
+
+      const r = await req(port, { path: '/api/v1/courses/course-test1', headers: { authorization: `Bearer ${LMS_TOKEN}` } });
+      assert(r.status === 200, `expected 200, got ${r.status} ${r.text}`);
+      const byId = Object.fromEntries(r.json.items.map((i) => [i.id, i]));
+
+      assert(/below the 4.9 threshold/.test(byId['testing/broke'].error || ''),
+        'a failed lesson still reports no error, so the LMS cannot say why');
+      assert(/awaiting human review/.test(byId['testing/waiting'].reason || ''),
+        'a blocked lesson reports no reason');
+      assert(!byId['testing/retried'].error,
+        'a rebuilt lesson still carries the error from an attempt it has moved past');
+
+      // runId is the only handle tying a lesson to what it cost.
+      assert(byId['testing/broke'].runId === 'run-a', 'no runId, so a lesson cannot be reconciled against spend');
+
+      // A lesson waiting on a person is not work in flight.
+      assert(r.json.blocked === 1, `expected blocked: 1, got ${r.json.blocked}`);
+      assert(r.json.inProgress === 0, `a blocked lesson is counted as in progress (${r.json.inProgress})`);
+      assert(r.json.awaitingApproval.length === 1, 'awaitingApproval does not carry the waiting lesson');
+      return 'error, reason and runId all survive the projection';
+    }); });
+
   await check('GET /api/v1/health answers without a credential and leaks nothing',
     () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
       const r = await req(port, { path: '/api/v1/health' });
