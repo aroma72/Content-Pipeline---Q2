@@ -39,7 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "c=$(jq -r '.tool_input.command // empty'); [ -n \"$c\" ] || exit 0; set -f; set -- $c; out=$(bash .claude/hooks/block-bad-commands.sh \"${1:-}\" \"$c\"); rc=$?; [ $rc -eq 0 ] && exit 0; printf '%s\n' \"$out\" >&2; exit 2",
+            "command": "H=\"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/block-bad-commands.sh\"; [ -r \"$H\" ] || { printf 'hook: %s is unreadable -- the command guard did NOT run\n' \"$H\" >&2; exit 0; }; c=$(jq -r '.tool_input.command // empty'); [ -n \"$c\" ] || exit 0; set -f; set -- $c; out=$(bash \"$H\" \"${1:-}\" \"$c\"); rc=$?; [ $rc -eq 0 ] && exit 0; printf '%s\n' \"$out\" >&2; exit 2",
             "timeout": 10,
             "statusMessage": "Blocking force-push to main, .env commits, unapproved ElevenLabs..."
           }
@@ -52,13 +52,13 @@
         "hooks": [
           {
             "type": "command",
-            "command": "f=$(jq -r '.tool_input.file_path // .tool_response.filePath // empty'); case \"$f\" in *.md) ;; *) exit 0;; esac; [ -f \"$f\" ] || exit 0; out=$(bash .claude/hooks/guard-file-writes.sh \"$f\" \"$(cat \"$f\")\"); rc=$?; if [ $rc -eq 0 ]; then [ -n \"$out\" ] && printf '%s\n' \"$out\"; exit 0; else printf '%s\n' \"$out\" >&2; exit 2; fi",
+            "command": "H=\"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/guard-file-writes.sh\"; [ -r \"$H\" ] || { printf 'hook: %s is unreadable -- the line-budget guard did NOT run\n' \"$H\" >&2; exit 0; }; f=$(jq -r '.tool_input.file_path // .tool_response.filePath // empty'); case \"$f\" in *.md) ;; *) exit 0;; esac; [ -f \"$f\" ] || exit 0; out=$(bash \"$H\" \"$f\" \"$(cat \"$f\")\"); rc=$?; if [ $rc -eq 0 ]; then [ -n \"$out\" ] && printf '%s\n' \"$out\"; exit 0; else printf '%s\n' \"$out\" >&2; exit 2; fi",
             "timeout": 15,
             "statusMessage": "Guarding CLAUDE.md 150-line budget..."
           },
           {
             "type": "command",
-            "command": "f=$(jq -r '.tool_input.file_path // .tool_response.filePath // empty'); { [ -n \"$f\" ] && [ -f \"$f\" ]; } || exit 0; out=$(bash .claude/hooks/validate-after-write.sh \"$f\"); rc=$?; if [ $rc -eq 0 ]; then [ -n \"$out\" ] && printf '%s\n' \"$out\"; exit 0; else printf '%s\n' \"$out\" >&2; exit 2; fi",
+            "command": "H=\"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/validate-after-write.sh\"; [ -r \"$H\" ] || { printf 'hook: %s is unreadable -- the syntax check did NOT run\n' \"$H\" >&2; exit 0; }; f=$(jq -r '.tool_input.file_path // .tool_response.filePath // empty'); { [ -n \"$f\" ] && [ -f \"$f\" ]; } || exit 0; out=$(bash \"$H\" \"$f\"); rc=$?; if [ $rc -eq 0 ]; then [ -n \"$out\" ] && printf '%s\n' \"$out\"; exit 0; else printf '%s\n' \"$out\" >&2; exit 2; fi",
             "timeout": 30,
             "statusMessage": "Validating Python syntax and markdown frontmatter..."
           }
@@ -71,7 +71,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/session-start.sh",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/session-start.sh",
             "timeout": 15,
             "statusMessage": "Injecting open beads from .beads/status.jsonl..."
           }
@@ -84,7 +84,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/session-end.sh",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/session-end.sh",
             "timeout": 15,
             "statusMessage": "Checking open beads and unstaged changes..."
           }
@@ -96,7 +96,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/publish-checkpoints.sh",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/publish-checkpoints.sh",
             "async": true,
             "timeout": 900,
             "statusMessage": "Publishing quiz checkpoints to the LMS API..."

@@ -2267,6 +2267,32 @@ async function courseChecks() {
     return dir;
   };
 
+  // A hook script named by a RELATIVE path resolves against the session's working
+  // directory, not the repo. Move the cwd and every hook command fails with 127 --
+  // and because the PreToolUse wrapper turned any non-zero status into exit 2, that
+  // 127 blocked every Bash and PowerShell call, and the PostToolUse pair blocked
+  // every Write and Edit. The guards did not refuse anything; they could not run,
+  // and said so in the same voice. $CLAUDE_PROJECT_DIR is what the hooks docs give
+  // for this, and a missing script must exit 0 loudly rather than brick the session.
+  check('hook commands find their scripts from any working directory', () => {
+    const cfg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '.claude', 'settings.json'), 'utf8'));
+    const cmds = Object.values(cfg.hooks || {})
+      .flat().flatMap((g) => g.hooks || []).map((h) => h.command || '');
+    assert(cmds.length, 'no hook commands found -- did the hooks block move?');
+    for (const c of cmds) {
+      if (!c.includes('.claude/hooks/')) continue;
+      assert(c.includes('CLAUDE_PROJECT_DIR'),
+        `a hook runs .claude/hooks/ by a relative path, which breaks outside the repo root: ${c.slice(0, 80)}`);
+    }
+    // Fail-safe, not fail-closed: a guard that cannot run must not look like a refusal.
+    const guards = cmds.filter((c) => c.includes('.claude/hooks/') && /exit 2/.test(c));
+    for (const c of guards) {
+      assert(/\[ -r "\$H" \]/.test(c),
+        'a blocking hook does not check its script is readable first, so a missing file exits 2 and blocks every tool call');
+    }
+    return `${cmds.length} commands, ${guards.length} blocking`;
+  });
+
   check('the laptop queue is not shipped inside the image', () => {
     const di = fs.readFileSync(path.join(__dirname, '..', '.dockerignore'), 'utf8');
     assert(/^orchestrator\/queue\.jsonl$/m.test(di),
