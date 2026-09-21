@@ -70,7 +70,24 @@ try { puppeteer = require('puppeteer'); }
 catch { console.log('[qa-frames] ⏭  puppeteer not installed here.'); process.exit(0); }
 
 (async () => {
-  const browser = await puppeteer.launch({ headless: 'shell', args: ['--no-sandbox'] });
+  // headless 'new', not 'shell': 'shell' makes Puppeteer demand a separate
+  // chrome-headless-shell binary, and the image deliberately ships only the system
+  // Chromium. That mismatch exited 1 AFTER the render was paid for, and the error
+  // was reported to the LMS as a quality finding a person should rule on.
+  //
+  // executablePath is belt-and-braces. PUPPETEER_EXECUTABLE_PATH in the Dockerfile
+  // is what actually resolves this in production; CHROME_PATH is read here too
+  // because that is the name the rest of the pipeline already sets.
+  //
+  // --disable-dev-shm-usage because a container's /dev/shm is small and Chrome
+  // crashes writing screenshots into it. Puppeteer's own Docker guidance.
+  const browser = await puppeteer.launch({
+    headless: 'new',
+    args: ['--no-sandbox', '--disable-dev-shm-usage'],
+    ...(process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROME_PATH
+      ? { executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROME_PATH }
+      : {}),
+  });
   const page = await browser.newPage();
   await page.setViewport({ width: 1920, height: 1080 });
   // __DATA must exist BEFORE the page's own init script runs, or the renderer builds

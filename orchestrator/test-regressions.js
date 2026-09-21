@@ -2670,6 +2670,88 @@ async function referenceChecks() {
   });
 }
 
+function browserChecks() {
+  check('the gates are told where Chrome is, in the variable Puppeteer reads', () => {
+    // This cost every course lesson its render. PUPPETEER_EXECUTABLE_PATH is the
+    // variable Puppeteer resolves against; CHROME_PATH is a Lighthouse convention
+    // it has never read. With the skip-download flags set and neither of those
+    // pointing anywhere, Puppeteer looked for a chrome-headless-shell that the
+    // image deliberately does not ship, and exited 1 AFTER the art was bought.
+    const df = fs.readFileSync(path.join(PATHS_REPO, 'Dockerfile'), 'utf8');
+    assert(/PUPPETEER_EXECUTABLE_PATH=\/usr\/bin\/chromium/.test(df),
+      'the Dockerfile does not set PUPPETEER_EXECUTABLE_PATH');
+    assert(/PUPPETEER_SKIP_DOWNLOAD=1/.test(df),
+      'the skip flag went away; Puppeteer would download its own Chrome');
+    assert(/chromium/.test(df) && /apt-get install/.test(df),
+      'no system chromium is installed for that path to point at');
+    return 'PUPPETEER_EXECUTABLE_PATH set, system chromium installed';
+  });
+
+  check('every frame gate can launch a browser on a container', () => {
+    // Belt-and-braces to the Dockerfile: a gate copied into a video folder and run
+    // somewhere else must still find a browser rather than fail after the spend.
+    const files = [path.join(PATHS_REPO, '.claude', 'skills', 'creating-explainer-videos',
+      'templates', 'qa-frames.js')];
+    const vids = path.join(PATHS_REPO, 'explainer-videos');
+    const walk = (d, depth) => {
+      if (depth > 3) return;
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        if (!e.isDirectory()) continue;
+        const p = path.join(d, e.name);
+        if (e.name === 'node_modules') continue;
+        const g = path.join(p, 'qa-frames.js');
+        if (fs.existsSync(g)) files.push(g);
+        walk(p, depth + 1);
+      }
+    };
+    if (fs.existsSync(vids)) walk(vids, 1);
+
+    for (const f of files) {
+      const src = fs.readFileSync(f, 'utf8');
+      const rel = path.relative(PATHS_REPO, f).split(path.sep).join('/');
+      assert(/executablePath/.test(src), `${rel} launches Chrome without an executablePath`);
+      assert(!/headless:\s*'shell'/.test(src),
+        `${rel} asks for headless 'shell', which needs a binary the image does not ship`);
+      assert(/--disable-dev-shm-usage/.test(src),
+        `${rel} omits --disable-dev-shm-usage; a container's /dev/shm is small`);
+    }
+    return `${files.length} frame gate(s) can find a browser`;
+  });
+
+  check('a gate that could not RUN is never reported as a finding', () => {
+    // The whole reason this was invisible for days. A finding parks the lesson for
+    // a person; nobody can rule on a missing binary. Tested with the exact stderr
+    // production produced, so a rewrite of the matcher cannot quietly stop
+    // catching the case that caused the outage.
+    const { isEnvironmentFailure } = require('./lib/stages/produce.js')._internals;
+
+    const realOutage = { stdout: '', stderr:
+      'Error: Could not find chrome-headless-shell (ver. 153.0.8010.36). This can occur if either\n'
+      + '1. you did not perform an installation before running the script' };
+    assert(isEnvironmentFailure(realOutage),
+      'the outage that blocked every course lesson still reads as a quality finding');
+
+    for (const e of [
+      { stdout: '', stderr: 'Failed to launch the browser process' },
+      { stdout: '', stderr: "Error: Cannot find module './lib/config'" },
+      { stdout: '', stderr: 'python: command not found' },
+      { stdout: '', stderr: 'spawn ffmpeg ENOENT' },
+      { stdout: '', stderr: 'ModuleNotFoundError: No module named PIL' },
+    ]) assert(isEnvironmentFailure(e), `not recognised as infrastructure: ${e.stderr}`);
+
+    // And the other direction, which matters just as much: a real verdict must
+    // still reach a person. Swallowing findings would be a worse bug than the one
+    // being fixed -- it would publish videos nobody judged.
+    for (const e of [
+      { stdout: '[qa-frames] beat 7: text at 22px is below the 28px floor', stderr: '' },
+      { stdout: '[qa-clips] clip 3 is frozen (SSIM 0.991)', stderr: '' },
+      { stdout: '[eval-text] beat 12 reads as a sentence fragment', stderr: '' },
+    ]) assert(!isEnvironmentFailure(e), `a real finding was swallowed: ${e.stdout}`);
+
+    return 'infrastructure recognised, verdicts still reach a person';
+  });
+}
+
 function contractChecks() {
   check('every blockedBy a stage can throw is in the published set', () => {
     // This drifted for months in three directions at once: the comment on
@@ -3047,6 +3129,7 @@ async function courseChecks() {
   await redraftChecks();
   namingChecks();
   contractChecks();
+  browserChecks();
   await referenceChecks();
   await courseChecks();
 

@@ -29,6 +29,42 @@ const { validateBeats } = require('../validate-beats');
 // slip past a budget that was meant to stop it.
 const COST = { imagePerImage: 0.04, ttsPerClip: 0.002, i2vPerSecond: 0.05 };
 
+/**
+ * Did this gate fail to RUN, rather than fail the video?
+ *
+ * A gate is meant to signal "I could not reach a verdict" with exit 3. A tool that
+ * dies before it starts cannot: Node exits 1 on an uncaught throw, and the stderr
+ * is a stack trace. The difference matters more than it looks -- a finding parks
+ * the lesson for a person, and no person can act on a missing binary. That is
+ * exactly what happened: qa-frames.js could not launch Chrome, exited 1, and every
+ * course lesson sat at post-render-check "needing a human decision" with the art
+ * and speech already paid for.
+ *
+ * Matched on the runtime's own words rather than on exit codes, because the exit
+ * code is the thing that is wrong. Deliberately narrow: these are all failures to
+ * START something. A gate that ran and disliked the video says none of them.
+ */
+const ENVIRONMENT_FAILURE = new RegExp([
+  'Could not find (Chrome|Chromium|chrome-headless-shell|browser)',
+  'Failed to launch the browser process',
+  'Browser was not found',
+  'ENOENT',
+  'command not found',
+  'No such file or directory',
+  'Cannot find module',
+  'MODULE_NOT_FOUND',
+  'ModuleNotFoundError',
+  'ImportError',
+  'is not recognized as an internal or external command',
+  'error while loading shared libraries',
+  'Permission denied',
+  'EACCES',
+].join('|'), 'i');
+
+function isEnvironmentFailure(e) {
+  return ENVIRONMENT_FAILURE.test(`${(e && e.stdout) || ''}\n${(e && e.stderr) || ''}`);
+}
+
 // kie.ai clips come in fixed lengths; a beat is billed at the bucket above its
 // voiceover, so pricing must round the same way generate-lesson-video-omni.js does
 // or the estimate the budget is checked against is not the bill.
@@ -308,7 +344,7 @@ function copyTemplates(src, dest, log) {
 
 // Exported for the regression tests; not part of the stage contract.
 module.exports._internals = { estimateSpend, isFresherThanInputs, copyTemplates,
-  i2vSeconds, COST, missingPerBeat, staleVo, pruneOrphans };
+  i2vSeconds, COST, missingPerBeat, staleVo, pruneOrphans, isEnvironmentFailure };
 
 module.exports = Object.assign(module.exports, {
   name: 'produce',
@@ -469,14 +505,22 @@ module.exports = Object.assign(module.exports, {
       // treating it as one discarded a finished, rendered, bumper-wrapped video
       // because Gemini returned a 503, and re-bought art that nobody had judged.
       // Record it and carry on: an unrun gate has found nothing wrong.
-      if (e.code === 3) {
+      //
+      // Some gates cannot honour that convention. A tool that dies before main()
+      // -- no browser, no interpreter, a missing binary -- exits whatever its
+      // runtime chose, usually 1, and its stderr is a stack trace rather than a
+      // verdict. Treat that as exit 3, because it IS exit 3's case: the gate did
+      // not run. Reported as a finding instead, it parked every course lesson at
+      // post-render-check saying "needs a human decision", about a missing Chrome
+      // no reviewer could rule on, AFTER the art and speech were bought.
+      if (e.code === 3 || isEnvironmentFailure(e)) {
         const why = String(e.stdout || e.stderr || '').trim().split('\n').slice(-3).join(' ').slice(0, 300);
         log(`${script} could not run (${what}) -- continuing without its verdict. ${why}`);
         sensorResults.push({ ok: null, sensor: script, what, detail: `did not run: ${why}` });
         state.recordIntervention(st, {
           stage: 'produce',
           kind: 'sensor_unavailable',
-          detail: `${script} exited 3 (infrastructure): ${why}`,
+          detail: `${script} exited ${e.code} (infrastructure, not a verdict): ${why}`,
         });
         return;
       }

@@ -14,6 +14,17 @@ ENV NODE_ENV=production \
     # build both bloats the image and pulls a binary that misses these shared libs.
     PUPPETEER_SKIP_DOWNLOAD=1 \
     PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=1 \
+    # The variable PUPPETEER ITSELF READS. This is the one that matters, and its
+    # absence cost every course lesson its render for days: the skip flags above
+    # stop the bundled download, so with nowhere else to look Puppeteer resolved
+    # a chrome-headless-shell that was never installed and exited 1 AFTER the art
+    # and speech had been bought. `CHROME_PATH` below is NOT a Puppeteer variable
+    # -- it is a Lighthouse convention -- and the only reason the renderer worked
+    # while the frame check did not is that compile-lesson.js happens to read it
+    # by hand and pass executablePath. Setting this fixes every launch site at
+    # once, including the ones nobody has written yet.
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
+    # Kept: compile-lesson.js reads this one by name.
     CHROME_PATH=/usr/bin/chromium \
     # Use the apt ffmpeg installed below. Without this every pipeline script
     # resolves ffmpeg through ffmpeg-static, which DOWNLOADS an ~80MB binary at
