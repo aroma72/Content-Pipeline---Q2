@@ -55,10 +55,29 @@ docker build -q -t "$BASE_TAG" "$REPO" >/dev/null || { echo "base image build FA
 docker build -q -t "$HARNESS_TAG" -f "$REPO/scripts/harness/Dockerfile" "$REPO" >/dev/null \
   || { echo "harness image build FAILED"; exit 2; }
 
-TEMPLATES=.claude/skills/creating-explainer-videos/templates
+# Before any gate: can the image render at all?
+#
+# This is the check that would have caught the bug that cost two paid runs. A
+# developer laptop has Chrome, so a browser Puppeteer could not resolve stayed
+# invisible locally and only appeared after production had spent the money. Here
+# it runs in the deploy image, on every push, for nothing.
 FAILURES=()
 SKIPS=()
 PASSES=0
+
+echo
+echo "==> preflight, inside the deploy image"
+if docker run --rm -v "$REPO:/work" -w /work --shm-size=1g "$HARNESS_TAG" \
+     node -e "const p=require('/work/orchestrator/lib/preflight');p.check().then(r=>{console.log(p.format(r));process.exit(r.results.some(x=>x.name==='browser'&&x.ok!==true)?1:0)})"; then
+  echo "  browser OK in the deploy image"
+else
+  echo "  FAIL: the deploy image cannot launch the browser its gates need."
+  echo "  A render would buy art and speech and then stop on this."
+  FAILURES+=("preflight: browser cannot launch in the deploy image")
+fi
+
+TEMPLATES=.claude/skills/creating-explainer-videos/templates
+
 
 for fx in "${FIXTURES[@]}"; do
   [ -f "$REPO/$fx/beats.js" ] || { echo "!! no beats.js in $fx -- skipping"; continue; }
