@@ -51,19 +51,36 @@ function validateBeats(beats, videoDir, opts = {}) {
     // An illustration beat has to carry words of its own.
     //
     // animation/lesson.html draws an `ali` or `scene` beat as its art and NOTHING
-    // else unless the beat has a `cap` or an `overlay`. The prompt asks for one,
-    // and on the first real run the model supplied 11 of 14 and skipped 3 -- so
-    // the rule is enforced here rather than hoped for. A beat that reaches produce
-    // without words costs a full render before qa-frames refuses it, and the
-    // redraft this triggers is free.
+    // else unless the beat has a `cap` or a WORKING `overlay`. The prompt asks for
+    // one, and on the first run the model supplied 11 of 14 and skipped 3.
+    //
+    // "Working" is the whole subtlety, and it cost a paid render to find. The
+    // renderer draws an overlay only `if (beat.overlay && InfoTemplates[tpl])`,
+    // so an overlay naming a template that does not exist renders NOTHING while
+    // still looking, to a validator checking only for presence, like words on
+    // screen. That is the same trap this file's header records for `info` beats,
+    // one layer over -- and it let a `scene` beat reach qa-frames wordless after
+    // the art and voice were bought.
     //
     // strictCanon only: before art is bought a missing caption is a rewrite; after
     // it, throwing the render away over one would cost more than the fault.
-    if ((b.mode === 'ali' || b.mode === 'scene') && !b.cap && !b.overlay) {
-      const msg = `${at}: an ${b.mode} beat draws art and no text. Add a short 'cap' `
-        + '(<= 8 words) or an overlay, or the frame carries no words at all.';
-      if (strictCanon) errors.push(msg); else warnings.push(msg);
+    if (b.mode === 'ali' || b.mode === 'scene') {
+      const overlayDraws = Boolean(b.overlay && b.overlay.tpl
+        && (!tpls || tpls.includes(b.overlay.tpl)));
+      if (b.overlay && !overlayDraws) {
+        const why = !b.overlay.tpl
+          ? `${at}: overlay has no 'tpl', so it renders nothing.`
+          : `${at}: unknown overlay template '${b.overlay.tpl}' -- it renders NOTHING.`
+            + (tpls ? ` Available: ${tpls.join(', ')}.` : '');
+        if (strictCanon) errors.push(why); else warnings.push(why);
+      }
+      if (!b.cap && !overlayDraws) {
+        const msg = `${at}: an ${b.mode} beat draws art and no text. Add a short 'cap' `
+          + '(<= 8 words) or a working overlay, or the frame carries no words at all.';
+        if (strictCanon) errors.push(msg); else warnings.push(msg);
+      }
     }
+
 
     // A checkpoint is never spoken, so an empty vo is correct for it and a
     // FILLED one is the bug -- a voiced checkpoint reads the question aloud to a

@@ -376,7 +376,7 @@ module.exports = Object.assign(module.exports, {
       // is what makes a blocked lesson actionable.
       const preflight = require('../preflight');
       const pf = await preflight.check({ videoDir: dir });
-      log(`preflight:\n${preflight.format(pf)}`);
+      log.always(`preflight:\n${preflight.format(pf)}`);
       if (!pf.ok) {
         throw new BlockedError(
           'This container cannot finish a render, so nothing was bought:\n'
@@ -541,7 +541,7 @@ module.exports = Object.assign(module.exports, {
       // no reviewer could rule on, AFTER the art and speech were bought.
       if (e.code === 3 || isEnvironmentFailure(e)) {
         const why = String(e.stdout || e.stderr || '').trim().split('\n').slice(-3).join(' ').slice(0, 300);
-        log(`${script} could not run (${what}) -- continuing without its verdict. ${why}`);
+        log.always(`${script} could not run (${what}) -- continuing without its verdict. ${why}`);
         sensorResults.push({ ok: null, sensor: script, what, detail: `did not run: ${why}` });
         state.recordIntervention(st, {
           stage: 'produce',
@@ -566,7 +566,7 @@ module.exports = Object.assign(module.exports, {
           // The lenient pass: two rounds did not settle this, so it is recorded
           // and carried to the review step rather than ending the run. A person
           // reads it there; it is not discarded and not hidden.
-          log(`${script}: ${what} still not satisfied after redrafting -- `
+          log.always(`${script}: ${what} still not satisfied after redrafting -- `
             + 'accepted with a warning for review');
           sensorResults.push({ ok: false, sensor: script, what, accepted: true,
             detail: findings.slice(0, 800) });
@@ -649,7 +649,7 @@ module.exports = Object.assign(module.exports, {
     const spendApproved = est.totalUsd === 0
       || (budget !== null && budget !== undefined && (spentOnMedia + est.totalUsd) <= budget);
 
-    log(`estimated spend: ${est.images} image(s) x $${COST.imagePerImage} = $${est.artUsd}` +
+    log.always(`estimated spend: ${est.images} image(s) x $${COST.imagePerImage} = $${est.artUsd}` +
         ` + ${est.clips} TTS clip(s) x $${COST.ttsPerClip} = $${est.ttsUsd}` +
         (est.animBeats ? ` + ${est.animBeats} animated beat(s) / ${est.animSecs}s x $${COST.i2vPerSecond} = $${est.animUsd}` : '') +
         `  ->  $${est.totalUsd}`);
@@ -689,10 +689,10 @@ module.exports = Object.assign(module.exports, {
     // "the folder is non-empty" once let a failed image slip through to render.
     const missingArt = missingPerBeat(beatsForArt, dir, 'art', (id) => `${id}.png`);
     if (beatsForArt.length && missingArt.length === 0) {
-      log(`art/ complete (${beatsForArt.filter((b) => b.mode !== 'info' && b.art).length} image(s)) -- skipping generate-lesson-art (no re-spend)`);
+      log.always(`art/ complete (${beatsForArt.filter((b) => b.mode !== 'info' && b.art).length} image(s)) -- skipping generate-lesson-art (no re-spend)`);
     } else if (beatsForArt.length && missingArt.length && hasOutput(path.join(dir, 'art'), '.png')) {
       // Regenerate ONLY the gaps. generate-lesson-art.js takes ART_IDS for this.
-      log(`art/ incomplete -- missing beat(s) ${missingArt.join(',')}; regenerating just those`);
+      log.always(`art/ incomplete -- missing beat(s) ${missingArt.join(',')}; regenerating just those`);
       await run('node', ['generate-lesson-art.js', '--yes'], {
         env: { ...process.env, ART_IDS: missingArt.join(',') },
         timeoutMs: 30 * 60 * 1000,
@@ -711,7 +711,7 @@ module.exports = Object.assign(module.exports, {
       });
       log(`art/ now complete`);
     } else {
-      log('generating art (paid)');
+      log.always('generating art (paid)');
       await run('node', ['generate-lesson-art.js', '--yes'], { timeoutMs: 45 * 60 * 1000 });
       // Only record spend that actually happened -- a dry run that logged spend
       // would inflate the cost totals `run.js metrics` reports.
@@ -758,12 +758,12 @@ module.exports = Object.assign(module.exports, {
     // after a redraft the changed beats hold the previous take.
     const needVo = staleVo(beatsForArt, dir);
     if (hasOutput(path.join(dir, 'audio'), '.wav') && !needVo.length) {
-      log('audio/ matches every beat -- skipping tts-lesson (no re-spend)');
+      log.always('audio/ matches every beat -- skipping tts-lesson (no re-spend)');
     } else {
       // tts-lesson.js compares each sidecar to its beat and re-synthesises only
       // what changed, so a redraft costs those beats and not the whole video.
       if (needVo.length && hasOutput(path.join(dir, 'audio'), '.wav')) {
-        log(`voiceover is stale for beat(s) ${needVo.join(', ')} -- re-recording just those`);
+        log.always(`voiceover is stale for beat(s) ${needVo.join(', ')} -- re-recording just those`);
       } else {
         log('generating voiceover (paid)');
       }
@@ -796,7 +796,7 @@ module.exports = Object.assign(module.exports, {
       // the renderer plays it INSTEAD of the picture, so a redrafted beat played
       // the old art, moving, under the new voiceover -- and a beat switched to
       // 'info' played its old clip instead of the card.
-      log(`clips/ matches every moving beat -- skipping animation (no re-spend)`);
+      log.always(`clips/ matches every moving beat -- skipping animation (no re-spend)`);
       sensorResults.push({ ok: true, sensor: 'animate', what: 'i2v motion', detail: 'clips already on disk' });
     } else {
       // Re-price against the real durations now that TTS has measured them, and
@@ -811,7 +811,7 @@ module.exports = Object.assign(module.exports, {
         log(`animation: skipped (dry run) -- would animate ${motionBeats.length} beat(s), ~$${animUsd}`);
       } else if (room < 0) {
         // Not an error: the still version is a complete video.
-        log(`animation SKIPPED -- ${motionBeats.length} beat(s) / ${animSecs}s would cost $${animUsd}, ` +
+        log.always(`animation SKIPPED -- ${motionBeats.length} beat(s) / ${animSecs}s would cost $${animUsd}, ` +
             `over the remaining budget. Falling back to stills.`);
         state.recordIntervention(st, {
           stage: 'produce',
@@ -897,7 +897,7 @@ module.exports = Object.assign(module.exports, {
     // lesson can be understood for nothing, and the same call later adds the mp4.
     if (!opts.dryRun) {
       require('../deliverables').persist({
-        series: item.series, slug: item.slug, videoDir: dir, log,
+        series: item.series, slug: item.slug, videoDir: dir, log: log.always,
       });
     }
 
@@ -996,7 +996,7 @@ module.exports = Object.assign(module.exports, {
     let persisted = null;
     if (!opts.dryRun) {
       persisted = require('../deliverables').persist({
-        series: item.series, slug: item.slug, finalPath, videoDir: dir, log,
+        series: item.series, slug: item.slug, finalPath, videoDir: dir, log: log.always,
       });
     }
 

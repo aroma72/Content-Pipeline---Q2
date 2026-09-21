@@ -1074,12 +1074,35 @@ async function beatChecks() {
   check('stage chatter is still suppressed, so the log stays readable', () => {
     // The point of quiet was ffmpeg/npm/puppeteer spam; promoting EVERYTHING
     // would trade one unreadable log for another.
+    //
+    // Rewritten 2026-09-22 to assert the PROPERTY rather than one line of source.
+    // The original matched the literal `log: (msg) => log(name, msg)`, which broke
+    // the moment that closure was given a name so `.always` could hang off it --
+    // while the behaviour it guards was unchanged. A test that fails on a rename
+    // and passes on a regression is worse than no test, so this one now checks
+    // what actually matters, and adds the bound the original never had.
     const src = fs.readFileSync(path.join(__dirname, 'lib', 'spine.js'), 'utf8');
-    assert(/log: \(msg\) => log\(name, msg\)/.test(src),
-      'per-stage messages are no longer routed through the quiet-able logger');
+
     assert(/const log = \(stage, msg\) => \{ if \(!quiet\) emit\(stage, msg\); \}/.test(src),
       'quiet no longer suppresses anything');
-    return 'chatter still quiet';
+
+    // The channel a stage gets by default must still be the quiet-able one.
+    assert(/const stageLog = \(msg\) => log\(name, msg\);/.test(src),
+      'per-stage messages are no longer routed through the quiet-able logger');
+    assert(/stageLog\.always = \(msg\) => log\.always\(name, msg\);/.test(src),
+      'stages have no way to say something that survives quiet');
+
+    // The real guard: a budget. spine.js documents always-lines as "a couple of
+    // dozen per run", and produce is where the temptation to promote everything
+    // lives, because it is the stage that spends money and runs every sensor.
+    const prod = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'produce.js'), 'utf8');
+    const always = (prod.match(/log\.always\(/g) || []).length;
+    const quiet = (prod.match(/(^|[^.\w])log\(/g) || []).length;
+    assert(always <= 20, `produce has ${always} always-lines -- past the couple-of-dozen budget`);
+    assert(quiet > always,
+      `produce routes ${quiet} lines through quiet and ${always} through always -- `
+      + 'chatter is being promoted, which is what quiet exists to prevent');
+    return `${always} always-lines, ${quiet} still quiet`;
   });
 
   await checkAsync('queue bookkeeping cannot replace the real cause of death', async () => {

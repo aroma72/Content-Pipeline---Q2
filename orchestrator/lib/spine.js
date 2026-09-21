@@ -285,12 +285,23 @@ async function execute(item, opts = {}) {
       }
 
       try {
+        // Stages get BOTH channels, not just the quiet one.
+        //
+        // `log` is silenced by quiet:true, which the server always passes to keep
+        // ffmpeg and npm chatter out of Railway. That is right for chatter and
+        // wrong for everything else: it also threw away the preflight result, the
+        // art purchase, and every sensor's verdict, so a production run reported
+        // five redrafts with no way to learn what caused even one of them. A stage
+        // needs a way to say something that survives.
+        const stageLog = (msg) => log(name, msg);
+        stageLog.always = (msg) => log.always(name, msg);
+
         const output = await stage.run({
           item,
           state: st,
           artifacts: st.artifacts,
           opts: { dryRun, budgetUsd, reviewApproved, lenient: Boolean(st.lenient) },
-          log: (msg) => log(name, msg),
+          log: stageLog,
         });
         state.finishStage(st, name, { status: state.STATUS.DONE, output });
         log(name, 'ok');
@@ -392,7 +403,13 @@ async function execute(item, opts = {}) {
             detail: `${name} sent it back to ${err.fromStage} (${name} round ${redraftsBy[name]}/${MAX_REDRAFTS}).`,
           });
           state.save(st);
-          log.always(name, `NEEDS WORK -> redrafting from '${err.fromStage}' (${name} round ${redraftsBy[name]}/${MAX_REDRAFTS})`);
+          // Name the CAUSE, not just the fact. A run reported five redrafts with no
+          // way to learn what triggered even one of them: the sensor's verdict was
+          // in the error all along and this line threw it away. The first line of
+          // the message is `<what> FAILED (<script>)`, which is the whole answer.
+          const cause = String(err.message || '').split('\n')[0].slice(0, 160);
+          log.always(name, `NEEDS WORK -> redrafting from '${err.fromStage}' `
+            + `(${name} round ${redraftsBy[name]}/${MAX_REDRAFTS}) -- ${cause}`);
 
           // A rewind can name a stage this run was seeded PAST (--from produce, with
           // an already-written script on disk). Leaving skipUntil where it is means
