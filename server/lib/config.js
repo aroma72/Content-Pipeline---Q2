@@ -78,6 +78,10 @@ const config = {
     // Deliberately NOT chained off PIPELINE_STOP_AFTER: a future change to the
     // single-video path must not be able to drag courses back behind 'review'.
     courseStopAfter: process.env.PIPELINE_COURSE_STOP_AFTER || 'upload',
+    // What a course build reserves per lesson on the tenant ledger before it
+    // starts; settled to the real cost when the lesson ends. $2.50 is what the
+    // LMS already authorises per lesson, and above every measured full-cost run.
+    courseLessonReserveUsd: num(process.env.PIPELINE_COURSE_LESSON_RESERVE_USD, 2.5),
     dryRun: process.env.PIPELINE_DRY_RUN === '1',
     // A video costing more than budgetUsd is not refused outright — it stops and
     // asks. Aroma's rule: never exceed the ceiling without explicit permission,

@@ -177,6 +177,9 @@ function build() {
         { method: 'POST', path: '/api/v1/courses/build', auth: true,
           description: 'Queues every lesson in a plan as a video. Refuses without '
             + '`confirmLessons` matching the plan, because this spends real money. '
+            + 'Reserves $2.50 per lesson on your tenant ledger first (402 '
+            + '`tenant_budget_exhausted` if it does not fit; nothing is queued), settled '
+            + 'to the real cost as each lesson ends -- GET /demo/spend shows it under `courses`. '
             + 'Optional `references: true` adds two or three verified external reading '
             + 'links to each finished lesson.' },
         { method: 'GET', path: '/api/v1/courses/:courseId', auth: true,
@@ -449,6 +452,42 @@ function build() {
     const courseId = `course-${Date.now().toString(36)}`;
     const queued = [];
     const rejected = [];
+
+    // Money first. A course used to create queue items and nothing else: no
+    // reservation, no settlement, so GET /demo/spend could not see it and a
+    // tenant's monthly ceiling never applied to the one route that spends N x
+    // $2.50. Reserve per lesson (one ref each -- settling a shared ref would drop
+    // the other lessons' reservations the moment lesson one landed), or refuse
+    // the whole build before anything is queued.
+    const ledger = require('./ledger');
+    const jobStore = require('./job-store').shared();
+    if (!jobStore.canRecordSpend()) {
+      return res.status(503).json({ error: 'ledger_unavailable',
+        message: 'This server cannot durably record what it spends, so it refuses to spend. '
+          + 'See jobStore.durability on /health.' });
+    }
+    const perLesson = require('./config').config.pipeline.courseLessonReserveUsd;
+    const reservations = [];
+    for (const l of lessons) {
+      const slug = queue.slugify(l.title);
+      const r = ledger.reserve(jobStore, {
+        tenantId: req.tenant.id, jobId: courseId, usd: perLesson,
+        key: `${series}/${slug}`, tenant: req.tenant, kind: 'course',
+      });
+      if (!r.ok) {
+        for (const taken of reservations) {
+          ledger.release(jobStore, { tenantId: req.tenant.id, ref: taken.ref, jobId: courseId, why: 'build_refused' });
+        }
+        const status = r.reason === 'ledger_unavailable' ? 503 : 402;
+        return res.status(status).json({
+          error: r.reason, message: r.why,
+          monthlyUsd: r.monthlyUsd, spentUsd: r.spentUsd, remainingUsd: r.remainingUsd, resetsAt: r.resetsAt,
+          lessons: lessons.length, perLessonUsd: perLesson,
+          note: 'Nothing was queued and nothing was reserved.',
+        });
+      }
+      reservations.push({ slug, ref: r.ref });
+    }
     // The ONE scenario Ali is followed through for the whole course. The planner has
     // produced it since it was written (course-planner.js SCHEMA) and this loop threw it
     // away, so cross-lesson continuity existed only where a lesson's own brief happened
@@ -474,11 +513,15 @@ function build() {
           moduleTopic: l.moduleTitle,
           source: 'course-builder',
           wantReferences,
+          tenantId: req.tenant.id,
+          spendRef: (reservations.find((x) => x.slug === queue.slugify(l.title)) || {}).ref || null,
         });
         queued.push(item.id);
       } catch (e) {
         // Usually "already in the queue" — report it rather than aborting the rest.
         rejected.push({ title: l.title, reason: e.message });
+        const taken = reservations.find((x) => x.slug === queue.slugify(l.title));
+        if (taken) ledger.release(jobStore, { tenantId: req.tenant.id, ref: taken.ref, jobId: courseId, why: 'not_queued' });
       }
     }
 
@@ -534,6 +577,7 @@ function build() {
       .filter((i) => (i.notes || '').includes(tag))
       .map((i) => ({
         id: i.id, topic: i.topic, status: i.status, module: i.module,
+        ...(i.tenantId ? { tenantId: i.tenantId } : {}),
         ...(i.status === 'queued'
           ? { queuePosition: line.includes(i.id) ? line.indexOf(i.id) + 1 : null }
           : {}),
@@ -709,7 +753,7 @@ function build() {
   router.post('/courses/:courseId/lessons/:lessonId(*)/approve', requireToken, (req, res) => {
     const by = (req.body && req.body.by) || 'Aroma';
     const r = require('./course-worker')
-      .approve(req.params.lessonId, by, req.params.courseId);
+      .approve(req.params.lessonId, by, req.params.courseId, req.tenant.id);
     if (!r.ok) return res.status(409).json({ error: 'cannot_approve', message: r.why });
     res.status(202).json({
       approved: req.params.lessonId,
@@ -723,7 +767,7 @@ function build() {
   router.post('/courses/:courseId/lessons/:lessonId(*)/reject', requireToken, (req, res) => {
     const why = (req.body && req.body.why) || '';
     const r = require('./course-worker')
-      .reject(req.params.lessonId, why, req.params.courseId);
+      .reject(req.params.lessonId, why, req.params.courseId, req.tenant.id);
     if (!r.ok) return res.status(409).json({ error: 'cannot_reject', message: r.why });
     res.status(202).json({
       rejected: req.params.lessonId,
@@ -741,7 +785,7 @@ function build() {
   router.post('/courses/:courseId/lessons/:lessonId(*)/skip', requireToken, (req, res) => {
     const by = (req.body && req.body.by) || 'Aroma';
     const r = require('./course-worker')
-      .skip(req.params.lessonId, by, req.params.courseId);
+      .skip(req.params.lessonId, by, req.params.courseId, req.tenant.id);
     if (!r.ok) return res.status(409).json({ error: 'cannot_skip', message: r.why });
     res.status(202).json({
       skipped: req.params.lessonId,
@@ -766,7 +810,7 @@ function build() {
   router.post('/courses/:courseId/lessons/:lessonId(*)/requeue', requireToken, (req, res) => {
     const by = (req.body && req.body.by) || 'Aroma';
     const r = require('./course-worker')
-      .requeue(req.params.lessonId, by, req.params.courseId);
+      .requeue(req.params.lessonId, by, req.params.courseId, req.tenant.id);
     if (!r.ok) return res.status(409).json({ error: 'cannot_requeue', message: r.why });
     res.status(202).json({
       requeued: req.params.lessonId,

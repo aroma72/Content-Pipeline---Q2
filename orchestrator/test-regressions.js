@@ -3522,14 +3522,16 @@ async function courseChecks() {
 
   // A per-item stub: which lessons end how. Anything unnamed blocks at review.
   const outcomes = {};
+  const spend = {};
   const built = [];
   spine.execute = async (item, opts) => {
     lastSpineOpts = opts;
     built.push(item.id);
     const status = outcomes[item.id] || 'blocked';
-    if (status === 'failed') queue.fail(item.id, 'run-t', 'stubbed failure');
-    else if (status === 'done') queue.done(item.id, 'run-t', {});
-    else queue.block(item.id, 'run-t', 'awaiting human review', 'review');
+    const usd = spend[item.id];
+    if (status === 'failed') queue.fail(item.id, 'run-t', 'stubbed failure', usd);
+    else if (status === 'done') queue.done(item.id, 'run-t', {}, usd);
+    else queue.block(item.id, 'run-t', 'awaiting human review', 'review', usd);
     return { status };
   };
   const course = (tag, slug, extra = {}) => queue.enqueue({
@@ -3545,7 +3547,9 @@ async function courseChecks() {
   };
   const fresh = async () => {
     await settled();
-    freshQueue(); built.length = 0; for (const k of Object.keys(outcomes)) delete outcomes[k];
+    freshQueue(); built.length = 0;
+    for (const k of Object.keys(outcomes)) delete outcomes[k];
+    for (const k of Object.keys(spend)) delete spend[k];
   };
 
   await checkAsync('a failed lesson holds its own course and no other', async () => {
@@ -3670,6 +3674,72 @@ async function courseChecks() {
     assert(!folded.requeuedBy && !folded.rebuildApprovedBy && !folded.reviewApproved && folded.skipped === false,
       'the fold kept a stale release: ' + JSON.stringify({ r: folded.requeuedBy, a: folded.reviewApproved, s: folded.skipped }));
     return 'release fields reset on enqueue';
+  });
+
+  // ── tenants and money on course lessons ──────────────────────────────────────
+  // Courses were queue items with no tenant and no ledger entry: the shared
+  // `default` credential paid for everything, GET /demo/spend could not see a
+  // course, and a course's budget was the global PIPELINE_BUDGET_USD whoever
+  // asked for it.
+  check('enqueue records which tenant paid for a lesson', () => {
+    freshQueue();
+    const a = queue.enqueue({ topic: 'paid', series: 'demo', slug: 'paid', source: 'course-builder', tenantId: 'lms', spendRef: 'ref-1' });
+    const b = queue.enqueue({ topic: 'legacy', series: 'demo', slug: 'legacy', source: 'course-builder' });
+    assert(a.tenantId === 'lms' && a.spendRef === 'ref-1', 'tenantId/spendRef not recorded');
+    assert(b.tenantId === null && b.spendRef === null, 'a legacy enqueue should carry explicit nulls');
+    return 'tenantId and spendRef on the item';
+  });
+
+  check('another tenant cannot act on a lesson, and a legacy lesson stays open', () => {
+    freshQueue();
+    const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+    queue.enqueue({ topic: 'mine', series: 'demo', slug: 'mine', source: 'course-builder', notes: '[course-a] b', tenantId: 'lms' });
+    queue.enqueue({ topic: 'old', series: 'demo', slug: 'old', source: 'course-builder', notes: '[course-b] b' });
+    queue.block('demo/mine', 'r', 'awaiting human review', 'review');
+    queue.block('demo/old', 'r', 'awaiting human review', 'review');
+    const other = cw.approve('demo/mine', 'x', 'course-a', 'someone-else');
+    assert(other.ok === false && /another tenant/.test(other.why), `another tenant approved it: ${JSON.stringify(other)}`);
+    assert(queue.get('demo/mine').status === 'blocked', 'the lesson moved anyway');
+    assert(cw.skip('demo/mine', 'x', 'course-a', 'someone-else').ok === false, 'another tenant could skip it');
+    assert(cw.reject('demo/mine', 'x', 'course-a', 'someone-else').ok === false, 'another tenant could reject it');
+    // Built before tenants were recorded: nobody owns it, so the check stays off.
+    assert(cw.approve('demo/old', 'x', 'course-b', 'someone-else').ok === true, 'a legacy lesson was refused');
+    return 'refused across tenants, open for legacy items';
+  });
+
+  await checkAsync('a course lesson\'s media budget is capped by its tenant\'s maxRunUsd', async () => {
+    await fresh();
+    const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+    const before = process.env.TENANTS_JSON;
+    process.env.TENANTS_JSON = JSON.stringify([{ id: 'capped', name: 'Capped', token: 'a-token-long-enough-for-the-rules-x', monthlyUsd: 50, maxRunUsd: 0.75 }]);
+    try {
+      queue.enqueue({ topic: 'cap', series: 'demo', slug: 'cap', source: 'course-builder', notes: '[course-c] b', tenantId: 'capped' });
+      lastSpineOpts = null;
+      await cw.drain();
+      assert(lastSpineOpts, 'the worker never called the spine');
+      assert(lastSpineOpts.budgetUsd <= 0.75, `budgetUsd ${lastSpineOpts.budgetUsd} ignores the tenant's maxRunUsd of 0.75`);
+    } finally {
+      if (before === undefined) delete process.env.TENANTS_JSON; else process.env.TENANTS_JSON = before;
+    }
+    return `budgetUsd ${lastSpineOpts.budgetUsd}`;
+  });
+
+  await checkAsync('a course lesson settles its reservation at what it cost', async () => {
+    await fresh();
+    const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+    const ledger = require(path.join(__dirname, '..', 'server', 'lib', 'ledger'));
+    const store = jobStore.shared();
+    assert(store.canRecordSpend(), 'the test store cannot record spend');
+    const r = ledger.reserve(store, { tenantId: 'lms', jobId: 'course-s', usd: 2.5, key: 'demo/settled', kind: 'course' });
+    assert(r.ok, 'reserve failed');
+    queue.enqueue({ topic: 'settled', series: 'demo', slug: 'settled', source: 'course-builder', notes: '[course-s] b', tenantId: 'lms', spendRef: r.ref });
+    outcomes['demo/settled'] = 'blocked';
+    spend['demo/settled'] = 1.23;
+    await cw.drain();
+    const bal = ledger.spentUsd(store, 'lms');
+    assert(bal.reserved === 0 && Math.abs(bal.settled - 1.23) < 1e-9,
+      `ledger after the build: ${JSON.stringify(bal)} -- expected the $2.50 reservation settled at $1.23`);
+    return 'reserved 2.50, settled 1.23';
   });
 
   // Put the plain stub back for anything after this section.

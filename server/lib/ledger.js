@@ -44,29 +44,49 @@ function spentUsd(store, tenantId, month = monthKey()) {
   const byRef = new Map();
   for (const r of rows) {
     if (!r || !r.ref) continue;
-    const cur = byRef.get(r.ref) || { reserved: 0, settled: null, released: false };
-    if (r.type === 'reserve') cur.reserved = Number(r.usd) || 0;
-    if (r.type === 'settle') cur.settled = Number(r.usd) || 0;
+    const cur = byRef.get(r.ref) || { reserved: 0, settled: null, released: false, kind: 'job', outcome: null };
+    if (r.type === 'reserve') { cur.reserved = Number(r.usd) || 0; if (r.kind) cur.kind = r.kind; }
+    if (r.type === 'settle') { cur.settled = Number(r.usd) || 0; cur.outcome = r.outcome || null; }
     if (r.type === 'release') cur.released = true;
     byRef.set(r.ref, cur);
   }
   let settled = 0;
   let reserved = 0;
   let runs = 0;
+  // Courses used to be invisible here -- they never reserved -- so a reader saw
+  // 0 after a course and took it as proof nothing was spent. Broken out so the
+  // figure a course consumer wants is a field, not an inference from the total.
+  const courses = { settledUsd: 0, reservedUsd: 0, lessons: 0, doneUsd: [] };
   for (const v of byRef.values()) {
     if (v.released) continue;
     runs++;
     if (v.settled === null) reserved += v.reserved;
     else settled += v.settled;
+    if (v.kind === 'course') {
+      courses.lessons++;
+      if (v.settled === null) courses.reservedUsd += v.reserved;
+      else {
+        courses.settledUsd += v.settled;
+        if (v.outcome === 'done') courses.doneUsd.push(v.settled);
+      }
+    }
   }
-  return { settled, reserved, total: settled + reserved, runs, month };
+  return { settled, reserved, total: settled + reserved, runs, month, courses };
+}
+
+/** p50 / p90 of a sample, or null under three points -- a figure from two runs is a guess. */
+function percentiles(xs) {
+  if (!xs || xs.length < 3) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  const at = (p) => s[Math.min(s.length - 1, Math.floor(p * (s.length - 1) + 0.5))];
+  return { p50: Number(at(0.5).toFixed(4)), p90: Number(at(0.9).toFixed(4)), n: s.length };
 }
 
 /**
  * Take a reservation, or explain why not.
  * @returns {{ok:true, ref:string, remaining:number}|{ok:false, why:string, ...}}
  */
-function reserve(store, { tenantId, jobId, usd, key, tenant = null }) {
+function reserve(store, { tenantId, jobId, usd, key, tenant = null, kind = 'job' }) {
   if (!store.canRecordSpend()) {
     return { ok: false, reason: 'ledger_unavailable',
       why: 'this server cannot durably record spending, so it will not spend' };
@@ -90,7 +110,7 @@ function reserve(store, { tenantId, jobId, usd, key, tenant = null }) {
   const ref = newRef();
   store.appendLedger(tenantId, {
     type: 'reserve', at: new Date().toISOString(), month,
-    tenantId, jobId, ref, usd: Number(usd), key: key || null,
+    tenantId, jobId, ref, usd: Number(usd), key: key || null, kind,
   });
   return {
     ok: true,
@@ -137,6 +157,18 @@ function summary(store, tenant) {
     totalUsd: Number(bal.total.toFixed(4)),
     remainingUsd: monthlyUsd === null ? null : Number(Math.max(0, monthlyUsd - bal.total).toFixed(4)),
     runs: bal.runs,
+    // Course lessons, separately. A course reserves per lesson at build and
+    // settles each lesson at its real cost; lessons that never started are
+    // released and do not appear. `perLessonUsd` is measured from done lessons
+    // and is null until there are three -- quote the ceiling, not a guess.
+    courses: {
+      lessons: bal.courses.lessons,
+      reservedUsd: Number(bal.courses.reservedUsd.toFixed(4)),
+      spentUsd: Number(bal.courses.settledUsd.toFixed(4)),
+      perLessonUsd: percentiles(bal.courses.doneUsd),
+      note: 'Course spend recorded here from 2026-09-23. Lessons built before that '
+        + 'are costed only on GET /api/v1/courses/:courseId (spendUsdTotal).',
+    },
     resetsAt: nextMonthIso(),
     recordable: store.canRecordSpend(),
     note: monthlyUsd === null

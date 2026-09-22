@@ -115,6 +115,9 @@ function enqueue({
   // Whether this lesson should carry external reading. Off unless asked for:
   // it buys a web search per lesson, and most courses do not want one.
   wantReferences = false,
+  // Who is paying, and the ledger reservation taken for this lesson. Null for a
+  // lesson enqueued before tenants were recorded; the tenant guard then stays off.
+  tenantId = null, spendRef = null,
 }) {
   if (!topic) throw new Error('enqueue requires a topic');
   if (!series) throw new Error('enqueue requires a series (the explainer-videos subfolder)');
@@ -134,6 +137,8 @@ function enqueue({
     module: moduleNumber === null ? null : Number(moduleNumber),
     moduleTopic,
     wantReferences: Boolean(wantReferences),
+    tenantId: tenantId || null,
+    spendRef: spendRef || null,
     status: ITEM_STATUS.QUEUED,
     enqueuedAt: new Date().toISOString(),
     // A failed slug may be enqueued again, and the fold never deletes a key. Reset

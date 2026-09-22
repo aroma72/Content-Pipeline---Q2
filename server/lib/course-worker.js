@@ -53,6 +53,13 @@ const queue = require('../../orchestrator/lib/queue');
 const spine = require('../../orchestrator/lib/spine');
 const state = require('../../orchestrator/lib/state');
 const { config } = require('./config');
+const ledger = require('./ledger');
+const tenants = require('./tenants');
+
+/** The store the queue and the ledger share. Null when none is writable. */
+function store() {
+  try { return require('./job-store').shared(); } catch { return null; }
+}
 
 let running = false;
 let current = null;
@@ -73,6 +80,41 @@ function notThisCourse(item, courseId) {
   if (!courseId) return null;
   if (String(item.notes || '').includes(`[${courseId}]`)) return null;
   return { ok: false, why: `Lesson '${item.id}' does not belong to course '${courseId}'.` };
+}
+
+/**
+ * Refuse a lesson another tenant paid for. Off for a lesson enqueued before
+ * tenants were recorded (no tenantId) and for internal callers (no tenantId
+ * supplied), so nothing already built changes hands or locks up.
+ */
+function notThisTenant(item, tenantId) {
+  if (!tenantId || !item.tenantId) return null;
+  if (item.tenantId === tenantId) return null;
+  return { ok: false, why: `Lesson '${item.id}' belongs to another tenant.` };
+}
+
+/**
+ * Close a lesson's ledger reservation. A lesson that ran settles at what it
+ * cost -- a failed render still bought art. One that never started is released.
+ */
+function settleSpend(item, outcome) {
+  const s = store();
+  if (!s || !item || !item.spendRef || !item.tenantId) return;
+  try {
+    const fresh = queue.get(item.id) || item;
+    ledger.settle(s, {
+      tenantId: item.tenantId, ref: item.spendRef, jobId: courseTagOf(item),
+      runId: fresh.runId || null, usd: Number(fresh.spendUsdTotal) || 0, outcome,
+    });
+  } catch (e) { log(`ledger settle failed for ${item.id}: ${e.message}`); }
+}
+
+function releaseSpend(item, why) {
+  const s = store();
+  if (!s || !item || !item.spendRef || !item.tenantId) return;
+  try {
+    ledger.release(s, { tenantId: item.tenantId, ref: item.spendRef, jobId: courseTagOf(item), why });
+  } catch (e) { log(`ledger release failed for ${item.id}: ${e.message}`); }
 }
 
 /** Queued lessons this worker owns. Notion-driven work belongs to dispatch(). */
@@ -168,10 +210,15 @@ async function buildOne(item) {
   current = { id: item.id, topic: item.topic, courseId: courseTagOf(item), startedAt: new Date().toISOString() };
   log(`building ${item.id} (run ${st.runId})`);
 
+  // The media budget is the service ceiling, or the tenant's own per-run wall
+  // if it is lower. A course used to get the global figure whoever paid.
+  const tenant = item.tenantId ? tenants.registry().byId(item.tenantId) : null;
+  const wall = tenant && Number.isFinite(tenant.maxRunUsd) && tenant.maxRunUsd !== null
+    ? tenant.maxRunUsd : Infinity;
   try {
     const final = await spine.execute(item, {
       resumeState: st,
-      budgetUsd: config.pipeline.budgetUsd,
+      budgetUsd: Math.min(config.pipeline.budgetUsd, wall),
       // Approval rides on the queue item, recorded by approve(). Absent it, the
       // review stage blocks -- which is the pause this worker is built around.
       reviewApproved: item.reviewApproved || false,
@@ -190,12 +237,14 @@ async function buildOne(item) {
     };
     history.push(outcome);
     log(`${item.id} -> ${outcome.status}`);
+    settleSpend(item, outcome.status);
     return outcome;
   } catch (e) {
     const outcome = { id: item.id, topic: item.topic, status: 'failed',
       error: e.message, finishedAt: new Date().toISOString() };
     history.push(outcome);
     log(`${item.id} FAILED: ${e.message}`);
+    settleSpend(item, 'failed');
     return outcome;
   } finally {
     current = null;
@@ -254,10 +303,10 @@ function resume(by = 'Aroma') {
  * Approve a built lesson: publish it, then release the next one.
  * @returns {{ok:true}|{ok:false, why:string}}
  */
-function approve(lessonId, by = 'Aroma', courseId = null) {
+function approve(lessonId, by = 'Aroma', courseId = null, tenantId = null) {
   const item = queue.get(lessonId);
   if (!item) return { ok: false, why: `No lesson '${lessonId}'.` };
-  const wrong = notThisCourse(item, courseId);
+  const wrong = notThisCourse(item, courseId) || notThisTenant(item, tenantId);
   if (wrong) return wrong;
   if (item.status === 'done') return { ok: false, why: 'That lesson is already published.' };
   if (item.status !== 'blocked') {
@@ -285,10 +334,10 @@ function approve(lessonId, by = 'Aroma', courseId = null) {
  * every queued sibling, free, with a reason naming the rejection. Other courses
  * are released -- before this kicked, a reject left the whole worker idle.
  */
-function reject(lessonId, why = '', courseId = null) {
+function reject(lessonId, why = '', courseId = null, tenantId = null) {
   const item = queue.get(lessonId);
   if (!item) return { ok: false, why: `No lesson '${lessonId}'.` };
-  const wrong = notThisCourse(item, courseId);
+  const wrong = notThisCourse(item, courseId) || notThisTenant(item, tenantId);
   if (wrong) return wrong;
   // Rejecting means "do not publish this, stop the course here", which is not a
   // thing that can be said about a lesson already on YouTube. This had no status
@@ -302,6 +351,13 @@ function reject(lessonId, why = '', courseId = null) {
     rejectedAt: new Date().toISOString(),
     error: `rejected by a human${why ? ': ' + why : ''}`,
   });
+  // Rejected before it was ever claimed: nothing was bought, give the money back.
+  // Otherwise settle at what it has cost so far -- normally a repeat of the settle
+  // buildOne() wrote (last settle wins, same figure), but for a lesson a restart
+  // parked as `interrupted` it is the only settle there will ever be, and without
+  // it the reservation would sit on the tenant's ledger until the month rolled.
+  if (item.status === queue.ITEM_STATUS.QUEUED) releaseSpend(item, 'rejected_before_build');
+  else settleSpend(item, 'rejected');
   // The course stops here. Its queued siblings are failed now rather than left
   // `queued` behind a hold: a queued lesson reads as "still coming" to the LMS,
   // and a hold is invisible to a consumer that only reads statuses. Nothing was
@@ -317,6 +373,7 @@ function reject(lessonId, why = '', courseId = null) {
         stoppedAt: new Date().toISOString(),
         error: `stopped with the course: ${lessonId} was rejected`,
       });
+      releaseSpend(i, 'stopped_with_course');
       stopped.push(i.id);
     }
   }
@@ -330,10 +387,10 @@ function reject(lessonId, why = '', courseId = null) {
  * the lesson stays `failed` (the LMS treats the status set as closed) and simply
  * stops holding its course. The paid alternative is requeue().
  */
-function skip(lessonId, by = 'Aroma', courseId = null) {
+function skip(lessonId, by = 'Aroma', courseId = null, tenantId = null) {
   const item = queue.get(lessonId);
   if (!item) return { ok: false, why: `No lesson '${lessonId}'.` };
-  const wrong = notThisCourse(item, courseId);
+  const wrong = notThisCourse(item, courseId) || notThisTenant(item, tenantId);
   if (wrong) return wrong;
   if (item.status !== queue.ITEM_STATUS.FAILED) {
     return { ok: false, why: `That lesson is '${item.status}', not failed. Only a failed lesson `
@@ -361,10 +418,10 @@ function skip(lessonId, by = 'Aroma', courseId = null) {
  * person clicks -- and it refuses anything that is not `failed`, so it cannot be
  * used to re-run a lesson that is merely waiting for someone to watch it.
  */
-function requeue(lessonId, by = 'Aroma', courseId = null) {
+function requeue(lessonId, by = 'Aroma', courseId = null, tenantId = null) {
   const item = queue.get(lessonId);
   if (!item) return { ok: false, why: `No lesson '${lessonId}'.` };
-  const wrong = notThisCourse(item, courseId);
+  const wrong = notThisCourse(item, courseId) || notThisTenant(item, tenantId);
   if (wrong) return wrong;
   if (item.status !== queue.ITEM_STATUS.FAILED) {
     return { ok: false, why: `That lesson is '${item.status}', not failed. Only a failed lesson `

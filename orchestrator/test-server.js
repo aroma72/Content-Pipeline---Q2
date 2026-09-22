@@ -57,6 +57,9 @@ async function check(name, fn) {
  * listen(0) rather than a fixed port so tests never collide with a dev server
  * someone left running, and never with each other.
  */
+let lastPort = null;
+const port0 = () => lastPort;
+
 async function withServer(envPatch, opts, fn) {
   const saved = {};
   for (const k of Object.keys(envPatch || {})) {
@@ -68,6 +71,7 @@ async function withServer(envPatch, opts, fn) {
   const server = http.createServer(app);
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const port = server.address().port;
+  lastPort = port;
   try {
     return await fn(port);
   } finally {
@@ -970,6 +974,66 @@ async function bridgeChecks() {
       assert(!h.text.includes('testing/h-x'), '/health leaked a lesson id');
       return 'held, needsResume, queuePosition, explicit $0, health counts';
     }); });
+
+  // A course never touched the tenant ledger: no reservation, no settlement, no
+  // ceiling. GET /demo/spend reported 0 after a course and the LMS read that as
+  // "nothing spent". Now a build reserves per lesson, or is refused up front.
+  const PLAN2 = { title: 'T', modules: [{ title: 'M', lessons: [
+    { title: 'Lesson one', brief: 'b1', slo: 's1' }, { title: 'Lesson two', brief: 'b2', slo: 's2' },
+  ] }] };
+  const buildBody = { plan: PLAN2, confirmLessons: 2, series: 'testing' };
+  const withQuietWorker = async (fn) => {
+    // A successful build kicks the worker and the worker runs the real spine.
+    // Nothing here may start one, so the kick is a no-op for the duration.
+    const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+    const realKick = cw.kick;
+    cw.kick = () => {};
+    try { return await fn(); } finally { cw.kick = realKick; }
+  };
+
+  await check('a course build past the tenant ceiling is refused, and queues nothing',
+    () => { const env = freshEnv({ TENANTS_JSON: JSON.stringify([{ id: 'tiny', name: 'Tiny', token: LMS_TOKEN, monthlyUsd: 1 }]) });
+      return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, () => withQuietWorker(async () => {
+        const queue = require(path.join(__dirname, 'lib', 'queue'));
+        require(path.join(__dirname, '..', 'server', 'lib', 'job-store')).reset();
+        queue.resetPathCache();
+        const auth = { authorization: `Bearer ${LMS_TOKEN}` };
+        const r = await req(port0(), { method: 'POST', path: '/api/v1/courses/build', headers: auth, body: buildBody });
+        assert(r.status === 402 && r.json.error === 'tenant_budget_exhausted', `expected 402, got ${r.status} ${r.text}`);
+        assert(queue.currentItems().filter((i) => i.source === 'course-builder').length === 0, 'a refused build still queued lessons');
+        const sp = await req(port0(), { path: '/demo/spend', headers: auth });
+        assert(sp.json.reservedUsd === 0, `a refused build left a reservation: ${sp.text}`);
+        return '402, nothing queued, nothing reserved';
+      })); });
+
+  await check('a course build reserves per lesson, and /demo/spend can see a course',
+    () => { const env = freshEnv();
+      return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, () => withQuietWorker(async () => {
+        const queue = require(path.join(__dirname, 'lib', 'queue'));
+        require(path.join(__dirname, '..', 'server', 'lib', 'job-store')).reset();
+        queue.resetPathCache();
+        const auth = { authorization: `Bearer ${LMS_TOKEN}` };
+        const r = await req(port0(), { method: 'POST', path: '/api/v1/courses/build', headers: auth, body: buildBody });
+        assert(r.status === 202 && r.json.queued === 2, `build: ${r.status} ${r.text}`);
+        const view = await req(port0(), { path: `/api/v1/courses/${r.json.courseId}`, headers: auth });
+        for (const i of view.json.items) {
+          assert(i.tenantId === 'taleemabad-u', `item does not carry its tenant: ${JSON.stringify(i)}`);
+        }
+        const sp = await req(port0(), { path: '/demo/spend', headers: auth });
+        assert(sp.json.reservedUsd === 5, `two lessons should reserve $5.00, got ${sp.json.reservedUsd}`);
+        assert(sp.json.courses && sp.json.courses.lessons === 2 && sp.json.courses.reservedUsd === 5,
+          `/demo/spend does not break out courses: ${JSON.stringify(sp.json.courses)}`);
+
+        // Rejecting a lesson nobody has built yet releases the money, for it and
+        // for the sibling stopped with it.
+        const first = r.json.items[0];
+        const rej = await req(port0(), { method: 'POST', path: `/api/v1/courses/${r.json.courseId}/lessons/${first}/reject`, headers: auth, body: { why: 'changed plan' } });
+        assert(rej.status === 202 && rej.json.stopped.length === 1, `reject: ${rej.status} ${rej.text}`);
+        const after = await req(port0(), { path: '/demo/spend', headers: auth });
+        assert(after.json.reservedUsd === 0 && after.json.spentUsd === 0,
+          `rejecting unbuilt lessons left money on the ledger: ${after.text}`);
+        return 'reserved 2 x $2.50, released on reject';
+      })); });
 
   await check('resume and skip are on the index the LMS pins to',
     () => withServer(BASE_ENV, {}, async (port) => {
