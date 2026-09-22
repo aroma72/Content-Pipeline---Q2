@@ -23,6 +23,42 @@ function buildData() {
   return window.__DATA || null;
 }
 
+/**
+ * Draw an `overlay`, whichever shape it arrives in.
+ *
+ * The script schema declares `overlay: { type: 'string' }` -- "optional HTML
+ * overlay text" -- and that is what the writer produces. This function used to be
+ * inlined as `InfoTemplates[beat.overlay.tpl]`, which asks a string for a `.tpl`
+ * it does not have, gets undefined, and draws NOTHING.
+ *
+ * So every overlay a generated video ever asked for rendered as an empty frame.
+ * It surfaced as a beat carrying art and no words at all, after the art was paid
+ * for, and only after a gate that measures the rendered frame was finally able to
+ * run at all.
+ *
+ * A string is the documented contract and is now honoured. An object is accepted
+ * too, because hand-written videos in the library use {tpl, data} and the two
+ * shapes are trivially distinguishable.
+ */
+function renderOverlay(overlay) {
+  if (typeof overlay === 'string') {
+    const t = document.createElement('div');
+    t.className = 'overlay-text';
+    t.textContent = overlay;
+    return t;
+  }
+  if (overlay && overlay.tpl && window.InfoTemplates[overlay.tpl]) {
+    return window.InfoTemplates[overlay.tpl](overlay.data || {});
+  }
+  // Neither shape drew anything. Say so in the DOM rather than leaving a silent
+  // empty box: qa-frames reads this frame, and an empty overlay-box that looks
+  // identical to a missing one is how this went unnoticed.
+  const t = document.createElement('div');
+  t.className = 'overlay-text';
+  t.textContent = typeof overlay === 'object' && overlay ? String(overlay.text || '') : String(overlay || '');
+  return t;
+}
+
 function makeLayer(beat, anchors) {
   const L = document.createElement('div');
   L.className = 'layer'; L.dataset.id = beat.id;
@@ -34,9 +70,9 @@ function makeLayer(beat, anchors) {
     vid.muted = true; vid.playsInline = true; vid.preload = 'auto';
     L.appendChild(vid);
     // overlays (e.g. the price-list screen on beat 20) still ride on top of the clip.
-    if (beat.overlay && window.InfoTemplates[beat.overlay.tpl]) {
+    if (beat.overlay) {
       const ob = document.createElement('div'); ob.className = 'overlay-box';
-      ob.appendChild(window.InfoTemplates[beat.overlay.tpl](beat.overlay.data || {}));
+      ob.appendChild(renderOverlay(beat.overlay));
       L.appendChild(ob);
     }
   } else if (beat.mode === 'info' && beat.info && window.InfoTemplates[beat.info.tpl]) {
@@ -52,9 +88,9 @@ function makeLayer(beat, anchors) {
     boy.style.top = (bb[1] / ih * 100) + '%';
     boy.style.width = ((bb[2] - bb[0]) / iw * 100) + '%';
     L.appendChild(boy);
-    if (beat.overlay && window.InfoTemplates[beat.overlay.tpl]) {
+    if (beat.overlay) {
       const ob = document.createElement('div'); ob.className = 'overlay-box';
-      ob.appendChild(window.InfoTemplates[beat.overlay.tpl](beat.overlay.data || {}));
+      ob.appendChild(renderOverlay(beat.overlay));
       L.appendChild(ob);
     }
   } else {

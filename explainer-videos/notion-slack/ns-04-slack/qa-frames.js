@@ -140,17 +140,30 @@ catch { console.log('[qa-frames] ⏭  puppeteer not installed here.'); process.e
       const brokenImgs = imgs.filter((im) => im.complete && !im.naturalWidth).length;
       const hasWindow = Boolean(layer.querySelector(STRUCTURED));
       const sizes = texts.map((t) => t.size).filter((n) => n > 0);
-      // WHICH elements spill, not just how many. A bare count ("153 element(s)
-      // spill outside 1920x1080") is unactionable: it cannot distinguish one
-      // mis-sized container dragging its whole subtree out of frame from 153
-      // independent layout faults, and the first is overwhelmingly more likely.
-      // Naming the worst offenders turns a re-render into a read.
+      // LAYOUT overflow, not animated overflow.
+      //
+      // getBoundingClientRect() includes transforms, and the push-in deliberately
+      // scales the full-bleed art past the frame -- lesson.html ramps
+      // scale(1.04 -> 1.11), and body{overflow:hidden} crops it. That is how a
+      // Ken Burns move works, and measuring it post-transform reported a working
+      // animation as "1 element spills by 94px" and blocked a paid render.
+      //
+      // offsetLeft/offsetWidth are the pre-transform layout box, which is what
+      // this rule is actually about: something POSITIONED wrong, not something
+      // moving on purpose.
       const spills = [...layer.querySelectorAll('*')].map((el) => {
         const cs = getComputedStyle(el);
         if (cs.display === 'none' || cs.visibility === 'hidden') return null;
-        const r = el.getBoundingClientRect();
-        if (!(r.width > 2 && r.height > 2)) return null;
-        const over = Math.max(-r.left, -r.top, r.right - 1920, r.bottom - 1080, 0);
+        const w = el.offsetWidth;
+        const h = el.offsetHeight;
+        if (!(w > 2 && h > 2)) return null;
+        let left = 0;
+        let top = 0;
+        for (let n = el; n && n !== layer; n = n.offsetParent) {
+          left += n.offsetLeft;
+          top += n.offsetTop;
+        }
+        const over = Math.max(-left, -top, left + w - 1920, top + h - 1080, 0);
         if (over <= 8) return null;
         const cls = (el.className && String(el.className).split(/\s+/)[0]) || '';
         return { sel: el.tagName.toLowerCase() + (cls ? '.' + cls : ''), over: Math.round(over) };
@@ -181,6 +194,19 @@ catch { console.log('[qa-frames] ⏭  puppeteer not installed here.'); process.e
   findings.forEach((f) => {
     const b = beats[f.i];
     if (!b) return;
+    // Does this beat put a PICTURE on screen, as opposed to a bare sentence?
+    //
+    // The 60px floor exists for a slide that is nothing but words, because a lone
+    // sentence has to carry the frame. A laid-out component sits below it by
+    // design, so misjudging this blocks a correct video.
+    //
+    // The beat's own mode answers it, and a hand-maintained CSS selector list does
+    // not. That list said `.scoresheet` while the template renders `.scoresheets`,
+    // so a two-panel comparison table read as a bare sentence and failed the 60px
+    // bar after the art was bought. Any template added since would drift the same
+    // way, silently.
+    const isInfo = Boolean(b && b.mode === 'info' && b.info && b.info.tpl);
+    const hasWindow = isInfo || f.hasWindow || Boolean(f.imgs);
     const id = `beat ${b.id}`;
     // Rule 3, in two parts, because the old single check conflated them and the
     // message sent a reader after the wrong thing for an hour.
@@ -211,7 +237,7 @@ catch { console.log('[qa-frames] ⏭  puppeteer not installed here.'); process.e
       problems.push(`${id}: text at ${f.min.toFixed(0)}px — below the ${MIN_ANY}px floor `
         + `("${f.smallest ? f.smallest.text : ''}"). Usually a missing stylesheet, not a size choice.`);
     }
-    if (!f.hasWindow && f.max < MIN_TEXT_ONLY) {
+    if (!hasWindow && f.max < MIN_TEXT_ONLY) {
       problems.push(`${id}: text-only slide but the largest text is ${f.max.toFixed(0)}px — a bare `
         + `sentence must lead at >= ${MIN_TEXT_ONLY}px, centred, so it carries the frame.`);
     }
