@@ -142,29 +142,31 @@ catch { console.log('[qa-frames] ⏭  puppeteer not installed here.'); process.e
       const sizes = texts.map((t) => t.size).filter((n) => n > 0);
       // LAYOUT overflow, not animated overflow.
       //
-      // getBoundingClientRect() includes transforms, and the push-in deliberately
-      // scales the full-bleed art past the frame -- lesson.html ramps
-      // scale(1.04 -> 1.11), and body{overflow:hidden} crops it. That is how a
-      // Ken Burns move works, and measuring it post-transform reported a working
-      // animation as "1 element spills by 94px" and blocked a paid render.
+      // The push-in deliberately ramps scale(1.04 -> 1.11) on the full-bleed art
+      // while body{overflow:hidden} crops it -- that is how a Ken Burns move
+      // works. getBoundingClientRect includes transforms, so measuring it flagged
+      // a working animation as "1 element spills by 94px" and blocked a render.
       //
-      // offsetLeft/offsetWidth are the pre-transform layout box, which is what
-      // this rule is actually about: something POSITIONED wrong, not something
-      // moving on purpose.
+      // The fix is to skip anything a transform is moving, not to change how the
+      // box is measured. Accumulating offsetLeft instead was the first attempt and
+      // it was worse: offsetParent skips non-positioned ancestors and an inline
+      // <span> reports its box differently, which invented a 201px spill on a
+      // fixture that had always passed. The harness caught that for nothing.
+      const animated = (el) => {
+        for (let n = el; n && n !== layer; n = n.parentElement) {
+          const t = getComputedStyle(n).transform;
+          if (t && t !== 'none') return true;
+        }
+        return false;
+      };
       const spills = [...layer.querySelectorAll('*')].map((el) => {
         const cs = getComputedStyle(el);
         if (cs.display === 'none' || cs.visibility === 'hidden') return null;
-        const w = el.offsetWidth;
-        const h = el.offsetHeight;
-        if (!(w > 2 && h > 2)) return null;
-        let left = 0;
-        let top = 0;
-        for (let n = el; n && n !== layer; n = n.offsetParent) {
-          left += n.offsetLeft;
-          top += n.offsetTop;
-        }
-        const over = Math.max(-left, -top, left + w - 1920, top + h - 1080, 0);
+        const r = el.getBoundingClientRect();
+        if (!(r.width > 2 && r.height > 2)) return null;
+        const over = Math.max(-r.left, -r.top, r.right - 1920, r.bottom - 1080, 0);
         if (over <= 8) return null;
+        if (animated(el)) return null;
         const cls = (el.className && String(el.className).split(/\s+/)[0]) || '';
         return { sel: el.tagName.toLowerCase() + (cls ? '.' + cls : ''), over: Math.round(over) };
       }).filter(Boolean);
