@@ -149,15 +149,39 @@ function claim(id, { to }, opts = {}) {
  * The finished file for this job, resolved now rather than remembered.
  * Returns null once the container that rendered it is gone, which is the truth.
  */
+/**
+ * Where this job's finished video actually is.
+ *
+ * Two fallbacks, both earned by a real failure.
+ *
+ * SERIES/SLUG came only from `job.review`, which is written when produce RETURNS.
+ * A run that finishes the video and then blocks at the review gate never returns
+ * -- it throws -- so the one state in which a person most needs to watch the file
+ * was the one state in which nothing could find it. `job.script` carries the same
+ * two fields and is written earlier.
+ *
+ * THE FILE came only from the render directory, which .dockerignore excludes, so
+ * it is gone after the next redeploy. The durable copy on the volume is the one
+ * that survives, and it is the copy the LMS is told to fetch.
+ */
 function resolveFinalPath(job, opts = {}) {
-  if (!job || !job.review || !job.review.series || !job.review.slug) return null;
+  const from = (job && job.review && job.review.series && job.review.slug)
+    ? job.review
+    : (job && job.script && job.script.series && job.script.slug ? job.script : null);
+  if (!from) return null;
+
   try {
     const oneVideo = opts.oneVideo || require('./one-video');
     const { videoDir } = require('../../orchestrator/lib/paths');
-    return oneVideo.finishedFile(videoDir(job.review.series, job.review.slug), job.review.slug);
+    const onDisk = oneVideo.finishedFile(videoDir(from.series, from.slug), from.slug);
+    if (onDisk) return onDisk;
+  } catch { /* fall through to the durable copy */ }
+
+  try {
+    const found = require('../../orchestrator/lib/deliverables').find(from.series, from.slug);
+    return found ? found.file : null;
   } catch { return null; }
 }
-
 /** Re-read the beats from disk when something actually needs them. */
 function hydrateScript(job) {
   if (!job || !job.script || !job.script.series || !job.script.slug) return null;
