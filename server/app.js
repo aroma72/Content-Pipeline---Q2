@@ -365,7 +365,26 @@ function createApp(opts = {}) {
             scenario: r.brief && r.brief.ali_scenario,
             gate: r.gate && r.gate.verdict,
             redrafts: r.redrafts,
-            beats: (r.beats || []).map((b) => ({ id: b.id, mode: b.mode, vo: b.vo || null })),
+            // Enough to REVIEW a beat, not just read it aloud.
+            //
+            // This carried {id, mode, vo} only, so nothing anywhere served a
+            // beat's caption, art prompt or overlay -- and the one surface meant
+            // for reading a script before paying for it showed only the words
+            // that get spoken. Diagnosing a wordless beat meant reading the
+            // renderer's source to work out what it would have drawn.
+            //
+            // Still a projection, not a second truth: beats.js on disk remains
+            // authoritative, and this is the subset a person needs to answer
+            // "is this beat going to render something worth watching?"
+            beats: (r.beats || []).map((b) => ({
+              id: b.id,
+              mode: b.mode,
+              vo: b.vo || null,
+              cap: b.cap || null,
+              art: b.art || null,
+              overlay: b.overlay ? { tpl: b.overlay.tpl || null } : null,
+              info: b.info ? { tpl: b.info.tpl || null } : null,
+            })),
             // The question the LMS will pop. Never drawn, never spoken.
             checkpoint: checkpoint ? checkpoint.quiz : null,
             checkpointAfterBeat: checkpoint
@@ -685,7 +704,24 @@ function createApp(opts = {}) {
         L.push('', `**— the video pauses here (beat ${b.id}) —**`, '');
         continue;
       }
-      L.push(`**${b.id}** *(${b.mode})*  ${b.vo}`, '');
+      L.push(`**${b.id}** *(${b.mode})*  ${b.vo}`);
+
+      // What the beat actually puts ON SCREEN, which is the half of a script that
+      // decides whether a frame is worth watching -- and the half this file used
+      // to omit entirely. An `ali` or `scene` beat draws its art and nothing else
+      // unless it carries a caption or a working overlay, so "no words" here is a
+      // real defect a reader can catch before a single dollar is spent.
+      const onScreen = [];
+      if (b.cap) onScreen.push(`caption: "${b.cap}"`);
+      if (b.overlay && b.overlay.tpl) onScreen.push(`overlay: ${b.overlay.tpl}`);
+      if (b.info && b.info.tpl) onScreen.push(`info: ${b.info.tpl}`);
+      if (onScreen.length) {
+        L.push(`    ${onScreen.join(' · ')}`);
+      } else if (b.mode === 'ali' || b.mode === 'scene') {
+        L.push('    ⚠ NO WORDS ON SCREEN — this beat draws art and nothing else.');
+      }
+      if (b.art) L.push(`    art: ${String(b.art).slice(0, 200)}`);
+      L.push('');
     }
 
     if (cp) {

@@ -2858,6 +2858,32 @@ function browserChecks() {
     return 'GET never forgets; DELETE is explicit';
   });
 
+  check('a script can be reviewed before it is paid for, not just read aloud', () => {
+    // The whole point of splitting writing from rendering is that somebody reads
+    // the script while it is still free. That only works if the script shows what
+    // reaches the SCREEN -- and for weeks it showed only what gets spoken.
+    //
+    // The cost was concrete: a beat rendered with no words on it, nobody could see
+    // that from any surface, and finding out took a paid render and then reading
+    // the renderer's source to work out what it would have drawn.
+    const src = fs.readFileSync(path.join(PATHS_REPO, 'server', 'app.js'), 'utf8');
+
+    // The projection has to carry it before the page can show it.
+    const proj = src.slice(src.indexOf('beats: (r.beats || []).map'), src.indexOf('checkpoint: checkpoint'));
+    for (const field of ['cap', 'art', 'overlay', 'info']) {
+      assert(proj.includes(field + ':'),
+        `the stored script drops '${field}', so no surface can ever show it`);
+    }
+
+    // And the readable form has to call out the case that actually bit.
+    const md = src.slice(src.indexOf("app.get('/demo/make-video/:jobId/script.md'"));
+    assert(/NO WORDS ON SCREEN/.test(md),
+      'script.md does not flag a beat that draws art and nothing else');
+    assert(/caption:/.test(md) && /overlay:/.test(md),
+      'script.md still shows only the spoken line');
+    return 'cap, art, overlay and info survive to a page a person reads';
+  });
+
   check('a course script can put words on an illustration beat', () => {
     // The defect that blocked every course lesson, and it was NOT a bad gate.
     // animation/lesson.html draws an `ali`/`scene` beat as art and nothing else
