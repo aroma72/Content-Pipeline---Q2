@@ -820,3 +820,49 @@ are all container-only. Run it in the container before believing it.
 
 Related: [[H21]] (fail-soft + hard requirement = silent outage), [[H22]] (`--tools` vs
 `--allowedTools`).
+
+---
+
+### H24. Persist an artefact the moment it exists, never after the next thing that can throw
+
+**Added:** 2026-09-22 | **Applies to:** every durable copy in the pipeline
+**Invalidate if:** the spine gains a finally-block that persists on the way out
+
+The mp4 copy to the volume sat *after* the `eval-text` sensor. That sensor blocks by **throwing**,
+so a lesson blocked there jumped straight past the copy: the only copy of a finished, paid render
+stayed in a directory `.dockerignore` excludes, one redeploy from gone.
+
+That is precisely the loss `deliverables.js` was written to prevent, reproduced by the module
+itself. The beats copy two hundred lines earlier already had the rule right — *"keep what makes this
+lesson diagnosable before anything can block on it"* — and the second call site did not follow it.
+
+**How to apply:** a persist belongs immediately after the artefact exists, never after the next
+check. Ask "what throws between here and the copy?" — if anything does, the copy is in the wrong
+place. Ordering IS the guarantee, and there is no observable difference until a gate happens to fail
+in production, which is why an assertion on the ordering is the only thing that holds it.
+
+Related: [[H21]] (a silent skip is how someone believes a video is safe when it is not).
+
+---
+
+### H25. Two facts that usually travel together will eventually diverge — publish the one that is asked about
+
+**Added:** 2026-09-22 | **Applies to:** any status/enum we publish to a consumer
+**Invalidate if:** every `post-render-check` block comes to mean a render exists
+
+Our API reference tabulated `blockedBy` against "money spent?", and the LMS reasonably read that as
+"a video exists, so `/file` should serve it". But art, speech and animation are bought *before* the
+render, and `post-render-check` is raised by three sensors — `qa-clips` and `qa-frames` run before
+`compile-lesson.js`, `eval-text` after it. Same value, opposite answers. They spent a day probing a
+gate that does not exist, then asked us to relax it.
+
+The internal version of the same error: `finalRendered: true` was hardcoded into every blocking
+sensor, including the two that cannot have a render.
+
+**How to apply:** when a consumer needs to know X and we publish Y because Y usually implies X,
+publish X. Here that is `deliverableAvailable` — a boolean meaning "a fetch will succeed right now",
+computed from what is on the volume. Any *rule* mapping `blockedBy` to fetchability is wrong for
+some value of `blockedBy`; a fact cannot drift. Prefer answering the question over documenting how
+to infer the answer.
+
+Related: [[H22]] (prove it from evidence, not from a counter you have not measured on that path).

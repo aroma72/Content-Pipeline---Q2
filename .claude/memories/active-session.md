@@ -170,10 +170,38 @@ read the cwd's `.claude/settings.json` and exit 1 before any model call. Fail-so
 references came back empty — the same silent outage, new costume. Fixed by spawning the search in
 `os.tmpdir()`. See `lessons.md` H23. **Green suite + green CI + successful deploy all missed this.**
 
+**LMS found a real durability bug — `282f17a`.** They reported `/file` 404ing for a lesson blocked
+after a paid render and asked us to relax a status gate for four `blockedBy` values. **There is no
+status gate** — the handler looks up the bytes first and only the message varies by status, so their
+requested change would have done nothing. Three faults, all ours:
+
+1. **The mp4 persist sat AFTER the `eval-text` sensor, which blocks by throwing** — so a block there
+   skipped the copy and the only copy of a paid render stayed in a `.dockerignore`d directory. The
+   exact loss `deliverables.js` exists to prevent, reproduced by it. See `lessons.md` H24.
+2. **`finalRendered: true` was hardcoded** on every blocking sensor; `qa-clips` and `qa-frames` run
+   BEFORE `compile-lesson.js`. Our API reference repeated it, which is what sent them hunting bytes
+   that were never made. See H25.
+3. The 404 said "no finished video yet" for a lesson that spent money in full.
+
+**Their probed lesson has no video and never did** — blocked at `qa-frames` (pre-render) on
+2026-09-21; the volume has no directory for it at all. Nothing recoverable.
+
+Shipped: persist before the last gate · `finalRendered` per call site · honest 404 with `status`/
+`blockedBy`/`renderExists`/`partsAvailable` · **`deliverableAvailable`** on blocked+done items (a
+fact, not a rule — no `blockedBy` mapping can be right) · `GET .../beats` (produce has been keeping
+beats.js for a reader that did not exist) · `/file`, `/beats`, `/deliverables` now on `GET /api/v1`
+· `DELETE /demo/make-video/:jobId/video`. Reply letter at
+`E:\Cohort2LP\docs\content-automation\2026-09-22-file-serves-what-exists-reply.md`.
+
+**Why it shipped: the only /file test was a regex over api.js source** — the handler had never been
+called with a real queue item. Added a route-level suite in `test-server.js` with a real enqueued
+lesson (beats-only, with-mp4, course projection). 210 + 39 green, all three guards mutation-tested.
+
 ### NEXT
-1. Confirm the redeploy of `661b995` is live, then **run the references stage in the container
-   again** — that is the only proof that counts. Then tell the LMS the toggle is live, with one real
-   lesson's `references` output behind it.
+1. **CI then deploy `282f17a`**, then re-probe `/file`, `/beats` and `/api/v1` live and tell the LMS
+   (letter is written and waiting).
+2. **References: do NOT tell the LMS it is live yet.** Aroma's call: wait for a real course lesson
+   with `references: true`, not the stage-level production run already verified.
 2. Aroma still to decide: approve run 4 (`030ebdae3d8c`) for unlisted YouTube.
 3. Starred gaps disclosed in the doc and now owed: gate `/demo/course-builder/build`
    (unauthenticated, spends), enforce scopes on `/api/v1`, CORS `DELETE`, set
