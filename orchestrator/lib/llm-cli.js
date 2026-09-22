@@ -26,6 +26,7 @@
  */
 
 const fs = require('fs');
+const os = require('os');
 const { loadPrompt } = require('./paths');
 const shell = require('./shell');
 
@@ -805,7 +806,19 @@ async function askWithSearch({
 
   let res;
   try {
-    res = await shell.run('claude', args, { timeoutMs, input });
+    // RUN IT OUTSIDE THE REPO. Claude Code reads the working directory's
+    // `.claude/settings.json`, and the moment a tool is PERMITTED it also insists
+    // the workspace has been trusted -- which a container never has. In
+    // production this exited 1 with "Ignoring 9 permissions.allow entries ...
+    // this workspace has not been trusted", so the search failed and the stage
+    // fail-softed to no references: the original bug wearing a different hat.
+    //
+    // askJson does not hit this because it permits no tools at all, which is why
+    // the whole pipeline works from /app today. Rather than trusting the
+    // workspace in the image, this runs somewhere with no settings and no hooks
+    // to inherit -- nothing here reads the repo, so there is nothing to lose by
+    // leaving it.
+    res = await shell.run('claude', args, { timeoutMs, input, cwd: os.tmpdir() });
   } catch (e) {
     if (AUTH_FAILURE_RE.test(e.message)) {
       throw new LlmUnavailableError(`the claude CLI is not authenticated: ${e.message.slice(0, 120)}`);

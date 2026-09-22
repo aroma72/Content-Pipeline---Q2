@@ -2739,6 +2739,36 @@ async function referenceChecks() {
     return 'two WebSearch calls counted as two; another tool counted as none';
   });
 
+  await checkAsync('the search runs outside the repo, where there are no settings to inherit', async () => {
+    // Found only in production. Claude Code reads the working directory's
+    // .claude/settings.json, and once a tool is PERMITTED it also requires the
+    // workspace to have been trusted -- which a container never has. From /app it
+    // exited 1 with "this workspace has not been trusted" and the stage
+    // fail-softed to no references, i.e. the original bug in a new costume. Local
+    // runs pass either way, so only an assertion keeps this fixed.
+    const cli = require('./lib/llm-cli');
+    const shell = require('./lib/shell');
+    const realRun = shell.run;
+    let sawCwd = null;
+    try {
+      shell.run = async (_cmd, _args, opts) => {
+        sawCwd = opts && opts.cwd;
+        return {
+          code: 0,
+          stderr: '',
+          stdout: JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'x' }),
+        };
+      };
+      await cli.askWithSearch({ promptName: 'video_references_search', input: 'x' });
+      assert(sawCwd, 'the search ran with no cwd, so it inherits the repo it happens to start in');
+      assert(!path.resolve(sawCwd).startsWith(path.resolve(__dirname, '..')),
+        `the search ran inside the repo (${sawCwd}), where .claude/settings.json blocks it`);
+    } finally {
+      shell.run = realRun;
+    }
+    return `runs in ${sawCwd}, not the repo`;
+  });
+
   await checkAsync('a search without an API key goes to the CLI instead of returning nothing', async () => {
     // The regression that shipped the feature switched off: this threw, so every
     // lesson this deployment ever built got an empty reference list.
