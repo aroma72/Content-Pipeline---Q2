@@ -87,6 +87,19 @@ function createApp(opts = {}) {
             queueFile: q.queueFile(),
             durableSince: q.durableSince(),
             awaitingApproval: cw.awaitingApproval().length,
+            // Counts only, no ids -- this route has no credential. needsResume is
+            // the fact an operator needs after a deploy: work is waiting and the
+            // worker is idle, because boot starts nothing on purpose.
+            worker: (() => {
+              const s = cw.status();
+              return {
+                running: s.running,
+                building: Boolean(s.current),
+                eligible: s.eligible,
+                needsResume: s.needsResume,
+                heldCourses: s.held.length,
+              };
+            })(),
           };
         } catch (e) { return { error: e.message }; }
       })(),

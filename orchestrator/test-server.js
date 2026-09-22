@@ -929,6 +929,48 @@ async function bridgeChecks() {
       return 'refuses a waiting lesson and an unknown one';
     }); });
 
+  // worker.building was null for idle and for parked alike, and `running` was
+  // computed then dropped at the API boundary. The LMS read "nothing is happening"
+  // in exactly the case where nothing WOULD happen without a person.
+  await check('the course view says whether the worker needs a resume and what holds this course',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      const queue = require(path.join(__dirname, 'lib', 'queue'));
+      require(path.join(__dirname, '..', 'server', 'lib', 'job-store')).reset();
+      queue.resetPathCache();
+      const mk = (course, slug) => queue.enqueue({ topic: slug, series: 'testing', slug, source: 'course-builder', notes: `[${course}] brief` });
+      mk('course-held', 'h-x'); mk('course-held', 'h-y'); mk('course-free', 'f-z');
+      queue.fail('testing/h-x', null, 'script never validated');
+      queue.setStatus('testing/h-x', 'failed', { runId: null });
+      const auth = { authorization: `Bearer ${LMS_TOKEN}` };
+
+      const held = await req(port, { path: '/api/v1/courses/course-held', headers: auth });
+      assert(held.status === 200, `held course view: ${held.status}`);
+      const w = held.json.worker;
+      assert(w && w.held && w.held.by === 'testing/h-x' && w.held.status === 'failed',
+        `the held course does not name what holds it: ${JSON.stringify(w)}`);
+      assert(w.running === false, 'running is not forwarded');
+      assert(w.needsResume === true, 'a free course is queued and idle, yet needsResume is false');
+      assert(w.eligibleAcrossAllCourses === 1, `eligible should be 1 (f-z), got ${w.eligibleAcrossAllCourses}`);
+      assert(w.buildingCourseId === null, 'buildingCourseId should be null when idle');
+      const hx = held.json.items.find((i) => i.id === 'testing/h-x');
+      assert(hx.spendUsdTotal === 0 && hx.spendUsd === 0,
+        `a failed lesson with no run must report an explicit 0, got ${JSON.stringify({ t: hx.spendUsdTotal, u: hx.spendUsd })}`);
+      const hy = held.json.items.find((i) => i.id === 'testing/h-y');
+      assert(hy.queuePosition === null, `a queued lesson behind a hold has no position, got ${hy.queuePosition}`);
+
+      const free = await req(port, { path: '/api/v1/courses/course-free', headers: auth });
+      assert(free.json.worker.held === null, 'the free course reports a hold that is not its own');
+      const fz = free.json.items.find((i) => i.id === 'testing/f-z');
+      assert(fz.queuePosition === 1, `f-z is first in line, got ${fz.queuePosition}`);
+
+      const h = await req(port, { path: '/health' });
+      const cw = h.json.courses && h.json.courses.worker;
+      assert(cw && cw.needsResume === true && cw.eligible === 1 && cw.heldCourses === 1 && cw.running === false,
+        `/health.courses.worker is wrong: ${JSON.stringify(cw)}`);
+      assert(!h.text.includes('testing/h-x'), '/health leaked a lesson id');
+      return 'held, needsResume, queuePosition, explicit $0, health counts';
+    }); });
+
   await check('resume and skip are on the index the LMS pins to',
     () => withServer(BASE_ENV, {}, async (port) => {
       const r = await req(port, { path: '/api/v1' });

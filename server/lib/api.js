@@ -524,11 +524,19 @@ function build() {
 
   router.get('/courses/:courseId', requireToken, (req, res) => {
     const queue = require('../../orchestrator/lib/queue');
+    const cw = require('./course-worker');
     const tag = `[${req.params.courseId}]`;
+    // Where each queued lesson stands in the worker's line, 1-based, counting only
+    // lessons the worker may actually take. A lesson behind its own course's hold
+    // has no position: it is not in line, it is waiting for a person.
+    const line = cw.eligible().map((e) => e.id);
     const items = queue.currentItems()
       .filter((i) => (i.notes || '').includes(tag))
       .map((i) => ({
         id: i.id, topic: i.topic, status: i.status, module: i.module,
+        ...(i.status === 'queued'
+          ? { queuePosition: line.includes(i.id) ? line.indexOf(i.id) + 1 : null }
+          : {}),
         // The run that owns this lesson. It is the only handle that ties a lesson
         // to what it cost, and without it a course cannot be reconciled against
         // any spend figure at all.
@@ -606,6 +614,12 @@ function build() {
         // Settle against `spendUsdTotal`: it accumulates across retries, so it is what
         // the lesson has really cost. `spendUsd` is the last attempt alone, which is
         // what reconciles against `runId` on the same row.
+        // A lesson that failed without ever being claimed -- stopped with its course,
+        // or rejected while queued -- has no run and so no spend event. Absent means
+        // "unknown" to the consumer, which left a $2.50 hold standing on a lesson that
+        // cost nothing. Say zero, explicitly, when it is known to be zero.
+        ...(i.status === 'failed' && !i.runId && !Number.isFinite(i.spendUsdTotal)
+          ? { spendUsd: 0, spendUsdTotal: 0 } : {}),
         ...(Number.isFinite(i.spendUsd) ? { spendUsd: i.spendUsd } : {}),
         ...(Number.isFinite(i.spendUsdTotal) ? { spendUsdTotal: i.spendUsdTotal } : {}),
         // And what it was spent ON. Media is art and speech -- the part that scales
@@ -641,8 +655,8 @@ function build() {
       });
     }
     const by = (s) => items.filter((i) => i.status === s).length;
-    const cw = require('./course-worker');
     const worker = cw.status();
+    const heldHere = worker.held.find((h) => h.courseId === req.params.courseId) || null;
     const waiting = cw.awaitingApproval(req.params.courseId);
     res.json({
       courseId: req.params.courseId,
@@ -664,7 +678,23 @@ function build() {
       // One lesson is built at a time and then waits. This is the field the UI
       // acts on: while it is non-empty, nothing else is being built or spent.
       awaitingApproval: waiting,
-      worker: { building: worker.current, queuedAcrossAllCourses: worker.queued },
+      worker: {
+        building: worker.current,
+        queuedAcrossAllCourses: worker.queued,
+        // `building: null` was the same value for idle and for parked, and the LMS
+        // read it as "fine" in the one case where nothing would move without a
+        // person. These say which it is.
+        running: worker.running,
+        buildingCourseId: worker.buildingCourseId,
+        eligibleAcrossAllCourses: worker.eligible,
+        // True when lessons the worker may take are waiting and nobody is building:
+        // the normal state after a redeploy, because boot starts nothing.
+        // POST /api/v1/courses/worker/resume clears it.
+        needsResume: worker.needsResume,
+        // What holds THIS course, or null. `by` is the lesson a person must deal
+        // with (approve / reject / skip / requeue) before the course moves again.
+        held: heldHere && { by: heldHere.by, status: heldHere.status, since: heldHere.since },
+      },
       items,
     });
   });
