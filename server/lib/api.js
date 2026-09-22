@@ -194,7 +194,18 @@ function build() {
             + 'ONE lesson at a time and pause until approved.' },
         { method: 'POST', path: '/api/v1/courses/:courseId/lessons/:lessonId/reject',
           auth: true,
-          description: 'Reject a built lesson. The course stops; nothing after it is built.' },
+          description: 'Reject a lesson. THIS course stops: its queued lessons are failed, free, '
+            + 'with `stoppedWithCourse` naming the rejection. Other courses continue.' },
+        { method: 'POST', path: '/api/v1/courses/:courseId/lessons/:lessonId/skip',
+          auth: true,
+          description: 'Drop ONE failed lesson for free so its course continues without it. The '
+            + 'lesson stays `failed` with `skipped: true`; nothing is rebuilt. The paid '
+            + 'alternative is requeue.' },
+        { method: 'POST', path: '/api/v1/courses/worker/resume', auth: true,
+          description: 'Start the course worker after a restart. Boot deliberately starts '
+            + 'nothing, so queued lessons wait for this, a build, an approve or a requeue. '
+            + 'Builds only lessons whose course is not held by a failed or blocked lesson; '
+            + 'spends nothing a build did not already authorise.' },
         { method: 'POST', path: '/api/v1/courses/:courseId/lessons/:lessonId/requeue',
           auth: true,
           description: 'Retry ONE failed lesson, leaving the rest of the course alone. '
@@ -490,6 +501,27 @@ function build() {
     });
   });
 
+  /**
+   * Start the worker by hand. restore() starts nothing on boot -- a crash loop
+   * must not spend -- so after every redeploy the queue waits for a kick, and the
+   * only kicks were build, approve and requeue. Declared before /courses/:courseId
+   * so `worker` can never be read as a course id.
+   */
+  router.post('/courses/worker/resume', requireToken, (req, res) => {
+    const by = (req.body && req.body.by) || req.tenant.id;
+    const r = require('./course-worker').resume(by);
+    res.status(202).json({
+      resumed: true,
+      by,
+      eligible: r.eligible,
+      running: r.running,
+      held: r.held,
+      note: r.eligible
+        ? `Building ${r.eligible} eligible lesson(s), one at a time. Courses held by a failed or blocked lesson are not touched.`
+        : 'Nothing is eligible: every queued lesson belongs to a course that is waiting for a person.',
+    });
+  });
+
   router.get('/courses/:courseId', requireToken, (req, res) => {
     const queue = require('../../orchestrator/lib/queue');
     const tag = `[${req.params.courseId}]`;
@@ -665,7 +697,27 @@ function build() {
     if (!r.ok) return res.status(409).json({ error: 'cannot_reject', message: r.why });
     res.status(202).json({
       rejected: req.params.lessonId,
-      note: 'Nothing further will be built for this course. The video was not published.',
+      stopped: r.stopped || [],
+      note: 'Nothing further will be built for THIS course: its queued lessons are now failed '
+        + '(free, `stoppedWithCourse`). Other courses continue. The video was not published.',
+    });
+  });
+
+  /**
+   * Drop one failed lesson so its course continues. Free -- nothing is rebuilt.
+   * The lesson keeps status `failed` and gains `skipped: true`, so a consumer
+   * holding the status set closed sees nothing new.
+   */
+  router.post('/courses/:courseId/lessons/:lessonId(*)/skip', requireToken, (req, res) => {
+    const by = (req.body && req.body.by) || 'Aroma';
+    const r = require('./course-worker')
+      .skip(req.params.lessonId, by, req.params.courseId);
+    if (!r.ok) return res.status(409).json({ error: 'cannot_skip', message: r.why });
+    res.status(202).json({
+      skipped: req.params.lessonId,
+      by,
+      note: 'This lesson stays failed and no longer holds its course. The next lesson of the '
+        + 'course builds now. Nothing was bought.',
     });
   });
 

@@ -3456,6 +3456,168 @@ async function courseChecks() {
     return 'refused';
   });
 
+  // ── the hold is per course, not per service ──────────────────────────────────
+  // On 2026-09-22 one course's lesson failed script validation and drain() broke
+  // out of its loop. "Paused" was never a state -- just the absence of a running
+  // drain -- and only build/approve/requeue ever started one again. Every other
+  // course, every other tenant, sat queued behind it for a day. The header comment
+  // said "nothing after a rejected lesson is built"; the code stopped everything.
+
+  // A per-item stub: which lessons end how. Anything unnamed blocks at review.
+  const outcomes = {};
+  const built = [];
+  spine.execute = async (item, opts) => {
+    lastSpineOpts = opts;
+    built.push(item.id);
+    const status = outcomes[item.id] || 'blocked';
+    if (status === 'failed') queue.fail(item.id, 'run-t', 'stubbed failure');
+    else if (status === 'done') queue.done(item.id, 'run-t', {});
+    else queue.block(item.id, 'run-t', 'awaiting human review', 'review');
+    return { status };
+  };
+  const course = (tag, slug, extra = {}) => queue.enqueue({
+    topic: slug, series: 'demo', slug, source: 'course-builder', notes: `[${tag}] brief`, ...extra,
+  });
+  // Earlier checks call approve(), whose kick() drains fire-and-forget; a drain
+  // still running when the next check starts makes that check's drain() return
+  // alreadyRunning and build nothing. Settle first, then start clean.
+  const settled = async () => {
+    const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+    for (let i = 0; i < 200 && cw.status().running; i++) await new Promise((res) => setTimeout(res, 10));
+    assert(!cw.status().running, 'the worker is still running from an earlier check');
+  };
+  const fresh = async () => {
+    await settled();
+    freshQueue(); built.length = 0; for (const k of Object.keys(outcomes)) delete outcomes[k];
+  };
+
+  await checkAsync('a failed lesson holds its own course and no other', async () => {
+    await fresh();
+    const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+    course('course-a', 'a1'); course('course-a', 'a2'); course('course-b', 'b1');
+    outcomes['demo/a1'] = 'failed';
+    await cw.drain();
+    assert(queue.get('demo/a1').status === 'failed', 'a1 did not fail as stubbed');
+    assert(queue.get('demo/a2').status === 'queued', 'a2 was built after its sibling failed');
+    assert(queue.get('demo/b1').status === 'blocked', `b1 was parked behind another course's failure: '${queue.get('demo/b1').status}'`);
+    assert(built.join(',') === 'demo/a1,demo/b1', `built ${built.join(',')}`);
+    const st = cw.status();
+    assert(st.held.some((h) => h.courseId === 'course-a' && h.by === 'demo/a1' && h.status === 'failed'),
+      'status() does not name the held course and the lesson holding it');
+    assert(st.needsResume === false, 'nothing is eligible, yet needsResume is true');
+    return 'a2 waits, b1 builds';
+  });
+
+  await checkAsync('reject stops the rejected course and releases the others', async () => {
+    await fresh();
+    const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+    course('course-a', 'a1'); course('course-a', 'a2'); course('course-b', 'b1');
+    queue.block('demo/a1', 'run-1', 'awaiting human review', 'review');
+    const r = cw.reject('demo/a1', 'wrong format', 'course-a');
+    assert(r.ok, r.why);
+    // kick() is fire-and-forget; drain() returns alreadyRunning until it settles.
+    for (let i = 0; i < 50 && cw.status().running; i++) await new Promise((res) => setTimeout(res, 10));
+    await cw.drain();
+    const a2 = queue.get('demo/a2');
+    assert(a2.status === 'failed', `the rejected course's next lesson is '${a2.status}' -- it must stop with the course`);
+    assert(/stopped with the course/.test(a2.error || ''), 'a2 does not say why it failed');
+    assert(a2.stoppedWithCourse === 'demo/a1', 'a2 does not name the lesson whose rejection stopped it');
+    assert(!built.includes('demo/a2'), 'the lesson after a rejected one was BUILT');
+    assert(queue.get('demo/b1').status === 'blocked', 'rejecting course-a did not release course-b');
+    return 'a2 stopped free, b1 built';
+  });
+
+  await checkAsync('an approved lesson publishes even when a sibling has failed', async () => {
+    await fresh();
+    const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+    course('course-a', 'a1'); course('course-a', 'a2');
+    queue.fail('demo/a1', 'run-1', 'script never validated');
+    queue.block('demo/a2', 'run-2', 'awaiting human review', 'review');
+    outcomes['demo/a2'] = 'done';
+    cw.approve('demo/a2', 'Aroma', 'course-a');
+    for (let i = 0; i < 50 && cw.status().running; i++) await new Promise((res) => setTimeout(res, 10));
+    await cw.drain();
+    assert(queue.get('demo/a2').status === 'done', `the approved lesson is '${queue.get('demo/a2').status}' -- the hold swallowed a human's approval`);
+    return 'human release passes the hold';
+  });
+
+  await checkAsync('requeue lets only that lesson through the hold', async () => {
+    await fresh();
+    const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+    course('course-a', 'a1'); course('course-a', 'a2');
+    queue.fail('demo/a1', 'run-1', 'broke');
+    queue.requeue('demo/a1', { requeuedBy: 'test' });
+    const ids = cw.eligible().map((i) => i.id);
+    assert(ids[0] === 'demo/a1', `the requeued lesson is not first in line: ${ids.join(',')}`);
+    // Once a1 is queued again the course has no failed lesson and is not held --
+    // which is right -- but a1 blocks at review and re-holds it before a2's turn.
+    await cw.drain();
+    assert(built.join(',') === 'demo/a1', `built ${built.join(',')} -- the requeue released the sibling too`);
+    assert(queue.get('demo/a2').status === 'queued', "a2 was built on the back of a1's requeue");
+    return 'a1 rebuilt, a2 still waits';
+  });
+
+  await checkAsync('skip lifts the hold without buying a rebuild', async () => {
+    await fresh();
+    const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+    course('course-a', 'a1'); course('course-a', 'a2');
+    queue.fail('demo/a1', 'run-1', 'broke');
+    assert(cw.skip('demo/a2', 'test', 'course-a').ok === false, 'a queued lesson could be skipped');
+    const r = cw.skip('demo/a1', 'test', 'course-a');
+    assert(r.ok, r.why);
+    const a1 = queue.get('demo/a1');
+    assert(a1.status === 'failed' && a1.skipped === true && a1.skippedBy === 'test',
+      'skip changed the status or did not record who skipped');
+    for (let i = 0; i < 50 && cw.status().running; i++) await new Promise((res) => setTimeout(res, 10));
+    await cw.drain();
+    assert(!built.includes('demo/a1'), 'skip rebuilt the failed lesson');
+    assert(queue.get('demo/a2').status === 'blocked', 'the course did not continue after the skip');
+    return 'a2 built, a1 untouched';
+  });
+
+  await checkAsync('resume starts nothing when every course is held', async () => {
+    await fresh();
+    const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+    course('course-a', 'a1'); course('course-a', 'a2');
+    queue.fail('demo/a1', 'run-1', 'broke');
+    const r = cw.resume('test');
+    assert(r.ok && r.eligible === 0, `resume reported ${r.eligible} eligible`);
+    for (let i = 0; i < 50 && cw.status().running; i++) await new Promise((res) => setTimeout(res, 10));
+    assert(built.length === 0, `resume built ${built.join(',')}`);
+    return 'nothing eligible, nothing built';
+  });
+
+  await checkAsync('restore still starts nothing, and says a resume is needed', async () => {
+    await fresh();
+    const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+    course('course-b', 'b1');
+    cw.restore();
+    const st = cw.status();
+    assert(queue.get('demo/b1').status === 'queued', 'restore moved a queued lesson');
+    assert(st.running === false, 'restore started the worker');
+    assert(st.needsResume === true, 'an eligible lesson is waiting after a boot and nothing says so');
+    assert(st.eligible === 1, `eligible is ${st.eligible}`);
+    return 'needsResume: true';
+  });
+
+  await checkAsync('a fresh enqueue of a previously failed slug does not inherit a human release', async () => {
+    await fresh();
+    course('course-a', 'a1');
+    queue.fail('demo/a1', 'run-1', 'broke');
+    queue.requeue('demo/a1', { requeuedBy: 'test' });
+    queue.fail('demo/a1', 'run-2', 'broke again');
+    queue.setStatus('demo/a1', 'failed', { skipped: true, skippedBy: 'test' });
+    const item = course('course-a', 'a1');
+    const folded = queue.get('demo/a1');
+    assert(item.status === 'queued', 'enqueue did not re-queue a failed slug');
+    assert(!folded.requeuedBy && !folded.rebuildApprovedBy && !folded.reviewApproved && folded.skipped === false,
+      'the fold kept a stale release: ' + JSON.stringify({ r: folded.requeuedBy, a: folded.reviewApproved, s: folded.skipped }));
+    return 'release fields reset on enqueue';
+  });
+
+  // Put the plain stub back for anything after this section.
+  spine.execute = async (item, opts) => { lastSpineOpts = opts; return { status: 'blocked' }; };
+
   // The budget is a ceiling on what a video BUYS -- images, speech, motion. Model
   // spend is now counted on the run too, and letting it into this comparison
   // would spend the art budget on research and ship a stills-only video instead.

@@ -26,6 +26,19 @@
  * expensive render -- are skipped, not repeated. It picks up at review, passes
  * now that approval is present, and uploads.
  *
+ * THE HOLD IS PER COURSE
+ * "Nothing after a rejected or unreviewed lesson is built" was always meant per
+ * course. The first implementation broke out of the drain loop on ANY non-done
+ * outcome, which made it per service: on 2026-09-22 one course's lesson failed
+ * script validation and every other course -- another tenant's included -- sat
+ * queued behind it for a day, because "paused" was never a state, only the
+ * absence of a running drain, and only build/approve/requeue ever started one.
+ * Now a course with a blocked or failed lesson is HELD; drain() skips held courses
+ * and carries on with the rest. A lesson a person has released (approved,
+ * requeued, or told to rebuild) passes through its course's hold, and skip()
+ * lifts a hold for free. Boot still starts nothing; resume() is the operator's
+ * starter after a deploy.
+ *
  * SURVIVING A RESTART
  * The queue lives in the job store, so it lands on the Railway volume and the
  * course outlives a redeploy. What does NOT survive is the lesson that was
@@ -69,6 +82,45 @@ function queued() {
     .sort((a, b) => String(a.enqueuedAt).localeCompare(String(b.enqueuedAt)));
 }
 
+/** The [course-xxx] tag a lesson carries in its notes, or null for a loose lesson. */
+function courseTagOf(item) {
+  const m = String((item && item.notes) || '').match(/\[(course-[a-z0-9]+)\]/);
+  return m ? m[1] : null;
+}
+
+/**
+ * Written only by the routes a person clicks: approve() (reviewApproved or
+ * rebuildApprovedBy) and requeue() (requeuedBy). A lesson carrying one of these
+ * was released by a human and must build even though its course is held --
+ * otherwise approving lesson two after lesson one failed would publish nothing.
+ */
+function humanReleased(i) {
+  return Boolean(i.reviewApproved || i.rebuildApprovedBy || i.requeuedBy);
+}
+
+/**
+ * Courses that need a person: any lesson blocked, or failed and not skipped.
+ * Map of courseId -> { courseId, by, status, since }. A loose lesson holds nothing.
+ */
+function heldCourses() {
+  const held = new Map();
+  for (const i of queue.currentItems()) {
+    if (i.source !== 'course-builder') continue;
+    const holds = i.status === queue.ITEM_STATUS.BLOCKED
+      || (i.status === queue.ITEM_STATUS.FAILED && i.skipped !== true);
+    if (!holds) continue;
+    const c = courseTagOf(i);
+    if (c && !held.has(c)) held.set(c, { courseId: c, by: i.id, status: i.status, since: i.updatedAt || null });
+  }
+  return held;
+}
+
+/** Queued lessons the worker may build right now: not in a held course, or released by a person. */
+function eligible() {
+  const held = heldCourses();
+  return queued().filter((i) => humanReleased(i) || !held.has(courseTagOf(i)));
+}
+
 /** Lessons that finished a build and are waiting for a person to approve them. */
 function awaitingApproval(courseId = null) {
   return queue.currentItems()
@@ -87,10 +139,18 @@ function awaitingApproval(courseId = null) {
 }
 
 function status() {
+  const el = eligible().length;
   return {
     running,
     current: current && { id: current.id, topic: current.topic, startedAt: current.startedAt },
+    buildingCourseId: current ? current.courseId : null,
     queued: queued().length,
+    // The two facts an operator could not see on 2026-09-22: is there work the
+    // worker may take, and is anyone taking it. Idle with eligible work after a
+    // boot is the normal case -- restore() starts nothing -- and needsResume names it.
+    eligible: el,
+    needsResume: !running && el > 0,
+    held: [...heldCourses().values()],
     awaitingApproval: awaitingApproval(),
     recent: history.slice(-12),
   };
@@ -105,7 +165,7 @@ async function buildOne(item) {
   // again, and the first attempt's spend vanished with no record of it. Let a
   // failure here throw -- a build with no record of itself is the thing to stop.
   queue.claim(item.id, st.runId);
-  current = { id: item.id, topic: item.topic, startedAt: new Date().toISOString() };
+  current = { id: item.id, topic: item.topic, courseId: courseTagOf(item), startedAt: new Date().toISOString() };
   log(`building ${item.id} (run ${st.runId})`);
 
   try {
@@ -144,12 +204,12 @@ async function buildOne(item) {
 }
 
 /**
- * Build lessons until one needs a person, then stop.
+ * Build every eligible lesson, one at a time, until none is left.
  *
- * A lesson that ends `done` (an approved one that has just published) lets the
- * next begin. Anything else -- blocked at review, blocked on spend, failed --
- * ends the pass. Continuing past a lesson nobody has looked at is the exact
- * behaviour this replaced.
+ * A lesson that ends anything but `done` -- blocked at review, blocked on spend,
+ * failed -- puts its COURSE on hold, and eligible() stops offering that course's
+ * lessons. Other courses carry on. The loop terminates because each pass either
+ * moves a lesson out of `queued` or finds nothing eligible.
  */
 async function drain() {
   if (running) return { alreadyRunning: true };
@@ -157,13 +217,13 @@ async function drain() {
   let built = 0;
   try {
     for (;;) {
-      const next = queued()[0];
+      const next = eligible()[0];
       if (!next) break;
       const outcome = await buildOne(next);
       built++;
       if (outcome.status !== 'done') {
-        log(`pausing: ${next.id} ended ${outcome.status} and needs a person`);
-        break;
+        const c = courseTagOf(next);
+        log(`held: ${c || 'no course'} by ${next.id} (${outcome.status}) -- needs a person; other courses continue`);
       }
     }
   } finally {
@@ -174,6 +234,20 @@ async function drain() {
 
 function kick() {
   drain().catch((e) => log('drain crashed: ' + e.message));
+}
+
+/**
+ * Start the worker by hand. The one free way to move a queue after a boot:
+ * restore() deliberately starts nothing, and until this existed the only kicks
+ * were build, approve and requeue -- two of which cost money. Builds only what
+ * eligible() offers, so a held course is never touched by it.
+ */
+function resume(by = 'Aroma') {
+  const el = eligible();
+  const held = [...heldCourses().values()];
+  log(`resume by ${by}: ${el.length} eligible, ${held.length} course(s) held, running=${running}`);
+  kick();
+  return { ok: true, eligible: el.length, running, held };
 }
 
 /**
@@ -206,7 +280,11 @@ function approve(lessonId, by = 'Aroma', courseId = null) {
   return { ok: true };
 }
 
-/** Reject a built lesson. The course stops; nothing after it is built. */
+/**
+ * Reject a lesson. ITS course stops: the rejected lesson is failed and so is
+ * every queued sibling, free, with a reason naming the rejection. Other courses
+ * are released -- before this kicked, a reject left the whole worker idle.
+ */
 function reject(lessonId, why = '', courseId = null) {
   const item = queue.get(lessonId);
   if (!item) return { ok: false, why: `No lesson '${lessonId}'.` };
@@ -224,7 +302,49 @@ function reject(lessonId, why = '', courseId = null) {
     rejectedAt: new Date().toISOString(),
     error: `rejected by a human${why ? ': ' + why : ''}`,
   });
-  log(`rejected ${lessonId}${why ? ' -- ' + why : ''}`);
+  // The course stops here. Its queued siblings are failed now rather than left
+  // `queued` behind a hold: a queued lesson reads as "still coming" to the LMS,
+  // and a hold is invisible to a consumer that only reads statuses. Nothing was
+  // spent on them, and their spend fields say so (spendUsdTotal 0, no runId).
+  const tag = courseTagOf(item);
+  const stopped = [];
+  if (tag) {
+    for (const i of queue.currentItems()) {
+      if (i.source !== 'course-builder' || i.status !== queue.ITEM_STATUS.QUEUED) continue;
+      if (courseTagOf(i) !== tag) continue;
+      queue.setStatus(i.id, queue.ITEM_STATUS.FAILED, {
+        stoppedWithCourse: lessonId,
+        stoppedAt: new Date().toISOString(),
+        error: `stopped with the course: ${lessonId} was rejected`,
+      });
+      stopped.push(i.id);
+    }
+  }
+  log(`rejected ${lessonId}${why ? ' -- ' + why : ''}${stopped.length ? ` -- stopped ${stopped.length} queued sibling(s)` : ''}`);
+  kick();
+  return { ok: true, stopped };
+}
+
+/**
+ * Drop one failed lesson so its course can continue. Free: nothing is rebuilt,
+ * the lesson stays `failed` (the LMS treats the status set as closed) and simply
+ * stops holding its course. The paid alternative is requeue().
+ */
+function skip(lessonId, by = 'Aroma', courseId = null) {
+  const item = queue.get(lessonId);
+  if (!item) return { ok: false, why: `No lesson '${lessonId}'.` };
+  const wrong = notThisCourse(item, courseId);
+  if (wrong) return wrong;
+  if (item.status !== queue.ITEM_STATUS.FAILED) {
+    return { ok: false, why: `That lesson is '${item.status}', not failed. Only a failed lesson `
+      + 'can be skipped; a lesson waiting for a person should be approved or rejected.' };
+  }
+  if (item.skipped === true) return { ok: false, why: 'That lesson is already skipped.' };
+  queue.setStatus(lessonId, queue.ITEM_STATUS.FAILED, {
+    skipped: true, skippedBy: by, skippedAt: new Date().toISOString(),
+  });
+  log(`skipped ${lessonId} by ${by} -- its course continues without it`);
+  kick();
   return { ok: true };
 }
 
@@ -286,5 +406,6 @@ function restore() {
 }
 
 module.exports = {
-  drain, kick, status, approve, reject, requeue, queued, awaitingApproval, restore,
+  drain, kick, status, approve, reject, requeue, skip, resume, queued, eligible, heldCourses,
+  courseTagOf, awaitingApproval, restore,
 };

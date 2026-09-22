@@ -890,6 +890,56 @@ async function bridgeChecks() {
       return 'refuses a waiting lesson, and refuses another course entirely';
     }); });
 
+  // Boot never starts the worker (a crash loop must not spend), so after every
+  // redeploy the queue sits until something kicks it. Until now the only kicks were
+  // build, approve and requeue -- two of which cost money. This is the free one.
+  await check('the worker can be resumed after a boot, and only with a credential',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      const queue = require(path.join(__dirname, 'lib', 'queue'));
+      require(path.join(__dirname, '..', 'server', 'lib', 'job-store')).reset();
+      queue.resetPathCache();
+      const anon = await req(port, { method: 'POST', path: '/api/v1/courses/worker/resume', body: { by: 'nobody' } });
+      assert(anon.status === 401, `resume without a token: ${anon.status}`);
+      // An empty queue: the route answers, and there is nothing it could start.
+      const r = await req(port, { method: 'POST', path: '/api/v1/courses/worker/resume',
+        headers: { authorization: `Bearer ${LMS_TOKEN}` }, body: { by: 'test' } });
+      assert(r.status === 202, `resume on an empty queue: ${r.status} ${r.text}`);
+      assert(r.json.eligible === 0, `eligible should be 0 on an empty queue, got ${r.json.eligible}`);
+      assert(Array.isArray(r.json.held), 'resume does not list the held courses');
+      return '401 anonymous, 202 with nothing to start';
+    }); });
+
+  await check('skip drops a failed lesson for free and refuses anything else',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      const queue = require(path.join(__dirname, 'lib', 'queue'));
+      require(path.join(__dirname, '..', 'server', 'lib', 'job-store')).reset();
+      queue.resetPathCache();
+      const tag = '[course-test-skip]';
+      queue.enqueue({ topic: 'waiting', series: 'testing', slug: 'sk-waiting', source: 'course-builder', notes: `${tag} brief` });
+      queue.block('testing/sk-waiting', 'run-b', 'awaiting human review', 'review');
+      const post = (lesson) => req(port, { method: 'POST',
+        path: `/api/v1/courses/course-test-skip/lessons/${lesson}/skip`,
+        headers: { authorization: `Bearer ${LMS_TOKEN}` }, body: { by: 'test' } });
+      // Only refusals here: a successful skip kicks the worker and the real spine.
+      const no = await post('testing/sk-waiting');
+      assert(no.status === 409 && no.json.error === 'cannot_skip', `a waiting lesson was skipped: ${no.status} ${no.text}`);
+      assert(queue.get('testing/sk-waiting').status === 'blocked', 'the waiting lesson was moved');
+      const none = await post('testing/does-not-exist');
+      assert(none.status === 409, `an unknown lesson: ${none.status}`);
+      return 'refuses a waiting lesson and an unknown one';
+    }); });
+
+  await check('resume and skip are on the index the LMS pins to',
+    () => withServer(BASE_ENV, {}, async (port) => {
+      const r = await req(port, { path: '/api/v1' });
+      const paths = (r.json.endpoints || []).map((e) => `${e.method} ${e.path}`);
+      for (const want of [
+        'POST /api/v1/courses/worker/resume',
+        'POST /api/v1/courses/:courseId/lessons/:lessonId/skip',
+      ]) assert(paths.includes(want), `the index does not list ${want}`);
+      return 'both listed';
+    }));
+
   await check('GET /api/v1/health answers without a credential and leaks nothing',
     () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
       const r = await req(port, { path: '/api/v1/health' });

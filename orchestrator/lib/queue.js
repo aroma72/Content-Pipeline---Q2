@@ -136,6 +136,10 @@ function enqueue({
     wantReferences: Boolean(wantReferences),
     status: ITEM_STATUS.QUEUED,
     enqueuedAt: new Date().toISOString(),
+    // A failed slug may be enqueued again, and the fold never deletes a key. Reset
+    // every field a person writes to release a lesson, or a fresh build would
+    // inherit the old attempt's approval and skip review.
+    reviewApproved: false, requeuedBy: null, rebuildApprovedBy: null, skipped: false,
   };
   jsonl.appendDurable(queueFile(), item);
   return item;
