@@ -502,7 +502,15 @@ module.exports = Object.assign(module.exports, {
       // more and reports the real verdict, so the failure is never swallowed.
     };
 
-    const sensor = async (script, what, { redraftable = false, blockOnFail = false } = {}) => {
+    // `finalRendered` says whether a branded mp4 EXISTS when this sensor runs. It
+    // defaults to false and each blocking call site states its own answer, because
+    // it used to be hardcoded `true` for every one of them -- and two of the three
+    // run BEFORE compile-lesson.js. So a lesson blocked at qa-frames reported a
+    // finished render that had never been made, which is what sent the LMS looking
+    // for bytes that did not exist. Whatever reads a block must be able to tell
+    // "the video is waiting for you" from "there is no video".
+    const sensor = async (script, what,
+      { redraftable = false, blockOnFail = false, finalRendered = false } = {}) => {
       if (opts.dryRun) { log(`${script}: skipped (dry run)`); return; }
 
       // A gate that silently does not run is worse than no gate -- it reports
@@ -598,9 +606,11 @@ module.exports = Object.assign(module.exports, {
           throw new BlockedError(
             `${what} needs a human decision (${script}, exit ${e.code}):\n${findings}`,
             {
-              blocker: `${script} findings after the render`,
+              blocker: finalRendered
+                ? `${script} findings after the render`
+                : `${script} findings before the render`,
               code: 'post-render-check',
-              details: { sensor: script, what, findings, finalRendered: true },
+              details: { sensor: script, what, findings, finalRendered },
             }
           );
         }
@@ -972,6 +982,32 @@ module.exports = Object.assign(module.exports, {
       .filter((l) => /^[✅❌]/.test(l))
       .map((l) => ({ ok: l.startsWith('✅'), what: l.slice(1).trim() }));
 
+    const finalPath = path.join(dir, final);
+    if (!opts.dryRun && !fs.existsSync(finalPath)) {
+      throw new Error(`verify.js passed but ${final} is missing -- refusing to report success`);
+    }
+
+    // Copy it somewhere a redeploy cannot reach BEFORE anything else happens to
+    // it -- and BEFORE the last gate, which can block.
+    //
+    // This used to sit after the eval-text sensor below, and that ordering was the
+    // bug: `blockOnFail` throws, so a block there jumped straight past this line
+    // and the branded mp4 was never copied. The only copy stayed in a directory
+    // .dockerignore excludes, one redeploy from gone -- which is precisely how the
+    // LMS lost a lesson an instructor had paid for, reproduced by the very code
+    // written to prevent it. They found it: a lesson blocked after a paid render
+    // answered `no_deliverable` because the bytes really were not on the volume.
+    //
+    // Same rule as the beats copy before qa-frames: persist an artefact the moment
+    // it exists, never after the next thing that can stop the run. Fail-soft, so a
+    // lesson that rendered correctly is never failed by a copy.
+    let persisted = null;
+    if (!opts.dryRun) {
+      persisted = require('../deliverables').persist({
+        series: item.series, slug: item.slug, finalPath, videoDir: dir, log: log.always,
+      });
+    }
+
     // 8. grammar/clarity, again, over the script as it actually went out. The
     // first run (before the spend) is where a finding can still be redrafted; this
     // one catches an edit made between then and here, and is deliberately NOT
@@ -980,25 +1016,10 @@ module.exports = Object.assign(module.exports, {
     // makes that true: without it this threw RejectedError, which the spine settles
     // as `failed` -- the finished video thrown away exactly as the line above says
     // it must not be.
+    //
+    // The one sensor here that runs after a render exists, hence finalRendered.
     await sensor('eval-text.js', 'grammar and clarity of the spoken and on-screen text',
-      { blockOnFail: true });
-
-    const finalPath = path.join(dir, final);
-    if (!opts.dryRun && !fs.existsSync(finalPath)) {
-      throw new Error(`verify.js passed but ${final} is missing -- refusing to report success`);
-    }
-
-    // Copy it somewhere a redeploy cannot reach BEFORE anything else happens to
-    // it. Up to this line the only copy of a paid render lives in a directory
-    // .dockerignore excludes, so the next deploy deletes it -- which is exactly
-    // how the LMS lost a lesson an instructor had paid for. Fail-soft: a lesson
-    // that rendered correctly is never failed by a copy.
-    let persisted = null;
-    if (!opts.dryRun) {
-      persisted = require('../deliverables').persist({
-        series: item.series, slug: item.slug, finalPath, videoDir: dir, log: log.always,
-      });
-    }
+      { blockOnFail: true, finalRendered: true });
 
     return { dir, finalPath, title, bare: path.join(dir, bare), verifyChecks, sensorResults, persisted };
   },

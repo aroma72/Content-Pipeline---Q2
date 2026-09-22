@@ -33,6 +33,7 @@ const express = require('express');
 // rather than at load, so the route would have 500'd for the LMS and looked fine
 // in every startup check.
 const fs = require('fs');
+const path = require('path');
 const checkpoints = require('./checkpoints');
 
 const tenants = require('./tenants');
@@ -199,6 +200,25 @@ function build() {
           description: 'Retry ONE failed lesson, leaving the rest of the course alone. '
             + 'Refuses anything that is not failed, and buys another render -- call it '
             + 'from an explicit human action, never automatically.' },
+        // These three were reachable but unlisted, which made a liar of the advice
+        // above -- we told the LMS to pin to this index rather than to a document,
+        // then left the routes they most needed out of it, so the day the answer
+        // changed they had no way to notice except by asking.
+        { method: 'GET', path: '/api/v1/courses/:courseId/lessons/:lessonId/file', auth: true,
+          description: 'The finished mp4, off the durable volume, before anyone publishes it. '
+            + 'Supports Range. 404 `no_deliverable` carries `renderExists` and `partsAvailable` '
+            + 'so you can tell "not yet" from "there is no video and never will be" -- see '
+            + '`deliverableAvailable` on the course view, which answers it without a fetch.' },
+        { method: 'DELETE', path: '/api/v1/courses/:courseId/lessons/:lessonId/file', auth: true,
+          description: 'Drop our copy once yours is stored. Never inferred from a GET.' },
+        { method: 'GET', path: '/api/v1/courses/:courseId/lessons/:lessonId/beats', auth: true,
+          description: 'What the lesson was going to draw and say: beats.js as source text plus '
+            + 'durations.json, kept before the frame gate can block. For a lesson that stopped '
+            + 'before its render this is the only artefact there is, and it answers what the '
+            + 'findings were about without paying for another build.' },
+        { method: 'GET', path: '/api/v1/deliverables', auth: true,
+          description: 'Everything currently held on the volume, with sizes. So the store can be '
+            + 'watched rather than discovered full, and so "is it actually there?" is one call.' },
       ],
       // The closed set of `blockedBy`, served rather than documented. It is here
       // because a comment is not something a consumer can pin a test against: this
@@ -502,6 +522,22 @@ function build() {
         // queue.block() so items blocked before this field existed still read as
         // the normal case.
         ...(i.status === 'blocked' ? { blockedBy: i.blockedBy || queue.DEFAULT_BLOCKED_BY } : {}),
+        // Whether GET .../file will actually serve bytes right now.
+        //
+        // A fact, not an inference. The LMS reasonably read our own documentation
+        // as "these four blockedBy values mean the video exists" and built against
+        // it -- but two of those values are thrown by gates that run BEFORE the
+        // render, so for them there is no mp4 and never will be. Any rule mapping
+        // blockedBy to "fetchable" is wrong for some value of blockedBy, so we
+        // answer the question directly instead of publishing a rule to infer it
+        // from. Costs one readdir per blocked lesson, and only for blocked ones.
+        ...(i.status === 'blocked' || i.status === 'done' ? {
+          deliverableAvailable: (() => {
+            try {
+              return Boolean(require('../../orchestrator/lib/deliverables').find(i.series, i.slug));
+            } catch { return false; }
+          })(),
+        } : {}),
         // What the lesson actually produced. A finished lesson used to say only
         // that it succeeded, so the caller knew a video existed and could not say
         // which one -- there was no way to drop it into the block waiting for it.
@@ -679,16 +715,50 @@ function build() {
       return res.status(404).json({ error: 'no_such_lesson' });
     }
 
-    const found = require('../../orchestrator/lib/deliverables').find(item.series, item.slug);
+    const deliverables = require('../../orchestrator/lib/deliverables');
+    const found = deliverables.find(item.series, item.slug);
     if (!found) {
-      // Absent is not the same as never made, and saying which saves an hour.
+      // WHY THIS IS THREE ANSWERS AND NOT ONE.
+      //
+      // This used to say `This lesson is '<status>', so there is no finished video
+      // yet` for anything that was not `done`. For a lesson blocked after a paid
+      // render that sentence is simply false, and it reads as a status gate -- so
+      // the LMS spent a day probing the route and asking us to relax a gate that
+      // does not exist, when the real answer was that the bytes were never copied.
+      // A wrong explanation costs more than no explanation.
+      //
+      // Each branch below is a different action for the reader, which is the only
+      // reason to distinguish them.
+      const dir = deliverables.dirFor(item.series, item.slug);
+      const partial = dir && fs.existsSync(dir);
+      const rendered = item.status === 'done'
+        || Boolean(item.details && item.details.finalRendered);
+
+      let message;
+      if (partial && !rendered) {
+        // The ordinary blocked-before-the-render case. Something was bought, but
+        // no video was ever made, so there is nothing here to wait for.
+        message = `This lesson stopped before a video was rendered (${item.blockedBy || item.status})`
+          + ', so there is no mp4 to serve and there never was one. Art and speech may still have '
+          + 'been paid for. What it did leave is its beats and timings -- GET the /beats route '
+          + 'beside this one to see exactly what each beat was going to draw and say.';
+      } else if (partial) {
+        message = 'A render finished for this lesson but no mp4 reached the durable volume. '
+          + 'That is a fault on our side, not a state you can wait out -- please tell us, and '
+          + 'quote the lesson id.';
+      } else {
+        message = 'Nothing was kept on the durable volume for this lesson. Lessons built before '
+          + 'deliverable persistence shipped (2026-09-22) exist only on a container and are gone '
+          + 'after a redeploy; a lesson built since should have at least its beats here.';
+      }
       return res.status(404).json({
         error: 'no_deliverable',
-        message: item.status === 'done'
-          ? 'This lesson finished, but no copy was kept on the durable volume. Lessons built '
-            + 'before deliverable persistence shipped exist only on a container and are gone '
-            + 'after a redeploy.'
-          : `This lesson is '${item.status}', so there is no finished video yet.`,
+        message,
+        // The machine-readable half, so nothing has to be inferred from prose.
+        status: item.status,
+        ...(item.blockedBy ? { blockedBy: item.blockedBy } : {}),
+        renderExists: Boolean(rendered),
+        partsAvailable: partial ? ['beats.js', 'durations.json'] : [],
       });
     }
 
@@ -711,6 +781,94 @@ function build() {
     }
     res.setHeader('Content-Length', stat.size);
     return fs.createReadStream(found.file).pipe(res);
+  });
+
+  /**
+   * What is actually on the volume.
+   *
+   * `deliverables.list()` has existed since the module shipped and nothing ever
+   * called it. Diagnosing "the LMS says /file 404s" therefore meant shelling into
+   * the container, and the answer -- the directory is there with 4KB of beats in
+   * it, not 26MB of video -- was one readdir away the whole time.
+   *
+   * Also the capacity view. A full Railway volume triggers an offline resize that
+   * restarts the service, possibly mid-render, so this is worth watching before it
+   * is worth reacting to.
+   */
+  router.get('/deliverables', requireToken, (req, res) => {
+    try {
+      const listed = require('../../orchestrator/lib/deliverables').list();
+      return res.json({
+        durable: listed.durable,
+        count: listed.items.length,
+        bytes: listed.bytes,
+        items: listed.items,
+        ...(listed.durable ? {} : {
+          note: 'This store is not a volume, so nothing here survives a redeploy.',
+        }),
+      });
+    } catch (e) {
+      return res.status(500).json({ error: 'list_failed', message: e.message });
+    }
+  });
+
+  /**
+   * What a lesson was going to draw and say, off the volume.
+   *
+   * produce.js copies beats.js and durations.json BEFORE the frame gate can block,
+   * precisely so a lesson that stopped there can be understood without paying for
+   * another render. Until now nothing could read them: the data was being kept for
+   * a reader that did not exist, and "which element spills off 1920x1080?" could
+   * only be answered by rebuilding the lesson.
+   *
+   * This is the whole answer for the two gates that run BEFORE the render -- there
+   * is no mp4 for those and never will be, so this is what "preview it" can mean.
+   *
+   * beats.js is a JS module, not JSON. It is returned as text rather than parsed,
+   * because evaluating a file to serve it would make a render artefact into code
+   * this process runs.
+   */
+  router.get('/courses/:courseId/lessons/:lessonId(*)/beats', requireToken, (req, res) => {
+    const queue = require('../../orchestrator/lib/queue');
+    const item = queue.get(req.params.lessonId);
+    if (!item) return res.status(404).json({ error: 'no_such_lesson' });
+    if (!(item.notes || '').includes(`[${req.params.courseId}]`)) {
+      return res.status(404).json({ error: 'no_such_lesson' });
+    }
+
+    const deliverables = require('../../orchestrator/lib/deliverables');
+    const dir = deliverables.dirFor(item.series, item.slug);
+    if (!dir || !fs.existsSync(dir)) {
+      return res.status(404).json({
+        error: 'no_beats',
+        message: 'Nothing was kept on the durable volume for this lesson. Lessons built before '
+          + 'deliverable persistence shipped (2026-09-22) left nothing behind.',
+        status: item.status,
+      });
+    }
+
+    const read = (name) => {
+      try { return fs.readFileSync(path.join(dir, name), 'utf8'); } catch { return null; }
+    };
+    const beats = read('beats.js');
+    const durationsRaw = read('durations.json');
+    if (!beats && !durationsRaw) {
+      return res.status(404).json({ error: 'no_beats', message: 'No beats were kept for this lesson.' });
+    }
+
+    let durations = null;
+    try { durations = durationsRaw ? JSON.parse(durationsRaw) : null; } catch { durations = null; }
+
+    return res.json({
+      lessonId: item.id,
+      status: item.status,
+      ...(item.blockedBy ? { blockedBy: item.blockedBy } : {}),
+      // Verbatim source, so what you read is what the renderer was given.
+      beats,
+      durations,
+      note: 'beats.js is returned as source text, not evaluated. durations.json is the timing the '
+        + 'checkpoints are anchored to.',
+    });
   });
 
   /**

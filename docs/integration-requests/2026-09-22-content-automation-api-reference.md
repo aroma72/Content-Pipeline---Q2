@@ -171,7 +171,7 @@ There is **no ETag, no `updatedAt`, no version** on this route. Diff the payload
   "lessons": 2, "done": 0, "failed": 0, "blocked": 1, "inProgress": 1,
   "spentUsd": 5.4799,
   "awaitingApproval": [ { "id": "...", "topic": "...", "reason": "...", "blockedBy": "..." } ],
-  "worker": { "building": null, "queued": 3 },
+  "worker": { "building": null, "queuedAcrossAllCourses": 1 },
   "items": [] }
 ```
 
@@ -226,14 +226,33 @@ from the render directory** — so it does not race a deploy you cannot see.
 
 - `200` / `206` `video/mp4`, full `Range` support (`Accept-Ranges`, `Content-Range`, `416`).
 - `404 no_such_lesson` — unknown, or not in this course.
-- `404 no_deliverable` — the message distinguishes *"finished, but no durable copy was kept"* from
-  *"this lesson is '<status>', so there is no finished video yet."*
+- `404 no_deliverable` — carries `renderExists`, `status`, `blockedBy` and `partsAvailable`, so you
+  never have to read the prose to know which case you are in.
 
-`DELETE` drops our copy once you have stored yours. **We never infer it from a successful GET** — a
-download that failed halfway would otherwise destroy the last remaining copy, which is the exact
-failure that lost `what-a-harness-actually-is` on 2026-09-21.
+**There is no status gate.** It serves whenever the bytes are on the volume, including while the
+lesson is `blocked`. A lesson blocked at `review` is exactly the case this was built for — the video
+is finished, paid for, and not yet published. Fetch it then.
 
-Suggested flow: `status: done` → `GET .../file` → store your side → `DELETE .../file`.
+**Check `deliverableAvailable` on the course view first.** It tells you whether a fetch will
+succeed without making one, and it is correct for every `blockedBy` value (see §5).
+
+### `GET .../lessons/:lessonId/beats`
+
+When `deliverableAvailable` is `false` because the lesson stopped *before* its render, there is no
+mp4 and there never will be — but there is still something to look at. This returns the `beats.js`
+we kept (as source text, not evaluated) plus the parsed `durations.json`: what each beat was going
+to draw and say, and for how long. It is what makes a finding like *"beat 01: 1 element spills
+outside 1920x1080"* actionable without paying for another build.
+
+### `DELETE .../file`
+
+Drops our copy once you have stored yours. **We never infer it from a successful GET** — a download
+that failed halfway would otherwise destroy the last remaining copy, which is the exact failure that
+lost `what-a-harness-actually-is` on 2026-09-21.
+
+Suggested flow: `deliverableAvailable: true` → `GET .../file` → store your side → `DELETE .../file`.
+
+`DELETE /demo/make-video/:jobId/video` does the same for a Make-a-Video job.
 
 ---
 
@@ -304,18 +323,34 @@ There is no `running` and no `awaiting_review` here — `claimed` means building
 
 ### `blockedBy` — live values as of 2026-09-22
 
-| value | meaning | money spent? | what to do |
-|---|---|---|---|
-| `review` | Ordinary case: a person must watch it. | yes, in full | **approve** — costs $0 |
-| `preflight` | The container cannot render at all. A broken deploy, not a bad video. | **no** | tell us; requeue only after we fix it |
-| `spend-approval` | Estimated cost exceeds the budget. | **no** | raise the budget, then requeue |
-| `produce-input` | `beats.js` missing; produce could not start. | **no** | requeue |
-| `post-render-check` | A sensor disagreed with the finished render. | yes, in full | a human decision; requeue re-spends |
-| `qa-no-evidence` | Not one rubric factor could be assessed. | yes, in full | human |
-| `upload` | YouTube refused — consent, credentials, API, or quota. | yes, in full | fix the cause, then approve (not requeue) |
-| `interrupted` | The container restarted mid-build; working files are gone. | partially, amount unknown | approve means **rebuild**, ~$1.50 |
-| `time-ceiling` | The run hit the wall-clock ceiling (default 180 min). | usually yes | human; the cause usually recurs |
-| `nazim` | The LMS content-write hand-off, which is not built. | yes | unreachable in normal operation |
+**Money spent and video exists are two different questions.** An earlier version of this table had
+only the first column and that was a real error on our part: it reads as though anything marked
+"money spent" has a video you can fetch, and for `post-render-check` that is often false. Art,
+speech and animation are bought *before* the render, and two of the three gates that raise
+`post-render-check` run before `compile-lesson.js`. So a lesson can cost several dollars and have no
+video at all.
+
+| value | meaning | money spent? | video exists? | what to do |
+|---|---|---|---|---|
+| `review` | Ordinary case: a person must watch it. | yes, in full | **yes** | **approve** — costs $0 |
+| `preflight` | The container cannot render at all. A broken deploy, not a bad video. | **no** | no | tell us; requeue only after we fix it |
+| `spend-approval` | Estimated cost exceeds the budget. | **no** | no | raise the budget, then requeue |
+| `produce-input` | `beats.js` missing; produce could not start. | **no** | no | requeue |
+| `post-render-check` | A sensor disagreed with the lesson. | yes, in full | **sometimes** — see below | a human decision; requeue re-spends |
+| `qa-no-evidence` | Not one rubric factor could be assessed. | yes, in full | yes | human |
+| `upload` | YouTube refused — consent, credentials, API, or quota. | yes, in full | yes | fix the cause, then approve (not requeue) |
+| `interrupted` | The container restarted mid-build; working files are gone. | partially, amount unknown | no | approve means **rebuild**, ~$1.50 |
+| `time-ceiling` | The run hit the wall-clock ceiling (default 180 min). | usually yes | usually not | human; the cause usually recurs |
+| `nazim` | The LMS content-write hand-off, which is not built. | yes | yes | unreachable in normal operation |
+
+**Do not infer fetchability from `blockedBy`.** `post-render-check` is raised by three sensors:
+`qa-clips` and `qa-frames` run *before* the render (they judge the art and the laid-out frames, so
+that a fault costs minutes instead of an hour), and `eval-text` runs after it. Same value, opposite
+answers.
+
+So the course view carries **`deliverableAvailable`** on every blocked and done lesson — a boolean
+meaning "`GET .../file` will serve bytes right now". Poll that. It is a fact rather than a rule, and
+it cannot drift the way a mapping would.
 
 `blockedBy` defaults to `review` when a block predates the field, so treat `reason` as corroborating
 prose only.

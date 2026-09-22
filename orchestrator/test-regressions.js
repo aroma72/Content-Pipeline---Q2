@@ -1504,7 +1504,10 @@ async function beatChecks() {
         + 'yet, so it must reject the script rather than park a run for a person');
     }
 
-    const postRender = /await sensor\('eval-text\.js'[^;]*\{ blockOnFail: true \}\);/.test(src);
+    // `blockOnFail` may now travel with `finalRendered`, which says whether a video
+    // actually exists when the sensor runs -- so match the option, not the exact
+    // object literal.
+    const postRender = /await sensor\('eval-text\.js'[^;]*blockOnFail: true[^;]*\);/.test(src);
     assert(postRender, 'the post-render eval-text.js call does not pass blockOnFail');
 
     const preSpend = /await sensor\('eval-text\.js',[^;]*\{ redraftable: true \}\);/.test(src);
@@ -2957,6 +2960,48 @@ function browserChecks() {
     const getBody = src.slice(getIdx, delIdx);
     assert(!/forget\(/.test(getBody), 'the GET route deletes the copy -- a failed download loses it');
     return 'GET never forgets; DELETE is explicit';
+  });
+
+  check('a paid render reaches the volume even if the last gate blocks it', () => {
+    // THE BUG THE LMS FOUND. The mp4 persist used to sit AFTER the eval-text
+    // sensor, and that sensor blocks by throwing -- so a lesson that blocked there
+    // jumped straight past the copy. The only copy of a finished, paid render
+    // stayed in a directory .dockerignore excludes, one redeploy from gone: the
+    // exact loss this module was written to prevent, reproduced by it.
+    //
+    // Source-level because the ordering IS the guarantee -- there is no observable
+    // difference until a sensor happens to fail in production, which is precisely
+    // how it went unnoticed.
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'produce.js'), 'utf8');
+    // lastIndexOf on both: 'verify.js' and eval-text each appear earlier in prose
+    // and in the pre-spend call, and anchoring on the first occurrence compared the
+    // wrong pair entirely.
+    const persistIdx = src.indexOf('finalPath, videoDir: dir');
+    const evalIdx = src.lastIndexOf("sensor('eval-text.js'");
+    assert(persistIdx > 0, 'the mp4 persist call is gone');
+    assert(evalIdx > 0, 'the post-render eval-text sensor is gone');
+    assert(persistIdx < evalIdx,
+      'the mp4 is persisted AFTER a gate that can block -- a block there loses the render');
+    return 'the render is on the volume before the last gate can stop the run';
+  });
+
+  check('a gate that runs before the render does not claim one happened', () => {
+    // `finalRendered: true` was hardcoded into every blocking sensor, and two of
+    // the three run BEFORE compile-lesson.js. So a lesson blocked at qa-frames
+    // reported a finished render that had never been made -- which is what sent
+    // the LMS looking for bytes that did not exist, and what our own API reference
+    // then repeated back to them as fact.
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'produce.js'), 'utf8');
+    assert(!/finalRendered:\s*true\s*\}/.test(src.slice(src.indexOf('if (blockOnFail)'),
+      src.indexOf('if (blockOnFail)') + 600)),
+    'the block still hardcodes finalRendered: true');
+    assert(/finalRendered\s*=\s*false\s*\}\s*=\s*\{\}/.test(src),
+      'finalRendered is not a sensor option defaulting to false');
+    // The pre-render gates must not opt in.
+    const framesCall = src.slice(src.indexOf("sensor('qa-frames.js'"), src.indexOf("sensor('qa-frames.js'") + 200);
+    assert(!/finalRendered:\s*true/.test(framesCall),
+      'qa-frames runs before the render but claims one happened');
+    return 'only the sensor that runs after a render says so';
   });
 
   check('a script can be reviewed before it is paid for, not just read aloud', () => {

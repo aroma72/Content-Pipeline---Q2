@@ -417,6 +417,142 @@ async function moneyChecks() {
     });
 }
 
+// ── 4. a lesson's bytes, before anyone publishes them ────────────────────────
+
+/**
+ * The route the LMS actually integrates against, exercised as a request.
+ *
+ * Everything covering /file before this was a regex over api.js source. So the
+ * handler had never once been called with a real queue item, and the case that
+ * matters most -- a lesson whose beats reached the volume but whose mp4 did not --
+ * had no coverage at all. It shipped, the LMS hit it, read the 404 as a status
+ * gate, and asked us to relax a gate that does not exist. A source-text assertion
+ * cannot catch a wrong sentence.
+ */
+async function lessonFileChecks() {
+  console.log('\n4. a blocked lesson can be understood, and a finished one fetched');
+
+  const COURSE = 'course-test1';
+  const LESSON = 'fixtures/a-lesson-that-blocked';
+
+  // The queue memoises its store, and job-store is a singleton, so both have to be
+  // dropped from the registry before an app is built against a different dir.
+  const withCourse = async (fn, { withMp4 = false } = {}) => {
+    const env = freshEnv({ JOB_STORE_DURABLE: '1' });
+    for (const m of ['../../server/lib/job-store', '../lib/queue', '../lib/deliverables']) {
+      try { delete require.cache[require.resolve(path.join(__dirname, m))]; } catch { /* fine */ }
+    }
+    delete require.cache[require.resolve(path.join(__dirname, '..', 'server', 'lib', 'job-store'))];
+    delete require.cache[require.resolve(path.join(__dirname, 'lib', 'queue'))];
+    delete require.cache[require.resolve(path.join(__dirname, 'lib', 'deliverables'))];
+
+    const saved = {};
+    for (const k of Object.keys(env)) { saved[k] = process.env[k]; process.env[k] = env[k]; }
+    try {
+      const queue = require(path.join(__dirname, 'lib', 'queue'));
+      const deliverables = require(path.join(__dirname, 'lib', 'deliverables'));
+      queue.enqueue({
+        topic: 'A lesson that blocked',
+        series: 'fixtures',
+        slug: 'a-lesson-that-blocked',
+        source: 'course-builder',
+        notes: `[${COURSE}] a brief`,
+      });
+      queue.block(LESSON, 'run-fixture-1', 'the frame gate found problems', 'post-render-check');
+
+      // What produce.js copies BEFORE the frame gate: beats and timings, no video.
+      const vid = fs.mkdtempSync(path.join(os.tmpdir(), 'vidfix-'));
+      fs.writeFileSync(path.join(vid, 'beats.js'), 'module.exports=[{id:"01"}];');
+      fs.writeFileSync(path.join(vid, 'durations.json'), '{"01":2.5}');
+      if (withMp4) fs.writeFileSync(path.join(vid, 'x_final.mp4'), Buffer.alloc(4096, 7));
+      deliverables.persist({
+        series: 'fixtures',
+        slug: 'a-lesson-that-blocked',
+        videoDir: vid,
+        ...(withMp4 ? { finalPath: path.join(vid, 'x_final.mp4') } : {}),
+      });
+
+      return await withServer(env, {}, fn);
+    } finally {
+      for (const k of Object.keys(saved)) {
+        if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k];
+      }
+    }
+  };
+
+  const auth = { authorization: `Bearer ${LMS_TOKEN}` };
+
+  await check('a lesson blocked before its render says so, instead of "not yet"', () =>
+    withCourse(async (port) => {
+      const r = await req(port, { path: `/api/v1/courses/${COURSE}/lessons/${LESSON}/file`, headers: auth });
+      assert(r.status === 404, `expected 404, got ${r.status}`);
+      assert(r.json.error === 'no_deliverable', `wrong error: ${r.text}`);
+      // The sentence that cost the LMS a day.
+      assert(!/no finished video yet/i.test(r.json.message),
+        'it still says "no finished video yet" for a lesson that stopped before its render');
+      assert(r.json.renderExists === false, 'renderExists should be false, not absent or true');
+      assert(Array.isArray(r.json.partsAvailable) && r.json.partsAvailable.includes('beats.js'),
+        'it does not say the beats are there to look at');
+      return 'says there is no video and points at what there is';
+    }));
+
+  await check('the beats of a blocked lesson can be read without paying for a rebuild', () =>
+    withCourse(async (port) => {
+      const r = await req(port, { path: `/api/v1/courses/${COURSE}/lessons/${LESSON}/beats`, headers: auth });
+      assert(r.status === 200, `expected 200, got ${r.status} ${r.text}`);
+      assert(/module\.exports/.test(r.json.beats), 'beats.js did not come back as source');
+      assert(r.json.durations && r.json.durations['01'] === 2.5, 'durations did not come back parsed');
+      assert(r.json.blockedBy === 'post-render-check', 'the block is not named on the beats view');
+      return 'beats as source, durations parsed, and why it stopped';
+    }));
+
+  await check('a lesson whose render reached the volume is served', () =>
+    withCourse(async (port) => {
+      const r = await req(port, { path: `/api/v1/courses/${COURSE}/lessons/${LESSON}/file`, headers: auth });
+      assert(r.status === 200, `expected 200, got ${r.status} ${r.text}`);
+      assert(/^video\/mp4/.test(r.headers['content-type'] || ''), `wrong type: ${r.headers['content-type']}`);
+      assert(Number(r.headers['content-length']) === 4096, `wrong length: ${r.headers['content-length']}`);
+      return 'blocked, but the bytes are there and it serves them';
+    }, { withMp4: true }));
+
+  await check('the course view says whether the bytes are fetchable, so nothing is inferred', () =>
+    withCourse(async (port) => {
+      const r = await req(port, { path: `/api/v1/courses/${COURSE}`, headers: auth });
+      assert(r.status === 200, `expected 200, got ${r.status} ${r.text}`);
+      const item = (r.json.items || []).find((i) => i.id === LESSON);
+      assert(item, `the fixture lesson is not in the course: ${r.text}`);
+      // The point of the field: blockedBy is 'post-render-check' in BOTH fixtures,
+      // and the answer differs. A rule mapping blockedBy to "fetchable" is wrong.
+      assert(item.blockedBy === 'post-render-check', `wrong blockedBy: ${item.blockedBy}`);
+      assert(item.deliverableAvailable === false,
+        'deliverableAvailable should be false when only beats are on the volume');
+      return 'false for a beats-only lesson whose blockedBy says post-render-check';
+    }));
+
+  await check('deliverableAvailable is true once the mp4 is there', () =>
+    withCourse(async (port) => {
+      const r = await req(port, { path: `/api/v1/courses/${COURSE}`, headers: auth });
+      const item = (r.json.items || []).find((i) => i.id === LESSON);
+      assert(item && item.deliverableAvailable === true,
+        'the mp4 is on the volume but the course view says it is not fetchable');
+      return 'true for the same blockedBy, once the bytes exist';
+    }, { withMp4: true }));
+
+  await check('the file routes are listed on the index we told them to pin to', () =>
+    withServer(BASE_ENV, {}, async (port) => {
+      const r = await req(port, { path: '/api/v1', headers: auth });
+      const paths = (r.json.endpoints || []).map((e) => `${e.method} ${e.path}`);
+      for (const want of [
+        'GET /api/v1/courses/:courseId/lessons/:lessonId/file',
+        'DELETE /api/v1/courses/:courseId/lessons/:lessonId/file',
+        'GET /api/v1/courses/:courseId/lessons/:lessonId/beats',
+      ]) {
+        assert(paths.includes(want), `the index does not list ${want} -- they cannot detect it`);
+      }
+      return `${paths.length} endpoints, including the file routes`;
+    }));
+}
+
 // ── 3. the bridge, listing and callbacks ─────────────────────────────────────
 
 async function bridgeChecks() {
@@ -795,6 +931,7 @@ async function bridgeChecks() {
   await authChecks();
   await moneyChecks();
   await bridgeChecks();
+  await lessonFileChecks();
   for (const d of storeDirs) { try { fs.rmSync(d, { recursive: true, force: true }); } catch { /* best effort */ } }
 
   console.log(`\n${'-'.repeat(64)}`);

@@ -760,6 +760,41 @@ function createApp(opts = {}) {
     return streamFile(req, res, file);
   });
 
+  /**
+   * Drop our copy of a job's video, once theirs is stored.
+   *
+   * Asked for by the LMS on 2026-09-22: a course lesson has GET and DELETE on its
+   * file, a job had only GET, so on the one surface where they can already archive
+   * today we kept our copy forever. The asymmetry was an oversight, not a policy.
+   *
+   * Same discipline as the course route: NEVER inferred from a successful GET. A
+   * download that failed halfway would otherwise destroy the last remaining copy,
+   * which is the failure this whole area exists to prevent. Deleting something
+   * already gone is success -- the caller wants "your copy is gone", and it is.
+   *
+   * Only the durable copy is removed. The render directory dies with the next
+   * redeploy on its own, and reaching into it here would mean a delete that
+   * behaves differently depending on how recently we deployed.
+   */
+  app.delete('/demo/make-video/:jobId/video', owner.requireTenant('produce'), (req, res) => {
+    const job = ownedJob(req, res);
+    if (!job) return undefined;
+    const from = (job.review && job.review.series && job.review.slug)
+      ? job.review
+      : (job.script && job.script.series && job.script.slug ? job.script : null);
+    if (!from) {
+      return res.status(404).json({ error: 'no_deliverable', message: 'This job has no video.' });
+    }
+    const r = require('../orchestrator/lib/deliverables').forget(from.series, from.slug);
+    return res.json({
+      deleted: `${from.series}/${from.slug}`,
+      alreadyGone: !r.ok,
+      note: r.ok
+        ? 'Our durable copy is gone. Yours is now the only one unless the video was published.'
+        : 'Nothing was held on the volume for this job, so there was nothing to delete.',
+    });
+  });
+
   /** Range-capable MP4 streaming, in one place rather than three copies. */
   function streamFile(req, res, file) {
     const size = fs.statSync(file).size;
