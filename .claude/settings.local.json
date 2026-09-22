@@ -1,4 +1,12 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(cat >> *)"
+    ],
+    "additionalDirectories": [
+      "E:\\Content-Pipeline---Q2\\.claude\\memories"
+    ]
+  },
   "enabledPlugins": {
     "superpowers@claude-plugins-official": true
   }

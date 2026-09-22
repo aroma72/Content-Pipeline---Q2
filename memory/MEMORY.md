@@ -1,20 +1,18 @@
-# Drawing Room — Memory Index
+# Memory — moved
 
-## User & Role
-- [Aroma's Role](user_aroma.md) — content creator/orchestrator, decision-maker, review authority
+This store was migrated into the canonical one on **2026-09-21**:
 
-## Project Context
-- [Project Goals](project_goals.md) — 4-week build, weekly loop automation, learner asset delivery
-- [Build Timeline](project_timeline.md) — Week 1 (schemas), Week 2 (pipeline v1), Week 3 (video+publish), Week 4 (reflect+iterate)
+## → [`.claude/memories/`](../.claude/memories/MEMORY-INDEX.md)
 
-## Architecture & Tech Stack
-- [Tech Stack Decisions](arch_tech_stack.md) — Claude API, Whisper, ffmpeg, LangGraph/managed agents decision pending
-- [Schema Contracts](arch_schemas.md) — ContentSignal, ContentUnit, InstructorBrief, SessionAssetBundle, ContentHealthRecord
+All ten files moved there verbatim (via `git mv`, so history is intact) and were reorganised into
+the hot / warm / cold tiers. Nothing was summarised or dropped.
 
-## Feedback & Constraints
-- [Build Philosophy](feedback_build_philosophy.md) — Start simple, measure weekly, specialize only if quality improves
-- [Quality Gates](feedback_quality_gates.md) — Non-negotiable weekly gates, human review checkpoints, SLA targets
+| Was | Now |
+|---|---|
+| `user_aroma.md`, `project_goals.md`, `ref_taleemabad.md` | `.claude/memories/product-context.md` |
+| `project_timeline.md` | `.claude/memories/phase-status.md` |
+| `arch_tech_stack.md`, `arch_schemas.md` | `.claude/memories/architecture.md` |
+| `feedback_build_philosophy.md`, `feedback_quality_gates.md` | `.claude/memories/lessons.md` |
+| `ref_anthropic_practices.md` | `.claude/memories/reference-anthropic-practices.md` |
 
-## References
-- [Taleemabad LMS](ref_taleemabad.md) — Platform integration target, publishing endpoint
-- [Anthropic Best Practices](ref_anthropic_practices.md) — Agent patterns, prompt caching, tool use patterns
+Governance: [`.claude/standards/MEMORY_TIERS.md`](../.claude/standards/MEMORY_TIERS.md)

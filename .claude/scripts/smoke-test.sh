@@ -111,6 +111,10 @@ CRITICAL_FILES=(
   ".claude/standards/VOICEOVER_POLICY.md"
   ".claude/standards/DOC_TYPE_SYSTEM.md"
   ".claude/standards/METADATA_CONTRACT.md"
+  ".claude/standards/MEMORY_TIERS.md"
+  ".claude/memories/active-session.md"
+  ".claude/memories/MEMORY-INDEX.md"
+  ".claude/memory-db/mem.py"
 )
 
 # Per-test counter. The old code tested the GLOBAL $FAIL here, so one failure in
@@ -221,7 +225,8 @@ while IFS= read -r md_file; do
     MISSING_FRONTMATTER=$((MISSING_FRONTMATTER+1))
   fi
 done < <(find . -name "*.md" -type f ! -path "./.git/*" ! -path "./node_modules/*" \
-    ! -path "./updated/*" ! -path "./venv/*" ! -name "CLAUDE.md" | head -10)
+    ! -path "./updated/*" ! -path "./venv/*" ! -name "CLAUDE.md" \
+    ! -path "./.claude/memories/*" | head -10)
 
 # The 10-file cap is inherited behaviour. Say so, rather than letting a partial
 # scan read as a clean bill of health for the whole repo.
@@ -238,11 +243,12 @@ fi
 # ============================================================================
 echo "🔄 Test 7: Git Status..."
 
-if git diff-index --quiet HEAD -- 2>/dev/null; then
+MEM_EXCLUDE=(':!.claude/memories' ':!.claude/memory-db')
+if git diff-index --quiet HEAD -- . "${MEM_EXCLUDE[@]}" 2>/dev/null; then
   echo "  ✅ Working directory clean"
   PASS=$((PASS+1))
 else
-  UNSTAGED=$(git diff --name-only | wc -l)
+  UNSTAGED=$(git diff --name-only -- . "${MEM_EXCLUDE[@]}" | wc -l)
   echo "  ⚠️  $UNSTAGED unstaged changes (remember to commit before pushing)"
   WARN=$((WARN+1))
 fi

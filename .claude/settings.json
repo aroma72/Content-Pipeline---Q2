@@ -12,11 +12,6 @@
       "Read(//c/Program Files/**)"
     ]
   },
-  "memory": {
-    "auto_save_interval_seconds": 300,
-    "checkpoint_on_tool_completion": true,
-    "retention_days": 90
-  },
   "logging": {
     "level": "info",
     "session_log": ".claude/logs/session.log",
@@ -28,7 +23,7 @@
     "description": "Agentic L&D content factory",
     "main_artifacts": [
       "planning/planning.md",
-      "memory/MEMORY.md",
+      ".claude/memories/MEMORY-INDEX.md",
       ".claude/logs/"
     ]
   },
@@ -61,6 +56,25 @@
             "command": "H=\"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/validate-after-write.sh\"; [ -r \"$H\" ] || { printf 'hook: %s is unreadable -- the syntax check did NOT run\n' \"$H\" >&2; exit 0; }; f=$(jq -r '.tool_input.file_path // .tool_response.filePath // empty'); { [ -n \"$f\" ] && [ -f \"$f\" ]; } || exit 0; out=$(bash \"$H\" \"$f\"); rc=$?; if [ $rc -eq 0 ]; then [ -n \"$out\" ] && printf '%s\n' \"$out\"; exit 0; else printf '%s\n' \"$out\" >&2; exit 2; fi",
             "timeout": 30,
             "statusMessage": "Validating Python syntax and markdown frontmatter..."
+          },
+          {
+            "type": "command",
+            "command": "H=\"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/capture-active-session-changes.sh\"; [ -r \"$H\" ] || exit 0; p=$(cat); f=$(printf '%s' \"$p\" | jq -r '.tool_input.file_path // empty'); case \"$f\" in *active-session.md) ;; *) exit 0;; esac; o=$(printf '%s' \"$p\" | jq -r '.tool_input.old_string // empty'); [ -n \"$o\" ] || exit 0; bash \"$H\" \"$f\" \"$o\" >/dev/null 2>&1; exit 0",
+            "timeout": 5,
+            "async": true,
+            "statusMessage": "Preserving replaced memory text..."
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "H=\"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/capture-tool-failures.sh\"; [ -r \"$H\" ] || exit 0; p=$(cat); n=$(printf '%s' \"$p\" | jq -r '.tool_name // empty'); r=$(printf '%s' \"$p\" | jq -r 'if .tool_response then (.tool_response | if type==\"string\" then . else tojson end) elif .error then (.error|tostring) else empty end'); [ -n \"$r\" ] || exit 0; bash \"$H\" \"$n\" \"$r\" >/dev/null 2>&1; exit 0",
+            "timeout": 5,
+            "async": true,
+            "statusMessage": "Recording tool failure to memory..."
           }
         ]
       }
@@ -85,7 +99,7 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}\"/.claude/hooks/session-end.sh",
-            "timeout": 15,
+            "timeout": 45,
             "statusMessage": "Checking open beads and unstaged changes..."
           }
         ]
@@ -103,6 +117,70 @@
           }
         ]
       }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "H=\"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/capture-tool-failures.sh\"; [ -r \"$H\" ] || exit 0; p=$(cat); n=$(printf '%s' \"$p\" | jq -r '.tool_name // empty'); r=$(printf '%s' \"$p\" | jq -r '[.error?, (.tool_response? | if type==\"string\" then . else tojson end)] | map(select(. != null)) | join(\" \")'); [ -n \"$r\" ] || exit 0; bash \"$H\" \"$n\" \"$r\" >/dev/null 2>&1; exit 0",
+            "timeout": 5,
+            "async": true,
+            "statusMessage": "Recording tool failure to memory..."
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/prompt-submit.sh\" 2>/dev/null; exit 0",
+            "timeout": 5,
+            "statusMessage": "Memory protocol reminder..."
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "manual",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/pre-compact.sh\" 2>/dev/null; exit 0",
+            "timeout": 10,
+            "statusMessage": "Snapshotting working memory before compaction..."
+          }
+        ]
+      },
+      {
+        "matcher": "auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/pre-compact.sh\" 2>/dev/null; exit 0",
+            "timeout": 10,
+            "statusMessage": "Snapshotting working memory before compaction..."
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/post-compact.sh\" 2>/dev/null; exit 0",
+            "timeout": 10,
+            "statusMessage": "Restoring working memory after compaction..."
+          }
+        ]
+      }
     ]
   },
   "harness_config": {
@@ -110,7 +188,9 @@
     "beads_dir": ".beads/",
     "agents_dir": ".claude/agents/",
     "skills_dir": ".claude/skills/",
-    "scripts_dir": ".claude/scripts/"
+    "scripts_dir": ".claude/scripts/",
+    "memories_dir": ".claude/memories/",
+    "memory_db_dir": ".claude/memory-db/"
   },
   "enabledPlugins": {
     "superpowers@claude-plugins-official": true

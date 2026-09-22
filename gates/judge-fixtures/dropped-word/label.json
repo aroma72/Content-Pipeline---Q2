@@ -1,0 +1,6 @@
+{
+  "expect": "fail",
+  "why": "beat 02 drops 'that' — audible, and the prompt's own example error",
+  "source": "eval-text.js prompt, cited as the canonical error",
+  "labelledBy": "human"
+}

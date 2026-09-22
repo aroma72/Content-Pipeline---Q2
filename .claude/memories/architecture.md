@@ -1,8 +1,16 @@
 ---
-name: Technology Stack & Infrastructure Decisions
-description: Tech choices, models, tools, hosting, and architecture patterns for Drawing Room
-type: project
+type: reference
+last_verified: 2026-05-07
+owner: aroma
 ---
+
+> **Migrated 2026-09-21** from `memory/` into the warm tier, verbatim — no content was
+> summarised or dropped. It has **not** been re-verified against the codebase since
+> 2026-05-07, and much of it describes the originally-planned pipeline rather than the
+> explainer-video pipeline that now ships. Treat it per the decay schedule in
+> `.claude/standards/MEMORY_TIERS.md` §2: over 180 days, re-verify before acting.
+
+How Drawing Room is built: model choices, media tooling, and the schema contracts between stages.
 
 ## Agent Framework & Model Selection
 
@@ -170,3 +178,145 @@ ContentOrchestrator (Claude API)
 3. Confirm Taleemabad LMS API credentials + endpoint
 4. Validate ffmpeg + Python environment
 5. Pick managed agent framework (CrewAI, LangGraph, or Claude API native)
+
+
+---
+
+# Data Schema Contracts
+
+<!-- migrated verbatim from memory/arch_schemas.md on 2026-09-21 -->
+
+## Reference
+Full schema definitions are in [planning/planning.md](../planning/planning.md) under "Content Schema Definitions" section. **This is a quick reference; source of truth is the planning doc.**
+
+## Key Contracts
+
+### ContentSignal
+Represents an observed learner weakness or confusion pattern.
+- **id**: UUID
+- **source**: `learner_question`, `repeated_confusion`, `instructor_note`, `assignment_pattern`
+- **concept_id**: Links to concept ontology
+- **confidence**: 0.0-1.0 (strength of signal)
+- **observed_date**: When was this detected?
+
+### ContentUnit
+A teachable concept + its artifacts + success criteria.
+- **id**: UUID
+- **outcome**: "Learner will be able to [verb] [concept] by [method]"
+- **signal_ids**: Which signals map to this unit?
+- **format**: `video`, `interactive`, `reading`, `assignment`
+- **status**: `draft`, `ready_for_review`, `published`, `rebuild`, `archived`
+- **evidence_method**: How we measure success (`assignment`, `quiz`, `artifact`)
+
+### InstructorBrief
+Ready-to-teach instructional material for a content unit.
+- **content_unit_id**: Which unit does this brief support?
+- **already_know**: Likely prerequisite knowledge
+- **likely_weak**: Predicted misconceptions (watch during teaching)
+- **do_not_reteach**: Topics learners usually get
+- **explanation_variants**: 2-3 ways to explain the concept
+- **example_bank**: Difficulty-ranked worked examples
+
+### SessionAssetBundle
+Final published outputs from a recorded session.
+- **session_id**: UUID
+- **essential_edit_mp4**: Path to cleaned-up core video
+- **concept_clips**: List of 2-4 min clips
+- **session_summary**: Markdown summary + key takeaways
+- **glossary**: Term definitions
+- **watch_order**: Recommended viewing sequence
+- **status**: `draft`, `needs_review`, `publish_ready`, `published`
+
+### ContentHealthRecord
+Post-session evaluation: did the unit work?
+- **unit_id**: Which unit was this?
+- **cycle_week**: Which weekly cycle?
+- **assignment_attempt_rate**: % learners who tried it
+- **assignment_pass_rate_first_attempt**: % passed first try
+- **video_completion_rate**: % watched to end
+- **teacher_confidence**: Did instructor feel it worked?
+- **decision**: `keep` (reuse), `rebuild` (improve), `kill` (remove)
+- **decision_rationale**: Why this decision? (logged for audit)
+
+---
+
+## Schema Validation & Testing (Week 1)
+- Validate schemas against at least 3 real prior session datasets
+- Test round-tripping: signal → unit → asset → health record (no data loss)
+- Define default values for optional fields
+- Create examples for each schema (populate with real prior session data)
+
+---
+
+## Integration Points
+- **SignalIntakeSkill** produces: ContentSignal (list)
+- **ContentPlannerSkill** consumes: ContentSignal; produces: ContentUnit (list)
+- **ContentProductionSkill** consumes: ContentUnit; produces: SessionAssetBundle (partial)
+- **SessionCloseSkill** consumes: SessionAssetBundle (draft); produces: SessionAssetBundle (publish_ready)
+- **ContentReflectSkill** consumes: SessionAssetBundle (published), assignment evaluations; produces: ContentHealthRecord
+
+This is the contract — no agent deviates without consent from Aroma + course lead.
+
+
+---
+
+# Claude Code Hook Contract
+
+**Verified 2026-09-21** against the published hooks reference. Written down because these facts
+get re-derived every few months, and because a hook registered under a name that does not exist is
+silently ignored — indistinguishable from one that works.
+
+## Events this harness uses
+
+| Event | Fires | Matchers |
+|---|---|---|
+| `SessionStart` | session opens | `startup`, `resume`, `clear`, `compact`, `fork` |
+| `UserPromptSubmit` | every user prompt | — |
+| `PreToolUse` / `PostToolUse` | before / after a **successful** tool call | tool-name regex, or `*` for all |
+| `PostToolUseFailure` | after a tool call **fails** | tool-name regex |
+| `PreCompact` / `PostCompact` | around context compaction | `manual`, `auto` (PreCompact) |
+| `Stop` | **every time Claude finishes responding** — per turn, not per session | — |
+| `SessionEnd` | the session terminates | reasons: `clear`, `resume`, `logout`, `prompt_input_exit`, `other` |
+
+## The five facts that matter
+
+1. **`Stop` is per-turn, not per-session.** Anything expensive — opening SQLite, scanning an
+   archive — belongs on `SessionEnd`, not `Stop`. A `Stop` hook must also check `stop_hook_active`
+   and bail when it is true, or it can push Claude into a continuation loop up to the 8-turn cap.
+
+2. **`SessionEnd` has a 1.5-second shared budget by default**, raisable to 60s via `timeout`.
+   Transcript extraction, a SQLite write and a rotation pass will not fit in the default. Set the
+   timeout explicitly.
+
+3. **Plain stdout is injected as context** on `SessionStart`, `UserPromptSubmit`,
+   `UserPromptExpansion` and `PostModelSwitch`. This is why `session-start.sh` can stay a plain
+   `echo` script and still get its content in front of the model — **no JSON needed**. The moment
+   a hook prints JSON, every stray `echo` invalidates the object, so it is all-or-nothing.
+
+4. **`additionalContext` must be nested inside `hookSpecificOutput`.** At the top level it is
+   silently ignored. Combining `systemMessage` and `additionalContext` on `SessionStart` is
+   undocumented — prefer plain stdout there.
+
+5. **Multiple matcher blocks under one event all fire, in parallel.** A second `PostToolUse` block
+   with matcher `*` coexists safely with the existing `Write|Edit` block; neither sees the other.
+
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| `0` | Success. On context-injection events, stdout is added to context |
+| `2` | **Blocking.** Reason must go to **stderr** |
+| other | Non-blocking error; valid JSON on stdout is still applied |
+
+## House wrapper convention
+
+`.claude/settings.json` does the `jq` extraction from stdin and passes **plain positional args** to
+the `.sh`; the scripts never read stdin. This sidesteps a Git-Bash-on-Windows bug where
+`/dev/stdin` does not resolve when the parent is not a shell. Use command substitution
+(`c=$(jq -r ...)`), never `jq ... | read -r c` — `read` stops at the first newline and would hide a
+multi-line command from a guard. See `lessons.md` §H2.
+
+## Undocumented — do not assume
+
+The exact stdin payload shape for `PostToolUseFailure` and `PreCompact` is not in the public
+reference. Inspect a real run with `claude --debug` before depending on a field name.

@@ -25,6 +25,7 @@ owner: aroma
 | Fix text cutoff in diagrams | `docs/troubleshooting.md` |
 | **Operate the live service (durability, tenants, deploying)** | **`docs/SERVICE_DURABILITY_AND_CONTRACTS.md`** |
 | Track my work | `.beads/status.jsonl` |
+| **Know what past sessions learned (hot/warm/cold memory)** | **`.claude/memories/MEMORY-INDEX.md`** → `.claude/standards/MEMORY_TIERS.md` |
 | Understand the content pipeline | `docs/content-pipeline.md` |
 | Maintain infrastructure | `docs/infrastructure-maintenance.md` |
 | See design standards | `.claude/standards/VIDEO_PRODUCTION_RULES.md` |
@@ -127,15 +128,13 @@ owner: aroma
 | video-render (legacy Remotion) | `/video-render` |
 | audio-mux | `/audio-mux` |
 | git-workflow | `/git-workflow` |
+| memory-distill (archive → warm memory) | `/memory-distill` |
+| memory-stats (memory health) | `/memory-stats` |
 
 
 ## Standards Documents
 
-- **REVIEWER_GATED_PIPELINE.md** — Per-step reviewers, human-approval gates, feedback persistence, Review Log artifact
-- **QA_RATING_SYSTEM.md** — 7-factor quality rubric, scoring 0–7, minimum thresholds, remediation workflow
-- **SCRIPTING_STANDARDS.md** — Concept depth, single protagonist story, validation checklist (CRITICAL for all scripts)
-- **VIDEO_PRODUCTION_RULES.md** — Frame math, SVG safety, text prevention (legacy)
-- **VOICEOVER_POLICY.md** / **DOC_TYPE_SYSTEM.md** / **METADATA_CONTRACT.md** — VO policy · doc types & line limits · frontmatter
+All in `.claude/standards/`. **SCRIPTING_STANDARDS** (concept depth, single protagonist — CRITICAL for all scripts) · **QA_RATING_SYSTEM** (7-factor rubric) · **REVIEWER_GATED_PIPELINE** (per-step reviewers, approval gates) · **MEMORY_TIERS** (hot/warm/cold memory) · **VIDEO_PRODUCTION_RULES** (frame math, SVG safety — legacy) · **VOICEOVER_POLICY** · **DOC_TYPE_SYSTEM** · **METADATA_CONTRACT**
 
 
 ## Known Failures (See `.beads/failures.jsonl`)

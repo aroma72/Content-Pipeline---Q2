@@ -115,3 +115,20 @@ explainer-videos/testing/render-smoke/
 # local-development fallback and must never be committed.
 .jobstore/
 .salt-deck-build/
+
+# Memory index — a REBUILDABLE view over .claude/memories/ and .beads/, not a source of truth.
+# SQLite pages don't delta-compress, so a db touched every session and committed a few hundred
+# times is permanently-unremovable history for a file `mem.py rebuild` regenerates in a second.
+# It's also a binary two concurrent sessions would both modify and neither could merge.
+.claude/memory-db/*.db
+.claude/memory-db/*.db-wal
+.claude/memory-db/*.db-shm
+.claude/memories/.rotate.lock/
+.claude/memories/*.md.tmp
+
+# Derived from the memory index, rewritten on every session close. Tracking them means a diff
+# every session and a conflict whenever two sessions run — and `mem.py rebuild` regenerates all
+# three. The durable record is the markdown tiers, which ARE tracked.
+.claude/memories/lessons-export.md
+.claude/memories/mistakes-export.md
+.claude/memories/hook-runs.log

@@ -1,0 +1,14 @@
+{
+  "last_distilled_at": null,
+  "last_distilled_through_date": null,
+  "files_distilled": [],
+  "wrote": [],
+  "verdict": {
+    "read": 0,
+    "distilled": 0,
+    "superseded": 0,
+    "proposed": 0,
+    "conflicts_raised": 0
+  },
+  "note": "Initialised 2026-09-21 when the memory system was built. No pass has run yet: a null watermark means the whole archive is pending, which is correct for an empty archive."
+}

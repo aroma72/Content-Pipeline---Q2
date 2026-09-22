@@ -6,7 +6,12 @@ FILE_PATH="$1"
 
 # Validate Python syntax
 if [[ "$FILE_PATH" == *.py ]]; then
-  if command -v py >/dev/null 2>&1; then PY=py; else PY=python3; fi
+  PY=""
+  for c in py python python3; do
+    if command -v "$c" >/dev/null 2>&1 && "$c" -c "" >/dev/null 2>&1; then PY="$c"; break; fi
+  done
+  # No usable interpreter is not a syntax error in the file being written.
+  [ -n "$PY" ] || exit 0
   if ! PYTHONPYCACHEPREFIX="${TMPDIR:-/tmp}/claude-pycache" "$PY" -m py_compile "$FILE_PATH" 2>/dev/null; then
     echo "❌ ERROR: Python file has syntax errors. Fix before continuing."
     exit 1
@@ -18,7 +23,10 @@ if [[ "$FILE_PATH" == *.md ]]; then
   # Check if file starts with frontmatter
   if ! head -1 "$FILE_PATH" | grep -q "^---"; then
     # Exception: CLAUDE.md is exempt (it has special format)
-    if [[ ! "$FILE_PATH" == *"CLAUDE.md" ]]; then
+    case "$FILE_PATH" in
+      *CLAUDE.md|*/.claude/memories/*|*.claude/memories/*) exit 0 ;;
+    esac
+    if true; then
       echo "⚠️  WARNING: Markdown file missing YAML frontmatter. Add:"
       echo "---"
       echo "type: [document_type]"

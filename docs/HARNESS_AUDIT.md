@@ -25,13 +25,20 @@ mistaken for one.
 
 | # | Mechanism | Where | Written by |
 |---|---|---|---|
-| 1 | Claude-harness notes | `~/.claude/projects/E--Content-Pipeline---Q2/memory/` | the harness, per session |
+| 1 | **Tiered session memory (hot/warm/cold)** | `.claude/memories/` + `.claude/memory-db/` | memory hooks, `/memory-distill` — added 2026-09-21 |
+| 1b | Claude-harness notes | `~/.claude/projects/E--Content-Pipeline---Q2/memory/` | the harness, per session — now a pointer at (1) |
 | 2 | The app's own agent memory | `agent_memory.json` + `memory_manager.py` | `AgentMemoryManager` |
 | 3 | Work and quality logs | `.beads/*.jsonl` (7 files) | `spine.js`, `qa.js`, `gates/lib/feedback.js`, and by hand |
 | 4 | Job / queue / ledger store | Railway volume `/data/cq-jobs`, else `.jobstore/` | `server/lib/job-store.js` |
 | 5 | Per-run resume state | `orchestrator/.runs/<runId>.json` | `orchestrator/lib/state.js` |
 
-### There is no hot / warm / cold tiering, and that is deliberate
+### The job store has no hot / warm / cold tiering, and that is deliberate
+
+> **Amended 2026-09-21.** This section is about **job storage**, and its argument stands. Claude's
+> *session memory* is a different concern and now **is** tiered — see
+> `.claude/standards/MEMORY_TIERS.md`. The two do not conflict: one is about where a single
+> durable store landed, the other about how knowledge ages out of a context window.
+
 
 `server/lib/job-store.js:48-60` resolves **one** directory through a ladder —
 `JOB_STORE_DIR` → `RAILWAY_VOLUME_MOUNT_PATH` → repo-local `.jobstore` → OS temp →
@@ -57,7 +64,9 @@ The TTL runs from the **last transition**, not from creation (`job-store.js:233`
 a deliberate fix, because a job waiting on a human review is waiting by design.
 
 **The real gap is elsewhere:** no `.beads/*.jsonl` has any rotation, compaction or
-size cap. `runs.jsonl` is ~1.5 MB and grows monotonically, and it embeds whole beat
+size cap. *(Partly addressed 2026-09-21: `mem.py ingest-beads` now reads `failures.jsonl`
+into the memory index, filtering the 317 test-fixture rows, so the ledger is at least
+consumed rather than only written. It still has no size cap.)* `runs.jsonl` is ~1.5 MB and grows monotonically, and it embeds whole beat
 arrays per run. `.beads/README.md` states the append-only rule; nothing states an
 end to it.
 

@@ -1,0 +1,6 @@
+{
+  "expect": "pass",
+  "why": "spelled-out numbers and regional usage are house style, not errors",
+  "source": "eval-text.js prompt rules; both have been false-positived before",
+  "labelledBy": "human"
+}
