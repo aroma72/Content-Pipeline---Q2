@@ -26,6 +26,54 @@ function knownTemplates(videoDir) {
 }
 
 /**
+ * Mechanical repairs for the two illustration-beat faults that cost a run on
+ * 2026-09-22: an overlay with no or an unknown `tpl` (renders nothing), and an
+ * `ali`/`scene` beat left wordless by it. Both are fixable without a model --
+ * drop the dead overlay, borrow a caption from the beat's own vo -- so they are
+ * repaired here for $0 instead of spent on as a redraft, twice, then a lenient
+ * third draft that a deterministic check fails identically.
+ *
+ * Pure: never mutates its input. `tpls` is the known template list, or null when
+ * animation/info.js is not there yet (then only a MISSING tpl is a fault).
+ *
+ * @returns {{beats: object[], repairs: string[]}}
+ */
+function repairBeats(beats, tpls) {
+  const repairs = [];
+  if (!Array.isArray(beats)) return { beats, repairs };
+  const out = beats.map((b) => {
+    if (!b || (b.mode !== 'ali' && b.mode !== 'scene')) return b;
+    const at = `beat ${b.id || '(no id)'}`;
+    let fixed = b;
+    const overlayDraws = Boolean(b.overlay && b.overlay.tpl
+      && (!tpls || tpls.includes(b.overlay.tpl)));
+    if (b.overlay && !overlayDraws) {
+      const { overlay, ...rest } = fixed;
+      fixed = rest;
+      repairs.push(`${at}: dropped an overlay that would render nothing (${
+        overlay.tpl ? `unknown template '${overlay.tpl}'` : 'no tpl'})`);
+    }
+    const draws = Boolean(fixed.overlay && fixed.overlay.tpl && (!tpls || tpls.includes(fixed.overlay.tpl)));
+    if (!fixed.cap && !draws) {
+      const cap = capFromVo(fixed.vo);
+      if (cap) {
+        fixed = { ...fixed, cap };
+        repairs.push(`${at}: added cap "${cap}" from its own vo so the frame carries words`);
+      }
+    }
+    return fixed;
+  });
+  return { beats: out, repairs };
+}
+
+/** The first eight words of a line, without trailing punctuation. */
+function capFromVo(vo) {
+  const words = String(vo || '').trim().split(/\s+/).filter(Boolean).slice(0, 8);
+  const cap = words.join(' ').replace(/[\s.,;:!?]+$/, '');
+  return cap || null;
+}
+
+/**
  * @returns {{errors: string[], warnings: string[]}}
  */
 function validateBeats(beats, videoDir, opts = {}) {
@@ -332,4 +380,4 @@ function checkQuiz(errors, at, q, { what, requireExplain = false }) {
   }
 }
 
-module.exports = { validateBeats, knownTemplates };
+module.exports = { validateBeats, knownTemplates, repairBeats };

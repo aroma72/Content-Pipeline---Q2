@@ -11,7 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const { askJson } = require('../llm-router');
 const { videoDir } = require('../paths');
-const { validateBeats } = require('../validate-beats');
+const { validateBeats, repairBeats, knownTemplates } = require('../validate-beats');
 const { RedraftError } = require('../spine-errors');
 const { composeTitle } = require('../naming');
 const { ALI } = require('../characters');
@@ -433,6 +433,19 @@ module.exports = {
     log(`title: ${script.title}`);
 
     const dir = videoDir(item.series, item.slug);
+
+    // Repair what a machine can repair before asking a model to. A dead overlay
+    // and a wordless illustration beat are both mechanical; on 2026-09-22 they
+    // cost two redrafts, a lenient third, and the run. Each repair is logged and
+    // recorded as an intervention so it travels to review -- nothing is hidden.
+    const repaired = repairBeats(script.beats, knownTemplates(dir));
+    if (repaired.repairs.length) {
+      script.beats = repaired.beats;
+      for (const r of repaired.repairs) {
+        log(`repaired ${r}`);
+        require('../state').recordIntervention(st, { stage: 'script', kind: 'auto_repaired', detail: r });
+      }
+    }
 
     // Same structural check produce runs, applied here so a malformed script is
     // rejected while a retry is still cheap (this stage has maxAttempts 3).

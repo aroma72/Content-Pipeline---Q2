@@ -2077,6 +2077,63 @@ async function redraftChecks() {
     console.log(`  FAIL  redraft cap\n          ${e.message}`);
   }
 
+  // A deterministic validator says the same thing every time. On 2026-09-22 the
+  // spine spent its lenient pass -- a third Opus draft, 47 seconds -- on
+  // "overlay has no 'tpl'", which strictCanon fails identically, then REJECTED.
+  // The lenient pass exists for a judge that may disagree with itself, not for this.
+  try {
+    let drafts = 0;
+    const st = await spine.execute(testItem(), {
+      quiet: true, stopAfter: 'gate',
+      stageOverrides: {
+        research: stub('research', async () => ({ ok: 1 })),
+        script: stub('script', async () => {
+          drafts++;
+          throw new RedraftError('Malformed script:\n  - beat 12: overlay has no \'tpl\'', {
+            fromStage: 'script', feedback: ['beat 12: overlay has no tpl'], verdict: 'INVALID_BEATS',
+          });
+        }),
+        gate: stub('gate', async () => ({ verdict: 'READY' })),
+      },
+    });
+    assert(st.status === 'failed', `expected failed, got ${st.status}`);
+    assert(drafts === spine.MAX_REDRAFTS + 1,
+      `a deterministic validator failure got a lenient re-run: ${drafts} drafts, expected ${spine.MAX_REDRAFTS + 1}`);
+    assert(!(st.interventions || []).some((i) => i.kind === 'accepted_with_warning'),
+      'the run recorded accepting-with-a-warning for a fault that cannot be waived');
+    pass++; console.log('  PASS  a deterministic validator failure is not given a lenient Opus re-run');
+  } catch (e) {
+    failures.push({ name: 'no lenient pass for INVALID_BEATS', message: e.message });
+    console.log(`  FAIL  no lenient pass for INVALID_BEATS\n          ${e.message}`);
+  }
+
+  // Both findings from that run are mechanical: a dead overlay is dropped, and a
+  // wordless illustration beat borrows its first eight words from its own vo.
+  try {
+    const { repairBeats, validateBeats } = require(path.join(__dirname, 'lib', 'validate-beats'));
+    const beats = [
+      { id: '11', mode: 'ali', vo: 'Ali reads the trace.', cap: 'Read the trace' },
+      { id: '12', mode: 'ali', vo: 'Ali finds the line where the error actually happened, and stops.', overlay: { data: { x: 1 } } },
+      { id: '13', mode: 'scene', vo: 'The room is quiet.', overlay: { tpl: 'nope', data: {} } },
+      { id: '14', mode: 'info', vo: 'A question.', info: { tpl: 'quiz', data: { stem: 'q', options: ['a', 'b'], answer: 0 } } },
+    ];
+    const { beats: fixed, repairs } = repairBeats(beats, ['quiz', 'stat']);
+    assert(fixed[0] === beats[0] || JSON.stringify(fixed[0]) === JSON.stringify(beats[0]), 'a valid beat was changed');
+    assert(!fixed[1].overlay, 'the tpl-less overlay was kept');
+    assert(fixed[1].cap && fixed[1].cap.split(/\s+/).length <= 8 && /^Ali finds the line/.test(fixed[1].cap),
+      `no caption synthesised from vo: ${JSON.stringify(fixed[1].cap)}`);
+    assert(!fixed[2].overlay && fixed[2].cap === 'The room is quiet', `unknown-template overlay: ${JSON.stringify(fixed[2])}`);
+    assert(JSON.stringify(fixed[3]) === JSON.stringify(beats[3]), 'an info beat was touched');
+    assert(repairs.length === 4 && repairs.every((r) => /beat 1[23]/.test(r)), `repairs: ${JSON.stringify(repairs)}`);
+    const v = validateBeats(fixed, '/nonexistent', { strictCanon: true });
+    const overlayErrors = v.errors.filter((e) => /overlay|draws art and no text/.test(e));
+    assert(overlayErrors.length === 0, `repaired beats still fail: ${overlayErrors.join(' | ')}`);
+    pass++; console.log(`  PASS  repairBeats fixes the beat-12 shape for free  (${repairs.length} repairs)`);
+  } catch (e) {
+    failures.push({ name: 'repairBeats', message: e.message });
+    console.log(`  FAIL  repairBeats\n          ${e.message}`);
+  }
+
   console.log('\n11b. redrafts are patches, so untouched beats CANNOT change');
 
   // Measured twice: asking for the whole script back with "leave the rest

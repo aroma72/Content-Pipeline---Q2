@@ -344,7 +344,13 @@ async function execute(item, opts = {}) {
             // a warning and let the work through, and the warning travels in
             // sensorResults to the human review step. Nothing is hidden, and a
             // person still decides.
-            if (!st.lenient) {
+            //
+            // Not for a deterministic validator. INVALID_BEATS comes from
+            // validate-beats.js, which strictCanon fails identically every time;
+            // on 2026-09-22 the lenient pass bought a third Opus draft (47s) for
+            // "overlay has no 'tpl'" and then REJECTED on the same line. Skip
+            // straight to giving up: the money was the only thing the pass changed.
+            if (!st.lenient && err.verdict !== 'INVALID_BEATS') {
               st.lenient = true;
               state.recordIntervention(st, {
                 stage: name,
