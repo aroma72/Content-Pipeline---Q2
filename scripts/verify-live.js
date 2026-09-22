@@ -91,9 +91,55 @@ async function get(path, auth = true) {
     return rules.length + ' rules, ' + (r.json.endpoints || []).length + ' endpoints';
   });
 
+  console.log('\n3. the course worker -- contract 1.1 (a hold is per course, and visible)');
+
+  await check('the index and /health agree on a contractVersion of at least 1.1', async () => {
+    const idx = await get('/api/v1', false);
+    const h = await get('/health', false);
+    const v = String(idx.json.contractVersion || '');
+    assert(/^\d+\.\d+$/.test(v), 'the index carries no contractVersion -- this build predates 1.1');
+    assert(h.json.contractVersion === v, '/health says ' + h.json.contractVersion + ', the index says ' + v);
+    const [maj, min] = v.split('.').map(Number);
+    assert(maj > 1 || (maj === 1 && min >= 1), 'contractVersion ' + v + ' is older than 1.1');
+    return 'contract ' + v;
+  });
+
+  await check('the free exits are on the index: skip, and resume after a boot', async () => {
+    const r = await get('/api/v1', false);
+    const paths = (r.json.endpoints || []).map((e) => e.method + ' ' + e.path);
+    for (const want of ['POST /api/v1/courses/worker/resume', 'POST /api/v1/courses/:courseId/lessons/:lessonId/skip']) {
+      assert(paths.includes(want), 'the index does not list ' + want);
+    }
+    return 'both listed';
+  });
+
+  await check('/health says whether the worker is idle with work waiting', async () => {
+    const r = await get('/health', false);
+    const w = r.json.courses && r.json.courses.worker;
+    assert(w && typeof w.needsResume === 'boolean', 'no courses.worker.needsResume on /health');
+    assert(typeof w.eligible === 'number' && typeof w.heldCourses === 'number', 'worker counts missing');
+    if (w.needsResume) {
+      console.log('          note: needsResume is TRUE -- ' + w.eligible + ' eligible lesson(s) are waiting. '
+        + 'POST /api/v1/courses/worker/resume starts them; it spends what a build already reserved.');
+    }
+    return 'running=' + w.running + ' eligible=' + w.eligible + ' held=' + w.heldCourses + ' needsResume=' + w.needsResume;
+  });
+
   if (!TOKEN) {
     console.log('\n  SKIP  everything below needs CONTENT_API_TOKEN in the environment.\n');
   } else {
+    if (process.env.COURSE_ID) {
+      await check('the course view names what holds this course, and where its lessons stand', async () => {
+        const r = await get('/api/v1/courses/' + process.env.COURSE_ID);
+        assert(r.status === 200, 'expected 200, got ' + r.status);
+        const w = r.json.worker || {};
+        assert('held' in w && 'needsResume' in w, 'the course view predates 1.1');
+        const q = (r.json.items || []).filter((i) => i.status === 'queued');
+        return 'held=' + JSON.stringify(w.held) + ' needsResume=' + w.needsResume
+          + ' positions=' + JSON.stringify(q.map((i) => i.queuePosition));
+      });
+    }
+
     await check('the catalogue classifies every row', async () => {
       const r = await get('/api/v1/videos');
       assert(r.status === 200, 'expected 200, got ' + r.status);
@@ -161,7 +207,10 @@ async function get(path, auth = true) {
       if (r.json.tenant === 'default') {
         console.log('          note: this credential is the shared "default" tenant, not its own.');
       }
-      return 'tenant: ' + r.json.tenant + ', monthly ceiling: ' + ceiling;
+      assert(r.json.courses && typeof r.json.courses.lessons === 'number',
+        '/demo/spend has no courses block -- course spend is invisible here (pre-1.1)');
+      return 'tenant: ' + r.json.tenant + ', monthly ceiling: ' + ceiling
+        + ', course lessons this month: ' + r.json.courses.lessons;
     });
   }
 
