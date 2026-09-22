@@ -159,11 +159,24 @@ async function askWithSearch({
   stage = null,
   log = null,
 }) {
+  // No API credential: search through the CLI instead of giving up.
+  //
+  // This used to throw, and the throw was correct at the time -- the CLI ran every
+  // call under `--allowed-tools ''`, so it genuinely could not search, and
+  // answering without searching would have invented the URLs. The consequence was
+  // that `references` returned an empty list on every lesson this deployment ever
+  // built, because production holds CLAUDE_CODE_OAUTH_TOKEN and no API key.
+  //
+  // `llm-cli.askWithSearch` closes that: it offers WebSearch explicitly and proves
+  // each call from the streamed tool_use events, so the "did it search" guarantee
+  // survives the change rather than being traded away for coverage. It is tried
+  // only when there is no API credential -- the API path stays the default where
+  // one exists, since its search count comes from the provider rather than from
+  // our own parsing.
   if (!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN) {
-    throw new LlmUnavailableError(
-      'Web search needs a direct API credential (ANTHROPIC_API_KEY). The CLI backend ' +
-      'cannot search, and answering without searching would invent the URLs.'
-    );
+    return require('./llm-cli').askWithSearch({
+      promptName, input, maxTokens, maxSearches, allowedDomains, state, stage, log,
+    });
   }
 
   const system = loadPrompt(promptName);

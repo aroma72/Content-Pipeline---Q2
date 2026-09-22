@@ -34,6 +34,19 @@ const shell = require('./shell');
 // writing a lesson or judging one.
 const MODEL = 'claude-opus-5';
 
+/**
+ * A cheaper model for the search step, and only for it.
+ *
+ * Searching and summarising what came back is not the job MODEL is pinned for.
+ * Measured on a real references run: Opus made 8 searches and cost ~$1.18 against
+ * the plan, on top of a lesson whose actual media cost is $0.60-$2.15 -- so the
+ * reading list was costing about as much as the video. Sonnet does this one well,
+ * and the answer is verified by fetching every URL afterwards regardless of which
+ * model proposed it, so the floor on quality is set by the network check rather
+ * than by the model.
+ */
+const SEARCH_MODEL = process.env.SEARCH_MODEL || 'claude-sonnet-5';
+
 class LlmUnavailableError extends Error {
   constructor(message) { super(message); this.name = 'LlmUnavailableError'; }
 }
@@ -723,4 +736,131 @@ async function askJson({
   return parsed;
 }
 
-module.exports = { askJson, isAvailable, extractJson, checkShape, MODEL, LlmUnavailableError };
+/**
+ * Ask with WEB SEARCH on, through the CLI, and get prose back.
+ *
+ * THE ONE EXCEPTION to the no-tools rule at the top of this file, and it is
+ * deliberately a separate function rather than a flag on askJson. Every thinking
+ * stage must keep running under `--allowed-tools ''` plus a prompt that forbids
+ * tool use: a model that cannot call tools cannot surprise us, and three
+ * regression tests hold that line. Searching is the one job where no-tools is the
+ * worse answer, because a model asked for real URLs with no way to look them up
+ * invents them, fluently, every time.
+ *
+ * WHY THIS EXISTS AT ALL. The API version of this needs ANTHROPIC_API_KEY, which
+ * this deployment does not hold, so `references` returned an empty list on every
+ * lesson ever built -- a feature the LMS asked for, shipped switched off. The CLI
+ * runs the same search under the subscription already being paid for.
+ *
+ * TWO FLAGS, NOT ONE. `--allowedTools` governs PERMISSION to run a tool;
+ * `--tools` governs whether the tool is OFFERED at all. Passing only the former
+ * was measured to leave WebSearch unoffered: the model answered from memory,
+ * emitted plausible URLs, and reported `web_search_requests: 0` while looking
+ * exactly like a success. Both flags are required.
+ *
+ * STREAM-JSON, NOT JSON, AND THAT IS THE WHOLE POINT. The plain envelope's
+ * `usage.server_tool_use.web_search_requests` counts the API's server-side search
+ * tool and stays at 0 for the CLI's client-side WebSearch -- measured, not
+ * assumed. So it cannot prove a search happened, and "did it actually search" is
+ * the only question that matters here: references.js throws away any answer that
+ * was produced without searching. The streamed form emits one `tool_use` block
+ * per call, which is direct evidence rather than an inference.
+ *
+ * No --permission-mode. WebSearch needs no approval, and asking for
+ * bypassPermissions would hit the CLI's refusal to run it as root -- which is
+ * what this container is.
+ */
+async function askWithSearch({
+  promptName,
+  input,
+  maxTokens = 4000,       // accepted for signature parity with the API backend
+  maxSearches = 5,
+  allowedDomains = null,  // not expressible on the CLI; see below
+  state = null,
+  stage = null,
+  log = null,
+  timeoutMs = 5 * 60 * 1000,
+} = {}) {
+  if (!(await isAvailable())) {
+    throw new LlmUnavailableError('the claude CLI is not runnable, so there is no way to search');
+  }
+  // The API backend can constrain a search to a domain allowlist; the CLI cannot.
+  // Said out loud rather than accepted silently, because a caller that passed one
+  // would otherwise believe a restriction that is not being applied.
+  if (allowedDomains && allowedDomains.length && log) {
+    log('allowedDomains is not supported by the CLI search backend -- searching unrestricted');
+  }
+
+  const system = loadPrompt(promptName);
+  const args = [
+    '-p',                                   // prompt on stdin, never argv
+    '--model', SEARCH_MODEL,
+    '--append-system-prompt', system,
+    '--tools', 'WebSearch',                 // what is OFFERED
+    '--allowedTools', 'WebSearch',          // what is PERMITTED
+    '--max-turns', String(Math.max(2, maxSearches + 1)),
+    '--output-format', 'stream-json',
+    '--verbose',                            // stream-json under -p requires it
+  ];
+
+  let res;
+  try {
+    res = await shell.run('claude', args, { timeoutMs, input });
+  } catch (e) {
+    if (AUTH_FAILURE_RE.test(e.message)) {
+      throw new LlmUnavailableError(`the claude CLI is not authenticated: ${e.message.slice(0, 120)}`);
+    }
+    throw e;
+  }
+
+  // One JSON object per line. A malformed line is skipped rather than fatal: the
+  // count and the final result are what matter, and a run must not die because
+  // one frame did not parse.
+  let searches = 0;
+  let text = '';
+  let envelope = null;
+  for (const line of String(res.stdout || '').split('\n')) {
+    const t = line.trim();
+    if (!t) continue;
+    let ev;
+    try { ev = JSON.parse(t); } catch { continue; }
+    const content = ev && ev.message && ev.message.content;
+    if (Array.isArray(content)) {
+      for (const b of content) {
+        if (b && b.type === 'tool_use' && b.name === 'WebSearch') searches += 1;
+      }
+    }
+    if (ev && ev.type === 'result') envelope = ev;
+  }
+
+  if (!envelope) {
+    throw new Error('claude -p --output-format stream-json emitted no result event');
+  }
+  if (envelope.is_error) {
+    throw new Error(`claude -p reported an error: ${String(envelope.result || '').slice(0, 200)}`);
+  }
+  if (envelope.subtype && envelope.subtype !== 'success') {
+    throw new Error(`claude -p ended as '${envelope.subtype}' rather than success`);
+  }
+  text = String(envelope.result || '').trim();
+
+  if (state && typeof envelope.total_cost_usd === 'number' && envelope.total_cost_usd > 0) {
+    try {
+      require('./state').recordSpend(state, {
+        stage: stage || 'references',
+        kind: 'model',
+        usd: Number(envelope.total_cost_usd.toFixed(4)),
+        detail: `${SEARCH_MODEL} via claude -p: ${searches} web search(es)`,
+      });
+    } catch (e) {
+      if (log) log(`could not record search spend: ${e.message}`);
+    }
+  }
+
+  if (log) log(`searched the web ${searches} time(s) via claude -p`);
+  return { text, searches };
+}
+
+module.exports = {
+  askJson, askWithSearch, isAvailable, extractJson, checkShape, MODEL, LlmUnavailableError,
+};

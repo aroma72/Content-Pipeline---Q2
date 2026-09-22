@@ -2691,6 +2691,77 @@ async function referenceChecks() {
       'references is not between the gate and produce');
     return 'one attempt, no control-flow errors, placed before the money';
   });
+
+  check('the CLI search offers WebSearch as well as permitting it', () => {
+    // Measured, not assumed: with only --allowedTools the tool is permitted but
+    // never OFFERED, so the model answers from memory, emits plausible URLs and
+    // reports success. That is the exact failure this whole feature exists to
+    // prevent, and it is invisible unless both flags are asserted.
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'llm-cli.js'), 'utf8');
+    assert(/'--tools',\s*'WebSearch'/.test(src), 'WebSearch is permitted but never offered');
+    assert(/'--allowedTools',\s*'WebSearch'/.test(src), 'WebSearch is offered but not permitted');
+    assert(/'--output-format',\s*'stream-json'/.test(src),
+      'the plain envelope cannot prove a search ran; stream-json is what carries the tool calls');
+    // And the no-tools guard on the JSON path must be untouched by all of this.
+    assert(/'--allowed-tools',\s*''/.test(src), 'the thinking stages lost their no-tools guard');
+    return 'both flags, streamed, and askJson still runs with no tools at all';
+  });
+
+  await checkAsync('the search count is counted from the streamed tool calls', async () => {
+    // references.js throws away any answer produced without searching, so this
+    // number is load-bearing: report it wrongly and invented URLs get treated as
+    // researched ones. It cannot come from usage.server_tool_use -- that counts
+    // the API's server-side tool and stays 0 for the CLI's WebSearch.
+    const cli = require('./lib/llm-cli');
+    const shell = require('./lib/shell');
+    const realRun = shell.run;
+    const frame = (name) => JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'tool_use', name, input: {} }] },
+    });
+    const result = JSON.stringify({
+      type: 'result', subtype: 'success', is_error: false,
+      result: 'some prose with a url', total_cost_usd: 0,
+    });
+    try {
+      shell.run = async () => ({ code: 0, stderr: '', stdout: [frame('WebSearch'), frame('WebSearch'), result].join('\n') });
+      const two = await cli.askWithSearch({ promptName: 'video_references_search', input: 'x' });
+      assert(two.searches === 2, `counted ${two.searches} searches, not 2`);
+      assert(two.text === 'some prose with a url', 'lost the answer');
+
+      // A run that called some OTHER tool has still not searched.
+      shell.run = async () => ({ code: 0, stderr: '', stdout: [frame('Read'), result].join('\n') });
+      const none = await cli.askWithSearch({ promptName: 'video_references_search', input: 'x' });
+      assert(none.searches === 0, 'counted a non-search tool call as a search');
+    } finally {
+      shell.run = realRun;
+    }
+    return 'two WebSearch calls counted as two; another tool counted as none';
+  });
+
+  await checkAsync('a search without an API key goes to the CLI instead of returning nothing', async () => {
+    // The regression that shipped the feature switched off: this threw, so every
+    // lesson this deployment ever built got an empty reference list.
+    const llm = require('./lib/llm');
+    const cli = require('./lib/llm-cli');
+    const realCli = cli.askWithSearch;
+    const key = process.env.ANTHROPIC_API_KEY;
+    const authTok = process.env.ANTHROPIC_AUTH_TOKEN;
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_AUTH_TOKEN;
+    let viaCli = false;
+    cli.askWithSearch = async () => { viaCli = true; return { text: 'prose', searches: 1 }; };
+    try {
+      const out = await llm.askWithSearch({ promptName: 'video_references_search', input: 'x' });
+      assert(viaCli, 'it did not fall back to the CLI');
+      assert(out.searches === 1 && out.text === 'prose', 'lost the CLI answer');
+    } finally {
+      cli.askWithSearch = realCli;
+      if (key !== undefined) process.env.ANTHROPIC_API_KEY = key;
+      if (authTok !== undefined) process.env.ANTHROPIC_AUTH_TOKEN = authTok;
+    }
+    return 'no key means search on the CLI, not silence';
+  });
 }
 
 function browserChecks() {
