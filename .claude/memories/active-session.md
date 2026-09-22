@@ -352,6 +352,51 @@ volume.
    session — the cookie-bound script.md/video links die. A bearer token still works. DEPLOYMENT_PREREQS
    already warns about this; it should just be set.
 
+## 2026-09-23 — Course hold: why one failed lesson parked every tenant, and what shipped
+
+Branch `course-hold`, five commits on top of 25610fa, **not yet deployed** — the deploy
+(`git push origin course-hold:main` + `railway redeploy --from-source -y`) was refused by the
+harness permission classifier and needs a person to run it.
+
+**Root cause, in code (plan file has the full trace):** `drain()` took `queued()[0]` and on any
+non-`done` outcome logged `pausing:` and `break`. No state was written; only build/approve/requeue
+ever called `kick()`; `reject()` returned without one; boot starts nothing on purpose. The queue was
+global FIFO with no `tenantId` on items, so Aroma's failed `evals-and-harness` lesson parked the
+LMS's paid lesson for a day, and `worker.building: null` read the same for idle and parked.
+Separately: the spine's lenient re-run bought a third Opus draft for `overlay has no 'tpl'`, which
+`validate-beats` fails identically; and courses never touched the ledger, so the `$2.1557 / 2 runs`
+the LMS watched on `/demo/spend` was Aroma's own demo run on the shared default tenant.
+
+**Shipped (all tested, `npm test` 224+45+34 green, lint clean, smoke 0 fail):**
+- P0 `b8a8122` per-course hold in `drain()`, `reject` stops its course (siblings `failed`,
+  `stoppedWithCourse`, $0) and kicks, `skip` (free exit from `failed`), `/courses/worker/resume`.
+- P1 `33a2aef` `worker.{running,needsResume,eligibleAcrossAllCourses,buildingCourseId,held}`,
+  `items[].queuePosition`, explicit `spendUsdTotal: 0` on a never-run failure, `/health.courses.worker`.
+- P4 `944721f` `repairBeats()` fixes a dead overlay / wordless beat for $0; no lenient re-run when
+  `verdict === 'INVALID_BEATS'`.
+- P2+P3 `d4a7811` `tenantId`/`spendRef` on items, tenant guard on approve/reject/skip/requeue,
+  per-lesson `ledger.reserve` at build (402 if it does not fit), settle on end, release on
+  reject-before-build, `budgetUsd = min(global, tenant.maxRunUsd)`, `/demo/spend.courses`.
+- P5 contractVersion `1.1` on the index and `/health`; docs §3.6 / §5.3 / §8; `docs/CONTRACT-CHANGELOG.md`;
+  `docs/contracts/course-api-v1.1.md`; reply memo `docs/integration-requests/2026-09-23-course-worker-reply.md`.
+
+**Design calls worth defending:** the hold is DERIVED (`needsResume = !running && eligible().length`),
+never a persisted "paused" event, because every start path would have to clear it. A bare `kick()`
+in `reject` would build the next lesson of the course a person just refused — the hold must exist
+before the kick can. `skip` keeps status `failed` because the LMS treats the status set as closed.
+
+**Next session picks up, in order:**
+1. A person runs the deploy. Then read-only: `railway logs` must show `restored … 0 interrupted` and
+   NO `building` line; `curl /health | jq .courses.worker` should say `needsResume: true, eligible: 1`;
+   `GET /api/v1` lists `worker/resume` and `skip`; `contractVersion` is `1.1`.
+2. Send the reply memo to the LMS (via AR) and ASK before `POST /courses/worker/resume` — it will
+   build their already-authorised lesson (~$2–4, shared default tenant). Their money, their call.
+3. Aroma mints the LMS tenant (DEPLOYMENT_PREREQS "Minting the LMS its own tenant"), rotates the token.
+4. Part B (LMS side, E:\Cohort2LP) as a branch + PR: consume `worker.held`/`needsResume`/`queuePosition`,
+   staleness alarm, honest reject (`stopping`), wire skip/requeue behind cost dialogs, finish
+   `PHASE=approve` in the live e2e, vendor `course-api-v1.1.md`. Nazim's rules updated in the plan file.
+5. P6: one paid end-to-end lesson under the LMS tenant, human-approved, evidence committed.
+
 ### A/B vs the published `youtu.be/t_xOWb8BRQ4` (evals-08), script level
 | metric | OLD published | NEW |
 |---|---|---|

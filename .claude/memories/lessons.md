@@ -866,3 +866,59 @@ some value of `blockedBy`; a fact cannot drift. Prefer answering the question ov
 to infer the answer.
 
 Related: [[H22]] (prove it from evidence, not from a counter you have not measured on that path).
+
+---
+
+### H26. A skill with an unparseable description is not a broken skill, it is an absent one
+
+**Added:** 2026-09-23 | **Applies to:** every `.claude/skills/*/SKILL.md`
+**Invalidate if:** the loader starts reporting frontmatter errors instead of falling back silently
+
+Claude chooses a skill from its `name` and `description` alone. Two ways that field can be absent,
+both silent:
+
+1. **It was never written.** `audio-mux`, `git-workflow`, `video-render` and `pipeline-review` each
+   carried only `type: reference`. They sat on disk, in the right directory, for months, and could
+   not be invoked by any question.
+2. **It was written and does not parse.** A YAML scalar cannot contain a colon followed by a space
+   unless it is quoted. `description: Produces a lesson MP4 ... Stack: beats.js ...` is invalid, and
+   the skill loads with its H1 heading as its description instead. This had silently disabled
+   `creating-explainer-videos`, the DEFAULT video pipeline.
+
+Neither raises an error. The tell is the skill listing echoing the skill NAME where the description
+should be.
+
+`smoke-test.sh` had a frontmatter test the whole time. It checked that frontmatter *existed*. That
+is the recurring shape: a guard that asserts presence rather than content passes forever.
+
+Now enforced by `evals/skills/run.js` (Layer 1), in `smoke-test.sh` and in the PostToolUse hook.
+Contract: `.claude/standards/SKILL_AUTHORING.md`.
+
+Related: [[H9]] (the artefact is the evidence, not the exit code), [[H13]] (a green check you have
+never seen fail is not a check).
+
+---
+
+### H27. A pause that is only a `break` is invisible, and only a paid action will end it
+
+**Added:** 2026-09-23 | **Applies to:** any worker loop that stops for a human
+**Invalidate if:** the course worker persists an explicit paused state (it does not; see §3.6)
+
+`drain()` stopped on the first non-`done` lesson by breaking out of its loop. Nothing recorded
+that it had stopped, the status endpoint showed `building: null` for parked exactly as for idle,
+and the only callers of `kick()` were build, approve and requeue — so the free action a tenant
+would reach for (`reject`) accepted the request, logged it, and released nothing. One course's
+failure parked every course for a day.
+
+The shape to recognise: a loop that stops for a person must (1) make the stop **derivable** from
+durable state (`needsResume = !running && eligible().length > 0`), (2) expose it on the same
+endpoint a consumer already polls, (3) have at least one **free** way to restart, and (4) scope
+the stop to the unit that failed (the course), not the process. If any of the four is missing,
+the first tenant to hit it will pay to find out.
+
+A corollary on fixes: "just add `kick()` to reject" would have built the next lesson of the
+course a person had just refused, because the rejected lesson was `failed` and its sibling was
+now first in line. Scope (4) has to exist before the restart (3) is safe.
+
+Related: [[H9]] (the artefact is the evidence), [[H13]] (a guard that asserts presence rather
+than content passes forever — `building` asserted presence of work, not its state).
