@@ -1117,7 +1117,22 @@ function createApp(opts = {}) {
     // Never react to our own messages — the bot posts progress into the same
     // thread, and replying to that would loop.
     if (event.bot_id || event.subtype === 'bot_message') return;
-    if (event.type !== 'app_mention' && !(event.type === 'message' && event.channel_type === 'im')) return;
+
+    const isRequest = event.type === 'app_mention'
+      || (event.type === 'message' && event.channel_type === 'im');
+
+    // A plain in-thread reply -- answering the bot's question, approving a budget,
+    // approving a review -- is not a request and creates no ticket, so it falls
+    // through the filter below. followUpThreads() reads those replies, but only
+    // when a tick runs. At TICK_INTERVAL_MS=120000 that lag was invisible; at 30
+    // minutes it is not, so nudge the loop instead of waiting for the timer.
+    // runTick's own `ticking` guard collapses a burst of replies into one tick.
+    if (!isRequest && event.type === 'message' && event.thread_ts) {
+      tick.runTick({ trigger: 'slack-reply' }).catch(() => {});
+      return;
+    }
+
+    if (!isRequest) return;
 
     handleSlack(event).catch((e) => console.error('[slack] handler:', e));
   });
