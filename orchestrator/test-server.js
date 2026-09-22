@@ -215,7 +215,10 @@ async function authChecks() {
       assert(r.status === 200, `expected 200, got ${r.status}`);
       assert(r.json.configured === true, 'index should report a configured service');
       assert(!r.text.includes(LMS_TOKEN) && !r.text.includes(LEGACY_TOKEN), 'index leaked a token');
-      return 'public, clean';
+      assert(/^\d+\.\d+$/.test(String(r.json.contractVersion)), `index has no contractVersion: ${r.json.contractVersion}`);
+      const h = await req(port, { path: '/health' });
+      assert(h.json.contractVersion === r.json.contractVersion, '/health and the index disagree on contractVersion');
+      return `public, clean, contract ${r.json.contractVersion}`;
     }));
 
   await check('/health answers without a credential', () => withServer(BASE_ENV, {}, async (port) => {

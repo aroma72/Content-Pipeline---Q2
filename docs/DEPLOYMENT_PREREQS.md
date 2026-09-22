@@ -1,6 +1,6 @@
 ---
 type: reference
-last_verified: 2026-09-20
+last_verified: 2026-09-23
 owner: Aroma Tahir
 ---
 
@@ -78,7 +78,8 @@ assumes a single writer.
 
 | Variable | Shape |
 |---|---|
-| `TENANTS_JSON` | A JSON **array**. One variable, not four per tenant, because Railway has no atomic multi-variable save — four would leave a window where a live token has no budget. |
+| `TENANTS_JSON` | A JSON **array**. One variable, not four per tenant, because Railway has no atomic multi-variable save — four would leave a window where a live token has no budget. Each entry may carry `maxRunUsd`, which since 2026-09-23 also caps a course lesson's media budget. |
+| `PIPELINE_COURSE_LESSON_RESERVE_USD` | Optional, default `2.50`. What `POST /api/v1/courses/build` reserves per lesson on the tenant ledger before queueing; settled to the real cost when the lesson ends. Keep it at or above the LMS's own per-lesson hold. |
 
 ```json
 [
@@ -109,6 +110,23 @@ Rules the loader enforces, all reported on `/health`:
 A variable set to an **empty string** counts as unset, not as zero. `Number('')` is
 `0`, so a blank `PIPELINE_BUDGET_USD` used to read as "somebody authorised nothing"
 and silently blocked every lesson while looking configured in the dashboard.
+
+### Minting the LMS its own tenant (still open — Aroma's hands)
+
+The LMS is on the shared `default` credential: no ceiling, its spend indistinguishable
+from ours on `/demo/spend`, and the token is in git history. Once, from PowerShell:
+
+```powershell
+node scripts/mint-tenant.js --id cohort2-lms --name "Cohort 2 LMS" --monthly 10
+# add "maxRunUsd": 4 to the entry by hand (the script has no flag for it), then:
+node scripts/mint-tenant.js --check --file <the saved json>
+# paste the array into TENANTS_JSON on Railway, rotate CONTENT_API_TOKEN, redeploy
+curl -s https://content-queen-production.up.railway.app/health | jq .tenants.ids
+```
+
+`maxRunUsd 4` caps one lesson's media spend below the service ceiling; `monthly 10` buys
+about four lessons at the $2.50 reservation. Hand the LMS the token out of band, never in a
+document. After the redeploy, `POST /api/v1/courses/worker/resume` restarts the queue.
 
 ### Optional
 

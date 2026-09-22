@@ -71,6 +71,7 @@ function createApp(opts = {}) {
   app.get('/health', (_req, res) => {
     res.json({
       ok: true,
+      contractVersion: require('./lib/api').CONTRACT_VERSION,
       surfaces: readiness(),
       tick: tick.status(),
       // Say what the store actually is. A service that claimed durability it did

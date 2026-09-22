@@ -1,6 +1,6 @@
 ---
 type: reference
-last_verified: 2026-09-21
+last_verified: 2026-09-23
 owner: Aroma Tahir
 ---
 
@@ -114,6 +114,14 @@ is not a spend we accept.
 | `done` | Built, approved, published. |
 | `failed` | Failed QA, or rejected by a human. |
 
+**A course is HELD while any of its lessons is `blocked`, or `failed` and not `skipped`.**
+The worker (`server/lib/course-worker.js` `heldCourses()` / `eligible()`) skips a held
+course's queued lessons and carries on with other courses. A lesson a person released --
+`reviewApproved`, `rebuildApprovedBy` or `requeuedBy`, written only by the approve and
+requeue routes -- passes through its course's hold. `GET /courses/:id` reports the hold as
+`worker.held` (`{by, status, since}`) and each queued lesson's `queuePosition` among the
+lessons the worker may take (`null` behind a hold). See §3.6 for why.
+
 The queue is an append-only JSONL event log folded on read. That costs a full read
 per operation (fine at this volume) and buys two things: history survives, and two
 writers cannot silently clobber each other the way a rewritten JSON array would.
@@ -202,6 +210,14 @@ folds the queue and, for each `course-builder` item:
 crash loop would otherwise burn three unattended rebuilds. A test asserts that
 restore never moves a `queued` lesson and never sets `running`.
 
+**So after every redeploy the queue waits for a kick.** Until 2026-09-23 the only kicks
+were a new build, an approve and a requeue -- two of which cost money -- and a redeploy
+with queued work left the service idle until somebody spent. Now `/health.courses.worker`
+and `GET /courses/:id` `worker` report `needsResume: true` (eligible work waiting, nobody
+building) and **`POST /api/v1/courses/worker/resume`** starts the worker. It builds only
+what `eligible()` offers, so a held course is never touched by it, and it spends nothing a
+build did not already reserve. Run it after a deploy; it is idempotent.
+
 ### 3.4 Approving an interrupted lesson rebuilds it
 
 `approve()` normally requeues carrying `reviewApproved`, which makes the spine skip
@@ -211,6 +227,37 @@ For an `interrupted` lesson that is catastrophic: the video does not exist, so
 skipping review would publish nothing or something stale. `approve()` therefore
 branches — an interrupted lesson is requeued **without** `reviewApproved` and with
 the flag cleared, so it rebuilds and then blocks at review as normal.
+
+### 3.6 The hold is per course, not per service (2026-09-23)
+
+`drain()` used to take `queued()[0]` and, on any outcome but `done`, log `pausing:` and
+`break`. "Paused" was never a state -- only the absence of a running drain -- and `reject()`
+wrote `failed` and returned without kicking. On 2026-09-22 one course's lesson failed script
+validation and every other course, another tenant's included, sat queued behind it for a
+day; both free actions the tenant tried returned `202` and released nothing, and the API
+showed `worker.building: null` for parked exactly as for idle.
+
+What changed, all in `course-worker.js` and additive on the API:
+
+| | Before | Now |
+|---|---|---|
+| Scheduler | global FIFO, stop on first non-`done` | `eligible()[0]`: FIFO over lessons whose course is not held |
+| `reject` | fails one lesson, no kick | fails the lesson **and its queued siblings** (`stoppedWithCourse`, $0, reservations released), then kicks so other courses continue |
+| Free exit from `failed` | none (only paid `requeue`) | **`POST .../lessons/:id/skip`** -- status stays `failed`, `skipped: true`, the course continues |
+| After a boot | idle until a paid kick | `needsResume` + **`POST /courses/worker/resume`** |
+| Observability | `worker.building` only | `worker.running / needsResume / eligibleAcrossAllCourses / buildingCourseId / held`, `items[].queuePosition`, explicit `spendUsdTotal: 0` on a never-run failure |
+
+Why derived, not persisted: `needsResume` is `!running && eligible().length > 0`, and the
+JSONL stays item-keyed. A persisted "paused" event would have to be cleared by every path
+that can start work, and the one path that forgot would be this bug again.
+
+Why a bare `kick()` in `reject` would have been wrong: the rejected lesson is `failed`, so
+the *next lesson of the same course* is `queued()[0]`, and the worker would build the lesson
+after the one a person just refused. The hold has to exist before the kick can.
+
+Tests: `orchestrator/test-regressions.js` §11 (hold, reject stop, human-release override,
+requeue, skip, resume-on-held, restore + `needsResume`, enqueue hygiene) and
+`test-server.js` (routes, refusals, index, course view, `/health`).
 
 ### 3.5 A bug worth knowing about
 
@@ -356,6 +403,15 @@ same rules before the paste. It never prints a token.
 - The budget gate (`PIPELINE_BUDGET_USD`) measures **media spend only**, deliberately:
   folding token spend into the number it checks would eat headroom sized for art and
   silently ship a stills-only video.
+- **Courses are on the ledger (2026-09-23).** `POST /courses/build` reserves
+  `PIPELINE_COURSE_LESSON_RESERVE_USD` (default $2.50) per lesson, one ref each, on the
+  caller's tenant before anything is queued -- `402 tenant_budget_exhausted` with every
+  reservation released if the course does not fit. Each lesson settles at `spendUsdTotal`
+  when it ends; a lesson rejected or stopped before it ran is released. A course lesson's
+  media budget is `min(PIPELINE_BUDGET_USD, tenant.maxRunUsd)`. `GET /demo/spend` shows it
+  under `courses` (`lessons`, `reservedUsd`, `spentUsd`, `perLessonUsd` p50/p90 once three
+  lessons are `done`). Lessons enqueued before that date were never reserved and are
+  costed only on `GET /courses/:id`.
 
 ---
 
@@ -479,7 +535,11 @@ not live evidence, for those items.
 | `youtubeVideoId` | `null` on every row — two publish records exist, neither for a video with a checkpoint |
 | 18 `on-screen` rows serve `video-note` | Content debt: those videos need authored explanations |
 | Plans cannot be edited | Accept or re-plan |
-| Course spend is not in `/demo/spend` | Courses create **queue items, not jobs**, and `ledger.js` builds its summary from job records — so a course never reserves, never settles, and never counts against a tenant's `monthlyUsd`. `/demo/spend` reporting `0` after a course is **not** evidence that nothing was spent. The cost exists only in `.beads/runs.jsonl`, keyed by the lesson's `runId`, which the course payload now carries. |
+| Course spend is not in `/demo/spend` | **Fixed 2026-09-23** for lessons built from then on — see §5.3. Earlier course lessons never reserved and remain visible only as `spendUsdTotal` on `GET /courses/:id`. |
+| One course's failure parked every tenant | **Fixed 2026-09-23** — §3.6. |
+| `reject` did not resume the worker | **Fixed 2026-09-23** — it stops its course and kicks. `skip` is the free exit from `failed`; `/courses/worker/resume` the starter after a boot. |
+| Per-tenant fairness in the queue | Not built. Items now carry `tenantId`, but ordering is still FIFO over eligible lessons. Courses pause after every lesson, so two eligible courses already alternate; a round-robin is deferred until unfairness is observed. |
+| `orchestrator/run.js` uses `queue.nextQueued()` | That helper does not filter `source`, so the CLI can pop a `course-builder` lesson. Out of scope; do not run the CLI against the production volume. |
 | An LLM judge can disagree with itself | `eval-text.js` passed a line before the spend and failed the same line after the render. It can no longer end a run (§3.1b), but it can still park a good video for a human to clear. |
 | `.beads/runs.jsonl` is not on the volume | **Fixed 2026-09-21.** `state.appendRunLog()` now writes the same row to the job store as well, so a run's cost outlives a redeploy the way the course does. `scripts/diagnose-course-lesson.js` reads both. Rows written before that date existed only in `.beads` and are gone. |
 | `spendUsd` counted media only | **Fixed 2026-09-21.** Art, speech and animation were counted; every model call in research, script, gate and qa was not, so a lesson's stated cost was part of its cost. Model spend is now recorded as `kind: 'model'` and reported as `spendModelUsd`. The `$1.50` planning figure and the measured `$0.598` were both honest about different things. The budget gate still measures media only — see §5.3. |

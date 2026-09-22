@@ -125,6 +125,9 @@ function sendJson(req, res, payload) {
   return res.json(payload);
 }
 
+/** The course-API contract version. docs/CONTRACT-CHANGELOG.md says what each one added. */
+const CONTRACT_VERSION = '1.1';
+
 function build() {
   const router = express.Router();
   router.use(cors);
@@ -135,6 +138,9 @@ function build() {
     res.json({
       service: 'content-queen checkpoint api',
       version: 'v1',
+      // Bumped whenever a field or route is added. A consumer that vendors
+      // docs/contracts/course-api-<version>.md compares this and knows to re-read.
+      contractVersion: CONTRACT_VERSION,
       auth: 'Authorization: Bearer <token>  (ask Aroma Tahir for CONTENT_API_TOKEN)',
       configured: tenants.registry().configured,
       endpoints: [
@@ -1022,4 +1028,4 @@ function build() {
   return router;
 }
 
-module.exports = { build, requireToken, requireScope, cors, bearerOf };
+module.exports = { build, requireToken, requireScope, cors, bearerOf, CONTRACT_VERSION };
