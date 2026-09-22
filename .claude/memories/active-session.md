@@ -164,9 +164,16 @@ spend.
 unset), so any `callbackUrl` is refused 400. `reason` strings come back **mojibake** (UTF-8
 double-encoded) and the LMS renders them to instructors.
 
+**Then production refused it anyway — `661b995`.** Running the stage in the container (not trusting
+a green local run) surfaced `this workspace has not been trusted`: permitting a tool makes the CLI
+read the cwd's `.claude/settings.json` and exit 1 before any model call. Fail-soft swallowed it, so
+references came back empty — the same silent outage, new costume. Fixed by spawning the search in
+`os.tmpdir()`. See `lessons.md` H23. **Green suite + green CI + successful deploy all missed this.**
+
 ### NEXT
-1. **Deploy the pushed commit**, then tell the LMS the toggle is live, with one real lesson's
-   `references` output behind it.
+1. Confirm the redeploy of `661b995` is live, then **run the references stage in the container
+   again** — that is the only proof that counts. Then tell the LMS the toggle is live, with one real
+   lesson's `references` output behind it.
 2. Aroma still to decide: approve run 4 (`030ebdae3d8c`) for unlisted YouTube.
 3. Starred gaps disclosed in the doc and now owed: gate `/demo/course-builder/build`
    (unauthenticated, spends), enforce scopes on `/api/v1`, CORS `DELETE`, set

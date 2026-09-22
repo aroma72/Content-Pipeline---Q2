@@ -785,3 +785,38 @@ count `tool_use` blocks — evidence rather than inference.
 **How to apply:** when giving the CLI a tool, pass both flags and assert both in a test. When a
 guarantee depends on a tool having *run*, prove it from the streamed events, never from a usage
 counter you have not measured on that exact path.
+
+---
+
+### H23. Permitting a tool makes `claude -p` demand a trusted workspace; run it outside the repo
+
+**Added:** 2026-09-22 | **Applies to:** any `claude -p` call in this repo that permits a tool
+**Invalidate if:** the CLI stops reading the cwd's `.claude/settings.json` when tools are allowed
+
+Every stage works from `/app` in the container because `askJson` passes
+`--allowed-tools ''` — no tools permitted, so no settings are consulted. The moment a call
+*permits* a tool, Claude Code reads the working directory's `.claude/settings.json` and refuses:
+
+```
+Ignoring 9 permissions.allow entries from .claude/settings.json:
+this workspace has not been trusted.
+```
+
+Exit 1, before any model call. The references stage then fail-softed and returned no references —
+the same silent outage as [[H21]], in a new costume.
+
+**It passes locally either way**, because a developer machine has accepted the trust dialog. This
+is only observable in the container, which is why it survived a green suite, a green CI run
+including the deploy-image gates, and a successful deploy.
+
+**How to apply:** spawn `claude` with `cwd: os.tmpdir()` for anything that permits a tool. It needs
+no image change, requires trusting nothing, and drops the whole inherited-settings-and-hooks
+surface. The alternative — seeding `hasTrustDialogAccepted` into the image's `.claude.json`, as
+`E:\Nazim` does — trusts a workspace in order to run a call that never reads it.
+
+**The wider rule this is the third instance of:** a green local run says almost nothing about a
+`claude -p` code path. Root refusal of `bypassPermissions`, the trust dialog, and argv length limits
+are all container-only. Run it in the container before believing it.
+
+Related: [[H21]] (fail-soft + hard requirement = silent outage), [[H22]] (`--tools` vs
+`--allowedTools`).
