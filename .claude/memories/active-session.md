@@ -197,9 +197,16 @@ beats.js for a reader that did not exist) · `/file`, `/beats`, `/deliverables` 
 called with a real queue item. Added a route-level suite in `test-server.js` with a real enqueued
 lesson (beats-only, with-mp4, course projection). 210 + 39 green, all three guards mutation-tested.
 
+**Deployed and verified live 2026-09-22** (deploy `1f377656`, CI green on `1d197b5` incl. render
+gates). Replayed their exact probe: now 404 with `renderExists:false`, `partsAvailable:[]`,
+`status`, `blockedBy` — honest, and it says waiting will not help. Course view shows
+`deliverableAvailable:false` beside `blockedBy:post-render-check`. Index is 22 endpoints with
+`/file`, `/beats`, `/deliverables`. `GET /api/v1/deliverables` shows 2 items / 26.2MB, both `made/`
+— confirming no course lesson ever persisted. **Do NOT call `DELETE /demo/make-video/030ebdae3d8c/video`**:
+that is run 4's only durable copy.
+
 ### NEXT
-1. **CI then deploy `282f17a`**, then re-probe `/file`, `/beats` and `/api/v1` live and tell the LMS
-   (letter is written and waiting).
+1. **Send the letter** — `E:\Cohort2LP\docs\content-automation\2026-09-22-file-serves-what-exists-reply.md`.
 2. **References: do NOT tell the LMS it is live yet.** Aroma's call: wait for a real course lesson
    with `references: true`, not the stage-level production run already verified.
 2. Aroma still to decide: approve run 4 (`030ebdae3d8c`) for unlisted YouTube.
