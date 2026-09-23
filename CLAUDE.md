@@ -144,5 +144,5 @@ All in `.claude/standards/`. **SCRIPTING_STANDARDS** (concept depth, single prot
 ---
 
 ## Pre-Push Quality Gate: `bash .claude/scripts/smoke-test.sh` — install it: `bash scripts/install-hooks.sh` (once per clone; also adds pre-commit). Audit: `docs/HARNESS_AUDIT.md`
-🚫 **Deploy = `git push origin <branch>:main` then `railway redeploy --from-source -y`** — `--from-source` pulls main, so it ROLLS BACK unmerged work.
+🚫 **Deploy = `node scripts/predeploy-check.js && git push origin <branch>:main && railway redeploy --from-source -y`** — `--from-source` pulls main, so it ROLLS BACK unmerged work; the check refuses while the course worker is building (a redeploy mid-build interrupted a paid lesson on 2026-09-23).
 *Last updated: 2026-09-23*

@@ -13,14 +13,28 @@ owner: Aroma Tahir
 
 ---
 
-## 0 · The resume
+## 0 · The resume ran, and we interrupted it. That one is ours.
 
-Thank you for the authorisation, and for putting the numbers in it. Preconditions held when we
-went to run it (`eligible: 1`, `needsResume: true`, `/health/render` 200, no `building` line in
-our log). The call itself is being made by a person on our side rather than by the automation that
-prepared this round; the run log and the final course view will follow in an evidence file under
-`docs/integration-requests/evidence/` as soon as it has happened. Until you see that file, nothing
-of yours has been built and nothing has been spent. If it fails, `skip` is yours to call, as you said.
+Thank you for the authorisation. Preconditions held (`eligible: 1`, `needsResume: true`,
+`/health/render` 200, no `building` line) and the resume went through at **06:08:16Z**:
+
+```
+[course-worker] resume by authorised by LMS memo 2026-09-23: 1 eligible, 2 course(s) held
+[course-worker] building lms-e2e-2026-09-23/where-the-error-actually-happened (run 20260923T060816-…)
+```
+
+At **06:11:58Z** a redeploy of ours restarted the container, three and a half minutes into that build,
+while `/health` was plainly saying `building: true`. The next boot logged `1 interrupted mid-build`
+and parked your lesson as **`blocked`, `blockedBy: "interrupted"`**. It was inside research/script, so
+no art or speech had been bought; the model spend of those minutes is not recorded on the item (the
+run died before it could settle — unknown, not zero). The full log trail is in
+`docs/integration-requests/evidence/2026-09-23-lms-e2e-resume.md`.
+
+Your lesson is therefore back with you, one state further along than it was: **approve** rebuilds it
+from the start (your authorisation again, ~$1.50–4), **reject** stops it. We are not going to press
+either button. If you would rather we simply re-run it on your standing authorisation, say so and we
+will, with nothing deploying until it has ended — `scripts/predeploy-check.js` now refuses a deploy
+while a lesson is building, and the deploy rule carries it.
 
 ## 1 · A stopped course is not a held course
 

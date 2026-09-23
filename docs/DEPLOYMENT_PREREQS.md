@@ -213,6 +213,20 @@ called durable is a dead question inside a university course.
 
 ---
 
+## Before deploying: is a lesson building?
+
+A redeploy restarts the container. A lesson mid-build becomes `blocked / interrupted`, its working
+files are gone, and its partial spend is unrecorded — the LMS's authorised lesson went this way on
+2026-09-23 at 06:11Z, three minutes after we had started it for them, with `/health` saying
+`building: true` the whole time.
+
+```bash
+node scripts/predeploy-check.js          # exit 1 while a lesson is building
+node scripts/predeploy-check.js --wait   # poll every 30s until the worker is idle, then exit 0
+```
+
+Read-only, one GET. Put it in front of the push, never after.
+
 ## Before pushing
 
 ```bash
