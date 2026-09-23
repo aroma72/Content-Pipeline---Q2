@@ -9,6 +9,7 @@ echo ""
 
 PASS=0
 FAIL=0
+TMPDIR_SAFE="${TMPDIR:-/tmp}"
 WARN=0
 
 # Counters are incremented with $((X+1)), never ((X++)).
@@ -330,6 +331,28 @@ if grep -rlE "cq_[A-Za-z0-9_-]{24,}" prototypes/*.html > /tmp/cred-out.txt 2>&1;
 else
   echo "  ✅ PASS: no credential in prototypes/*.html"
   PASS=$((PASS + 1))
+fi
+
+# ============================================================================
+# Claude selects a skill from its name and description alone. A SKILL.md with a
+# missing or YAML-unparseable description loads with no description at all and
+# is invisible - which is how four skills sat unusable here for months, and how
+# the DEFAULT video pipeline lost its description to an unquoted colon.
+# ============================================================================
+echo ""
+echo "🔎 Test: Skills load, route, and gate correctly (evals/skills)..."
+if [ -f evals/skills/run.js ]; then
+  if node evals/skills/run.js > "$TMPDIR_SAFE/skill-evals.txt" 2>&1; then
+    echo "  ✅ PASS: $(grep -o "TOTAL .*" "$TMPDIR_SAFE/skill-evals.txt")"
+    PASS=$((PASS + 1))
+  else
+    echo "  ❌ FAIL: skill evals failed"
+    grep -E "FAIL|TOTAL" "$TMPDIR_SAFE/skill-evals.txt" | sed "s/^/     /"
+    FAIL=$((FAIL + 1))
+  fi
+else
+  echo "  ⚠️  WARN: evals/skills/run.js is missing"
+  WARN=$((WARN + 1))
 fi
 
 # ============================================================================

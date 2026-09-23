@@ -11,6 +11,10 @@
 set -uo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/_memory-lib.sh"
 
+# stdin is a stream and it is readable exactly once. Capture the whole payload
+# here, before anything downstream can swallow it.
+PAYLOAD="$(cat 2>/dev/null || true)"
+
 cat <<'TEXT'
 MEMORY PROTOCOL — before this response ends:
 
@@ -25,4 +29,14 @@ MEMORY PROTOCOL — before this response ends:
 SECRETS: never write a live token, key, password, connection string, or a private UUID or URL into
 any tracked file — memory files are tracked.
 TEXT
+
+# One short routing line when a skill clearly matches this prompt, nothing
+# otherwise. Never blocks; failure here must never cost the user a turn.
+if [ -n "$PAYLOAD" ] && command -v node >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+  PROMPT_TEXT="$(printf '%s' "$PAYLOAD" | jq -r '.prompt // .prompt_text // empty' 2>/dev/null || true)"
+  ROUTER="$(dirname "${BASH_SOURCE[0]}")/../scripts/route-skill.js"
+  if [ -n "$PROMPT_TEXT" ] && [ -f "$ROUTER" ]; then
+    printf '%s' "$PROMPT_TEXT" | node "$ROUTER" 2>/dev/null || true
+  fi
+fi
 exit 0

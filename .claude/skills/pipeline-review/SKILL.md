@@ -1,3 +1,11 @@
+---
+name: pipeline-review
+description: Runs the reviewer-gated pipeline - an adversarial reviewer after every production step, a simple report, then an explicit approval gate before advancing. Use when asked to go step by step, to review each stage before the next, to check the work as it goes, or to not proceed without approval.
+type: skill
+last_verified: 2026-09-23
+owner: aroma
+---
+
 # Skill: pipeline-review
 
 Run the **reviewer-gated, human-approved pipeline**: after every production step, an adversarial reviewer checks the output, shares a simple report, and waits for Aroma's approval before the pipeline advances.

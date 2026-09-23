@@ -1,4 +1,6 @@
 ---
+name: audio-mux
+description: Extracts a voiceover track out of an MP4 and muxes audio into a silent render using ffmpeg. Use when asked to extract VO, mux audio, add the voiceover back onto a video, or when a rendered video has no sound. NOT for generating new voiceover - the explainer pipeline uses Gemini TTS for that.
 type: reference
 last_verified: 2026-05-19
 owner: aroma

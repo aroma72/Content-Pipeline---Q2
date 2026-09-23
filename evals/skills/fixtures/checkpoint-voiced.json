@@ -1,0 +1,36 @@
+{
+  "why": "a checkpoint must never be spoken",
+  "expect_error": "must not have a vo",
+  "beats": [
+    {
+      "id": "01",
+      "mode": "scene",
+      "vo": "Ali opens his order book and counts the week.",
+      "art": "A warm flat illustration of a small tailoring shop, plain flat cream background, no ground, no shadow, no text",
+      "cap": "The week in orders"
+    },
+    {
+      "id": "02",
+      "mode": "checkpoint",
+      "vo": "Now answer this.",
+      "quiz": {
+        "stem": "What does the gate actually measure?",
+        "options": [
+          "The output",
+          "The exit code",
+          "The clock"
+        ],
+        "answer": 0,
+        "explain": "B is tempting but it measures the wrong thing entirely here.",
+        "correctNote": "Right - the gate reads the artefact, not the status code."
+      }
+    },
+    {
+      "id": "03",
+      "mode": "scene",
+      "vo": "Ali opens his order book and counts the week.",
+      "art": "A warm flat illustration of a small tailoring shop, plain flat cream background, no ground, no shadow, no text",
+      "cap": "The week in orders"
+    }
+  ]
+}

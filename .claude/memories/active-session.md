@@ -14,113 +14,92 @@ No frontmatter: this file is machine-managed and exempt from the metadata contra
 ## NEXT_STEPS
 
 - Token rotation, then §7 held video. References stage built but never run with a real API key.
+- Skill system rebuilt 2026-09-23. `node evals/skills/run.js` must stay green; if a `beats.js`
+  legitimately changes, delete `evals/skills/baseline.json`, re-run, and commit the new snapshot
+  in the SAME commit as the change. Paid `claude plugin eval` layer is specced but not built.
 
 ---
 
 <!-- 2026-09-21, 2026-09-21, 2026-09-21, 2026-09-21, 2026-09-21, 2026-09-21, 2026-09-21, 2026-09-21 rotated to .claude/memories/session-archive/ -->
 <!-- 2026-09-22, 2026-09-22, 2026-09-22, 2026-09-22 rotated to .claude/memories/session-archive/ -->
-## 2026-09-22
+<!-- 2026-09-22 rotated to .claude/memories/session-archive/ -->
+## 2026-09-23 — Tick moved to 30 min; the CPU spike and the 2-min blips are different things
 
-### Railway memory (~250 MB steady) — what it actually is
-Asked "what's taking this memory and how do I cut cost". Measured, not guessed:
-loading the whole server graph locally (express + @slack/web-api + @anthropic-ai/sdk
-+ puppeteer + createApp() + tick + course-worker) costs **72 MB RSS / 17 MB heap**.
-So the app's own objects are ~1/3 of the plateau. The rest is (a) V8 old-space
-headroom — nothing sets `--max-old-space-size`, and Node sizes old space from the
-HOST's RAM, the same cgroup-blindness the Dockerfile already documents for
-`RENDER_WORKERS`; (b) page cache — Railway reports cgroup memory, which counts
-file-backed pages from `/data` (0.8 GB volume: job store, queue, renders).
-The plateau is flat for 10+ min at idle, so there is **no leak**. The dip to 100 MB
-is a redeploy, not a fix.
+Aroma read two Railway metric views as one problem. They are not:
 
-**Cost framing to reuse:** 0.25 GB at Railway's ~$10/GB-month is ~$2.50/month.
-Memory is not the bill. The bill is CPU during renders (2 headless Chrome at
-1920x1080 + ffmpeg) and the paid Gemini art/TTS budget (PIPELINE_BUDGET_USD=50).
+- The **2-minute sawtooth** at ~0.02 vCPU is `startLoop()` (`server/lib/tick.js:595`) waking up.
+  Near-free, but it was polling Slack + Notion 720 times a day for an empty queue.
+- The **3 vCPU / 3 GB spike** is a render: 2 headless Chrome at 1920x1080 (~1.2 GB each,
+  `RENDER_WORKERS=2` pinned at `Dockerfile:41`) plus the PNG page cache plus ffmpeg at
+  `-preset medium -crf 18`. Raising the tick does nothing to it. Said so plainly rather than
+  letting the env change look like a fix for the spike.
 
-**If capping the heap:** put the flag in the START COMMAND
-(`node --max-old-space-size=... server/index.js`), NOT in `NODE_OPTIONS` —
-NODE_OPTIONS is inherited by every spawned child, so it would also cap the render
-workers and OOM a paid render.
+Done, live and verified:
+- `TICK_INTERVAL_MS` 120000 -> **1800000** on the `content-queen` production service. Logs show
+  `[tick] polling every 1800s` (deploy `13271139`). Revert = set it back; read at boot only.
+- `server/app.js` (commit `25610fa`): an in-thread Slack reply now calls `runTick` directly. The
+  filter above it only admitted `app_mention` and DMs, so a *reply* — an answered question, an
+  approved budget, an approved review — was timer-only. At 2 min invisible; at 30 min not.
+  Bot scopes already carry `channels:history` / `groups:history`, so the events can arrive.
 
-Live service: project ContentQueen / service content-queen, US West, 1 replica,
-volume 0.8 GB used of 48.8 GB, TICK_INTERVAL_MS=120000.
-Nothing was changed on Railway — advice only, pending Aroma's call.
+**Google Drive was rejected as a memory fix, and the reasoning is the reusable part:** the 3 GB
+is live Chrome processes and frames being *created*, not finished files at rest. Drive moves
+files at rest. The volume is 0.8 GB of 48.8 GB — storage was never the constraint. Match the
+remedy to what is actually holding the bytes.
 
-**Care:** `railway variables` with no filter prints every live token in full to the
-transcript. Filter it (`| grep -Ei "TICK|RENDER|..."`) when you only need tuning vars.
+Next session should pick up:
+- **Unresolved, deliberately deferred:** `POST /demo/make-video/:jobId/produce` (`server/app.js:593`)
+  fires `oneVideo.produce` detached with no in-flight cap. Rate limits are per-hour quotas, not a
+  concurrency gate, so two tenants can render at once — 2x the 3 GB peak on a one-replica service.
+  Aroma chose "explain only, change nothing" this pass. This is the real OOM risk, not the tick.
+- `produce.js:334` never overwrites an existing `compile-lesson.js`, so video folders scaffolded
+  before the `byMemory` cap (e.g. `explainer-videos/evals/why-a-checklist-beats-a-careful-reader`)
+  still compute workers from **host** RAM and would launch 6 Chromes if `RENDER_WORKERS` were unset.
+- Notion-only actions (status edited in the Notion UI, approvals given there not in Slack) now wait
+  up to 30 min. No Notion webhook exists. Tell the team, or build one.
 
-### Correction + the real finding: frames are never deleted after encode
-The billing panel (Project Cost) overturned the framing above. Memory is **91% of
-the bill** ($4.4506 of $4.87), not a rounding error — because the average is
-**0.445 GB**, not the 0.25 GB idle plateau (19226.67 GB-min ÷ 43200 min, if that
-panel is a 30-day cycle). CPU is $0.34 on 729 vCPU-min ≈ 0.017 vCPU average: the
-box holds memory almost entirely while doing nothing.
+## 2026-09-23 — Skills were invisible to Claude; a YAML colon was the cause
 
-**Root cause of the multi-GB RAM plateaus (peak 7.13 GB):**
-`compile-lesson.js` writes every frame as a PNG to `frames/<NAME>/f_%06d.png`,
-ffmpeg reads them back with `-i .../f_%06d.png`, and **nothing ever deletes them
-after `encode()`** — `rmrf(framesDir)` runs only at the START of the next
-non-`--reuse` render (line ~177). A 6-min lesson is ~10,800 PNGs at 1920x1080.
-Those writes and the ffmpeg read-back sit in the cgroup's page cache, which is
-what Railway's RAM metric counts. That is the flat multi-GB block, not live
-objects — 2 workers x ~1.2 GB per Chrome only accounts for ~2.4 GB of the 7.13 GB
-peak. CORRECTION: the frames do NOT land on the volume — they are written under the repo
-dir (/app), which is ephemeral. The Volume graph step is commit 3546491 copying the
-finished MP4 + beats.js + durations.json onto /data. Page cache from /app writes is
-counted by the cgroup just the same, so the diagnosis stands; only the location was
-wrong.
+**The find.** Four skills (`audio-mux`, `git-workflow`, `video-render`, `pipeline-review`) had no
+`name`/`description` at all — 817 lines of correct guidance Claude could never invoke. Worse, TWO
+MORE were broken by a subtler fault: **an unquoted YAML scalar cannot contain `": "`**, so
+`description: Produces ... Stack: beats.js ...` fails to parse and the skill loads with its H1
+heading as its description. That silently disabled `creating-explainer-videos` — the DEFAULT
+pipeline — and `creating-avatar-videos`. Root cause of the whole class: `smoke-test.sh` Test 6
+checked that frontmatter EXISTED, never that it said anything.
 
-Fixes, cheapest first: (1) `rmrf(framesDir)` after a successful `encode()`;
-(2) pipe frames to ffmpeg via image2pipe so no PNG hits disk (breaks `--reuse`).
-This also matters beyond cost: the volume is 48.8 GB and frame dirs accumulate
-per video, so renders will eventually fail on a full disk.
+**Confirmed by the harness itself**, not inferred: the session skill listing re-printed each
+description the moment it parsed.
 
-**Lesson worth generalising:** on Railway, a flat multi-GB RAM plateau with near-zero
-CPU is page cache from file I/O, not a leak. Look for what the process is writing.
+**Built.** 4 new skills from the ledgers — `verify-before-claiming` (~20 exit-code-vs-artefact
+incidents), `this-machine` (+ references/shell-escaping, references/hook-authoring),
+`script-lint-preflight` (24 failing content-lint rows), `paid-run-protocol` (3 wrong spend quotes).
+`evals/skills/run.js`: 342 assertions in 3 layers, $0, wired into `smoke-test.sh` (Test 12) and a
+PostToolUse branch in `validate-after-write.sh`. `route-skill.js` adds one routing line on
+UserPromptSubmit when a skill clearly matches, silent otherwise. Standard:
+`.claude/standards/SKILL_AUTHORING.md`.
 
-### "Would Postgres be cheaper?" — no, ~45% more, and it misses the driver
-Postgres would replace only what is on `/data`: job JSON, ledger, idempotency
-records and the queue — metadata measured in MB, contributing ~nothing to the
-$4.45 memory line. It would ADD a second always-on service holding ~0.1–0.25 GB
-around the clock at the same $0.000231/GB/min, i.e. roughly +$2/month, plus its
-own volume. It cannot hold the ~10,800 PNG frames that are the actual excess, and
-MP4s as `bytea` would be worse (WAL amplification, and Postgres' buffer cache and
-the page cache both count toward the cgroup).
+**Environment re-probed 2026-09-23** — correction to lessons.md: Docker CLI 29.6.1 IS installed;
+it is the **daemon** that will not start (`npipe ... dockerDesktopLinuxEngine`), not WSL as
+recorded. `python` now works as well as `py`. Node still 20.19.0. `python3` still the Store stub
+(rc=49, message on **stdout**).
 
-Postgres is a correctness/scaling decision here, not a cost one — it earns its keep
-only if numReplicas goes above 1 (a Railway volume cannot be shared, and
-`job-store.js` documents single-writer-by-design) or catalogue queries get slow.
-Either way it raises the bill.
+**Two self-inflicted bugs worth remembering, both already in the lessons:**
+1. A patch script wrote a literal **backspace** instead of `\b`, so `split(/\bNOT\b/)` became
+   `split(/<BS>NOT<BS>/)` and silently stripped nothing. Fourth occurrence of this escaping trap.
+   Fix: stop generating regex through nested string layers; write the file directly.
+2. `file x.md` reports "CRLF" if ANY line is CRLF. It said CRLF for files that were 99% LF, so
+   "preserving" CRLF actually injected one stray CRLF line into nine skills. Measure line endings
+   by counting, not with `file`.
 
-### The 7.13 GB peak is NOT an OOM risk — and there is no live scaling problem
-Two things checked before recommending anything:
+**Mutation-tested**: each of the 3 layers was deliberately broken, seen to fail, and restored.
 
-1. **Page cache is reclaimable.** The kernel evicts it under pressure rather than
-   invoking the OOM killer. The unreclaimable (anonymous) part of a render is
-   ~2.4–3 GB: 2 Chromes at the ~1.2 GB `compile-lesson.js` measures, plus ffmpeg and
-   Node. So the graph bills 7.13 GB but only ~3 GB can actually kill the process.
-   Do not size the box off the RAM graph.
-2. **Renders are already serialised.** `course-worker.js` guards with a module-level
-   `running` flag (lines 44 / 155), so the peak is one render, never N. And at
-   0.017 vCPU average the HTTP side is nowhere near saturated — extra replicas would
-   add no render throughput, only webhook capacity nobody needs.
+**Left undone (deliberate):** `claude plugin eval` — needs `.claude-plugin/plugin.json` and spends
+money per run. Fully specified in `evals/skills/README.md`. `avatar-video-kit/` at the repo root
+was NOT deleted: it is a standalone distributable kit (README, docs, word-docs), not a stray
+duplicate, and its SKILL.md is outside `.claude/skills/` so it never loads and creates no ambiguity.
 
-Recommended (in order, all zero-risk): (a) `rmrf(framesDir)` after a successful
-`encode()`; (b) `node --max-old-space-size=256 server/index.js` in the START COMMAND
-(measured heap is 17 MB, so ~15x headroom); (c) `TICK_INTERVAL_MS` 120000 -> 300000.
-Held back: `RENDER_WORKERS=1` (buys OOM headroom, not money — doubles wall-clock so
-GB-min is a wash) and image2pipe streaming (kills the page cache but breaks `--reuse`).
-Rejected for now: splitting rendering into its own service — it is the right shape
-eventually but on Railway it means a second always-on service, i.e. more cost for the
-goal of less. Revisit when two lessons must render at once, or the bill passes ~$25/mo.
-
-### NEXT (cost thread)
-- Nothing has been changed yet — all of the above is advice pending Aroma's go-ahead.
-- If implementing (a), it touches the skill template AND the per-video inlined copies
-  under `explainer-videos/*/compile-lesson.js` (10+ files) — they were copied, not
-  imported, so a template-only fix silently misses every existing video.
-- Unknown worth checking in the Railway UI: the service's actual per-service memory
-  limit (plan-dependent). Not knowable from the CLI.
+---
 
 ## 2026-09-22 — The references feature was shipped switched off; LMS now has a contract
 
@@ -351,6 +330,27 @@ volume.
 2. **`OWNER_COOKIE_SECRET` is unset on production**, so every redeploy invalidates every browser
    session — the cookie-bound script.md/video links die. A bearer token still works. DEPLOYMENT_PREREQS
    already warns about this; it should just be set.
+
+### A/B vs the published `youtu.be/t_xOWb8BRQ4` (evals-08), script level
+| metric | OLD published | NEW |
+|---|---|---|
+| beats | 12 | 20 |
+| VO words | 184 | 336 |
+| captions | 0 | 12 |
+| overlays | 1 | 0 |
+| info templates | 4 | 7 |
+| motion beats | 0 | 5 |
+| checkpoint | 0 | 1 |
+
+All differences are INTENDED (captions enforced, checkpoint required, house length moved 12→16-20,
+motion now used). **No scripting regression visible.** Visual/audio A/B still needs a human to watch
+both.
+
+### NEXT
+1. Aroma decides whether to approve → publishes unlisted → a YouTube link to set beside the old one.
+2. Set `OWNER_COOKIE_SECRET` so shareable links survive a redeploy.
+3. Add a pre-spend ceiling checked against the estimate (nothing enforces one; $50 reservation).
+4. Ledger still reports $0 for a failed produce.
 
 ## 2026-09-23 — Course hold: why one failed lesson parked every tenant, and what shipped
 

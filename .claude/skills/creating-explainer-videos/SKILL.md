@@ -1,6 +1,6 @@
 ---
 name: creating-explainer-videos
-description: Produce a branded, narrated explainer/lesson MP4 where every voiceover sentence has its own matching animated visual, for ~$0 render cost. Use when creating a lesson/explainer video from a written script. Stack: beats.js + Imagen art + Python cutout + Gemini TTS + Puppeteer/ffmpeg + brand bumpers.
+description: Produces a branded, narrated explainer or lesson MP4 where every voiceover sentence has its own matching animated visual, at near-zero render cost. Use when creating a lesson, explainer or teaching video from a topic or a written script, or when asked to make a video for the LMS. This is the DEFAULT video pipeline - beats.js, Imagen art, Python cutout, Gemini TTS, Puppeteer/ffmpeg, brand bumpers. NOT for talking-head avatars (creating-avatar-videos) or legacy Remotion videos (video-render).
 type: skill
 last_verified: 2026-07-09
 owner: aroma

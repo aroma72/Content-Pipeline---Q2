@@ -1,3 +1,12 @@
+---
+type: archive
+last_verified: 2026-09-23
+owner: aroma
+---
+
+> **ARCHIVED 2026-09-23.** Superseded by the explainer pipeline (Imagen art + Python cutout + Puppeteer). This describes Kie.ai frames animated in Remotion, which is legacy. It also sat loose in .claude/skills/ where it could never load as a skill.
+> Kept for history only. Do not follow it for new work.
+
 # Educational Animation Image Generation Skill
 *Invocation: `/animate`, `/anim-gen`, or `/generate-frames`*
 *Last updated: 2026-05-20*

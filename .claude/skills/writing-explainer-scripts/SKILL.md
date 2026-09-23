@@ -1,6 +1,6 @@
 ---
 name: writing-explainer-scripts
-description: Draft a beats-ready explainer/lesson script — one spoken sentence per beat, single protagonist in depth, a mode picked per sentence. Use before beats.js, when turning a topic/SLO into a script for the explainer-video pipeline. ALWAYS web-researches the topic + best teaching techniques first.
+description: Writes a beats-ready explainer or lesson script - one spoken sentence per beat, a single protagonist followed in depth, and a mode picked per sentence. Use when asked to write, draft or script a lesson or an explainer video, when turning a topic or an SLO into a script, and before authoring beats.js. Always web-researches the topic and the best teaching techniques first.
 type: skill
 last_verified: 2026-08-03
 owner: aroma

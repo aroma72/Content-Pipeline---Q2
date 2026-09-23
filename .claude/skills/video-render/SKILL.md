@@ -1,4 +1,6 @@
 ---
+name: video-render
+description: Renders a LEGACY Remotion composition to a silent MP4 and diagnoses blank, black or wrong-length output. Use only when maintaining a pre-explainer video, or when a Remotion render comes out blank or the wrong duration. NOT for new videos - those use creating-explainer-videos.
 type: reference
 last_verified: 2026-05-19
 owner: aroma

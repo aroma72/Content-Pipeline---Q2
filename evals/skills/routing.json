@@ -1,0 +1,69 @@
+{
+  "_note": "Each case is a query a person might actually type, and the skill that must rank first. Phrasing is drawn from .claude/memories and .beads where possible. Negatives are near-misses on purpose: an easy negative tests nothing.",
+  "_grading": "Offline keyword-overlap against each skill's name + description. This proves the description carries the trigger surface. It does NOT prove the model will fire the skill - only a live eval does that (Phase 5).",
+  "cases": [
+    { "query": "make me a lesson video about how agents work", "expect": "creating-explainer-videos" },
+    { "query": "create an explainer video from this script", "expect": "creating-explainer-videos" },
+    { "query": "I need a teaching video for the LMS", "expect": "creating-explainer-videos" },
+
+    { "query": "make a talking head video of a spokesperson", "expect": "creating-avatar-videos" },
+    { "query": "I want an avatar clip with lip sync", "expect": "creating-avatar-videos" },
+
+    { "query": "write the script for a lesson on evals", "expect": "writing-explainer-scripts" },
+    { "query": "turn this SLO into a beats ready script", "expect": "writing-explainer-scripts" },
+
+    { "query": "is this script good enough to spend on", "expect": "reviewing-explainer-scripts" },
+    { "query": "review my script before we render", "expect": "reviewing-explainer-scripts" },
+    { "query": "give me a verdict on this lesson script", "expect": "reviewing-explainer-scripts" },
+
+    { "query": "why does the cutout look sliced in half", "expect": "animation-motion-design" },
+    { "query": "the character looks frozen and stiff", "expect": "animation-motion-design" },
+    { "query": "this beat has no visible movement", "expect": "animation-motion-design" },
+    { "query": "the cutout has a halo around the edge", "expect": "animation-motion-design" },
+
+    { "query": "extract the voiceover from this mp4", "expect": "audio-mux" },
+    { "query": "mux the audio back onto the silent render", "expect": "audio-mux" },
+    { "query": "the rendered video has no sound", "expect": "audio-mux" },
+
+    { "query": "main went red after my push", "expect": "git-workflow" },
+    { "query": "commit this with the submodule pointer", "expect": "git-workflow" },
+    { "query": "how do I stage this without touching the other session's work", "expect": "git-workflow" },
+
+    { "query": "the remotion render came out blank", "expect": "video-render" },
+    { "query": "render the legacy remotion composition", "expect": "video-render" },
+
+    { "query": "go step by step and let me approve each stage", "expect": "pipeline-review" },
+    { "query": "review each step before moving to the next", "expect": "pipeline-review" },
+
+    { "query": "distill the memory archive into lessons", "expect": "memory-distill" },
+    { "query": "drain the session archive backlog", "expect": "memory-distill" },
+
+    { "query": "how is the memory system doing", "expect": "memory-stats" },
+    { "query": "are the memory hooks still firing", "expect": "memory-stats" },
+
+    { "query": "the command exited 0 but I never saw it work", "expect": "verify-before-claiming" },
+    { "query": "before I say this is fixed how do I prove it", "expect": "verify-before-claiming" },
+    { "query": "can I trust this test I just wrote", "expect": "verify-before-claiming" },
+    { "query": "I deployed but did not check CI", "expect": "verify-before-claiming" },
+
+    { "query": "python3 says python was not found", "expect": "this-machine" },
+    { "query": "node throws ENOENT on a tmp path that exists", "expect": "this-machine" },
+    { "query": "UnicodeEncodeError charmap codec on this box", "expect": "this-machine" },
+    { "query": "the docker daemon will not connect here", "expect": "this-machine" },
+    { "query": "I am about to write a hook script", "expect": "this-machine" },
+
+    { "query": "the gate came back NEEDS WORK again", "expect": "script-lint-preflight" },
+    { "query": "this run is stuck in a redraft loop", "expect": "script-lint-preflight" },
+    { "query": "check the content lint rules on my draft", "expect": "script-lint-preflight" },
+    { "query": "the rendered beat came out blank and wordless", "expect": "script-lint-preflight" },
+
+    { "query": "how much will this video cost before I run it", "expect": "paid-run-protocol" },
+    { "query": "the run was refused because of budget", "expect": "paid-run-protocol" },
+    { "query": "about to generate art, what is the estimate", "expect": "paid-run-protocol" },
+    { "query": "quote me the spend for this lesson", "expect": "paid-run-protocol" },
+
+    { "query": "what is the capital of France", "expect": null },
+    { "query": "rename this variable across the repo", "expect": null },
+    { "query": "what time is the standup", "expect": null }
+  ]
+}

@@ -1,3 +1,12 @@
+---
+type: archive
+last_verified: 2026-09-23
+owner: aroma
+---
+
+> **ARCHIVED 2026-09-23.** Veo was rejected - CLAUDE.md forbids paid AI video. This also sat loose in .claude/skills/ where it could never load as a skill.
+> Kept for history only. Do not follow it for new work.
+
 # Google Veo 3.1 Animation Generation Skill
 *Invocation: `/veo-animate`, `/generate-video`, or `/veo`*
 *Last updated: 2026-05-20*

@@ -1,6 +1,6 @@
 ---
 name: reviewing-explainer-scripts
-description: Gate an explainer/lesson script before any art/TTS/render — verdict READY / NEEDS WORK / NOT READY against the house scripting standard and pipeline laws. Use as step 0 of creating-explainer-videos.
+description: Gates an explainer or lesson script before any art, TTS or render, returning a verdict of READY / NEEDS WORK / NOT READY against the house scripting standard and the pipeline laws. Use as step 0 of creating-explainer-videos, or when asked whether a script is good enough, to review or check a script, or to sanity-check one before spending money on it.
 type: skill
 last_verified: 2026-07-09
 owner: aroma

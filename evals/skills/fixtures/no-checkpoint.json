@@ -1,0 +1,20 @@
+{
+  "why": "every video must ask one question",
+  "expect_error": "no CHECKPOINT beat",
+  "beats": [
+    {
+      "id": "01",
+      "mode": "scene",
+      "vo": "Ali opens his order book and counts the week.",
+      "art": "A warm flat illustration of a small tailoring shop, plain flat cream background, no ground, no shadow, no text",
+      "cap": "The week in orders"
+    },
+    {
+      "id": "02",
+      "mode": "scene",
+      "vo": "Ali opens his order book and counts the week.",
+      "art": "A warm flat illustration of a small tailoring shop, plain flat cream background, no ground, no shadow, no text",
+      "cap": "The week in orders"
+    }
+  ]
+}

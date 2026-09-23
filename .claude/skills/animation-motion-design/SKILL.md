@@ -1,6 +1,6 @@
 ---
 name: animation-motion-design
-description: Cutout-puppet + infographic motion mechanics for the explainer pipeline — clean-hero art, segmentation, sway/breathe/push-in, and evolving infographics. Use when authoring beats.js art prompts, tuning animation/lesson.html, or debugging cutouts.
+description: Cutout-puppet and infographic motion mechanics for the explainer pipeline - clean-hero art, segmentation, sway, breathe, push-in, and evolving infographics. Use when the character looks sliced or cut in half, when a cutout has a halo or hard edge, when a beat looks frozen or stiff or has no visible movement, or when authoring beats.js art prompts and tuning animation/lesson.html.
 type: skill
 last_verified: 2026-07-09
 owner: aroma

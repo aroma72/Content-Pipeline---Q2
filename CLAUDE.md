@@ -19,14 +19,20 @@ owner: aroma
 | Produce a video with reviewer gates (human-approved, step-by-step) | `/pipeline-review` → `.claude/standards/REVIEWER_GATED_PIPELINE.md` |
 | Evaluate video quality (QA rating system) | `docs/QA_QUICK_REFERENCE.md` → `.claude/standards/QA_RATING_SYSTEM.md` |
 | Write scripts (concept depth, single protagonist story) | `.claude/standards/SCRIPTING_STANDARDS.md` |
-| Render videos (Remotion — LEGACY, pre-explainer videos only) | `docs/video-production.md` |
-| Extract & mux voiceover | `docs/audio-extraction.md` |
-| Understand frame count formula | `docs/design-standards.md` |
-| Fix text cutoff in diagrams | `docs/troubleshooting.md` |
+| Render videos (Remotion — LEGACY, pre-explainer only) | `video-render` skill |
+| Extract & mux voiceover | `audio-mux` skill → `.claude/standards/VOICEOVER_POLICY.md` |
+| Understand frame count formula | `.claude/standards/VIDEO_PRODUCTION_RULES.md` |
+| Fix text cutoff in diagrams | `.claude/standards/VIDEO_PRODUCTION_RULES.md` |
 | **Operate the live service (durability, tenants, deploying)** | **`docs/SERVICE_DURABILITY_AND_CONTRACTS.md`** |
+| **Check a script before spending money** | **`script-lint-preflight` skill** |
+| **Quote / approve a paid run** | **`paid-run-protocol` skill** |
+| Prove a change actually works | `verify-before-claiming` skill |
+| Hit a Windows / Git-Bash / python3 trap | `this-machine` skill |
+| Run the LLM content gates | `gates/run-gates.js` |
+| Check the skills themselves still load | `evals/skills/run.js` |
 | Track my work | `.beads/status.jsonl` |
 | **Know what past sessions learned (hot/warm/cold memory)** | **`.claude/memories/MEMORY-INDEX.md`** → `.claude/standards/MEMORY_TIERS.md` |
-| Understand the content pipeline | `docs/content-pipeline.md` |
+| Understand the content pipeline | `docs/PIPELINE.md` |
 | Maintain infrastructure | `docs/infrastructure-maintenance.md` |
 | See design standards | `.claude/standards/VIDEO_PRODUCTION_RULES.md` |
 
@@ -109,32 +115,26 @@ owner: aroma
 
 ## Agents
 
-| Agent | Purpose |
-|-------|---------|
-| render-all-videos | TSX → silent render → extract VO → mux → copy → commit |
-| daily-git-sync | Auto-commit daily @ 12pm |
-| quality-checker | Validate frame counts vs VO before render |
+**`explainer-script-gatekeeper`** — the only loadable subagent; applies `reviewing-explainer-scripts` and returns a VERDICT block.
+Prose runbooks (not loadable agents): `render-all-videos` · `quality-checker` · `daily-git-sync` in `.claude/agents/`.
 
 
 ## Skills
 
-| Skill | Command |
-|-------|---------|
-| creating-explainer-videos (DEFAULT pipeline) | `creating-explainer-videos` |
-| writing-explainer-scripts | `writing-explainer-scripts` |
-| reviewing-explainer-scripts (step-0 gate) | `reviewing-explainer-scripts` |
-| animation-motion-design | `animation-motion-design` |
-| pipeline-review | `/pipeline-review` |
-| video-render (legacy Remotion) | `/video-render` |
-| audio-mux | `/audio-mux` |
-| git-workflow | `/git-workflow` |
-| memory-distill (archive → warm memory) | `/memory-distill` |
-| memory-stats (memory health) | `/memory-stats` |
+Claude picks these from their `description`, so a skill with a broken one is invisible — `evals/skills/run.js` enforces that contract.
+
+**Making video** — `creating-explainer-videos` (DEFAULT) · `writing-explainer-scripts` · `reviewing-explainer-scripts` (step-0 gate) · `script-lint-preflight` (six lint rules + free sensors, before any spend) · `animation-motion-design` · `creating-avatar-videos` (talking head) · `video-render` + `audio-mux` (legacy Remotion)
+
+**Working safely** — `paid-run-protocol` (quote → ceiling → approve → persist → commit) · `verify-before-claiming` (assert on the artefact, never the exit code) · `this-machine` (Windows / Git-Bash / hook traps) · `git-workflow` · `pipeline-review`
+
+**Memory** — `memory-distill` (archive → warm) · `memory-stats` (health)
+
+Authoring a new one: `.claude/standards/SKILL_AUTHORING.md`.
 
 
 ## Standards Documents
 
-All in `.claude/standards/`. **SCRIPTING_STANDARDS** (concept depth, single protagonist — CRITICAL for all scripts) · **QA_RATING_SYSTEM** (7-factor rubric) · **REVIEWER_GATED_PIPELINE** (per-step reviewers, approval gates) · **MEMORY_TIERS** (hot/warm/cold memory) · **VIDEO_PRODUCTION_RULES** (frame math, SVG safety — legacy) · **VOICEOVER_POLICY** · **DOC_TYPE_SYSTEM** · **METADATA_CONTRACT**
+All in `.claude/standards/`. **SCRIPTING_STANDARDS** (concept depth, single protagonist — CRITICAL for all scripts) · **QA_RATING_SYSTEM** (7-factor rubric) · **REVIEWER_GATED_PIPELINE** (per-step reviewers, approval gates) · **MEMORY_TIERS** (hot/warm/cold memory) · **VIDEO_PRODUCTION_RULES** (frame math, SVG safety — legacy) · **VOICEOVER_POLICY** · **DOC_TYPE_SYSTEM** · **METADATA_CONTRACT** · **SKILL_AUTHORING** (frontmatter contract, evals)
 
 
 ## Known Failures (See `.beads/failures.jsonl`)
@@ -145,4 +145,4 @@ All in `.claude/standards/`. **SCRIPTING_STANDARDS** (concept depth, single prot
 
 ## Pre-Push Quality Gate: `bash .claude/scripts/smoke-test.sh` — install it: `bash scripts/install-hooks.sh` (once per clone; also adds pre-commit). Audit: `docs/HARNESS_AUDIT.md`
 🚫 **Deploy = `git push origin <branch>:main` then `railway redeploy --from-source -y`** — `--from-source` pulls main, so it ROLLS BACK unmerged work.
-*Last updated: 2026-09-20*
+*Last updated: 2026-09-23*

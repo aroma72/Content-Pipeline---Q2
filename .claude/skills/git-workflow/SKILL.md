@@ -1,4 +1,6 @@
 ---
+name: git-workflow
+description: Commits and pushes in this repo - submodule pointer committed first, never force-push to main, and never stage a whole file, so a commit cannot publish another session uncommitted work from the shared working tree. Use for any commit, push, staging or submodule-pointer question, when asked how to stage or add changes without touching other work, and when main went red after a push.
 type: reference
 last_verified: 2026-05-19
 owner: aroma

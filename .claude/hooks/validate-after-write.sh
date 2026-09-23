@@ -37,4 +37,17 @@ if [[ "$FILE_PATH" == *.md ]]; then
   fi
 fi
 
+# A SKILL.md with a missing or YAML-unparseable description loads with NO
+# description, and Claude selects skills on that field alone - so the skill is
+# simply invisible. Four skills sat unusable here for months because nothing
+# checked. Advisory only: report it, never block the write.
+case "$FILE_PATH" in
+  */.claude/skills/*/SKILL.md|*.claude/skills/*/SKILL.md)
+    REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+    if command -v node >/dev/null 2>&1 && [ -f "$REPO_ROOT/evals/skills/check-one.js" ]; then
+      node "$REPO_ROOT/evals/skills/check-one.js" "$FILE_PATH" || true
+    fi
+    ;;
+esac
+
 exit 0

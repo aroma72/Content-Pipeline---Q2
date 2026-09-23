@@ -1,6 +1,6 @@
 ---
 name: creating-avatar-videos
-description: Produce a 2D illustrated talking-avatar video where a stylised character sits and talks straight to camera with the mouth truly lip-synced to a generated voiceover, ~$3-4/min. Use when creating a talking-head / spokesperson / influencer-style avatar clip from a short script. Stack: kie nano-banana-2 still + Gemini TTS + kie infinitalk lip-sync + ffmpeg concat. NOT the explainer/Ali pipeline.
+description: Produces a 2D illustrated talking-avatar video where a stylised character sits and talks straight to camera with the mouth lip-synced to a generated voiceover, at roughly $3-4 per minute. Use when creating a talking-head, spokesperson or influencer-style avatar clip from a short script. Stack is kie nano-banana-2 still, Gemini TTS, kie infinitalk lip-sync, ffmpeg concat. NOT the explainer/Ali pipeline - lessons use creating-explainer-videos.
 type: skill
 last_verified: 2026-08-08
 owner: aroma
