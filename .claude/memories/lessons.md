@@ -922,3 +922,22 @@ now first in line. Scope (4) has to exist before the restart (3) is safe.
 
 Related: [[H9]] (the artefact is the evidence), [[H13]] (a guard that asserts presence rather
 than content passes forever — `building` asserted presence of work, not its state).
+
+---
+
+### H28. Never redeploy while the worker is building — read `/health` first, not the log you remember
+
+**Added:** 2026-09-23 | **Applies to:** every `railway redeploy` / push-to-main of this service
+**Invalidate if:** builds move off the web container onto a worker that survives a redeploy
+
+A redeploy restarts the one container the course worker runs in. A lesson mid-build is parked as
+`interrupted`, its render directory is gone, and its model spend of the last minutes is never
+settled. On 2026-09-23 the LMS's authorised lesson started at 06:08Z and a redeploy landed at 06:11Z
+with `/health.courses.worker.building: true` visible the whole time. The doc had warned "a redeploy
+costs at most the lesson in flight" — and that is exactly the lesson it cost, somebody else's.
+
+Rule: `node scripts/predeploy-check.js` before every push-to-main; `--wait` if you would rather
+queue behind the build than skip the deploy. It is in the CLAUDE.md deploy line. Corollary for the
+LMS side, already in their memo: a repo says what was committed, `/health` says what is running.
+
+Related: [[H4]] (verify against production, not defaults), [[H27]] (a pause that is only a `break`).

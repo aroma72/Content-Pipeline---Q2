@@ -256,6 +256,42 @@ work earning its keep: the whole diagnosis cost $0.
 
 **Overlay has NEVER worked for any generated video.** `script.js` declares
 `overlay: { type: 'string' }` ("optional HTML overlay text") in all 3 schema blocks, and the writer
+
+**Later, same day (merge request):** branch audit, remote and local: every branch except `course-hold-2`
+is already fully in `main` (0 ahead). `course-hold-2` is 3 ahead, 0 behind, CI #123 green, so it
+fast-forwards. The user turned down push+redeploy as one step and asked for "merge all branches to main"
+instead; the harness classifier then blocked `git push origin course-hold-2:main` too. The person has to
+run the push. Redeploying is a separate decision the user has not made yet.
+Update: the user pushed it, so `origin/main` = 274f937 and every branch is now merged. Railway is NOT redeployed (the live version is still an older main).
+**Branches deleted (the user asked):** on GitHub only `main` is left. course-hold, course-hold-2,
+lms-creation-api-hardening (this closed PR #1) and add-autonomy-and-5x-scripts are gone; each had 0 commits not in main.
+The classifier blocked the local cleanup (`git branch -D`), so local course-hold and course-hold-2 still exist.
+**DEPLOY DID NOT TAKE — open, and the reason is not verified:** main was at 274f937 when the user ran `railway redeploy --from-source -y`.
+Railway still built commit a92bf5e (per meta.commitHash). That build then went to REMOVED. SUCCESS/live is still a92bf5e.
+That contradicts SERVICE_DURABILITY §6.1, which says `--from-source` pulls main. Look into it before writing the next deploy note.
+Possible cause, not checked: Railway's GitHub commit cache, or the branch trigger. The dashboard's "Deploy latest commit" is the next thing to try.
+**Why the redeploy didn't take:** `railway status --json` shows the content-queen service `source` is `{"image":null,"repo":null}`.
+The service is NOT connected to GitHub, so `redeploy --from-source` has nothing to pull and just rebuilds the last snapshot (a92bf5e). This makes §6.1 wrong as it stands.
+**Workaround used:** `git archive origin/main | tar -x` into the scratchpad (871 MB, versus the 36 GB tree).
+Then `railway up <dir> --path-as-root -s content-queen -e production --detach -y`. That uploaded fine; the deployment id starts 19a7e2a6.
+Permanent fix, still open: reconnect the repo in Railway (Settings → Source → aroma72/Content-Pipeline---Q2, branch main), then correct §6.1.
+**Deploy verified:** 19a7e2a6 is SUCCESS. Its logs show the new `[course-worker] boot: clean boot` line (added in 5e10822), so 274f937 is live. /health ok, volume durable, 0 eligible, 0 held, 1 awaiting approval.
+
+### 2026-09-23, later — the resume ran; our redeploy interrupted it
+
+06:08:16Z the user ran the resume (from the repo dir; `railway run` needs the linked cwd -- "No linked
+project" elsewhere, and from Git Bash `railway run -- node -e` runs nothing while `-- bash -c 'curl …'`
+works). Log: `building lms-e2e-2026-09-23/where-the-error-actually-happened`. 06:11:58Z
+`railway redeploy --from-source` (old code a92bf5e, main not yet fast-forwarded) restarted the container;
+that boot logged `1 interrupted mid-build`. Two more redeploys; 06:27Z round 2 (274f937) is LIVE:
+`boot: clean boot -- resuming`, `0 eligible, 0 held`. **The LMS lesson is `blocked/interrupted`**;
+approve = rebuild, their call. Evidence: `docs/integration-requests/evidence/2026-09-23-lms-e2e-resume.md`;
+memo §0 rewritten to say so. New guard: `scripts/predeploy-check.js` (exit 1 while building; `--wait`),
+wired into the CLAUDE.md deploy rule and DEPLOYMENT_PREREQS. Their course id is not in any doc we hold;
+`course-mub7whoa` is the evals course (both lessons failed, $5.48 + $1.53).
+
+Next: (1) push `course-hold-2` → main + redeploy AFTER `predeploy-check` passes (classifier blocks me);
+(2) send the corrected memo + evidence to the LMS; they decide approve/reject; (3) tenant minting; (4) P6.
 duly produced `"Per-slice mean · pass→fail count · worst drop"`. `lesson.html:43` asked that string
 for `.tpl`, got undefined, drew nothing. A schema/renderer contract mismatch nobody could see until a
 gate that measures the rendered frame could finally run.
