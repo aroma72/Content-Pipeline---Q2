@@ -210,13 +210,24 @@ folds the queue and, for each `course-builder` item:
 crash loop would otherwise burn three unattended rebuilds. A test asserts that
 restore never moves a `queued` lesson and never sets `running`.
 
-**So after every redeploy the queue waits for a kick.** Until 2026-09-23 the only kicks
+**A clean boot resumes itself; a suspicious one waits.** Until 2026-09-23 the only kicks
 were a new build, an approve and a requeue -- two of which cost money -- and a redeploy
-with queued work left the service idle until somebody spent. Now `/health.courses.worker`
-and `GET /courses/:id` `worker` report `needsResume: true` (eligible work waiting, nobody
-building) and **`POST /api/v1/courses/worker/resume`** starts the worker. It builds only
-what `eligible()` offers, so a held course is never touched by it, and it spends nothing a
-build did not already reserve. Run it after a deploy; it is idempotent.
+with queued work left the service idle until somebody spent. Now, after `restore()`,
+`course-worker.bootDecision()` decides from three facts: were any lessons interrupted
+mid-build (a person decides before anything is rebuilt), did the previous boot happen
+inside the cooldown (`boot.json` on the job store; `COURSE_AUTO_RESUME_COOLDOWN_MS`,
+default 15 min -- a restart loop), and is `COURSE_AUTO_RESUME` set to `0`. Any of those
+means wait, and the log line `[course-worker] boot: <why>` says which; otherwise the
+worker resumes. A crash *during* a build always leaves a `claimed` lesson and so always
+waits; a crash *outside* one lands inside the cooldown. Worst case is one build attempt per
+cooldown window. `/health.courses.worker.needsResume` and **`POST /api/v1/courses/worker/resume`**
+remain for the boots that waited: idempotent, builds only what `eligible()` offers, spends
+nothing a build did not already reserve.
+
+**A course is held only while work waits behind the hold** (2026-09-23, later): `heldCourses()`
+requires a `queued` sibling. A course whose rejected lesson has no queued sibling is stopped,
+reads `held: null`, and is not counted on `/health` -- a hold nobody can release must not look
+like one waiting for someone.
 
 ### 3.4 Approving an interrupted lesson rebuilds it
 
