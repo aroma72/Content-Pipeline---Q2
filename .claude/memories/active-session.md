@@ -406,3 +406,22 @@ flagged, for the PR description: `stopping` can persist while a blocked sibling 
 (by design); requeue route does not refuse a `stopping` course; skip sits behind the produce kill
 switch though it spends $0; service must confirm it sends `worker.queuedAcrossAllCourses` (it does,
 api.js) -- the LMS fixture used `queued`.
+
+### 2026-09-23, round 2 — the LMS read 1.1 and found two things; both fixed on `course-hold-2`
+
+Their memo: `E:\Cohort2LP\docs\content-automation\2026-09-23-contract-1-1-is-live-and-we-read-it.md`.
+1.1 had been deployed (a92bf5e, 02:02Z) -- I had believed it was not; `origin/main` is 8184f49 and
+contains every course-hold commit. **Lesson, theirs and mine: a repo says what was committed, `/health`
+says what runs; one curl outranks a note saying "not yet deployed".**
+
+Shipped on `course-hold-2` (off 8184f49), commit 5e10822 + docs: `heldCourses()` requires a queued
+sibling (a stopped course is not held; `course-mub7whoa` reads `held: null`); `requeue` refuses
+`stoppedWithCourse`; `bootDecision()` + `boot.json` marker so a clean boot resumes itself and a crash
+loop / interrupted work / `COURSE_AUTO_RESUME=0` waits, wired in `index.js` after `restore()`.
+Tests 230 + 46 + 34, lint clean. Reply memo: `docs/integration-requests/2026-09-23-resume-run-and-two-fixes-reply.md`.
+
+**The resume did NOT happen from this session.** The LMS authorised it in writing (memo §0). My first
+`railway run` POST returned nothing and the worker did not start; the retry was refused by the harness
+classifier as a production action. A person runs it (command in the plan file and the final message),
+then writes `docs/integration-requests/evidence/2026-09-23-lms-e2e-resume.md` with the log excerpt and
+final course JSON. Not deployed either: `git push origin course-hold-2:main && railway redeploy --from-source -y`.
