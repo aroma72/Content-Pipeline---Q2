@@ -397,23 +397,12 @@ before the kick can. `skip` keeps status `failed` because the LMS treats the sta
    `PHASE=approve` in the live e2e, vendor `course-api-v1.1.md`. Nazim's rules updated in the plan file.
 5. P6: one paid end-to-end lesson under the LMS tenant, human-approved, evidence committed.
 
-### A/B vs the published `youtu.be/t_xOWb8BRQ4` (evals-08), script level
-| metric | OLD published | NEW |
-|---|---|---|
-| beats | 12 | 20 |
-| VO words | 184 | 336 |
-| captions | 0 | 12 |
-| overlays | 1 | 0 |
-| info templates | 4 | 7 |
-| motion beats | 0 | 5 |
-| checkpoint | 0 | 1 |
-
-All differences are INTENDED (captions enforced, checkpoint required, house length moved 12→16-20,
-motion now used). **No scripting regression visible.** Visual/audio A/B still needs a human to watch
-both.
-
-### NEXT
-1. Aroma decides whether to approve → publishes unlisted → a YouTube link to set beside the old one.
-2. Set `OWNER_COOKIE_SECRET` so shareable links survive a redeploy.
-3. Add a pre-spend ceiling checked against the estimate (nothing enforces one; $50 reservation).
-4. Ledger still reports $0 for a failed produce.
+**LMS side (Part B) is built, unmerged:** E:\Cohort2LP branch `content-queen-contract-1.1`, 7 commits off
+74cbbaa (phases 1-3: contract 1.1 mapper + drift warning, migration 0060, worker mirror + own 45-min
+stall clock, build-page banner via pure `course-hold.ts`, honest reject with a new non-terminal
+`stopping` status, skip route + retry dialog with price). Verified here: web 22/22, api unit 108/108;
+agent reported integration 51/51 and tsc clean. NOT pushed; Nazim/AR merge. Open points the agent
+flagged, for the PR description: `stopping` can persist while a blocked sibling awaits a person
+(by design); requeue route does not refuse a `stopping` course; skip sits behind the produce kill
+switch though it spends $0; service must confirm it sends `worker.queuedAcrossAllCourses` (it does,
+api.js) -- the LMS fixture used `queued`.
