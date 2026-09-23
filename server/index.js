@@ -86,7 +86,8 @@ const server = app.listen(config.port, () => {
   // the process died; it is parked for a person rather than rebuilt, because a
   // rebuild costs about $1.50 and Railway retries a failing deploy three times.
   try {
-    const courses = require('./lib/course-worker').restore();
+    const cw = require('./lib/course-worker');
+    const courses = cw.restore();
     if (courses.lessons) {
       console.log(`[server] courses: ${courses.lessons} lesson(s) on a ${courses.durability} queue`
         + (courses.interrupted ? `, ${courses.interrupted} interrupted mid-build` : ''));
@@ -95,6 +96,18 @@ const server = app.listen(config.port, () => {
       console.warn('[server] course queue durability is '
         + `${courses.durability} — a redeploy can interrupt a course. Attach a Railway volume.`);
     }
+    // A clean boot resumes itself; a crash loop or interrupted work waits for a
+    // person. The decision is taken here, after restore() has parked anything
+    // caught mid-build, and the marker is written whatever was decided.
+    const decision = cw.bootDecision({
+      interrupted: courses.interrupted,
+      lastBootAt: cw.readBoot(),
+      enabled: process.env.COURSE_AUTO_RESUME !== '0',
+      cooldownMs: Number(process.env.COURSE_AUTO_RESUME_COOLDOWN_MS) || 15 * 60_000,
+    });
+    cw.markBoot();
+    console.log(`[course-worker] boot: ${decision.why}`);
+    if (decision.resume) cw.resume('boot');
   } catch (e) {
     console.error('[server] course restore failed:', e.message);
   }

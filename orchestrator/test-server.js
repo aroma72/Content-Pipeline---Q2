@@ -1038,6 +1038,25 @@ async function bridgeChecks() {
         return 'reserved 2 x $2.50, released on reject';
       })); });
 
+  await check('a stopped course reads held: null, and /health counts only courses with work behind a hold',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      const queue = require(path.join(__dirname, 'lib', 'queue'));
+      require(path.join(__dirname, '..', 'server', 'lib', 'job-store')).reset();
+      queue.resetPathCache();
+      const mk = (course, slug) => queue.enqueue({ topic: slug, series: 'testing', slug, source: 'course-builder', notes: `[${course}] brief` });
+      mk('course-stopped', 's-x'); mk('course-waiting', 'w-x'); mk('course-waiting', 'w-y');
+      queue.fail('testing/s-x', 'run-1', 'rejected by a human');
+      queue.fail('testing/w-x', 'run-2', 'broke');
+      const auth = { authorization: `Bearer ${LMS_TOKEN}` };
+      const stopped = await req(port, { path: '/api/v1/courses/course-stopped', headers: auth });
+      assert(stopped.json.worker.held === null, `a course with nothing queued reports a hold: ${JSON.stringify(stopped.json.worker.held)}`);
+      const waiting = await req(port, { path: '/api/v1/courses/course-waiting', headers: auth });
+      assert(waiting.json.worker.held && waiting.json.worker.held.by === 'testing/w-x', 'a course with a queued sibling lost its hold');
+      const h = await req(port, { path: '/health' });
+      assert(h.json.courses.worker.heldCourses === 1, `heldCourses should be 1, got ${h.json.courses.worker.heldCourses}`);
+      return 'stopped: null, waiting: held, heldCourses 1';
+    }); });
+
   await check('resume and skip are on the index the LMS pins to',
     () => withServer(BASE_ENV, {}, async (port) => {
       const r = await req(port, { path: '/api/v1' });

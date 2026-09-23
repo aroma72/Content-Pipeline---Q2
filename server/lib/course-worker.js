@@ -141,18 +141,26 @@ function humanReleased(i) {
 }
 
 /**
- * Courses that need a person: any lesson blocked, or failed and not skipped.
+ * Courses with work waiting behind a lesson that needs a person: a lesson
+ * blocked, or failed and not skipped, AND at least one queued sibling.
  * Map of courseId -> { courseId, by, status, since }. A loose lesson holds nothing.
+ *
+ * The second condition is the point. A course whose rejected lesson has no
+ * queued sibling is STOPPED, not held: nothing is being kept from building, and
+ * reporting it as held put a course a person had finished with on /health for a
+ * day, indistinguishable from one waiting for that person (LMS memo 2026-09-23 §3).
  */
 function heldCourses() {
+  const items = queue.currentItems().filter((i) => i.source === 'course-builder');
+  const withWork = new Set(items.filter((i) => i.status === queue.ITEM_STATUS.QUEUED).map(courseTagOf));
   const held = new Map();
-  for (const i of queue.currentItems()) {
-    if (i.source !== 'course-builder') continue;
+  for (const i of items) {
     const holds = i.status === queue.ITEM_STATUS.BLOCKED
       || (i.status === queue.ITEM_STATUS.FAILED && i.skipped !== true);
     if (!holds) continue;
     const c = courseTagOf(i);
-    if (c && !held.has(c)) held.set(c, { courseId: c, by: i.id, status: i.status, since: i.updatedAt || null });
+    if (!c || !withWork.has(c) || held.has(c)) continue;
+    held.set(c, { courseId: c, by: i.id, status: i.status, since: i.updatedAt || null });
   }
   return held;
 }
@@ -428,10 +436,65 @@ function requeue(lessonId, by = 'Aroma', courseId = null, tenantId = null) {
       + 'can be retried; a lesson waiting for a person should be approved or rejected, and '
       + 'retrying one that is building or built would buy a second render of the same video.' };
   }
+  // A sibling failed at $0 because its course was rejected is not a build that
+  // went wrong; it is a decision somebody made. Retrying it one lesson at a time
+  // would rebuild a course a person just stopped -- the LMS refuses this on its
+  // side (`course_stopped`), and so do we.
+  if (item.stoppedWithCourse) {
+    return { ok: false, why: `That lesson was stopped when '${item.stoppedWithCourse}' was rejected. `
+      + 'It never ran, so there is nothing to retry; build the course again if you want it.' };
+  }
   queue.requeue(lessonId, { requeuedBy: by });
   log(`requeued ${lessonId} by ${by} -- building it again from the start`);
   kick();
   return { ok: true };
+}
+
+/**
+ * Should this boot start the worker by itself?
+ *
+ * Every deploy used to park the queue until a person called /worker/resume,
+ * because restore() starts nothing and boot never kicked. That rule exists for a
+ * crash loop -- three unattended rebuilds is real money -- but the boot line
+ * already tells the cases apart: interrupted work means the last process died
+ * mid-build, and a boot minutes after the previous one is a restart loop. A
+ * clean boot outside the cooldown can resume without ever repeating the build
+ * that killed a container. Pure; index.js supplies the facts and acts on the answer.
+ */
+function bootDecision({ interrupted = 0, lastBootAt = null, now = Date.now(), cooldownMs = 15 * 60_000, enabled = true } = {}) {
+  if (!enabled) return { resume: false, why: 'COURSE_AUTO_RESUME=0 -- a person starts the worker (POST /api/v1/courses/worker/resume)' };
+  if (interrupted > 0) {
+    return { resume: false, why: `${interrupted} lesson(s) were mid-build when the last process died; a person decides before anything is rebuilt` };
+  }
+  const last = lastBootAt ? Date.parse(lastBootAt) : NaN;
+  if (Number.isFinite(last) && now - last < cooldownMs) {
+    const mins = Math.max(1, Math.round((now - last) / 60_000));
+    return { resume: false, why: `booted ${mins} min ago -- looks like a restart loop; waiting for a person or the next clean boot` };
+  }
+  return { resume: true, why: 'clean boot -- resuming the eligible lessons' };
+}
+
+function bootMarkerPath() {
+  const s = store();
+  return s && s.dir ? require('path').join(s.dir, 'boot.json') : null;
+}
+
+/** When this service last booted, from the job store; null if never or unreadable. */
+function readBoot() {
+  const p = bootMarkerPath();
+  if (!p) return null;
+  try { return JSON.parse(require('fs').readFileSync(p, 'utf8')).lastBootAt || null; } catch { return null; }
+}
+
+/** Record this boot on the job store, so the next one can tell a loop from a deploy. */
+function markBoot(at = new Date().toISOString()) {
+  const p = bootMarkerPath();
+  if (!p) return null;
+  try {
+    require('fs').mkdirSync(require('path').dirname(p), { recursive: true });
+    require('fs').writeFileSync(p, JSON.stringify({ lastBootAt: at }) + '\n');
+    return at;
+  } catch (e) { log(`could not write the boot marker: ${e.message}`); return null; }
 }
 
 /**
@@ -464,5 +527,5 @@ function restore() {
 
 module.exports = {
   drain, kick, status, approve, reject, requeue, skip, resume, queued, eligible, heldCourses,
-  courseTagOf, awaitingApproval, restore,
+  courseTagOf, awaitingApproval, restore, bootDecision, readBoot, markBoot,
 };

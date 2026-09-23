@@ -3742,6 +3742,87 @@ async function courseChecks() {
     return 'reserved 2.50, settled 1.23';
   });
 
+  // ── a stopped course is not a held course ────────────────────────────────────
+  // course-mub7whoa read `held.by: <a lesson Aroma rejected>` for a day, and /health
+  // counted it in heldCourses, with nothing queued behind it. A hold that can never
+  // be released looks, on a dashboard, exactly like one waiting for a person.
+  await checkAsync('a course with nothing queued behind its failed lesson is stopped, not held', async () => {
+    await fresh();
+    const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+    course('course-a', 'a1');
+    queue.fail('demo/a1', 'run-1', 'rejected by a human: wrong format');
+    assert(cw.heldCourses().size === 0, 'a course with no queued lesson is reported as held');
+    assert(cw.status().held.length === 0, 'status().held lists a course nothing is waiting behind');
+    assert(cw.eligible().length === 0, 'nothing should be eligible either');
+    return 'held: none';
+  });
+
+  await checkAsync('a course with a queued sibling behind a failed lesson is held', async () => {
+    await fresh();
+    const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+    course('course-a', 'a1'); course('course-a', 'a2');
+    queue.fail('demo/a1', 'run-1', 'broke');
+    const held = cw.heldCourses();
+    assert(held.size === 1 && held.get('course-a').by === 'demo/a1', `held: ${JSON.stringify([...held.values()])}`);
+    return 'held by a1';
+  });
+
+  await checkAsync('a sibling stopped by a reject cannot be requeued one lesson at a time', async () => {
+    await fresh();
+    const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+    course('course-a', 'a1'); course('course-a', 'a2');
+    queue.block('demo/a1', 'run-1', 'awaiting human review', 'review');
+    cw.reject('demo/a1', 'wrong format', 'course-a');
+    for (let i = 0; i < 50 && cw.status().running; i++) await new Promise((res) => setTimeout(res, 10));
+    const r = cw.requeue('demo/a2', 'test', 'course-a');
+    assert(r.ok === false && /rejected/.test(r.why), `a stopped sibling was requeued: ${JSON.stringify(r)}`);
+    assert(queue.get('demo/a2').status === 'failed', 'the stopped sibling moved');
+    // A lesson that merely failed is still retryable: that is a build that did not work,
+    // not a decision somebody made.
+    assert(cw.requeue('demo/a1', 'test', 'course-a').ok === true, 'the rejected lesson itself cannot be retried');
+    for (let i = 0; i < 50 && cw.status().running; i++) await new Promise((res) => setTimeout(res, 10));
+    return 'refused for the sibling, allowed for a plain failure';
+  });
+
+  // ── a clean boot resumes itself; a crash loop does not ───────────────────────
+  // Every deploy left the queue parked until a person called /worker/resume. The
+  // boot line already tells the two cases apart: `0 interrupted` is a clean boot.
+  check('bootDecision resumes a clean boot and refuses a restart loop or interrupted work', () => {
+    const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+    const now = Date.parse('2026-09-23T12:00:00Z');
+    const min = 60_000;
+    const d = (o) => cw.bootDecision({ now, cooldownMs: 15 * min, enabled: true, interrupted: 0, lastBootAt: null, ...o });
+    assert(d({}).resume === true, 'a clean first boot did not resume');
+    assert(d({ lastBootAt: new Date(now - 60 * min).toISOString() }).resume === true, 'a boot an hour after the last did not resume');
+    const loop = d({ lastBootAt: new Date(now - 3 * min).toISOString() });
+    assert(loop.resume === false && /ago/.test(loop.why), `a boot 3 minutes after the last resumed: ${JSON.stringify(loop)}`);
+    const hurt = d({ interrupted: 1 });
+    assert(hurt.resume === false && /mid-build/.test(hurt.why), `a boot with interrupted work resumed: ${JSON.stringify(hurt)}`);
+    const off = d({ enabled: false });
+    assert(off.resume === false && /COURSE_AUTO_RESUME/.test(off.why), 'disabling it is not honoured or not explained');
+    return 'clean → resume; loop, interrupted, disabled → wait';
+  });
+
+  check('the boot marker round-trips on the job store', () => {
+    freshQueue();
+    const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+    assert(cw.readBoot() === null, 'a fresh store already has a boot marker');
+    const at = cw.markBoot();
+    assert(at && cw.readBoot() === at, `marker did not round-trip: ${cw.readBoot()} vs ${at}`);
+    return at;
+  });
+
+  check('index.js decides at boot through bootDecision, and never kicks directly', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'server', 'index.js'), 'utf8');
+    const restoreAt = src.indexOf('.restore()');
+    const decideAt = src.indexOf('bootDecision(');
+    assert(decideAt > -1, 'index.js never consults bootDecision, so every deploy parks the queue');
+    assert(restoreAt > -1 && decideAt > restoreAt, 'the boot decision is taken before restore() has parked interrupted work');
+    assert(!/\.kick\(/.test(src), 'index.js kicks the worker directly, bypassing the crash-loop guard');
+    assert(/markBoot\(/.test(src), 'index.js never writes the boot marker, so the cooldown can never fire');
+    return 'restore → bootDecision → resume/markBoot';
+  });
+
   // Put the plain stub back for anything after this section.
   spine.execute = async (item, opts) => { lastSpineOpts = opts; return { status: 'blocked' }; };
 
