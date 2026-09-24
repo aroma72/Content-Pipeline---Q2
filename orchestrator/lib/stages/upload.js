@@ -17,6 +17,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { BlockedError } = require('../spine-errors');
 const state = require('../state');
 const jsonl = require('../jsonl');
@@ -52,6 +53,67 @@ function buildDescription({ item, script, qa }) {
   return lines.join('\n').slice(0, 4900); // YouTube's limit is 5000
 }
 
+/**
+ * Find the branded deliverable, wherever it now lives.
+ *
+ * Returns `{ path, from, cleanup }`. `cleanup` is a function the caller MUST run
+ * once it is done: when the bytes came down from Drive they are in a temp file
+ * that nothing else will ever remove, and leaking those would recreate the disk
+ * problem this whole change exists to solve.
+ */
+async function resolveSource(finalPath, item, log) {
+  // 1. The render directory -- the normal case for a single video that runs
+  //    straight through without a human pause.
+  if (finalPath && fs.existsSync(finalPath)) {
+    return { path: finalPath, from: 'render-dir', cleanup: () => {} };
+  }
+
+  const deliverables = require('../deliverables');
+
+  // 2. The volume copy.
+  const held = deliverables.find(item.series, item.slug);
+  if (held && held.file && fs.existsSync(held.file)) {
+    log('render directory is gone; uploading the copy held on the volume');
+    return { path: held.file, from: 'volume', cleanup: () => {} };
+  }
+
+  // 3. Drive.
+  const drive = deliverables.driveRecord(item.series, item.slug);
+  if (drive && drive.saved2drive && drive.driveFileId) {
+    const gdrive = require('../gdrive');
+    if (!gdrive.isAuthorised()) {
+      throw new BlockedError(
+        `This lesson's video was offloaded to Google Drive (${drive.driveFileId}) and the ` +
+        'local copies were reclaimed, but Drive is not authorised on this machine so it ' +
+        'cannot be fetched back.\n  Set GDRIVE_REFRESH_TOKEN, or run: node orchestrator/gdrive-auth.js',
+        { blocker: 'video is on Drive but Drive is not authorised', code: 'upload' }
+      );
+    }
+    const tmp = path.join(os.tmpdir(), `cq-upload-${item.slug}-${Date.now()}_final.mp4`);
+    log(`fetching the deliverable back from Drive (${drive.driveFileId})`);
+    const got = await gdrive.downloadFile({ fileId: drive.driveFileId, toPath: tmp, log });
+
+    // The size Drive recorded at offload time is a free integrity check on the
+    // way back. A truncated download that reached YouTube would publish a video
+    // that cuts off partway through, which nobody would notice until a learner did.
+    if (drive.bytes && got.bytes !== drive.bytes) {
+      try { fs.unlinkSync(tmp); } catch { /* best effort */ }
+      throw new BlockedError(
+        `Fetched ${got.bytes} bytes from Drive but the record says ${drive.bytes}. ` +
+        'Refusing to publish a partial video.',
+        { blocker: 'incomplete download from Drive', code: 'upload' }
+      );
+    }
+    return {
+      path: tmp,
+      from: 'drive',
+      cleanup: () => { try { fs.unlinkSync(tmp); } catch { /* best effort */ } },
+    };
+  }
+
+  return { path: null, from: 'nowhere', cleanup: () => {} };
+}
+
 module.exports = {
   name: 'upload',
   // One attempt at the stage level: uploadVideo already retries and resumes
@@ -84,9 +146,24 @@ module.exports = {
       return { skipped: 'dry-run', wouldUpload: finalPath };
     }
 
-    if (!fs.existsSync(finalPath)) {
+    // WHERE THE BYTES ARE, IN ORDER OF PREFERENCE.
+    //
+    // This stage runs AFTER the human review gate: a course lesson blocks at
+    // `review`, waits (hours, days), and only then is requeued into `upload`. By
+    // that point the Drive offload has almost always reclaimed both the render
+    // directory and the volume copy, so `produced.finalPath` -- recorded by a
+    // produce stage that ran before the wait -- points at a file that no longer
+    // exists.
+    //
+    // Without this ladder, offloading would have silently broken publishing for
+    // every course lesson, and it would have looked like a deliverable that went
+    // missing rather than one that was deliberately moved.
+    const resolved = await resolveSource(finalPath, item, log);
+    const uploadPath = resolved.path;
+    if (!uploadPath) {
       throw new BlockedError(
-        `Deliverable is missing at ${finalPath}.`,
+        `Deliverable is missing at ${finalPath}, and no copy was found on the volume ` +
+        `or on Drive.`,
         { blocker: 'deliverable absent', code: 'upload' }
       );
     }
@@ -119,7 +196,7 @@ module.exports = {
     let result;
     try {
       result = await yt.uploadVideo({
-        filePath: finalPath,
+        filePath: uploadPath,
         title,
         description: buildDescription({ item, script: artifacts.script, qa: artifacts.qa }),
         tags: [item.series, 'Taleemabad', 'explainer'],
@@ -158,6 +235,12 @@ module.exports = {
       }
 
       throw e;
+    } finally {
+      // Runs on success AND on every throw above. If the bytes came down from
+      // Drive they are in a temp file nothing else owns, and every blocked
+      // upload -- an expired grant, exhausted quota -- would otherwise leave a
+      // 30MB orphan behind on the very disk this change exists to free.
+      resolved.cleanup();
     }
 
     // Born provisional (2.3). Recorded so a human can find and clear it later
@@ -200,6 +283,9 @@ module.exports = {
       privacyStatus: result.privacyStatus,
       bytes: result.bytes,
       provisional,
+      // Which copy was published. Worth recording: "it came back from Drive" is
+      // the difference between a healthy offload and a missing render.
+      sourcedFrom: resolved.from,
     };
   },
 };

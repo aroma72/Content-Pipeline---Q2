@@ -104,6 +104,41 @@ function createApp(opts = {}) {
           };
         } catch (e) { return { error: e.message }; }
       })(),
+      // WHAT IS ACTUALLY USING SPACE AND MEMORY.
+      //
+      // Added because the two were being confused. Railway's dashboard graphs RAM
+      // and does not graph volume usage at all, so "the service is using too much
+      // memory" was reached from the only number on screen -- while the unbounded,
+      // service-restarting problem was the 50GB volume, which nothing displayed.
+      //
+      // Both are reported here so the next person can tell them apart in one GET:
+      // `rss` is the container's memory, `deliverables.videoBytes` is the half of
+      // the disk that grows per lesson and that offloading reclaims.
+      //
+      // Counts and bytes only, no ids -- this route has no credential.
+      storage: (() => {
+        try {
+          const listed = require('../orchestrator/lib/deliverables').list();
+          const mem = process.memoryUsage();
+          return {
+            deliverables: {
+              durable: listed.durable,
+              lessons: listed.items.length,
+              bytes: listed.bytes,
+              // The number to watch. Metadata is KB per lesson; a video is tens of MB.
+              videoBytes: listed.videoBytes || 0,
+              videosHeldLocally: listed.items.filter((i) => i.videoLocal).length,
+              offloadedToDrive: listed.offloadedCount || 0,
+            },
+            driveOffload: (() => {
+              const gd = require('../orchestrator/lib/gdrive');
+              // Never the token or the folder id -- only whether they are present.
+              return { configured: gd.isConfigured(), authorised: gd.isAuthorised(), folderSet: Boolean(gd.folderId()) };
+            })(),
+            memory: { rssBytes: mem.rss, heapUsedBytes: mem.heapUsed, externalBytes: mem.external },
+          };
+        } catch (e) { return { error: e.message }; }
+      })(),
       tenants: tenants.registry().health(),
       webhooks: webhook.health(),
     });
@@ -698,62 +733,14 @@ function createApp(opts = {}) {
     if (!job) return undefined;
     if (!job.script) return res.status(404).type('text').send('No script for this job (or it expired).');
 
-    const sc = job.script;
-    const cp = sc.checkpoint || null;
-    const L = [];
-
-    L.push(`# ${sc.title}`, '');
-    if (sc.interpretation) L.push(`> ${sc.interpretation}`, '');
-    L.push(`**Topic asked:** ${job.topic}`);
-    if (sc.slo) L.push(`**Outcome:** ${sc.slo}`);
-    if (sc.scenario) L.push(`**Scenario:** ${sc.scenario}`);
-    L.push(`**Review:** ${sc.gate || '?'}`
-      + (sc.redrafts ? ` after ${sc.redrafts} redraft${sc.redrafts > 1 ? 's' : ''}` : ' on the first pass')
-      + ` · ${sc.beats.length} beats`);
-    L.push('', '---', '', '## The script', '');
-    L.push('One beat is one spoken sentence, and the picture shown while it is spoken.', '');
-
-    for (const b of sc.beats) {
-      if (b.mode === 'checkpoint') {
-        L.push('', `**— the video pauses here (beat ${b.id}) —**`, '');
-        continue;
-      }
-      L.push(`**${b.id}** *(${b.mode})*  ${b.vo}`);
-
-      // What the beat actually puts ON SCREEN, which is the half of a script that
-      // decides whether a frame is worth watching -- and the half this file used
-      // to omit entirely. An `ali` or `scene` beat draws its art and nothing else
-      // unless it carries a caption or a working overlay, so "no words" here is a
-      // real defect a reader can catch before a single dollar is spent.
-      const onScreen = [];
-      if (b.cap) onScreen.push(`caption: "${b.cap}"`);
-      if (b.overlay && b.overlay.tpl) onScreen.push(`overlay: ${b.overlay.tpl}`);
-      if (b.info && b.info.tpl) onScreen.push(`info: ${b.info.tpl}`);
-      if (onScreen.length) {
-        L.push(`    ${onScreen.join(' · ')}`);
-      } else if (b.mode === 'ali' || b.mode === 'scene') {
-        L.push('    ⚠ NO WORDS ON SCREEN — this beat draws art and nothing else.');
-      }
-      if (b.art) L.push(`    art: ${String(b.art).slice(0, 200)}`);
-      L.push('');
-    }
-
-    if (cp) {
-      L.push('---', '', '## The checkpoint', '');
-      L.push('Never drawn, never spoken. The video pauses and the LMS shows this as a popup.', '');
-      L.push(`**${cp.stem}**`, '');
-      cp.options.forEach((o, i) => {
-        L.push(`${i === cp.answer ? '- **[correct]**' : '-'} ${o}`);
-      });
-      L.push('', `**Why the others are wrong:** ${cp.explain}`, '');
-    }
-
-    L.push('---', '', `_Made by Content Queen for Taleemabad University · ${new Date().toISOString().slice(0, 10)}_`, '');
-
-    const name = (sc.slug || 'script').replace(/[^a-z0-9-]/gi, '-').slice(0, 60);
+    // Rendered by lib/script-md.js, which the course script gate serves too: an
+    // instructor deciding whether to spend on a lesson must read exactly what the
+    // demo reader reads, and two copies of this would drift apart unnoticed.
+    const scriptMd = require('./lib/script-md');
+    const body = scriptMd.render(job.script, { topic: job.topic });
     res.set('Content-Type', 'text/markdown; charset=utf-8');
-    res.set('Content-Disposition', `attachment; filename="${name}.md"`);
-    return res.send(L.join('\n'));
+    res.set('Content-Disposition', `attachment; filename="${scriptMd.filename(job.script.slug)}"`);
+    return res.send(body);
   });
 
   /**

@@ -11,11 +11,17 @@
 
 /** A dependency the stage cannot proceed without (missing spec, access, approval). */
 class BlockedError extends Error {
-  constructor(message, { blocker, planItem, details, code } = {}) {
+  constructor(message, { blocker, planItem, details, code, queueFields } = {}) {
     super(message);
     this.name = 'BlockedError';
     this.blocker = blocker || null;
     this.planItem = planItem || null;
+    // Fields to write onto the QUEUE ITEM, not just the run state, when this
+    // blocks. queue.block() writes only status/reason/blockedBy/spend, and run
+    // state is deliberately off the volume (paths.js:36-39), so a blocker whose
+    // handler needs a value to survive a redeploy -- the sha of the script a
+    // person is being asked to approve -- has nowhere else to put it.
+    this.queueFields = queueFields || null;
     // A stable, closed-set name for WHY this blocked, as opposed to `blocker`
     // and `message`, which are prose for a person to read. It is the only part
     // of this error that survives to the queue and out through the API, because
@@ -80,6 +86,12 @@ const BLOCKED_BY = {
   PREFLIGHT: 'preflight',
   /** A person must watch the video and approve it. The ordinary case. */
   REVIEW: 'review',
+  /**
+   * A person must READ THE SCRIPT before anything is bought. Sits before
+   * `references` and `produce`, so a lesson stopped here has cost cents of model
+   * calls and no media at all -- which is the whole point of it.
+   */
+  SCRIPT_APPROVAL: 'script-approval',
   /** A sensor on the finished render disagreed with the script. */
   POST_RENDER_CHECK: 'post-render-check',
   /** Money is needed and no budget was pre-approved. */

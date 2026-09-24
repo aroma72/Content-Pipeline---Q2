@@ -460,6 +460,19 @@ for `kick(`. If it is there, the assertion is a spend. Check `git status` for a 
 folder — `rm -rf explainer-videos/testing` also deletes the **committed** `testing/ai-in-2030`
 fixture (recover with `git checkout -- explainer-videos/testing/ai-in-2030`).
 
+**Recurred 2026-09-24, and the first fix does not work.** A script-gate test hit
+`POST .../script/approve`; `withCourse()` did not stub the worker, the real spine ran, and it made
+two real Opus calls ($0.73) before it was killed. The obvious guard -- reassigning `cw.kick` from
+the test, the way `withQuietWorker` does -- **is not enough**: `course-worker`'s own verbs
+(`approve`, `approveScript`, `revise`, `requeue`) call their module-local `kick()`, not
+`module.exports.kick()`, so replacing the export changes nothing for them. It only works for callers
+that go through the export, which is why it worked for `/courses/build` (api.js does
+`require('./course-worker').kick()`).
+
+**The only chokepoint that cannot be routed around is `spine.execute`.** `orchestrator/test-server.js`
+`withCourse()` now replaces it with a stub that blocks the item, and restores it in a `finally`. Do
+that in any harness where a route under test can reach the worker -- stub the SPINE, never the kick.
+
 
 ---
 
@@ -922,6 +935,72 @@ now first in line. Scope (4) has to exist before the restart (3) is safe.
 
 Related: [[H9]] (the artefact is the evidence), [[H13]] (a guard that asserts presence rather
 than content passes forever — `building` asserted presence of work, not its state).
+
+---
+
+### H29. A Google refresh token is scope-bound — you cannot reuse one across APIs
+
+**Added:** 2026-09-24 | **Applies to:** adding any second Google API (Drive, Sheets, Gmail) to a project that already has one
+**Invalidate if:** Google changes OAuth2 refresh-token semantics
+
+`YOUTUBE_REFRESH_TOKEN` worked perfectly and refreshed cleanly, so reusing it for a
+Drive upload looked free. It is not: a refresh token carries exactly the scopes it
+was consented with, and that one carries `youtube.upload` alone. The failure does
+not appear at refresh time — the refresh succeeds — it appears as a confusing 403
+partway through the first upload.
+
+Check before designing around it, in one call: exchange the refresh token and read
+`scope` off the token response (or hit `tokeninfo`). That is a read-only call and it
+converts an assumption into a fact in about thirty seconds.
+
+**How to apply:** mint a SECOND token against the same OAuth client rather than
+re-consenting one token for both scopes. Same Google Cloud project, nothing new to
+create, and it keeps the two APIs in separate failure domains — a botched consent for
+the new API cannot take the working one down. `gdrive.accessToken()` asserts the scope
+is present and says so in English rather than letting a 403 surface later.
+
+---
+
+### H30. Never delete a local artefact on "the upload returned OK" — delete on the remote's own checksum
+
+**Added:** 2026-09-24 | **Applies to:** any offload/archive step that reclaims space
+**Invalidate if:** never
+
+An upload call returning 200 means the request was accepted, not that the stored
+bytes equal yours. Google Drive returns its own server-side `md5Checksum`; S3 returns
+an ETag. Compare it against a hash of the local file, and treat a mismatch as "keep
+both copies", never as "probably fine".
+
+Order matters as much as the check: capture the artefact's attributes and checksum
+**before** the upload, so a crash mid-upload still leaves a record of what the file
+was; write the record proving the remote copy exists **before** deleting; and if the
+record cannot be written, do not delete — an unrecorded copy is one nobody can find.
+
+**How to apply:** `orchestrator/lib/drive-offload.js` is the worked example, and
+`test-regressions.js` §12 asserts the failure directions rather than the happy path:
+a mismatched md5, a thrown upload and an unconfigured client must each leave the
+video exactly where it was. Tests for a deleter are tests about what survives.
+
+---
+
+### H31. The render working dirs are the RAM plateau, not just the disk
+
+**Added:** 2026-09-24 | **Applies to:** reading the Railway memory graph for this service
+**Invalidate if:** compile-lesson.js stops writing per-frame PNGs
+
+Refines H7 above rather than replacing it. H7 established that Railway's RAM metric
+is cgroup usage including file-backed pages, and that the ~10,800 PNGs per lesson in
+`frames/` sit in page cache until reclaimed. The consequence was not drawn at the
+time: **deleting those directories reduces the RAM number as well as the disk.**
+
+So when a screenshot of the memory graph prompts "we are using too much memory", the
+honest answer is not "that is page cache, ignore it" and not "this is purely a disk
+fix" — it is that the same uncleaned scratch output causes both readings. The Drive
+offload's working-dir sweep (`art frames audio clips layers out`) is what removes it.
+
+**How to apply:** do not present the disk fix and the memory graph as unrelated. Check
+`/health.storage` — `deliverables.videoBytes` and `memory.rssBytes` are reported side
+by side precisely so the two can be told apart when they genuinely are.
 
 ---
 

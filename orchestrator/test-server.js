@@ -444,7 +444,7 @@ async function lessonFileChecks() {
 
   // The queue memoises its store, and job-store is a singleton, so both have to be
   // dropped from the registry before an app is built against a different dir.
-  const withCourse = async (fn, { withMp4 = false } = {}) => {
+  const withCourse = async (fn, { withMp4 = false, scriptGate = false, offloaded = false } = {}) => {
     const env = freshEnv({ JOB_STORE_DURABLE: '1' });
     for (const m of ['../../server/lib/job-store', '../lib/queue', '../lib/deliverables']) {
       try { delete require.cache[require.resolve(path.join(__dirname, m))]; } catch { /* fine */ }
@@ -452,6 +452,13 @@ async function lessonFileChecks() {
     delete require.cache[require.resolve(path.join(__dirname, '..', 'server', 'lib', 'job-store'))];
     delete require.cache[require.resolve(path.join(__dirname, 'lib', 'queue'))];
     delete require.cache[require.resolve(path.join(__dirname, 'lib', 'deliverables'))];
+    // course-worker binds `queue` at module load, so a copy left in the cache holds
+    // the PREVIOUS fixture's store and answers "No lesson '<id>'" for a lesson that
+    // is plainly there. Anything that captures the store at load time has to be
+    // dropped alongside it.
+    try {
+      delete require.cache[require.resolve(path.join(__dirname, '..', 'server', 'lib', 'course-worker'))];
+    } catch { /* not loaded yet */ }
 
     const saved = {};
     for (const k of Object.keys(env)) { saved[k] = process.env[k]; process.env[k] = env[k]; }
@@ -465,12 +472,26 @@ async function lessonFileChecks() {
         source: 'course-builder',
         notes: `[${COURSE}] a brief`,
       });
-      queue.block(LESSON, 'run-fixture-1', 'the frame gate found problems', 'post-render-check');
+      queue.block(LESSON, 'run-fixture-1',
+        scriptGate ? 'awaiting script approval' : 'the frame gate found problems',
+        scriptGate ? 'script-approval' : 'post-render-check');
 
       // What produce.js copies BEFORE the frame gate: beats and timings, no video.
+      // With scriptGate, what stages/script-approval.js copies EARLIER still: the
+      // same beats plus the run context, and no video that will ever exist unless
+      // somebody reads it.
       const vid = fs.mkdtempSync(path.join(os.tmpdir(), 'vidfix-'));
-      fs.writeFileSync(path.join(vid, 'beats.js'), 'module.exports=[{id:"01"}];');
+      const beatsSrc = scriptGate
+        ? 'module.exports=[{id:"01",mode:"ali",vo:"Ali opens the shop.",cap:"Monday"},'
+          + '{id:"02",mode:"checkpoint",quiz:{stem:"Why?",options:["a","b","c","d"],answer:1,explain:"because"}}];'
+        : 'module.exports=[{id:"01"}];';
+      fs.writeFileSync(path.join(vid, 'beats.js'), beatsSrc);
       fs.writeFileSync(path.join(vid, 'durations.json'), '{"01":2.5}');
+      if (scriptGate) {
+        fs.writeFileSync(path.join(vid, 'run-context.json'), JSON.stringify({
+          topic: 'A lesson that blocked', research: { brief: 'b' }, gate: { verdict: 'READY' },
+        }));
+      }
       if (withMp4) fs.writeFileSync(path.join(vid, 'x_final.mp4'), Buffer.alloc(4096, 7));
       deliverables.persist({
         series: 'fixtures',
@@ -478,8 +499,71 @@ async function lessonFileChecks() {
         videoDir: vid,
         ...(withMp4 ? { finalPath: path.join(vid, 'x_final.mp4') } : {}),
       });
+      if (scriptGate) {
+        // The fingerprint the stage records on the durable item -- the value an
+        // approval has to name.
+        const held = deliverables.findScript('fixtures', 'a-lesson-that-blocked');
+        queue.setStatus(LESSON, 'blocked', { scriptSha: deliverables.fingerprint(held.beats) });
+      }
 
-      return await withServer(env, {}, fn);
+      // The state after a Drive offload: the records are on the volume, the beats
+      // and timings are still there, and the mp4 is deliberately gone. Built by
+      // hand rather than by running the offload, because this suite must not touch
+      // the network and the offload's own ordering is covered in test-regressions.
+      if (offloaded) {
+        const dest = deliverables.dirFor('fixtures', 'a-lesson-that-blocked');
+        for (const f of fs.readdirSync(dest)) {
+          if (/\.mp4$/i.test(f)) fs.unlinkSync(path.join(dest, f));
+        }
+        fs.writeFileSync(path.join(dest, 'drive.json'), JSON.stringify({
+          saved2drive: true, driveFileId: 'drive-file-1',
+          driveUrl: 'https://drive.google.com/file/d/drive-file-1/view',
+          driveName: 'fixtures__x_final.mp4', bytes: 4096,
+          md5: 'aaaa', sha256: 'bbbb', verified: true, savedAt: '2026-09-24T00:00:00.000Z',
+        }));
+        fs.writeFileSync(path.join(dest, 'video-meta.json'), JSON.stringify({
+          bytes: 4096, md5: 'aaaa', sha256: 'bbbb', durationSeconds: 119.73,
+          width: 1920, height: 1080, fps: 30, videoCodec: 'h264',
+          pixelFormat: 'yuv420p', audioCodec: 'aac', complete: true,
+        }));
+        queue.markSavedToDrive(LESSON, {
+          driveFileId: 'drive-file-1',
+          driveUrl: 'https://drive.google.com/file/d/drive-file-1/view',
+          bytes: 4096, verified: true, savedAt: '2026-09-24T00:00:00.000Z',
+        });
+      }
+
+      // NOTHING IN THIS SUITE MAY START A BUILD. approve, revise and the script
+      // gate all call course-worker.kick(), which drains the queue through the REAL
+      // spine -- and on 2026-09-24 a script-gate test did exactly that and made two
+      // real model calls ($0.73) before it was killed. The routes are what is under
+      // test; the worker behind them is covered in test-regressions with a stubbed
+      // spine. So the kick is a no-op here, and it is stubbed on the same fresh
+      // module instance the routes will resolve, not on a stale one.
+      // Stubbed at the SPINE, not at kick(): course-worker's verbs call their own
+      // module-local kick(), so replacing the export would not stop them, and
+      // approveScript/revise both kick. Neutering execute() is the one place that
+      // cannot be routed around.
+      const spine = require(path.join(__dirname, 'lib', 'spine'));
+      const realExecute = spine.execute;
+      spine.execute = async (item) => {
+        const q = require(path.join(__dirname, 'lib', 'queue'));
+        q.block(item.id, 'run-stub', 'awaiting script approval', 'script-approval');
+        return { status: 'blocked' };
+      };
+      try {
+        return await withServer(env, {}, fn);
+      } finally {
+        spine.execute = realExecute;
+        // course-worker.seedFromScript copies the held script back into the render
+        // directory -- correct in production, repo dirt here. A suite that leaves
+        // untracked files under explainer-videos/ is one `git add .` away from
+        // committing a fixture as a real lesson.
+        try {
+          fs.rmSync(path.join(__dirname, '..', 'explainer-videos', 'fixtures'),
+            { recursive: true, force: true });
+        } catch { /* nothing to clean */ }
+      }
     } finally {
       for (const k of Object.keys(saved)) {
         if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k];
@@ -522,6 +606,66 @@ async function lessonFileChecks() {
       return 'blocked, but the bytes are there and it serves them';
     }, { withMp4: true }));
 
+  // OFFLOADED IS NOT MISSING.
+  //
+  // The whole storage fix rests on deleting our copy once TU's Drive has one. If
+  // that read as a 404, every offloaded lesson would look to the LMS exactly like
+  // a video that was lost -- which is the failure this service has already had
+  // once, and the reason they asked for the fetch route in the first place.
+  await check('an offloaded video answers with its Drive link, not a 404', () =>
+    withCourse(async (port) => {
+      const r = await req(port, { path: `/api/v1/courses/${COURSE}/lessons/${LESSON}/file`, headers: auth });
+      assert(r.status === 200, `expected 200, got ${r.status} ${r.text}`);
+      assert(r.json.saved2drive === true, `saved2drive not set: ${r.text}`);
+      assert(r.json.driveFileId === 'drive-file-1', `wrong file id: ${r.text}`);
+      assert(/^https:\/\/drive\.google\.com\//.test(r.json.driveUrl || ''), `no drive url: ${r.text}`);
+      assert(r.json.verified === true, 'the byte-for-byte check is not reported');
+      // The attributes have to outlive the bytes, or "what was this video?" becomes
+      // unanswerable the moment we reclaim the disk.
+      assert(r.json.video && r.json.video.width === 1920 && r.json.video.durationSeconds === 119.73,
+        `the measured attributes did not survive the offload: ${r.text}`);
+      assert(!r.json.error, `an offloaded video reported an error: ${r.text}`);
+      return '200 with the Drive link and the measured attributes';
+    }, { withMp4: true, offloaded: true }));
+
+  await check('the questions still work after the video is offloaded', () =>
+    withCourse(async (port) => {
+      // The reason beats.js and durations.json are never reclaimed: checkpoints and
+      // the catalogue row are recomputed from them per request. If the offload ever
+      // takes them, videos play and cannot be answered.
+      const r = await req(port, { path: `/api/v1/courses/${COURSE}/lessons/${LESSON}/beats`, headers: auth });
+      assert(r.status === 200, `expected 200, got ${r.status} ${r.text}`);
+      assert(/module\.exports/.test(r.json.beats), 'beats.js did not survive the offload');
+      assert(r.json.durations && r.json.durations['01'] === 2.5, 'durations did not survive the offload');
+      return 'beats and timings outlive the bytes';
+    }, { withMp4: true, offloaded: true }));
+
+  await check('the course view carries the Drive link so nothing has to be fetched to find it', () =>
+    withCourse(async (port) => {
+      const r = await req(port, { path: `/api/v1/courses/${COURSE}`, headers: auth });
+      assert(r.status === 200, `expected 200, got ${r.status} ${r.text}`);
+      const item = (r.json.items || []).find((i) => i.id === LESSON);
+      assert(item, `the fixture lesson is not in the course: ${r.text}`);
+      assert(item.saved2drive === true, `saved2drive missing from the course view: ${JSON.stringify(item)}`);
+      assert(item.driveUrl && item.driveFileId === 'drive-file-1', 'the Drive link is not on the course view');
+      // Both facts together. `deliverableAvailable: false` alone would read as
+      // "the video is gone"; beside saved2drive it reads as "not from here".
+      assert(item.deliverableAvailable === false,
+        'deliverableAvailable should be false once we no longer hold the bytes');
+      return 'saved2drive + driveUrl beside deliverableAvailable';
+    }, { withMp4: true, offloaded: true }));
+
+  await check('the capacity view separates metadata from video bytes', () =>
+    withCourse(async (port) => {
+      const r = await req(port, { path: '/api/v1/deliverables', headers: auth });
+      assert(r.status === 200, `expected 200, got ${r.status} ${r.text}`);
+      assert(r.json.offloadedCount === 1, `offloadedCount wrong: ${r.text}`);
+      assert(r.json.videoBytes === 0, `videoBytes should be 0 once reclaimed: ${r.text}`);
+      assert(r.json.localVideoCount === 0, `localVideoCount wrong: ${r.text}`);
+      assert(r.json.bytes > 0, 'the metadata we deliberately kept is not counted');
+      return 'offloaded counted, video bytes reclaimed, metadata still held';
+    }, { withMp4: true, offloaded: true }));
+
   await check('the course view says whether the bytes are fetchable, so nothing is inferred', () =>
     withCourse(async (port) => {
       const r = await req(port, { path: `/api/v1/courses/${COURSE}`, headers: auth });
@@ -544,6 +688,120 @@ async function lessonFileChecks() {
         'the mp4 is on the volume but the course view says it is not fetchable');
       return 'true for the same blockedBy, once the bytes exist';
     }, { withMp4: true }));
+
+  // ── the script gate (contract 1.2) ──────────────────────────────────────────
+
+  await check('the script of a waiting lesson can be read, and it names itself', () =>
+    withCourse(async (port) => {
+      const r = await req(port, { path: `/api/v1/courses/${COURSE}/lessons/${LESSON}/script`, headers: auth });
+      assert(r.status === 200, `expected 200, got ${r.status} ${r.text}`);
+      assert(r.json.awaitingApproval === true, 'the script view does not say it is waiting');
+      assert(r.json.sha && r.json.sha.length === 16, `no usable sha: ${r.json.sha}`);
+      // The spoken line AND what is on screen: the half of a script that decides
+      // whether a frame is worth watching.
+      const b1 = r.json.beats.find((b) => b.id === '01');
+      assert(b1 && b1.vo === 'Ali opens the shop.' && b1.cap === 'Monday',
+        `the beat did not survive the projection: ${JSON.stringify(b1)}`);
+      // The checkpoint is lifted out, because a reader judges it separately -- it
+      // is the one thing in the video a learner cannot skip.
+      assert(r.json.checkpoint && r.json.checkpoint.answer === 1, 'the checkpoint is not shown');
+      assert(r.json.checkpointAfterBeat === '02', 'the pause point is not named');
+      return 'beats, on-screen words, the checkpoint, and a sha to quote';
+    }, { scriptGate: true }));
+
+  await check('the script also comes back as markdown a person can read', () =>
+    withCourse(async (port) => {
+      const r = await req(port, { path: `/api/v1/courses/${COURSE}/lessons/${LESSON}/script.md`, headers: auth });
+      assert(r.status === 200, `expected 200, got ${r.status}`);
+      assert(/^text\/markdown/.test(r.headers['content-type'] || ''), `wrong type: ${r.headers['content-type']}`);
+      assert(/Ali opens the shop\./.test(r.text), 'the spoken line is missing');
+      assert(/caption: "Monday"/.test(r.text), 'what is on screen is missing');
+      assert(/Script id:/.test(r.text), 'the reader is not told which script they are approving');
+      return 'the same script, rendered for a human';
+    }, { scriptGate: true }));
+
+  await check('a lesson with no script yet says so, rather than 404ing blankly', () =>
+    withCourse(async (port) => {
+      // The ordinary fixture blocked at post-render-check and has beats, so use a
+      // lesson that never wrote one at all.
+      const r = await req(port, { path: `/api/v1/courses/${COURSE}/lessons/fixtures/nope/script`, headers: auth });
+      assert(r.status === 404, `expected 404, got ${r.status}`);
+      assert(r.json.error === 'no_such_lesson', `wrong error: ${r.text}`);
+      return 'an unknown lesson is an unknown lesson, not an empty script';
+    }, { scriptGate: true }));
+
+  await check('an approval must quote the script it approves', () =>
+    withCourse(async (port) => {
+      const read = await req(port, { path: `/api/v1/courses/${COURSE}/lessons/${LESSON}/script`, headers: auth });
+      const sha = read.json.sha;
+
+      const none = await req(port, { method: 'POST', headers: auth,
+        path: `/api/v1/courses/${COURSE}/lessons/${LESSON}/script/approve`, body: { by: 'aroma' } });
+      assert(none.status === 409 && none.json.error === 'cannot_approve_script',
+        `an approval with no sha was accepted: ${none.status} ${none.text}`);
+
+      const wrong = await req(port, { method: 'POST', headers: auth,
+        path: `/api/v1/courses/${COURSE}/lessons/${LESSON}/script/approve`,
+        body: { by: 'aroma', sha: 'deadbeefdeadbeef' } });
+      assert(wrong.status === 409, `an approval naming another script was accepted: ${wrong.text}`);
+
+      const ok = await req(port, { method: 'POST', headers: auth,
+        path: `/api/v1/courses/${COURSE}/lessons/${LESSON}/script/approve`,
+        body: { by: 'aroma', sha } });
+      assert(ok.status === 202 && ok.json.sha === sha, `the right sha was refused: ${ok.status} ${ok.text}`);
+      return 'no sha and a wrong sha refused, the right one accepted';
+    }, { scriptGate: true }));
+
+  await check('a revision needs notes, and says what it costs', () =>
+    withCourse(async (port) => {
+      const empty = await req(port, { method: 'POST', headers: auth,
+        path: `/api/v1/courses/${COURSE}/lessons/${LESSON}/script/revise`, body: { by: 'aroma' } });
+      assert(empty.status === 409 && empty.json.error === 'cannot_revise_script',
+        `an empty revision was accepted: ${empty.status} ${empty.text}`);
+
+      const r = await req(port, { method: 'POST', headers: auth,
+        path: `/api/v1/courses/${COURSE}/lessons/${LESSON}/script/revise`,
+        body: { by: 'aroma', why: 'too abstract -- put Ali in the shop' } });
+      assert(r.status === 202 && r.json.round === 1, `revision refused: ${r.status} ${r.text}`);
+      assert(/no media has been bought/.test(r.json.note), 'the reply does not say it is free of media');
+      return 'empty refused, notes accepted, the cost stated';
+    }, { scriptGate: true }));
+
+  await check('the course view says a script is ready to read without a fetch', () =>
+    withCourse(async (port) => {
+      const r = await req(port, { path: `/api/v1/courses/${COURSE}`, headers: auth });
+      const item = (r.json.items || []).find((i) => i.id === LESSON);
+      assert(item.blockedBy === 'script-approval', `wrong blockedBy: ${item.blockedBy}`);
+      assert(item.scriptAvailable === true, 'the course view does not say the script is readable');
+      assert(item.scriptSha, 'the course view does not carry the sha');
+      // And the older field still tells the truth: there is no video, and there
+      // will not be one until somebody reads this.
+      assert(item.deliverableAvailable === false,
+        'a lesson waiting on its script claims a fetchable video');
+      return 'scriptAvailable true, deliverableAvailable false, both facts';
+    }, { scriptGate: true }));
+
+  await check('a plan that lost a lesson objective is refused before anything is reserved', () =>
+    { const env = freshEnv();
+      return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async () => {
+        const queue = require(path.join(__dirname, 'lib', 'queue'));
+        require(path.join(__dirname, '..', 'server', 'lib', 'job-store')).reset();
+        queue.resetPathCache();
+        // The plan is meant to be EDITED by an instructor before it is built. An
+        // edit that drops an SLO must fail loudly here rather than quietly build a
+        // video about nothing in particular.
+        const broken = { title: 'T', modules: [{ title: 'M', lessons: [
+          { title: 'Lesson one', brief: 'b1' },
+        ] }] };
+        const r = await req(port0(), { method: 'POST', path: '/api/v1/courses/build',
+          headers: { authorization: `Bearer ${LMS_TOKEN}` },
+          body: { plan: broken, confirmLessons: 1, series: 'testing' } });
+        assert(r.status === 400 && r.json.error === 'invalid_plan', `expected invalid_plan, got ${r.status} ${r.text}`);
+        assert(r.json.errors.some((e) => /slo/.test(e.path)), `the missing SLO is not named: ${r.text}`);
+        assert(queue.currentItems().filter((i) => i.source === 'course-builder').length === 0,
+          'a refused plan still queued lessons');
+        return 'refused, the field named, nothing queued';
+      }); });
 
   await check('the file routes are listed on the index we told them to pin to', () =>
     withServer(BASE_ENV, {}, async (port) => {

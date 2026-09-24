@@ -126,7 +126,7 @@ function sendJson(req, res, payload) {
 }
 
 /** The course-API contract version. docs/CONTRACT-CHANGELOG.md says what each one added. */
-const CONTRACT_VERSION = '1.1';
+const CONTRACT_VERSION = '1.2';
 
 function build() {
   const router = express.Router();
@@ -201,6 +201,28 @@ function build() {
           auth: true,
           description: 'Publish a built lesson and release the next one. Courses build '
             + 'ONE lesson at a time and pause until approved.' },
+        // The pre-spend gate (contract 1.2). Every course lesson now pauses HERE
+        // first, minutes in and before a penny of media, and only reaches the
+        // approve/reject pair above once somebody has read what it will say.
+        { method: 'GET', path: '/api/v1/courses/:courseId/lessons/:lessonId/script',
+          auth: true,
+          description: 'The script a lesson is waiting to have read: every beat, what is spoken '
+            + 'and what is on screen, the checkpoint, and a `sha` naming this exact draft. '
+            + 'Served off the durable volume, so it survives a redeploy of ours.' },
+        { method: 'GET', path: '/api/v1/courses/:courseId/lessons/:lessonId/script.md',
+          auth: true,
+          description: 'The same script as markdown, for a person to read. Identical to what the '
+            + 'Make a Video reader sees -- one builder serves both.' },
+        { method: 'POST', path: '/api/v1/courses/:courseId/lessons/:lessonId/script/approve',
+          auth: true,
+          description: 'Approve the script and let the lesson be built. Body {by, sha}: the `sha` '
+            + 'is REQUIRED and must name the draft you read, so an approval can never authorise '
+            + 'a script nobody saw. $0 -- the spending starts after it.' },
+        { method: 'POST', path: '/api/v1/courses/:courseId/lessons/:lessonId/script/revise',
+          auth: true,
+          description: 'Send the script back with notes. Body {why, by}. Costs one model call, '
+            + 'not a render: the writer rewrites from your notes, the machine gate re-checks it, '
+            + 'and it pauses for you again. Capped per lesson; reject still stops the course.' },
         { method: 'POST', path: '/api/v1/courses/:courseId/lessons/:lessonId/reject',
           auth: true,
           description: 'Reject a lesson. THIS course stops: its queued lessons are failed, free, '
@@ -228,7 +250,10 @@ function build() {
           description: 'The finished mp4, off the durable volume, before anyone publishes it. '
             + 'Supports Range. 404 `no_deliverable` carries `renderExists` and `partsAvailable` '
             + 'so you can tell "not yet" from "there is no video and never will be" -- see '
-            + '`deliverableAvailable` on the course view, which answers it without a fetch.' },
+            + '`deliverableAvailable` on the course view, which answers it without a fetch. '
+            + 'IMPORTANT: a video we have offloaded returns 200 with `saved2drive: true` and a '
+            + '`driveUrl` INSTEAD of the bytes -- fetch it from Drive. That is a success, not a '
+            + 'failure: treat `saved2drive` as authoritative and do not read it as a 404.' },
         { method: 'DELETE', path: '/api/v1/courses/:courseId/lessons/:lessonId/file', auth: true,
           description: 'Drop our copy once yours is stored. Never inferred from a GET.' },
         { method: 'GET', path: '/api/v1/courses/:courseId/lessons/:lessonId/beats', auth: true,
@@ -238,7 +263,9 @@ function build() {
             + 'findings were about without paying for another build.' },
         { method: 'GET', path: '/api/v1/deliverables', auth: true,
           description: 'Everything currently held on the volume, with sizes. So the store can be '
-            + 'watched rather than discovered full, and so "is it actually there?" is one call.' },
+            + 'watched rather than discovered full, and so "is it actually there?" is one call. '
+            + '`videoBytes` is the half that grows fast; `offloadedCount` is how many have been '
+            + 'moved to Drive and reclaimed.' },
       ],
       // The closed set of `blockedBy`, served rather than documented. It is here
       // because a comment is not something a consumer can pin a test against: this
@@ -427,9 +454,24 @@ function build() {
           + 'could not be approved or resumed. GET /api/v1/health reports the store.' });
     }
 
-    if (!body.plan || !Array.isArray(body.plan.modules)) {
+    if (!body.plan) {
       return res.status(400).json({ error: 'bad_request',
         message: 'Send the plan you got from POST /api/v1/courses/plan as `plan`.' });
+    }
+    // Checked against the schema the planner itself is held to, not just for the
+    // presence of `modules`. The plan is meant to be EDITED before it is built --
+    // that is why we return it rather than persist it -- so what arrives here is
+    // no longer what we validated on the way out. A lesson that lost its `slo` in
+    // an instructor's form would otherwise queue and build a video with no stated
+    // objective, and nobody would find out until they watched it.
+    const invalid = planner.validate(body.plan);
+    if (!invalid.ok) {
+      return res.status(400).json({
+        error: 'invalid_plan',
+        message: `This plan cannot be built: ${invalid.errors.length} problem(s). Nothing was `
+          + 'queued and nothing was reserved.',
+        errors: invalid.errors,
+      });
     }
     const lessons = planner.lessonsOf(body.plan);
 
@@ -628,6 +670,35 @@ function build() {
             } catch { return false; }
           })(),
         } : {}),
+        // Where the video actually lives once we no longer hold the bytes.
+        //
+        // `deliverableAvailable` above answers "can this service stream it to you
+        // right now", and after an offload the honest answer to that is `false` --
+        // but `false` on its own would read as "the video is gone", which is the
+        // opposite of the truth. These three fields are the rest of the sentence:
+        // it exists, it is on TU's Drive, and this is its id and link.
+        //
+        // Read off the queue item, not the volume, because the queue is what this
+        // route already folds and the flag is written there by the offload
+        // (queue.markSavedToDrive). One readdir less per lesson, and it still
+        // works for a lesson whose whole deliverable directory has been swept.
+        ...(i.saved2drive ? {
+          saved2drive: true,
+          driveFileId: i.driveFileId || null,
+          driveUrl: i.driveUrl || null,
+          driveSavedAt: i.driveSavedAt || null,
+        } : {}),
+        // The same question one gate earlier: is there a script to read. Answered
+        // as a fact for exactly the same reason -- a lesson blocked at
+        // `script-approval` has no video and never will until somebody reads this,
+        // so `deliverableAvailable: false` is the normal state here rather than a
+        // fault, and a caller needs a positive signal for the thing that IS ready.
+        ...(i.scriptSha ? { scriptAvailable: true, scriptSha: i.scriptSha } : {}),
+        ...(i.scriptApproved ? {
+          scriptApprovedBy: i.scriptApproved,
+          scriptApprovedAt: i.scriptApprovedAt || null,
+        } : {}),
+        ...(Number(i.humanRevisions) ? { scriptRevisions: Number(i.humanRevisions) } : {}),
         // What the lesson actually produced. A finished lesson used to say only
         // that it succeeded, so the caller knew a video existed and could not say
         // which one -- there was no way to drop it into the block waiting for it.
@@ -749,6 +820,129 @@ function build() {
     });
   });
 
+  // REGISTERED BEFORE /approve AND /reject ON PURPOSE. `:lessonId(*)` is greedy,
+  // so `/lessons/a/b/script/approve` also matches the plain `/approve` route with
+  // lessonId 'a/b/script'. Whichever is declared first wins, and the first version
+  // of this had the script routes last -- every script approval was swallowed by the
+  // publish route and refused as an unknown lesson.
+  /**
+   * The script a lesson is waiting to have read, and the two things a reader can
+   * do about it.
+   *
+   * Served off the DURABLE VOLUME, never out of run state or the render directory.
+   * A script can wait days for a person and Railway redeploys in that window; run
+   * state is deliberately not on the volume (paths.js), so reading from it would
+   * hand back a 404 to somebody who was asked to approve something.
+   */
+  function lessonScript(req) {
+    const queue = require('../../orchestrator/lib/queue');
+    const item = queue.get(req.params.lessonId);
+    if (!item) return { error: 'no_such_lesson', status: 404 };
+    if (!(item.notes || '').includes(`[${req.params.courseId}]`)) {
+      return { error: 'no_such_lesson', status: 404 };
+    }
+    const deliverables = require('../../orchestrator/lib/deliverables');
+    const held = deliverables.findScript(item.series, item.slug);
+    if (!held) {
+      return {
+        status: 404,
+        error: 'no_script',
+        message: 'This lesson has not written a script yet, or nothing was kept for it. A lesson '
+          + 'reaches its script about two minutes in; until then there is nothing to read.',
+        lessonStatus: item.status,
+        blockedBy: item.blockedBy || null,
+      };
+    }
+    let beats = null;
+    try {
+      delete require.cache[require.resolve(held.beats)];
+      beats = require(held.beats);
+    } catch (e) {
+      return { status: 500, error: 'script_unreadable', message: e.message };
+    }
+    const ctx = held.context || {};
+    const scriptMd = require('./script-md');
+    return {
+      item,
+      script: scriptMd.fromBeats(beats, {
+        title: ctx.topic || item.topic,
+        slo: (String(item.notes || '').match(/^SLO:\s*(.+)$/m) || [])[1] || null,
+        scenario: (String(item.notes || '').match(/^Running scenario for this course:\s*(.+)$/m) || [])[1] || null,
+        gate: (ctx.gate && ctx.gate.verdict) || null,
+        redrafts: (ctx.redraftFeedback && ctx.redraftFeedback.round) || 0,
+        // The sha ON THE ITEM, not one recomputed here: the item's is what
+        // approveScript compares against, and showing a reader anything else would
+        // hand them a value their approval is then refused for.
+        sha: item.scriptSha || null,
+      }),
+    };
+  }
+
+  router.get('/courses/:courseId/lessons/:lessonId(*)/script', requireToken, (req, res) => {
+    const r = lessonScript(req);
+    if (r.error) return res.status(r.status).json(r);
+    return res.json({
+      lessonId: r.item.id,
+      status: r.item.status,
+      ...(r.item.blockedBy ? { blockedBy: r.item.blockedBy } : {}),
+      awaitingApproval: r.item.blockedBy === 'script-approval',
+      humanRevisions: Number(r.item.humanRevisions) || 0,
+      maxRevisions: require('./course-worker').MAX_HUMAN_REVISIONS,
+      ...(r.item.scriptApprovedBy || r.item.scriptApproved
+        ? { scriptApprovedBy: r.item.scriptApproved, scriptApprovedAt: r.item.scriptApprovedAt }
+        : {}),
+      ...r.script,
+      note: 'Approve with POST .../script/approve quoting `sha`. Nothing has been bought yet.',
+    });
+  });
+
+  router.get('/courses/:courseId/lessons/:lessonId(*)/script.md', requireToken, (req, res) => {
+    const r = lessonScript(req);
+    if (r.error) return res.status(r.status).type('text').send(r.message || r.error);
+    const scriptMd = require('./script-md');
+    res.set('Content-Type', 'text/markdown; charset=utf-8');
+    res.set('Content-Disposition', `attachment; filename="${scriptMd.filename(r.item.slug)}"`);
+    return res.send(scriptMd.render(r.script, { topic: r.item.topic }));
+  });
+
+  /**
+   * Approve the script. The build proceeds and the money starts here.
+   *
+   * `sha` is required, and that is the whole point: an approval that does not name
+   * a script is a standing licence to render whatever beats.js exists later.
+   */
+  router.post('/courses/:courseId/lessons/:lessonId(*)/script/approve', requireToken, (req, res) => {
+    const by = (req.body && req.body.by) || req.tenant.id;
+    const sha = (req.body && req.body.sha) || null;
+    const r = require('./course-worker')
+      .approveScript(req.params.lessonId, by, sha, req.params.courseId, req.tenant.id);
+    if (!r.ok) return res.status(409).json({ error: 'cannot_approve_script', message: r.why });
+    res.status(202).json({
+      approved: req.params.lessonId,
+      by,
+      sha: r.sha,
+      note: 'Building this lesson now. This is where the spending starts: about $1.50 and '
+        + '30 minutes, then it pauses again for you to watch the finished video.',
+    });
+  });
+
+  /** Send the script back with notes. Costs a model call, not a render. */
+  router.post('/courses/:courseId/lessons/:lessonId(*)/script/revise', requireToken, (req, res) => {
+    const why = (req.body && req.body.why) || '';
+    const by = (req.body && req.body.by) || req.tenant.id;
+    const r = require('./course-worker')
+      .revise(req.params.lessonId, why, by, req.params.courseId, req.tenant.id);
+    if (!r.ok) return res.status(409).json({ error: 'cannot_revise_script', message: r.why });
+    res.status(202).json({
+      revising: req.params.lessonId,
+      by,
+      round: r.round,
+      revisionsLeft: r.remaining,
+      note: 'Rewriting the script from your notes and re-checking it, then it pauses for you '
+        + 'again. This costs a model call, not a render -- no media has been bought.',
+    });
+  });
+
   /**
    * Approve a built lesson: publish it, and release the next one.
    *
@@ -849,6 +1043,55 @@ function build() {
 
     const deliverables = require('../../orchestrator/lib/deliverables');
     const found = deliverables.find(item.series, item.slug);
+
+    // OFFLOADED IS NOT MISSING.
+    //
+    // Once a video is on TU's Drive we delete our copy of the bytes -- that is the
+    // whole point, and it is what keeps the 50GB volume from filling and forcing a
+    // restart mid-render. But the three 404 branches below all say, in different
+    // words, "there is nothing here", and for an offloaded lesson that is simply
+    // false. Answering 404 would have sent somebody hunting for a video that is
+    // exactly where it is supposed to be.
+    //
+    // So: 200, with everything needed to go and get it, plus the measured
+    // attributes captured before the local copy was removed. Checked BEFORE the
+    // `!found` branches because after an offload `found` is null by design.
+    const drive = deliverables.driveRecord(item.series, item.slug);
+    if (!found && drive && drive.saved2drive) {
+      const meta = deliverables.videoMeta(item.series, item.slug);
+      return res.status(200).json({
+        saved2drive: true,
+        driveFileId: drive.driveFileId,
+        driveUrl: drive.driveUrl,
+        driveName: drive.driveName || null,
+        savedAt: drive.savedAt || null,
+        // Byte-for-byte proof the copy on Drive is the video we made: `verified`
+        // is true only when Drive's own server-side md5 matched ours before we
+        // deleted anything.
+        bytes: drive.bytes || null,
+        md5: drive.md5 || null,
+        sha256: drive.sha256 || null,
+        verified: Boolean(drive.verified),
+        // What the video IS, measured from the file itself rather than asserted.
+        ...(meta ? {
+          video: {
+            durationSeconds: meta.durationSeconds,
+            width: meta.width,
+            height: meta.height,
+            fps: meta.fps,
+            videoCodec: meta.videoCodec,
+            pixelFormat: meta.pixelFormat,
+            audioCodec: meta.audioCodec,
+          },
+        } : {}),
+        status: item.status,
+        ...(item.blockedBy ? { blockedBy: item.blockedBy } : {}),
+        message: 'This video is stored on the Taleemabad University Google Drive and is no '
+          + 'longer served from here. Fetch it at driveUrl. Its questions and timings are '
+          + 'unaffected -- they are still served from this API.',
+      });
+    }
+
     if (!found) {
       // WHY THIS IS THREE ANSWERS AND NOT ONE.
       //
@@ -934,6 +1177,15 @@ function build() {
         durable: listed.durable,
         count: listed.items.length,
         bytes: listed.bytes,
+        // The capacity numbers that actually matter now that videos are offloaded.
+        //
+        // `bytes` alone stopped being a useful signal: a store holding 200 lessons
+        // of 4KB metadata and one holding 200 finished videos are wildly different
+        // situations and used to look similar right up until the volume filled.
+        // `videoBytes` is the part that grows fast and the part offloading removes.
+        videoBytes: listed.videoBytes || 0,
+        offloadedCount: listed.offloadedCount || 0,
+        localVideoCount: listed.items.filter((i) => i.videoLocal).length,
         items: listed.items,
         ...(listed.durable ? {} : {
           note: 'This store is not a volume, so nothing here survives a redeploy.',

@@ -1,6 +1,6 @@
 ---
 type: reference
-last_verified: 2026-09-23
+last_verified: 2026-09-24
 owner: Aroma Tahir
 ---
 
@@ -354,6 +354,114 @@ six-word on-screen caption, i.e. this question still needs one written) |
 
 ---
 
+## 4a. Where a finished video lives (2026-09-24)
+
+### 4a.1 The problem this solves
+
+`deliverables.persist()` copied every `<slug>_final.mp4` onto the volume and
+**nothing ever removed it.** The only exit was the LMS calling `DELETE .../file`,
+which in practice never happened. Two stores therefore grew without bound: the
+50 GB volume, and the per-video render directories (`art/`, `frames/`, `audio/`,
+`clips/`, `layers/`, `out/` — gigabytes per lesson, cleared only by a redeploy).
+A full Railway volume triggers an offline resize that **restarts the service,
+possibly mid-render**, i.e. the capacity problem destroys a paid lesson.
+
+**The memory graph and the disk are the same problem.** Railway graphs RAM and does
+not graph volume usage at all, so the visible symptom was a multi-GB memory plateau.
+That metric is the container's *cgroup* usage, which counts file-backed pages — and
+`compile-lesson.js` writes ~10,800 PNGs per six-minute lesson into `frames/` and only
+clears them at the start of the *next* render. Those pages sit in cache and on the
+billed volume simultaneously. So the working-dir sweep below reduces the RAM reading
+as well as the disk; they were never two separate issues. `/health.storage` reports
+`deliverables.videoBytes` and `memory.rssBytes` side by side so the two can still be
+told apart when they genuinely diverge. See `.claude/memories/lessons.md` H7 and H31.
+
+### 4a.2 What happens now
+
+At the end of every run — whatever its terminal status — the spine uploads the
+branded `_final.mp4` to Taleemabad University's Google Drive and then reclaims the
+local copies. **No approval gate**: a lesson blocked at `review` has a real,
+paid-for video and is exactly the case that waits longest, so it is exactly the
+case whose bytes most need to be somewhere safe.
+
+This changes nothing about publishing. Videos are still born unlisted and a human
+still promotes them. Saving a copy and publishing are different acts; only the
+first is unconditional.
+
+### 4a.3 The ordering, which is the whole safety story
+
+This is the only operation in the service that **deletes** a paid-for artefact, so
+it is built the other way round from everything else: nothing is removed until
+another copy is *proven* to exist.
+
+| # | Step | If it fails |
+|---|---|---|
+| 1 | Capture attributes from the local file — size, md5, sha256, duration, resolution, fps, codecs → `video-meta.json` | nothing deleted |
+| 2 | Resumable upload to Drive | nothing deleted |
+| 3 | **Verify**: Drive's own server-side `md5Checksum` must equal ours, and the byte counts must match | nothing deleted |
+| 4 | Write `drive.json`, mirror into `persisted.json`, flag the queue item `saved2drive` | nothing deleted |
+| 5 | Reclaim the volume mp4 and the render working dirs | — |
+
+Step 1 exists because nothing in this repo previously persisted a video's own
+attributes as numbers (`verify.js` records pass/fail strings, and there was no mp4
+checksum anywhere). Once the bytes are gone, "what was this video?" and "did the
+copy arrive intact?" both become unanswerable without it.
+
+### 4a.4 What is never deleted
+
+`beats.js`, `durations.json`, `run-context.json`, `persisted.json`, `drive.json`,
+`video-meta.json`. A few KB between them, and **not optional**: `checkpoints.js`
+recomputes the checkpoint payload and the catalogue row from `beats.js` +
+`durations.json` live, per request (§4.1). Deleting them yields a video that plays
+and cannot be answered, and a row that silently leaves the catalogue.
+
+The reclaim list is an explicit allow-list of subdirectory names, never
+`rm -rf <videoDir>`, because the lesson's script sits at the top of that directory.
+
+### 4a.5 The trap: `upload` runs *after* the human gate
+
+A course lesson runs `produce → qa → review (BLOCKS) → [human approves] → requeue
+→ review → upload`. The YouTube stage reads `produced.finalPath` — a render-dir
+path recorded *before* the wait, by which time the offload has reclaimed it.
+
+`upload.js` therefore resolves its source through a ladder: render dir → volume
+copy → **fetch it back down from Drive** to a temp file (verified against the
+recorded byte count, and cleaned up in a `finally` so a blocked upload cannot leave
+a 30 MB orphan). Without this, offloading would have silently broken publishing for
+every course lesson.
+
+### 4a.6 What the LMS sees
+
+- `GET /courses/:id` — an offloaded lesson carries `saved2drive`, `driveFileId`,
+  `driveUrl`, `driveSavedAt` beside `deliverableAvailable`. `deliverableAvailable:
+  false` alone would read as "the video is gone"; the pair reads as "not from here".
+- `GET .../lessons/:id/file` — **200**, not 404, with `saved2drive: true`, the link,
+  the checksums, `verified`, and the measured `video` attributes. The three 404
+  branches still apply to lessons that genuinely never rendered.
+- `GET /deliverables` — `videoBytes`, `offloadedCount`, `localVideoCount`. The bare
+  `bytes` total stopped being a capacity signal once metadata outlived videos.
+
+### 4a.7 Backfilling and operating it
+
+```bash
+node orchestrator/gdrive-auth.js               # once, as the TU account
+node orchestrator/gdrive-auth.js --check       # scopes + folder; prints no secret
+node scripts/offload-deliverables-to-drive.js  # DRY RUN by default
+node scripts/offload-deliverables-to-drive.js --yes --limit 1
+```
+
+The script is dry-run by default on purpose: a tool whose default mode deletes
+things is one somebody eventually runs by accident. Every skip leaves that lesson's
+file exactly where it was, and one failure never stops the rest.
+
+Tests: `orchestrator/test-regressions.js` §12 (checksum mismatch aborts, a thrown
+upload deletes nothing, metadata captured *before* the upload, idempotency, dry run,
+the reclaim list cannot swallow the lesson directory, unbranded renders refused,
+unconfigured does nothing, `saved2drive` survives a requeue) and `test-server.js` §4
+(200-with-Drive-link, beats survive, course view, capacity view).
+
+---
+
 ## 5. Tenancy and spend
 
 ### 5.1 Configuration
@@ -552,6 +660,7 @@ not live evidence, for those items.
 | Per-tenant fairness in the queue | Not built. Items now carry `tenantId`, but ordering is still FIFO over eligible lessons. Courses pause after every lesson, so two eligible courses already alternate; a round-robin is deferred until unfairness is observed. |
 | `orchestrator/run.js` uses `queue.nextQueued()` | That helper does not filter `source`, so the CLI can pop a `course-builder` lesson. Out of scope; do not run the CLI against the production volume. |
 | An LLM judge can disagree with itself | `eval-text.js` passed a line before the spend and failed the same line after the render. It can no longer end a run (§3.1b), but it can still park a good video for a human to clear. |
+| Deliverables were never garbage-collected | **Fixed 2026-09-24** -- §4a. Finished videos go to TU's Drive and the local copies are reclaimed, in that order, verified by Drive's own md5. Unset `GDRIVE_*` and the old unbounded behaviour returns. |
 | `.beads/runs.jsonl` is not on the volume | **Fixed 2026-09-21.** `state.appendRunLog()` now writes the same row to the job store as well, so a run's cost outlives a redeploy the way the course does. `scripts/diagnose-course-lesson.js` reads both. Rows written before that date existed only in `.beads` and are gone. |
 | `spendUsd` counted media only | **Fixed 2026-09-21.** Art, speech and animation were counted; every model call in research, script, gate and qa was not, so a lesson's stated cost was part of its cost. Model spend is now recorded as `kind: 'model'` and reported as `spendModelUsd`. The `$1.50` planning figure and the measured `$0.598` were both honest about different things. The budget gate still measures media only — see §5.3. |
 | Gemini sensor spend is still uncounted | `eval-text.js` and `qa-art.js` are child processes that discard the `usageMetadata` their responses carry, and no Gemini rate is written down anywhere in this repo. Small next to Opus, but not zero. |

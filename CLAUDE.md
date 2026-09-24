@@ -23,7 +23,7 @@ owner: aroma
 | Extract & mux voiceover | `audio-mux` skill → `.claude/standards/VOICEOVER_POLICY.md` |
 | Understand frame count formula | `.claude/standards/VIDEO_PRODUCTION_RULES.md` |
 | Fix text cutoff in diagrams | `.claude/standards/VIDEO_PRODUCTION_RULES.md` |
-| **Operate the live service (durability, tenants, deploying)** | **`docs/SERVICE_DURABILITY_AND_CONTRACTS.md`** |
+| **Operate the live service (durability, tenants, deploying, freeing disk)** | **`docs/SERVICE_DURABILITY_AND_CONTRACTS.md`** (§4a = videos → TU Drive) |
 | **Check a script before spending money** | **`script-lint-preflight` skill** |
 | **Quote / approve a paid run** | **`paid-run-protocol` skill** |
 | Prove a change actually works | `verify-before-claiming` skill |
@@ -63,6 +63,8 @@ owner: aroma
 - Remotion + ElevenLabs are LEGACY — use only to maintain pre-existing videos, not for new ones
 - Deliverable is always `<name>_final.mp4` (wrapped in brand bumpers), never the bare render
 - No paid AI video (Veo rejected). Follow the LAWS in the skill's SKILL.md
+
+🚫 **Finished videos → TU Drive, then reclaim disk** (§4a): no approval gate (saving ≠ publishing); capture attributes → upload → **verify md5** → record → only then delete; **never delete `beats.js`/`durations.json`** (checkpoints recompute from them); backfill `scripts/offload-deliverables-to-drive.js` is dry-run by default
 
 🚫 **Voiceover:**
 - Default is **Gemini TTS** via the explainer pipeline, one-take normalized (`tts-lesson.js`); paid Imagen/TTS never fire without `--yes`/`CONFIRM_SPEND=1` (ask first)

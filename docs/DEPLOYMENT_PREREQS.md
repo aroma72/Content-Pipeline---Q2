@@ -128,6 +128,34 @@ curl -s https://content-queen-production.up.railway.app/health | jq .tenants.ids
 about four lessons at the $2.50 reservation. Hand the LMS the token out of band, never in a
 document. After the redeploy, `POST /api/v1/courses/worker/resume` restarts the queue.
 
+### Required for the Drive offload (otherwise the volume fills and never drains)
+
+A finished video is uploaded to Taleemabad University's Google Drive and the local
+copies are then reclaimed. **Unset these and nothing breaks** — the service behaves
+exactly as it did before the offload existed, which also means the 50 GB volume
+grows monotonically until a full-volume resize restarts the service mid-render.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `GDRIVE_REFRESH_TOKEN` | *(unset)* | OAuth refresh token scoped to `drive.file`. **The existing `YOUTUBE_REFRESH_TOKEN` will not work** — a Google refresh token is bound to the scopes it was consented with, and that one carries `youtube.upload` alone. Mint this one with `node orchestrator/gdrive-auth.js`, signed in as the Taleemabad University account. |
+| `GDRIVE_FOLDER_ID` | *(unset)* | The target Drive folder. Currently `UnPublished-CQ-Videos`, which sits on a **Shared Drive** — so the files are owned by the Drive rather than by a person and survive anyone leaving. |
+| `GDRIVE_CLIENT_ID` / `GDRIVE_CLIENT_SECRET` | falls back to the `YOUTUBE_` pair | Only needed if Drive should use a different OAuth client. The same Google Cloud project and account serve both, so normally leave these unset. |
+
+Two separate tokens rather than one re-consented for both scopes, deliberately: it
+keeps publishing and Drive in separate failure domains, so a botched Drive consent
+cannot take YouTube uploads down with it.
+
+Check it without uploading anything:
+
+```bash
+node orchestrator/gdrive-auth.js --check      # scopes + folder, prints no secret
+node scripts/offload-deliverables-to-drive.js # DRY RUN by default; says what it would move
+```
+
+`--check` reporting that the folder is *not visible* is **expected, not an error**:
+under `drive.file` a folder this client did not create is invisible by design. Only
+a real upload settles it — `--yes --limit 1`.
+
 ### Optional
 
 | Variable | Default | Effect |

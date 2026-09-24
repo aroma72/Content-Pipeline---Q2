@@ -1916,6 +1916,10 @@ async function redraftChecks() {
     let drafts = 0, produces = 0;
     const st = await spine.execute(testItem(), {
       quiet: true, fromStage: 'produce', stopAfter: 'produce',
+      // These redraft tests are about the redraft budget, not about the human
+      // script gate: a rewind to `script` replays script-approval on the way back
+      // down, which would park the run and starve the very loop under test.
+      scriptApproved: 'test',
       seedArtifacts: { script: { title: 't', beats: [] } },
       stageOverrides: {
         script: stub('script', async () => { drafts++; return { title: 't', beats: [] }; }),
@@ -1954,6 +1958,9 @@ async function redraftChecks() {
     let produceCalls = 0, gateCalls = 0, drafts = 0;
     const st = await spine.execute(testItem(), {
       quiet: true, stopAfter: 'produce',
+      // Redraft-budget tests: the human script gate is not what is under test here,
+      // and a rewind to `script` would replay it and park the run.
+      scriptApproved: 'test',
       stageOverrides: {
         research: stub('research', async () => ({ ok: 1 })),
         script: stub('script', async () => { drafts++; return { title: 't', beats: [] }; }),
@@ -1998,6 +2005,9 @@ async function redraftChecks() {
     let calls = 0;
     const st = await spine.execute(testItem(), {
       quiet: true, stopAfter: 'produce',
+      // Redraft-budget tests: the human script gate is not what is under test here,
+      // and a rewind to `script` would replay it and park the run.
+      scriptApproved: 'test',
       stageOverrides: {
         research: stub('research', async () => ({ ok: 1 })),
         script: stub('script', async () => ({ title: 't', beats: [] })),
@@ -2746,9 +2756,15 @@ async function referenceChecks() {
     const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'references.js'), 'utf8');
     assert(/maxAttempts:\s*1/.test(src), 'references retries, and a retry re-buys the search');
     assert(!/BlockedError|RejectedError|RedraftError/.test(src), 'references can stop a run');
-    const spine = fs.readFileSync(path.join(__dirname, 'lib', 'spine.js'), 'utf8');
-    assert(/'gate', 'references', 'produce'/.test(spine),
-      'references is not between the gate and produce');
+    // Asserted on the order itself rather than on the source text: the literal
+    // "'gate', 'references', 'produce'" broke the day script-approval was inserted
+    // between them, which is a stage this test has no opinion about. What it means
+    // is that references runs after the script is settled and before anything is
+    // bought, and that is what it now says.
+    const { STAGE_ORDER } = require('./lib/spine');
+    const at = (s) => STAGE_ORDER.indexOf(s);
+    assert(at('references') > at('gate'), 'references runs before the gate settles the script');
+    assert(at('references') < at('produce'), 'references runs after the money is committed');
     return 'one attempt, no control-flow errors, placed before the money';
   });
 
@@ -3078,12 +3094,29 @@ function browserChecks() {
         `the stored script drops '${field}', so no surface can ever show it`);
     }
 
-    // And the readable form has to call out the case that actually bit.
-    const md = src.slice(src.indexOf("app.get('/demo/make-video/:jobId/script.md'"));
-    assert(/NO WORDS ON SCREEN/.test(md),
+    // And the readable form has to call out the case that actually bit. Asserted
+    // by RENDERING rather than by reading the source: the builder moved out of
+    // app.js into lib/script-md.js when the course gate began serving it too, and
+    // a source-text assertion would have passed a module that no longer rendered.
+    const scriptMd = require(path.join(PATHS_REPO, 'server', 'lib', 'script-md'));
+    const out = scriptMd.render({
+      title: 'T',
+      beats: [
+        { id: '01', mode: 'ali', vo: 'Ali opens the shop.' },
+        { id: '02', mode: 'scene', vo: 'The orders pile up.', cap: 'Monday' },
+        { id: '03', mode: 'info', vo: 'Three steps.', overlay: { tpl: 'steps' } },
+      ],
+    }, { topic: 'orders' });
+    assert(/NO WORDS ON SCREEN/.test(out),
       'script.md does not flag a beat that draws art and nothing else');
-    assert(/caption:/.test(md) && /overlay:/.test(md),
+    assert(/caption: "Monday"/.test(out) && /overlay: steps/.test(out),
       'script.md still shows only the spoken line');
+
+    // One builder, both gates. An instructor deciding whether to spend on a course
+    // lesson must read what the demo reader reads; two copies would drift, and the
+    // half that drifted would be the half nobody read when it mattered.
+    assert(/require\('\.\/lib\/script-md'\)/.test(src),
+      'the demo route no longer uses the shared builder, so the two surfaces can drift');
     return 'cap, art, overlay and info survive to a page a person reads';
   });
 
@@ -3390,8 +3423,22 @@ async function courseChecks() {
     assert(r.interrupted === 1, 'expected 1 interrupted, got ' + r.interrupted);
     assert(item.status === 'blocked', 'expected blocked, got ' + item.status);
     assert(item.interrupted === true, 'the lesson does not say it was interrupted');
-    assert(/rebuild this lesson/.test(item.reason), 'the reason does not name the cost of rebuilding');
-    return 'parked, and the cost is stated';
+    // Interrupted BEFORE the script was fingerprinted: nothing was bought, so the
+    // quote must be cents. Telling this person "about $1.50" is wrong by two orders
+    // of magnitude and could talk them out of a lesson that costs nothing to redo.
+    assert(/cents/.test(item.reason) && !/\$1\.50/.test(item.reason),
+      'a lesson interrupted before any spend is still quoted a render: ' + item.reason);
+
+    // And the other side of the same branch: one that had a script, and therefore
+    // had reached the render, is quoted the render.
+    queue.enqueue({ topic: 'Lesson two b', series: 'demo', slug: 'midb', source: 'course-builder' });
+    queue.claim('demo/midb', 'run-dead-2');
+    queue.setStatus('demo/midb', 'claimed', { scriptSha: 'abc123' });
+    cw.restore();
+    const paid = queue.get('demo/midb');
+    assert(/rebuild this lesson/.test(paid.reason) && /\$1\.50/.test(paid.reason),
+      'a lesson interrupted after its script is not quoted the rebuild: ' + paid.reason);
+    return 'parked, and the cost stated matches how far it got';
   });
 
   check('restore starts no build of its own, so a crash loop cannot spend', () => {
@@ -3523,6 +3570,7 @@ async function courseChecks() {
   // A per-item stub: which lessons end how. Anything unnamed blocks at review.
   const outcomes = {};
   const spend = {};
+  const shas = {};
   const built = [];
   spine.execute = async (item, opts) => {
     lastSpineOpts = opts;
@@ -3531,8 +3579,15 @@ async function courseChecks() {
     const usd = spend[item.id];
     if (status === 'failed') queue.fail(item.id, 'run-t', 'stubbed failure', usd);
     else if (status === 'done') queue.done(item.id, 'run-t', {}, usd);
-    else queue.block(item.id, 'run-t', 'awaiting human review', 'review', usd);
-    return { status };
+    else if (status === 'script-blocked') {
+      // What stages/script-approval.js does: block before anything is bought, and
+      // record the fingerprint of the script on the DURABLE item, because that is
+      // the value an approval has to name.
+      queue.block(item.id, 'run-t', 'awaiting script approval', 'script-approval', usd);
+      queue.setStatus(item.id, queue.ITEM_STATUS.BLOCKED,
+        { scriptSha: shas[item.id] || 'sha-' + item.id.replace(/\W/g, '') });
+    } else queue.block(item.id, 'run-t', 'awaiting human review', 'review', usd);
+    return { status: status === 'script-blocked' ? 'blocked' : status };
   };
   const course = (tag, slug, extra = {}) => queue.enqueue({
     topic: slug, series: 'demo', slug, source: 'course-builder', notes: `[${tag}] brief`, ...extra,
@@ -3550,6 +3605,7 @@ async function courseChecks() {
     freshQueue(); built.length = 0;
     for (const k of Object.keys(outcomes)) delete outcomes[k];
     for (const k of Object.keys(spend)) delete spend[k];
+    for (const k of Object.keys(shas)) delete shas[k];
   };
 
   await checkAsync('a failed lesson holds its own course and no other', async () => {
@@ -3742,6 +3798,149 @@ async function courseChecks() {
     return 'reserved 2.50, settled 1.23';
   });
 
+  // ── the script gate: a person reads it before a penny is spent ───────────────
+  // Until 2026-09-24 the only human decision was on a finished, already-paid-for
+  // video: an instructor who disliked the angle of a lesson found out at ~$1.50 and
+  // half an hour. These checks are the claim that the first pause is the cheap one,
+  // and that an approval names the script it approved.
+
+  check('the script gate runs before anything can be bought', () => {
+    const at = (s) => spine.STAGE_ORDER.indexOf(s);
+    assert(at('script-approval') > at('gate'),
+      'the human reads the script before the machine gate has settled it');
+    assert(at('script-approval') < at('references') && at('script-approval') < at('produce'),
+      'the script gate sits after a stage that spends -- the pause would not be free');
+    const { BLOCKED_BY_VALUES } = require(path.join(__dirname, 'lib', 'spine-errors'));
+    assert(BLOCKED_BY_VALUES.includes('script-approval'),
+      'the blocker the LMS has to branch on is not in the published set');
+    return 'gate -> script-approval -> references -> produce, and published';
+  });
+
+  await checkAsync('a lesson pauses at its script, holds its course, and has bought nothing', async () => {
+    await fresh();
+    const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+    const ledger = require(path.join(__dirname, '..', 'server', 'lib', 'ledger'));
+    const store = jobStore.shared();
+    const r = ledger.reserve(store, { tenantId: 'lms', jobId: 'course-sg', usd: 2.5, key: 'demo/sg1', kind: 'course' });
+    assert(r.ok, 'reserve failed');
+    queue.enqueue({ topic: 'sg1', series: 'demo', slug: 'sg1', source: 'course-builder',
+      notes: '[course-sg] brief', tenantId: 'lms', spendRef: r.ref });
+    course('course-sg', 'sg2');
+    outcomes['demo/sg1'] = 'script-blocked';
+    spend['demo/sg1'] = 0.05;
+    await cw.drain();
+
+    const it = queue.get('demo/sg1');
+    assert(it.blockedBy === 'script-approval', `expected script-approval, got ${it.blockedBy}`);
+    assert(it.scriptSha, 'no script fingerprint was recorded, so nothing can be approved');
+    assert(!built.includes('demo/sg2'), 'the next lesson built while lesson one was still being read');
+    assert(cw.heldCourses().has('course-sg'), 'a script-blocked lesson does not hold its course');
+
+    // The money claim. Settling here would release the $2.50 against a lesson that
+    // cost five cents, and the approved build that follows would spend ~$1.50 with
+    // no reservation standing behind it.
+    const bal = ledger.spentUsd(store, 'lms');
+    assert(bal.reserved === 2.5 && bal.settled === 0,
+      `the reservation was closed at the script pause: ${JSON.stringify(bal)}`);
+    return 'paused at cents, course held, reservation still open';
+  });
+
+  await checkAsync('an approval must name the script it approved', async () => {
+    await fresh();
+    const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+    course('course-sh', 'sh1');
+    shas['demo/sh1'] = 'aaaa1111bbbb2222';
+    outcomes['demo/sh1'] = 'script-blocked';
+    await cw.drain();
+
+    assert(!cw.approveScript('demo/sh1', 'aroma', null, 'course-sh').ok,
+      'an approval with no sha was accepted -- that is a licence for any script');
+    assert(!cw.approveScript('demo/sh1', 'aroma', 'deadbeefdeadbeef', 'course-sh').ok,
+      'an approval naming a DIFFERENT script was accepted');
+    assert(queue.get('demo/sh1').status === 'blocked', 'a refused approval moved the lesson anyway');
+
+    const ok = cw.approveScript('demo/sh1', 'aroma', 'aaaa1111bbbb2222', 'course-sh');
+    assert(ok.ok, `the correct sha was refused: ${ok.why}`);
+    // approveScript kicks the worker, which drains synchronously into the stub --
+    // so assert on what SURVIVES the rebuild, not on the moment in between.
+    await settled();
+    const it = queue.get('demo/sh1');
+    assert(it.scriptApproved === 'aroma', 'the approval did not survive onto the item');
+    assert(it.scriptApprovedSha === 'aaaa1111bbbb2222', 'the approved sha was not carried onto the item');
+    // The load-bearing one: the worker handed the approval AND the sha to the spine,
+    // so the stage can refuse a script that is not the one that was read.
+    assert(lastSpineOpts.scriptApproved === 'aroma' && lastSpineOpts.scriptApprovedSha === 'aaaa1111bbbb2222',
+      `the worker did not pass the approval down: ${JSON.stringify({
+        a: lastSpineOpts.scriptApproved, s: lastSpineOpts.scriptApprovedSha })}`);
+    return 'no sha and a wrong sha refused, the right one released and passed down';
+  });
+
+  await checkAsync('an approved script builds even though its own course is held', async () => {
+    await fresh();
+    const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+    // One lesson parked at the script gate holds the course; a sibling whose own
+    // script a person has since approved must still be allowed through that hold,
+    // or approving anything after the first block would queue work that never runs.
+    course('course-he', 'he1');
+    course('course-he', 'he2');
+    queue.block('demo/he1', 'run-t', 'awaiting script approval', 'script-approval');
+    assert(cw.heldCourses().has('course-he'), 'the blocked lesson does not hold its course');
+    assert(!cw.eligible().some((i) => i.id === 'demo/he2'), 'a held course is offering work already');
+    queue.setStatus('demo/he2', queue.ITEM_STATUS.QUEUED, { scriptApproved: 'aroma' });
+    assert(cw.eligible().some((i) => i.id === 'demo/he2'),
+      'a lesson whose script was approved is not eligible -- it would never build');
+    return 'held for the unread one, released for the approved one';
+  });
+
+  await checkAsync('a script can be sent back with notes, and the rounds are capped', async () => {
+    await fresh();
+    const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+    course('course-sr', 'sr1');
+    outcomes['demo/sr1'] = 'script-blocked';
+    await cw.drain();
+
+    assert(!cw.revise('demo/sr1', '   ', 'aroma', 'course-sr').ok,
+      'an empty revision was accepted -- the writer has nothing to rewrite towards');
+
+    for (let n = 1; n <= cw.MAX_HUMAN_REVISIONS; n++) {
+      const r = cw.revise('demo/sr1', `round ${n}: more Ali`, 'aroma', 'course-sr');
+      assert(r.ok && r.round === n, `revision ${n} refused: ${r.why}`);
+      // revise kicks the worker, which rewrites and parks it at the gate again --
+      // the real loop. Let it settle, then read what survived.
+      await settled();
+      const it = queue.get('demo/sr1');
+      assert(it.scriptNotes === `round ${n}: more Ali`, `notes not carried on round ${n}`);
+      assert(it.humanRevisions === n, `the round was not counted on round ${n}`);
+      assert(it.scriptApproved === false, 'a revision left an approval standing on a script about to change');
+      assert(it.blockedBy === 'script-approval', 'the rewritten script did not pause to be read again');
+    }
+    const over = cw.revise('demo/sr1', 'one more', 'aroma', 'course-sr');
+    assert(!over.ok && /already been revised/.test(over.why),
+      'the revision cap does not hold -- a lesson can hold a course and a reservation forever');
+    assert(queue.get('demo/sr1').scriptNotesHistory.length === cw.MAX_HUMAN_REVISIONS,
+      'the revision history does not record every round');
+    return `${cw.MAX_HUMAN_REVISIONS} rounds, then refused`;
+  });
+
+  check('a requeue drops a script approval, as it drops a review approval', () => {
+    freshQueue();
+    queue.enqueue({ topic: 'rq', series: 'demo', slug: 'rq', source: 'course-builder', notes: '[course-rq] b' });
+    queue.setStatus('demo/rq', 'blocked', {
+      scriptApproved: 'aroma', scriptApprovedSha: 'aaaa1111bbbb2222', scriptNotes: 'x',
+      reviewApproved: 'aroma', humanRevisions: 2,
+    });
+    queue.requeue('demo/rq', { requeuedBy: 'test' });
+    const it = queue.get('demo/rq');
+    // A requeue writes a NEW script. Carrying the approval would resume straight
+    // past the read; carrying the sha would authorise a script not yet written.
+    assert(it.scriptApproved === false, 'a requeued lesson still carries its script approval');
+    assert(it.scriptApprovedSha === null, 'a requeued lesson still carries the approved sha');
+    assert(it.scriptNotes === null, 'a requeued lesson still carries stale revision notes');
+    // But the revision budget is per lesson, not per attempt.
+    assert(it.humanRevisions === 2, 'a requeue reset the revision budget, which is a way to buy more rounds');
+    return 'approval and sha cleared, the revision budget kept';
+  });
+
   // ── a stopped course is not a held course ────────────────────────────────────
   // course-mub7whoa read `held.by: <a lesson Aroma rejected>` for a day, and /health
   // counted it in heldCourses, with nothing queued behind it. A hold that can never
@@ -3871,6 +4070,243 @@ async function courseChecks() {
 }
 
 
+/**
+ * 12. Offloading a video to Drive must never be able to lose one.
+ *
+ * This section exists because the change it covers is the only one in this repo
+ * that DELETES a paid-for artefact. Everything else fails by leaving a copy
+ * somewhere useless; this fails by leaving no copy at all. So the tests are about
+ * the ordering rather than the happy path: what must still be true when the
+ * upload half goes wrong.
+ *
+ * No network. gdrive.uploadFile is stubbed -- a test that uploaded to a real
+ * Drive would be a test nobody runs.
+ */
+async function driveOffloadChecks() {
+  console.log('');
+  console.log('12. a video is never deleted before another copy is proven to exist');
+
+  const osMod = require('os');
+  const gdrive = require(path.join(__dirname, 'lib', 'gdrive'));
+  const deliverables = require(path.join(__dirname, 'lib', 'deliverables'));
+  const driveOffload = require(path.join(__dirname, 'lib', 'drive-offload'));
+  const jobStore = require(path.join(__dirname, '..', 'server', 'lib', 'job-store'));
+  const videoMetaMod = require(path.join(__dirname, 'lib', 'video-meta'));
+
+  const realUpload = gdrive.uploadFile;
+  const realConfigured = gdrive.isConfigured;
+  const realFolderId = gdrive.folderId;
+
+  // A lesson on a throwaway volume: the mp4 we might lose, plus the two small
+  // files whose loss would break the checkpoint contract.
+  function freshLesson(bytes = 'PRETEND MP4 BYTES') {
+    const dir = fs.mkdtempSync(path.join(osMod.tmpdir(), 'cq-drive-'));
+    jobStore.reset();
+    delete process.env.RAILWAY_VOLUME_MOUNT_PATH;
+    process.env.JOB_STORE_DIR = dir;
+    process.env.JOB_STORE_DURABLE = '1';
+    const dest = deliverables.dirFor('fixtures', 'a-lesson');
+    fs.mkdirSync(dest, { recursive: true });
+    fs.writeFileSync(path.join(dest, 'a-lesson_final.mp4'), bytes);
+    fs.writeFileSync(path.join(dest, 'beats.js'), 'module.exports = [];');
+    fs.writeFileSync(path.join(dest, 'durations.json'), '{}');
+    fs.writeFileSync(path.join(dest, 'persisted.json'), JSON.stringify({ series: 'fixtures', slug: 'a-lesson' }));
+    return { dir, dest, mp4: path.join(dest, 'a-lesson_final.mp4') };
+  }
+
+  gdrive.isConfigured = () => true;
+  gdrive.folderId = () => 'test-folder';
+
+  // The single most dangerous failure: Drive says OK, but stored different bytes.
+  // If this ever deletes, a paid video is gone and the record claims it is safe.
+  await checkAsync('a checksum mismatch aborts, and the video survives', async () => {
+    const { mp4, dest } = freshLesson();
+    gdrive.uploadFile = async () => ({
+      fileId: 'f1', name: 'x', bytes: 999999, md5: 'a-different-hash', webViewLink: 'http://x',
+    });
+    const res = await driveOffload.offload({ series: 'fixtures', slug: 'a-lesson' });
+    assert(!res.ok, 'a mismatched upload was accepted');
+    assert(fs.existsSync(mp4), 'THE VIDEO WAS DELETED despite the checksum not matching');
+    assert(!fs.existsSync(path.join(dest, 'drive.json')),
+      'a drive.json was written for an upload that did not verify');
+    return res.skipped;
+  });
+
+  await checkAsync('an upload that throws deletes nothing', async () => {
+    const { mp4 } = freshLesson();
+    gdrive.uploadFile = async () => { throw new Error('network went away'); };
+    const res = await driveOffload.offload({ series: 'fixtures', slug: 'a-lesson' });
+    assert(!res.ok, 'a failed upload reported success');
+    assert(fs.existsSync(mp4), 'THE VIDEO WAS DELETED after the upload failed');
+    return 'video intact';
+  });
+
+  // The other half of the contract. checkpoints.js recomputes the questions and
+  // the catalogue row from these two files on every request, so deleting them
+  // leaves a video that plays and cannot be answered.
+  await checkAsync('a verified upload reclaims the mp4 and keeps beats + durations', async () => {
+    const { mp4, dest } = freshLesson();
+    const realMeta = await videoMetaMod.capture(mp4);
+    gdrive.uploadFile = async () => ({
+      fileId: 'f2', name: 'a-lesson_final.mp4', bytes: realMeta.bytes,
+      md5: realMeta.md5, webViewLink: 'http://drive/f2',
+    });
+    const res = await driveOffload.offload({ series: 'fixtures', slug: 'a-lesson' });
+    assert(res.ok, `offload failed: ${res.skipped}`);
+    assert(!fs.existsSync(mp4), 'the mp4 was not reclaimed after a verified upload');
+    assert(fs.existsSync(path.join(dest, 'beats.js')), 'beats.js was deleted -- the questions are gone');
+    assert(fs.existsSync(path.join(dest, 'durations.json')), 'durations.json was deleted -- the timings are gone');
+    const rec = JSON.parse(fs.readFileSync(path.join(dest, 'drive.json'), 'utf8'));
+    assert(rec.saved2drive === true && rec.driveFileId === 'f2', 'drive.json does not record the copy');
+    assert(rec.verified === true, 'a matching md5 was not recorded as verified');
+    assert(fs.existsSync(path.join(dest, 'video-meta.json')), 'the video attributes were not kept');
+    return `freed ${res.freedBytes} bytes, metadata kept`;
+  });
+
+  await checkAsync('the attributes are captured before the bytes go, not after', async () => {
+    const { mp4, dest } = freshLesson();
+    const realMeta = await videoMetaMod.capture(mp4);
+    let metaExistedAtUploadTime = false;
+    gdrive.uploadFile = async () => {
+      // By the time Drive is called, the record of what this video IS must already
+      // be on disk -- otherwise a crash mid-upload loses the attributes of a file
+      // we are about to delete.
+      metaExistedAtUploadTime = fs.existsSync(path.join(dest, 'video-meta.json'));
+      return { fileId: 'f3', name: 'n', bytes: realMeta.bytes, md5: realMeta.md5, webViewLink: 'u' };
+    };
+    await driveOffload.offload({ series: 'fixtures', slug: 'a-lesson' });
+    assert(metaExistedAtUploadTime, 'video-meta.json was written only after the upload');
+    const m = JSON.parse(fs.readFileSync(path.join(dest, 'video-meta.json'), 'utf8'));
+    assert(m.md5 && m.sha256 && m.bytes, 'the captured attributes are missing a checksum or size');
+    return 'captured first';
+  });
+
+  // A requeue re-runs the spine. Uploading again would leave two copies on Drive
+  // and no way to say which one the record points at.
+  await checkAsync('a second offload does not upload the video twice', async () => {
+    const { mp4 } = freshLesson();
+    const realMeta = await videoMetaMod.capture(mp4);
+    let calls = 0;
+    gdrive.uploadFile = async () => {
+      calls += 1;
+      return { fileId: 'f4', name: 'n', bytes: realMeta.bytes, md5: realMeta.md5, webViewLink: 'u' };
+    };
+    await driveOffload.offload({ series: 'fixtures', slug: 'a-lesson' });
+    await driveOffload.offload({ series: 'fixtures', slug: 'a-lesson' });
+    assert(calls === 1, `uploaded ${calls} times; a requeue duplicates the Drive copy`);
+    return 'idempotent';
+  });
+
+  await checkAsync('a dry run touches nothing', async () => {
+    const { mp4, dest } = freshLesson();
+    let called = false;
+    gdrive.uploadFile = async () => { called = true; return {}; };
+    const res = await driveOffload.offload({ series: 'fixtures', slug: 'a-lesson', dryRun: true });
+    assert(!called, 'a dry run uploaded');
+    assert(fs.existsSync(mp4), 'a dry run deleted the video');
+    assert(!fs.existsSync(path.join(dest, 'drive.json')), 'a dry run wrote a record');
+    return res.wouldUpload;
+  });
+
+  // Reclaiming space must never be able to take the script with it. `rm -rf` on
+  // the video directory would free more and would be exactly the mistake that
+  // turns a disk fix into a content-loss incident.
+  check('the reclaim list cannot swallow the lesson directory itself', () => {
+    const bad = driveOffload.RECLAIMABLE.filter((d) => !/^[a-z]+$/.test(d));
+    assert(bad.length === 0, `a reclaimable path is not a plain subdirectory name: ${bad.join(', ')}`);
+    for (const forbidden of ['beats.js', 'durations.json', '.', '..', '']) {
+      assert(!driveOffload.RECLAIMABLE.includes(forbidden),
+        `'${forbidden}' is on the reclaim list`);
+    }
+    return driveOffload.RECLAIMABLE.join(', ');
+  });
+
+  check('working-dir cleanup leaves beats.js and durations.json where they are', () => {
+    const vd = fs.mkdtempSync(path.join(osMod.tmpdir(), 'cq-videodir-'));
+    for (const d of driveOffload.RECLAIMABLE) {
+      fs.mkdirSync(path.join(vd, d), { recursive: true });
+      fs.writeFileSync(path.join(vd, d, 'junk.bin'), 'x'.repeat(1000));
+    }
+    fs.writeFileSync(path.join(vd, 'beats.js'), 'module.exports = [];');
+    fs.writeFileSync(path.join(vd, 'durations.json'), '{}');
+    const r = driveOffload.reclaimWorkingDirs(vd);
+    assert(fs.existsSync(path.join(vd, 'beats.js')), 'beats.js was removed by the working-dir sweep');
+    assert(fs.existsSync(path.join(vd, 'durations.json')), 'durations.json was removed by the sweep');
+    assert(fs.existsSync(vd), 'the lesson directory itself was removed');
+    for (const d of driveOffload.RECLAIMABLE) {
+      assert(!fs.existsSync(path.join(vd, d)), `${d}/ survived the sweep`);
+    }
+    return `freed ${r.freedBytes} bytes from ${r.removed.length} dirs`;
+  });
+
+  // The bare render has no brand bumpers. LAW 1 says it is not the deliverable,
+  // and putting it in TU's Drive under a lesson's name would misrepresent it.
+  await checkAsync('an unbranded render is never offloaded', async () => {
+    const dir = fs.mkdtempSync(path.join(osMod.tmpdir(), 'cq-drive-bare-'));
+    jobStore.reset();
+    delete process.env.RAILWAY_VOLUME_MOUNT_PATH;
+    process.env.JOB_STORE_DIR = dir;
+    process.env.JOB_STORE_DURABLE = '1';
+    const dest = deliverables.dirFor('fixtures', 'bare-one');
+    fs.mkdirSync(dest, { recursive: true });
+    const bare = path.join(dest, 'lesson.mp4');
+    fs.writeFileSync(bare, 'BARE');
+    let called = false;
+    gdrive.uploadFile = async () => { called = true; return {}; };
+    const res = await driveOffload.offload({ series: 'fixtures', slug: 'bare-one' });
+    assert(!res.ok, 'a bare render was offloaded');
+    assert(!called, 'a bare render reached Drive');
+    assert(fs.existsSync(bare), 'the bare render was deleted anyway');
+    return res.skipped;
+  });
+
+  // A machine with no Drive credentials must behave exactly as it did before any
+  // of this existed -- above all, it must not delete.
+  await checkAsync('with Drive unconfigured, nothing happens at all', async () => {
+    const { mp4 } = freshLesson();
+    gdrive.isConfigured = () => false;
+    const res = await driveOffload.offload({ series: 'fixtures', slug: 'a-lesson' });
+    gdrive.isConfigured = () => true;
+    assert(!res.ok, 'an unconfigured offload reported success');
+    assert(fs.existsSync(mp4), 'an unconfigured offload deleted the video');
+    return res.skipped;
+  });
+
+  // The flag lives on the queue item because that is what the LMS polls. A
+  // requeue clears the approval fields on purpose; clearing this one too would
+  // make a rebuilt lesson claim its Drive copy had vanished.
+  check('saved2drive survives a requeue', () => {
+    const dir = fs.mkdtempSync(path.join(osMod.tmpdir(), 'cq-drive-q-'));
+    const queue = require(path.join(__dirname, 'lib', 'queue'));
+    jobStore.reset();
+    queue.resetPathCache();
+    delete process.env.RAILWAY_VOLUME_MOUNT_PATH;
+    process.env.JOB_STORE_DIR = dir;
+    process.env.JOB_STORE_DURABLE = '1';
+
+    queue.enqueue({ topic: 'A lesson', series: 'fixtures', slug: 'flagged' });
+    queue.markSavedToDrive('fixtures/flagged', {
+      driveFileId: 'f9', driveUrl: 'http://drive/f9', bytes: 10, verified: true,
+    });
+    const afterFlag = queue.get('fixtures/flagged');
+    assert(afterFlag.saved2drive === true, 'the flag was not written');
+    assert(afterFlag.status === 'queued',
+      'marking a video saved changed the lesson status -- a storage step must not move a human gate');
+
+    queue.requeue('fixtures/flagged');
+    const afterRequeue = queue.get('fixtures/flagged');
+    assert(afterRequeue.saved2drive === true,
+      'a requeue cleared saved2drive, so a rebuilt lesson claims its Drive copy is gone');
+    assert(afterRequeue.driveFileId === 'f9', 'the Drive file id was lost on requeue');
+    return 'flag and id both survive';
+  });
+
+  gdrive.uploadFile = realUpload;
+  gdrive.isConfigured = realConfigured;
+  gdrive.folderId = realFolderId;
+}
+
+
 (async () => {
   await interpreterChecks();
   await beatChecks();
@@ -3883,6 +4319,7 @@ async function courseChecks() {
   browserChecks();
   await referenceChecks();
   await courseChecks();
+  await driveOffloadChecks();
 
   console.log(`\n${'-'.repeat(64)}`);
   console.log(`  ${pass} passed, ${failures.length} failed` + (skipped ? `, ${skipped} skipped` : ''));

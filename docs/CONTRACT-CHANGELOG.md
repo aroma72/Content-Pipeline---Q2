@@ -17,6 +17,36 @@ Frozen copies: `docs/contracts/course-api-<version>.md`.
 
 ---
 
+## 1.2 — 2026-09-24
+
+Reply: `docs/integration-requests/2026-09-24-script-approval-reply.md`. Frozen: `docs/contracts/course-api-v1.2.md`.
+
+**Behaviour change, not only additions.** Every course lesson now pauses BEFORE any media spend,
+at `blockedBy: "script-approval"`, until a person approves its script. A client that does not call
+the new approve route will see its course stall at lesson one after ~2 minutes. Everything else here
+is additive.
+
+| Change | Where | Example | Commit | LMS file |
+|---|---|---|---|---|
+| `contractVersion` | `GET /api/v1`, `GET /health` | `"contractVersion": "1.2"` | this release | `content-queen-courses.ts` `checkSpendReadiness()` |
+| **`blockedBy: "script-approval"`** | `GET /courses/:courseId`, closed set on `GET /api/v1` | 11th value. A lesson stopped here has spent cents of model calls and **no media**. | this release | `content-queen-courses.ts` blocker branch; build page banner |
+| **`GET /api/v1/courses/:courseId/lessons/:lessonId/script`** | new route | beats (`vo` spoken, `cap`/`overlay`/`info` on screen), the checkpoint, `gate`, and `sha` naming the draft | this release | `content-queen-courses.ts` (new `fetchLessonScript`) |
+| **`GET .../lessons/:lessonId/script.md`** | new route | the same script as `text/markdown` for a person to read | this release | same; link or render |
+| **`POST .../lessons/:lessonId/script/approve`** | new route | `{"by","sha"}` → `202`. **`sha` required** and re-checked before the spend. `409 cannot_approve_script` otherwise. $0; the build starts after it. | this release | `actOnLesson` (new verb) |
+| **`POST .../lessons/:lessonId/script/revise`** | new route | `{"why","by"}` → `202 {round, revisionsLeft}`. Rewrites from notes, re-gates, pauses again. Cents, no media. Capped at 5. | this release | `actOnLesson` (new verb) |
+| `items[].scriptAvailable`, `items[].scriptSha` | `GET /courses/:courseId` | `"scriptAvailable": true, "scriptSha": "952c084d6e16bcdb"` — a fact off the volume, like `deliverableAvailable` | this release | `CourseLessonState`, allowlist |
+| `items[].scriptApprovedBy`, `scriptApprovedAt`, `scriptRevisions` | `GET /courses/:courseId` | who released the script and how many times it went back | this release | allowlist only |
+| `400 invalid_plan` | `POST /courses/build` | `{errors:[{path:"modules[0].lessons[2].slo", message}]}` — the plan is meant to be EDITED, so build now checks the fields it builds from (lesson `title`/`slo`/`brief`, module `title`, course `title`) before reserving anything | this release | `buildCourse` refusal handling |
+| reservation held across the script pause | `POST /courses/build` ledger | the $2.50/lesson reservation is **not** settled when a lesson stops to be read; it is held until the lesson ends, is rejected, or is skipped | this release | none (already reconciles on terminal states) |
+
+**Unchanged, stated for the avoidance of doubt:** `reject` still fails the lesson and stops its
+course — `revise` is the new soft path and only exists at the script gate. `review`, `approve`,
+`skip`, `requeue`, `resume`, the file routes and the $2.50 per-lesson reservation are all as in 1.1.
+`deliverableAvailable` is `false` for a lesson awaiting script approval, which is correct: there is
+no video and will not be one until it is approved.
+
+---
+
 ## 1.1 — 2026-09-23
 
 Reply: `docs/integration-requests/2026-09-23-course-worker-reply.md`. Why: `SERVICE_DURABILITY_AND_CONTRACTS.md` §3.6.

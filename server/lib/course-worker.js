@@ -12,19 +12,32 @@
  * it and releases the next one. Nothing after a rejected or unreviewed lesson
  * is ever built.
  *
+ * THERE ARE NOW TWO PAUSES, AND THE FIRST ONE IS THE CHEAP ONE
+ * Since 2026-09-24 a lesson stops TWICE: once at `script-approval`, before a
+ * penny is spent, and once at `review`, after the render. The first pause is the
+ * one that matters for money -- an instructor who dislikes the angle of a lesson
+ * now finds out at cents rather than at ~$1.50, and says so by sending the script
+ * back with notes instead of paying for a video to reject.
+ *
  * HOW THE PAUSE HAPPENS
- * It is not a new mechanism. The spine's `review` stage already fails closed --
- * without an explicit approval a run ends `blocked`, never `done`. This worker
- * simply treats "blocked" as "a human is needed here" and stops rather than
- * moving to the next lesson. Any other blocker (spend, a missing credential)
- * stops the course for the same reason, which is the behaviour you want: a
- * course that hit a wall should not keep spending.
+ * It is not a new mechanism. The spine's `review` and `script-approval` stages
+ * both fail closed -- without an explicit approval a run ends `blocked`, never
+ * `done`. This worker simply treats "blocked" as "a human is needed here" and
+ * stops rather than moving to the next lesson. Any other blocker (spend, a
+ * missing credential) stops the course for the same reason, which is the
+ * behaviour you want: a course that hit a wall should not keep spending.
  *
  * APPROVING
  * approve() records the approval on the queue item and requeues it. The spine
  * resumes from its saved state, so the completed stages -- including the
  * expensive render -- are skipped, not repeated. It picks up at review, passes
  * now that approval is present, and uploads.
+ *
+ * approveScript() and revise() are the same idea one gate earlier, with one
+ * difference that is the point of the whole feature: they resume from the SCRIPT
+ * ON THE VOLUME, not from run state, and the approval names a sha. A person
+ * approves a specific script, so a specific script is what gets built -- see
+ * seedFromScript() and stages/script-approval.js.
  *
  * THE HOLD IS PER COURSE
  * "Nothing after a rejected or unreviewed lesson is built" was always meant per
@@ -49,12 +62,30 @@
  * therefore: a redeploy costs at most the lesson in flight, never the course.
  */
 
+const fs = require('fs');
+const path = require('path');
 const queue = require('../../orchestrator/lib/queue');
 const spine = require('../../orchestrator/lib/spine');
 const state = require('../../orchestrator/lib/state');
+const deliverables = require('../../orchestrator/lib/deliverables');
+const { videoDir } = require('../../orchestrator/lib/paths');
 const { config } = require('./config');
 const ledger = require('./ledger');
 const tenants = require('./tenants');
+
+/**
+ * How many times a person may send a script back before the lesson has to be
+ * approved, rejected or restarted.
+ *
+ * Deliberately separate from the spine's MAX_REDRAFTS_TOTAL (spine.js), which
+ * exists to stop two MODELS handing work back and forth on nobody's budget. A
+ * person is the budget holder, is rate-limited by their own attention, and each
+ * round costs one script and one gate call -- so the cap is higher, and it is here
+ * only so that an abandoned lesson cannot hold a course and an open reservation
+ * forever. Counted on the QUEUE ITEM, never in run state: run state does not
+ * survive a redeploy, so a counter kept there would silently reset to zero.
+ */
+const MAX_HUMAN_REVISIONS = 5;
 
 /** The store the queue and the ledger share. Null when none is writable. */
 function store() {
@@ -137,7 +168,13 @@ function courseTagOf(item) {
  * otherwise approving lesson two after lesson one failed would publish nothing.
  */
 function humanReleased(i) {
-  return Boolean(i.reviewApproved || i.rebuildApprovedBy || i.requeuedBy);
+  return Boolean(i.reviewApproved || i.rebuildApprovedBy || i.requeuedBy
+    // A script a person has read and approved -- or sent back with notes -- is as
+    // much a human release as a video they watched, and it is the one that comes
+    // FIRST now. Without these two, approving lesson two's script while lesson one
+    // is blocked would queue it and never build it: its course is held, and
+    // eligible() only lets a released lesson through a hold.
+    || i.scriptApproved || i.scriptRevisedBy);
 }
 
 /**
@@ -206,6 +243,89 @@ function status() {
   };
 }
 
+/**
+ * Rebuild what research/script/gate produced, from the DURABLE copy, so a lesson
+ * whose script a person has read is built from that script and no other.
+ *
+ * Why not state.load(runId): run state is deliberately not on the volume
+ * (paths.js:36-39), because it points at render working directories a redeploy
+ * takes with it. A script can wait days for a person, and Railway redeploys in
+ * that window -- so run state is exactly the wrong place to resume a human pause
+ * from. The volume copy is the one surface built to survive it.
+ *
+ * Returns null when there is nothing to resume from: a first build, or a volume
+ * copy that is gone. The lesson then starts at research and pauses at
+ * script-approval again with a NEW sha, which no longer matches the recorded
+ * approval -- so the worst case is one extra cheap draft and one extra read, never
+ * a render of a script nobody approved.
+ */
+function seedFromScript(item) {
+  if (!item.scriptApproved && !item.scriptNotes) return null;
+  const held = deliverables.findScript(item.series, item.slug);
+  if (!held) return null;
+
+  let beats = null;
+  try {
+    delete require.cache[require.resolve(held.beats)];
+    const mod = require(held.beats);
+    if (!Array.isArray(mod) || !mod.length) return null;
+    beats = mod;
+  } catch (e) {
+    log(`${item.id}: could not read the held script (${e.message}) -- rebuilding it`);
+    return null;
+  }
+
+  // produce reads videoDir/beats.js, not the volume, and after a redeploy the
+  // working directory is empty. Copy it back before anything downstream looks.
+  const dir = videoDir(item.series, item.slug);
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.copyFileSync(held.beats, path.join(dir, 'beats.js'));
+    if (held.durations) fs.copyFileSync(held.durations, path.join(dir, 'durations.json'));
+  } catch (e) {
+    log(`${item.id}: could not restore the script to the render dir (${e.message}) -- rebuilding it`);
+    return null;
+  }
+
+  const ctx = held.context || {};
+  // Notes present -> rewrite first, from `script`. Otherwise straight to the gate
+  // stage itself -- NOT past it: resuming at 'references' would record the human
+  // gate as skipped and skip the sha check, which is the one thing making the
+  // approval mean anything.
+  const fromStage = item.scriptNotes ? 'script' : 'script-approval';
+  const seedArtifacts = {
+    script: {
+      title: ctx.topic || item.topic,
+      beats,
+      beatsPath: path.join(dir, 'beats.js'),
+      beatCount: beats.length,
+    },
+    ...(ctx.research ? { research: ctx.research } : {}),
+    ...(ctx.gate && fromStage === 'script-approval' ? { gate: ctx.gate } : {}),
+    ...(item.scriptNotes ? { redraftFeedback: humanFeedback(item, ctx) } : {}),
+  };
+  return { fromStage, seedArtifacts, sha: ctx.sha || null };
+}
+
+/**
+ * A person's notes, in the shape the script stage already reads feedback in
+ * (spine.js writes exactly this structure for a machine reviewer). Reusing it
+ * means a human revision goes through the redraft path the writer is already
+ * tuned for: script.js sees previousBeats plus a critique and returns a PATCH,
+ * so beats nobody complained about survive the rewrite verbatim.
+ */
+function humanFeedback(item, ctx) {
+  const prior = (ctx.redraftFeedback && ctx.redraftFeedback.history) || [];
+  const round = Number(item.humanRevisions) || 1;
+  return {
+    round,
+    fromStage: 'script',
+    requestedBy: 'human',
+    latest: [item.scriptNotes],
+    history: [...prior, { round, critique: [item.scriptNotes] }],
+  };
+}
+
 async function buildOne(item) {
   const st = state.create(item);
   // Record that this lesson is being built BEFORE any of it is paid for. The
@@ -223,10 +343,26 @@ async function buildOne(item) {
   const tenant = item.tenantId ? tenants.registry().byId(item.tenantId) : null;
   const wall = tenant && Number.isFinite(tenant.maxRunUsd) && tenant.maxRunUsd !== null
     ? tenant.maxRunUsd : Infinity;
+
+  // A script a person has already read is never written again: they approved a
+  // particular one, and a fresh draft is a different one.
+  const resumeFrom = seedFromScript(item);
+  if (resumeFrom) {
+    log(`${item.id}: resuming at '${resumeFrom.fromStage}' from the held script`
+      + `${resumeFrom.sha ? ` (${resumeFrom.sha})` : ''} -- not re-writing it`);
+  }
+
   try {
     const final = await spine.execute(item, {
       resumeState: st,
+      ...(resumeFrom ? { fromStage: resumeFrom.fromStage, seedArtifacts: resumeFrom.seedArtifacts } : {}),
       budgetUsd: Math.min(config.pipeline.budgetUsd, wall),
+      // The pre-spend gate. Absent it, `script-approval` blocks before references
+      // -- the pause this worker now opens with, rather than the one it ends with.
+      // The sha rides along so the stage can refuse an approval that names a
+      // different script than the one on disk.
+      scriptApproved: item.scriptApproved || false,
+      scriptApprovedSha: item.scriptApprovedSha || null,
       // Approval rides on the queue item, recorded by approve(). Absent it, the
       // review stage blocks -- which is the pause this worker is built around.
       reviewApproved: item.reviewApproved || false,
@@ -245,7 +381,19 @@ async function buildOne(item) {
     };
     history.push(outcome);
     log(`${item.id} -> ${outcome.status}`);
-    settleSpend(item, outcome.status);
+    // Do NOT close the reservation for a pause that happens BEFORE the spend it
+    // was taken for. Settling at the script gate would release $2.50 against a
+    // lesson that has cost about five cents, and the approved build that follows
+    // would then buy ~$1.50 of art with no authorisation standing behind it and
+    // no room left under the tenant's monthly ceiling to account for it. The hold
+    // survives the pause; the next build's settle, or reject(), is what closes it.
+    const fresh = queue.get(item.id);
+    if (fresh && fresh.blockedBy === 'script-approval') {
+      log(`${item.id}: reservation held open across the script pause (spent so far: `
+        + `$${Number(fresh.spendUsdTotal) || 0})`);
+    } else {
+      settleSpend(item, outcome.status);
+    }
     return outcome;
   } catch (e) {
     const outcome = { id: item.id, topic: item.topic, status: 'failed',
@@ -335,6 +483,92 @@ function approve(lessonId, by = 'Aroma', courseId = null, tenantId = null) {
     : `approved ${lessonId} by ${by} -- resuming to publish, then the next lesson`);
   kick();
   return { ok: true };
+}
+
+/**
+ * Approve a lesson's SCRIPT, before anything has been bought.
+ *
+ * `sha` is the fingerprint of the script the approver was actually shown. It is
+ * required and it is checked, twice: here, so a stale read is refused before a
+ * build even starts, and again inside the stage against the bytes on disk. An
+ * approval that does not name a script would be a standing licence to render
+ * whatever beats.js happened to exist later, which is precisely the thing this
+ * gate is for.
+ *
+ * @returns {{ok:true, sha:string}|{ok:false, why:string}}
+ */
+function approveScript(lessonId, by = 'Aroma', sha = null, courseId = null, tenantId = null) {
+  const item = queue.get(lessonId);
+  if (!item) return { ok: false, why: `No lesson '${lessonId}'.` };
+  const wrong = notThisCourse(item, courseId) || notThisTenant(item, tenantId);
+  if (wrong) return wrong;
+  if (item.status !== 'blocked' || item.blockedBy !== 'script-approval') {
+    return { ok: false, why: `That lesson is not waiting on its script `
+      + `(${item.blockedBy || item.status}). A finished video is approved with /approve.` };
+  }
+  if (!item.scriptSha) {
+    return { ok: false, why: 'That lesson has no recorded script fingerprint, so an approval '
+      + 'could not be tied to anything. Requeue it to build a script that can be.' };
+  }
+  if (!sha) {
+    return { ok: false, why: 'An approval must name the script being approved. Send the `sha` '
+      + `from GET .../script (currently ${item.scriptSha}).` };
+  }
+  if (sha !== item.scriptSha) {
+    return { ok: false, why: `That approval names script ${sha}, but this lesson's script is `
+      + `${item.scriptSha}. It changed since you read it -- read it again and approve that one.` };
+  }
+  queue.setStatus(lessonId, queue.ITEM_STATUS.QUEUED, {
+    scriptApproved: by,
+    scriptApprovedSha: sha,
+    scriptApprovedAt: new Date().toISOString(),
+    scriptNotes: null,
+    error: null, reason: null, blockedBy: null,
+  });
+  log(`script approved for ${lessonId} by ${by} (${sha}) -- building the video`);
+  kick();
+  return { ok: true, sha };
+}
+
+/**
+ * Send a script back with notes. Cheap on purpose: it re-runs script -> gate ->
+ * script-approval and stops again, buying nothing. This is the whole argument for
+ * gating before the render rather than after it -- a wrong angle costs a model
+ * call here and $1.50 plus half an hour on the other side of produce.
+ */
+function revise(lessonId, notes = '', by = 'Aroma', courseId = null, tenantId = null) {
+  const item = queue.get(lessonId);
+  if (!item) return { ok: false, why: `No lesson '${lessonId}'.` };
+  const wrong = notThisCourse(item, courseId) || notThisTenant(item, tenantId);
+  if (wrong) return wrong;
+  if (item.status !== 'blocked' || item.blockedBy !== 'script-approval') {
+    return { ok: false, why: `That lesson is not waiting on its script `
+      + `(${item.blockedBy || item.status}). Notes on a finished video go through /reject.` };
+  }
+  if (!String(notes || '').trim()) {
+    return { ok: false, why: 'A revision needs notes saying what to change -- the writer is '
+      + 'answering them, and "no" on its own is not something it can rewrite towards.' };
+  }
+  const round = (Number(item.humanRevisions) || 0) + 1;
+  if (round > MAX_HUMAN_REVISIONS) {
+    return { ok: false, why: `This script has already been revised ${MAX_HUMAN_REVISIONS} times. `
+      + 'Approve it, reject the lesson, or requeue it to start again from the brief.' };
+  }
+  const text = String(notes).trim();
+  queue.setStatus(lessonId, queue.ITEM_STATUS.QUEUED, {
+    scriptNotes: text,
+    scriptNotesHistory: [...(item.scriptNotesHistory || []),
+      { round, by, at: new Date().toISOString(), notes: text, onSha: item.scriptSha || null }],
+    humanRevisions: round,
+    scriptRevisedBy: by,
+    // A revision invalidates any approval: the script is about to change.
+    scriptApproved: false,
+    scriptApprovedSha: null,
+    error: null, reason: null, blockedBy: null,
+  });
+  log(`revise ${lessonId} round ${round} by ${by} -- rewriting the script from notes, no spend`);
+  kick();
+  return { ok: true, round, remaining: MAX_HUMAN_REVISIONS - round };
 }
 
 /**
@@ -513,9 +747,17 @@ function restore() {
       interruptedAt: new Date().toISOString(),
       previousRunId: i.runId || null,
       blockedBy: 'interrupted',
-      reason: 'interrupted by a server restart before it finished. Nothing was published, '
-        + 'and the partial render did not survive. Approve to rebuild this lesson '
-        + '(about $1.50 and 30 minutes), or reject to stop the course.',
+      // The cost of a rebuild depends on how far it got. A lesson interrupted
+      // before its script was ever fingerprinted had not reached the spend at all,
+      // and quoting ~$1.50 at that person is wrong by two orders of magnitude --
+      // they may reject a lesson to avoid a bill that does not exist.
+      reason: i.scriptSha
+        ? 'interrupted by a server restart before it finished. Nothing was published, '
+          + 'and the partial render did not survive. Approve to rebuild this lesson '
+          + '(about $1.50 and 30 minutes), or reject to stop the course.'
+        : 'interrupted by a server restart before anything was bought. Approve to write '
+          + 'its script again (cents, a couple of minutes); it will then pause for you to '
+          + 'read it, as it would have. Or reject to stop the course.',
     });
     interrupted++;
   }
@@ -526,6 +768,7 @@ function restore() {
 }
 
 module.exports = {
-  drain, kick, status, approve, reject, requeue, skip, resume, queued, eligible, heldCourses,
-  courseTagOf, awaitingApproval, restore, bootDecision, readBoot, markBoot,
+  drain, kick, status, approve, approveScript, revise, reject, requeue, skip, resume,
+  queued, eligible, heldCourses, courseTagOf, awaitingApproval, restore, bootDecision,
+  readBoot, markBoot, MAX_HUMAN_REVISIONS,
 };

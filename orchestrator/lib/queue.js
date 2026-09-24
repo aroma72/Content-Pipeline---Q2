@@ -234,6 +234,35 @@ const block   = (id, runId, reason, blockedBy, spendUsd) =>
     runId, reason, blockedBy: blockedBy || DEFAULT_BLOCKED_BY, ...spendFields(id, spendUsd),
   });
 
+/**
+ * Record that a lesson's video now lives on Google Drive.
+ *
+ * Keeps the item's CURRENT status on purpose. This is not a lifecycle
+ * transition -- a lesson blocked at review is still blocked after its bytes are
+ * copied somewhere safe -- and writing a status here would let a storage
+ * operation quietly release a human gate.
+ *
+ * The flag has to live on the queue item, not only in drive.json on the volume,
+ * because the queue item is what `GET /api/v1/courses/:courseId` projects and
+ * therefore the only per-lesson record the LMS actually polls.
+ *
+ * Note what is NOT needed: an entry in requeue()'s clear-list. The bytes are
+ * still on Drive after a requeue, so the flag stays true; clearing it would
+ * make a rebuilt lesson claim its existing Drive copy had vanished.
+ */
+const markSavedToDrive = (id, drive = {}) => {
+  const item = get(id);
+  if (!item) throw new Error(`No queue item '${id}'`);
+  return setStatus(id, item.status, {
+    saved2drive: true,
+    driveFileId: drive.driveFileId || null,
+    driveUrl: drive.driveUrl || null,
+    driveSavedAt: drive.savedAt || new Date().toISOString(),
+    driveBytes: Number.isFinite(drive.bytes) ? drive.bytes : null,
+    driveVerified: Boolean(drive.verified),
+  });
+};
+
 // Send a lesson back to the queue for another attempt.
 //
 // The clearing is the point, and it is here rather than in the caller because
@@ -243,10 +272,18 @@ const block   = (id, runId, reason, blockedBy, spendUsd) =>
 // nobody watched. Same for `interrupted`, which would send it down the rebuild
 // branch of approve(), and for `error`/`reason`/`blockedBy`, which would
 // describe the new attempt by the old one's ending.
+// The same applies to the SCRIPT gate: a requeued lesson carrying scriptApproved
+// would resume straight past the read, and one carrying scriptApprovedSha would
+// carry an authorisation for a script this attempt has not written yet.
+// humanRevisions is deliberately NOT cleared -- the revision budget is per lesson,
+// not per attempt, or a requeue would be a way to buy five more rounds.
 const requeue = (id, extra) => setStatus(id, ITEM_STATUS.QUEUED, {
   requeuedAt: new Date().toISOString(),
   reviewApproved: false,
   interrupted: false,
+  scriptApproved: false,
+  scriptApprovedSha: null,
+  scriptNotes: null,
   error: null,
   reason: null,
   blockedBy: null,
@@ -264,7 +301,7 @@ module.exports = {
   // approving a lesson has to carry fields none of them do (reviewApproved,
   // approvedAt) -- course-worker called it for months while it was private, so
   // every approve and reject threw.
-  setStatus, claim, done, fail, block, requeue,
+  setStatus, claim, done, fail, block, requeue, markSavedToDrive,
   // Exported so the split it produces can be tested without settling a real
   // lesson: the media/model breakdown is a published contract now.
   spendFields,

@@ -91,16 +91,16 @@ async function get(path, auth = true) {
     return rules.length + ' rules, ' + (r.json.endpoints || []).length + ' endpoints';
   });
 
-  console.log('\n3. the course worker -- contract 1.1 (a hold is per course, and visible)');
+  console.log('\n3. the course worker -- contract 1.2 (a hold is per course; a script is read before we spend)');
 
-  await check('the index and /health agree on a contractVersion of at least 1.1', async () => {
+  await check('the index and /health agree on a contractVersion of at least 1.2', async () => {
     const idx = await get('/api/v1', false);
     const h = await get('/health', false);
     const v = String(idx.json.contractVersion || '');
     assert(/^\d+\.\d+$/.test(v), 'the index carries no contractVersion -- this build predates 1.1');
     assert(h.json.contractVersion === v, '/health says ' + h.json.contractVersion + ', the index says ' + v);
     const [maj, min] = v.split('.').map(Number);
-    assert(maj > 1 || (maj === 1 && min >= 1), 'contractVersion ' + v + ' is older than 1.1');
+    assert(maj > 1 || (maj === 1 && min >= 2), 'contractVersion ' + v + ' is older than 1.2');
     return 'contract ' + v;
   });
 
@@ -123,6 +123,33 @@ async function get(path, auth = true) {
         + 'POST /api/v1/courses/worker/resume starts them; it spends what a build already reserved.');
     }
     return 'running=' + w.running + ' eligible=' + w.eligible + ' held=' + w.heldCourses + ' needsResume=' + w.needsResume;
+  });
+
+  // ── 3b. the pre-spend script gate (contract 1.2) ──────────────────────────
+  // The gate is ALWAYS ON: a course built against this service stops at lesson one
+  // after ~2 minutes and waits for a person. If these routes are not live, an LMS
+  // that has wired the approve call is calling a 404 and its course is stuck.
+
+  await check('the script gate routes are on the index the LMS pins to', async () => {
+    const r = await get('/api/v1', false);
+    const paths = (r.json.endpoints || []).map((e) => e.method + ' ' + e.path);
+    const want = [
+      'GET /api/v1/courses/:courseId/lessons/:lessonId/script',
+      'GET /api/v1/courses/:courseId/lessons/:lessonId/script.md',
+      'POST /api/v1/courses/:courseId/lessons/:lessonId/script/approve',
+      'POST /api/v1/courses/:courseId/lessons/:lessonId/script/revise',
+    ];
+    for (const w of want) assert(paths.includes(w), 'the index does not list ' + w);
+    return want.length + ' routes listed';
+  });
+
+  await check('script-approval is in the published blockedBy set', async () => {
+    const r = await get('/api/v1', false);
+    const set = r.json.blockedBy;
+    assert(Array.isArray(set), 'the index does not publish the blockedBy set any more');
+    assert(set.includes('script-approval'),
+      'script-approval is not published, so the LMS cannot branch on the gate: ' + set.join(', '));
+    return set.length + ' values, including script-approval';
   });
 
   if (!TOKEN) {

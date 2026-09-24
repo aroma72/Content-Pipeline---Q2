@@ -154,4 +154,73 @@ async function plan(req, { log = () => {} } = {}) {
   };
 }
 
-module.exports = { plan, lessonsOf, estimate, SCHEMA };
+/**
+ * Check a plan a CALLER sends us against the schema the model is held to.
+ *
+ * The LMS edits the plan before building -- an instructor renames a lesson,
+ * rewrites an SLO, drops one they do not want. That is the point of returning the
+ * plan rather than persisting it. But it means the plan arriving at /build is no
+ * longer the one we validated on the way out, and /build used to check only that
+ * `modules` was an array. A plan whose lesson lost its `slo` in an editor would
+ * queue a lesson with no objective, and nobody would find out until a person
+ * watched a video that taught nothing in particular.
+ *
+ * SCOPED TO WHAT BUILD ACTUALLY CONSUMES, and no wider. The planner's SCHEMA is
+ * what the MODEL is held to; holding a human editor to the same thing would refuse
+ * a perfectly buildable plan because somebody deleted a module summary nothing
+ * reads. So this refuses exactly the fields whose absence produces a broken
+ * lesson -- the per-lesson title, objective and brief that become the topic and
+ * the prompt -- and stays out of the way everywhere else. `question` and
+ * `difficulty` are advisory at build time (the writer produces the checkpoint
+ * itself), so a plan without them is trimmed, not invalid.
+ *
+ * Deliberately not a full JSON-schema engine: it reports every problem at once
+ * with a path, because a caller fixing a form wants the whole list, not the first
+ * error.
+ *
+ * @returns {{ok:true}|{ok:false, errors:Array<{path:string,message:string}>}}
+ */
+function validate(plan) {
+  const errors = [];
+  const bad = (p, m) => errors.push({ path: p, message: m });
+  const str = (v) => typeof v === 'string' && v.trim().length > 0;
+
+  if (!plan || typeof plan !== 'object' || Array.isArray(plan)) {
+    return { ok: false, errors: [{ path: 'plan', message: 'The plan must be an object.' }] };
+  }
+  if (!str(plan.title)) bad('title', 'The course needs a title.');
+  if (!Array.isArray(plan.modules) || !plan.modules.length) {
+    bad('modules', '`modules` is required and must hold at least one module.');
+    return { ok: false, errors };
+  }
+
+  plan.modules.forEach((m, mi) => {
+    const mp = `modules[${mi}]`;
+    if (!m || typeof m !== 'object') { bad(mp, 'A module must be an object.'); return; }
+    if (!str(m.title)) bad(`${mp}.title`, 'Every module needs a title -- it is filed under it.');
+    if (!Array.isArray(m.lessons) || !m.lessons.length) {
+      bad(`${mp}.lessons`, 'Every module needs at least one lesson.');
+      return;
+    }
+    m.lessons.forEach((l, li) => {
+      const lp = `${mp}.lessons[${li}]`;
+      if (!l || typeof l !== 'object') { bad(lp, 'A lesson must be an object.'); return; }
+      // These three are what a lesson is BUILT from: the title becomes the topic
+      // and the slug, and the brief and the SLO are what the writer is given.
+      if (!str(l.title)) bad(`${lp}.title`, 'Every lesson needs a title: it becomes the video\'s '
+        + 'topic and its filename.');
+      if (!str(l.slo)) bad(`${lp}.slo`, 'Every lesson needs an SLO. Without one the writer is '
+        + 'asked for a video about nothing in particular, and nobody finds out until they watch it.');
+      if (!str(l.brief)) bad(`${lp}.brief`, 'Every lesson needs a brief -- it is the prompt the '
+        + 'script is written from.');
+      if (l.difficulty !== undefined && !LESSON.properties.difficulty.enum.includes(l.difficulty)) {
+        bad(`${lp}.difficulty`, `If given, \`difficulty\` must be one of: `
+          + `${LESSON.properties.difficulty.enum.join(', ')}.`);
+      }
+    });
+  });
+
+  return errors.length ? { ok: false, errors } : { ok: true };
+}
+
+module.exports = { plan, lessonsOf, estimate, validate, SCHEMA, LESSON };

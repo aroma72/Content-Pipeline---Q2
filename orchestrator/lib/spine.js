@@ -80,13 +80,16 @@ const RETRY_BACKOFF_MS = [5000, 15000, 30000];
  *   }
  * `output` is persisted to state.artifacts[name] and passed to later stages.
  */
-const STAGE_ORDER = ['research', 'script', 'gate', 'references', 'produce', 'qa', 'review', 'upload', 'nazim'];
+const STAGE_ORDER = ['research', 'script', 'gate', 'script-approval', 'references', 'produce', 'qa', 'review', 'upload', 'nazim'];
 
 function loadStages(overrides = {}) {
   const stages = {
     research: require('./stages/research'),
     script:   require('./stages/script'),
     gate:     require('./stages/gate'),
+    // After the machine gate, before the first stage that costs anything: a person
+    // reads the script while the bill is still cents. Fails CLOSED, like `review`.
+    'script-approval': require('./stages/script-approval'),
     // After the gate so it sees the subtopic the script settled on, and before
     // produce so a lesson nobody asked references for pays nothing for them.
     // Fail-soft: it cannot stop a build.
@@ -161,11 +164,16 @@ function makeLogger(runId, quiet) {
 /**
  * Execute one queue item through the spine.
  *
+ * Internal. Callers get `execute()` below, which is this plus the Drive offload.
+ * Split so the offload has ONE place to hang: this function settles the queue at
+ * seven different `return st` sites, and hooking all seven would eventually mean
+ * hooking six of them.
+ *
  * @param {object} item        a queue item
  * @param {object} opts        { dryRun, stopAfter, resumeState, stageOverrides, quiet, budgetUsd }
  * @returns {Promise<object>}  the final run state
  */
-async function execute(item, opts = {}) {
+async function executeStages(item, opts = {}) {
   const {
     dryRun = false,
     stopAfter = null,        // e.g. 'qa' -- the plan scopes 3.1 to stop before upload
@@ -176,6 +184,8 @@ async function execute(item, opts = {}) {
     quiet = false,
     budgetUsd = null,
     reviewApproved = null,   // a person watched it and said publish
+    scriptApproved = null,   // a person read the script and said it may be spent on
+    scriptApprovedSha = null, // ...and this is the script they read
   } = opts;
 
   const stages = loadStages(stageOverrides);
@@ -300,7 +310,10 @@ async function execute(item, opts = {}) {
           item,
           state: st,
           artifacts: st.artifacts,
-          opts: { dryRun, budgetUsd, reviewApproved, lenient: Boolean(st.lenient) },
+          opts: {
+            dryRun, budgetUsd, reviewApproved, scriptApproved, scriptApprovedSha,
+            lenient: Boolean(st.lenient),
+          },
           log: stageLog,
         });
         state.finishStage(st, name, { status: state.STATUS.DONE, output });
@@ -324,6 +337,17 @@ async function execute(item, opts = {}) {
           settleQueue(log,
             () => queue.block(item.id, st.runId, err.message, err.code, spentSoFar(st)),
             'block', item.id);
+          // queue.block() writes status/reason/blockedBy/spend and nothing else,
+          // and run state is deliberately off the volume (paths.js:36-39). So a
+          // blocker with a value that MUST survive a redeploy -- the sha of the
+          // script a person is being asked to approve -- writes it as its own
+          // event here. Second call rather than a wider block(): every other
+          // blocker's shape stays exactly as it was.
+          if (err.queueFields) {
+            settleQueue(log,
+              () => queue.setStatus(item.id, queue.ITEM_STATUS.BLOCKED, err.queueFields),
+              'annotate', item.id);
+          }
           return st;
         }
 
@@ -486,6 +510,65 @@ async function execute(item, opts = {}) {
 }
 
 /**
+ * Execute one queue item, then put whatever it produced somewhere durable and
+ * reclaim the local copies.
+ *
+ * WHY THIS RUNS ON EVERY TERMINAL STATUS, NOT JUST `done`
+ *
+ * A lesson blocked at `review` has a real, rendered, PAID-FOR video sitting on
+ * the volume, and it is exactly the case that waits longest for a human -- so it
+ * is exactly the case whose bytes most need to be somewhere safe. Offloading only
+ * on `done` would leave the slowest lessons occupying the most disk for the
+ * longest time, which is the problem inverted.
+ *
+ * WHY IT DOES NOT GATE ON APPROVAL
+ *
+ * Asked for directly: once a video is made there is no waiting and no approval
+ * before it reaches TU's Drive. Note what this does NOT change -- videos are
+ * still born unlisted on YouTube and a human still promotes them (upload.js).
+ * Saving a copy and publishing are different acts, and only the first is
+ * unconditional.
+ *
+ * WHY IT CANNOT BREAK A RUN
+ *
+ * The queue is already settled by the time this runs, and the offload itself
+ * never throws. Wrapped anyway: a storage optimisation that can fail a paid
+ * lesson would be worse than the disk it saves.
+ */
+async function execute(item, opts = {}) {
+  const st = await executeStages(item, opts);
+
+  if (opts.dryRun || opts.skipOffload) return st;
+
+  try {
+    const driveOffload = require('./drive-offload');
+    const produced = st.artifacts && st.artifacts.produce;
+    const res = await driveOffload.offload({
+      series: item.series,
+      slug: item.slug,
+      finalPath: produced && produced.finalPath,
+      videoDir: produced && produced.dir,
+      log: (m) => { if (!opts.quiet) console.log(`  [drive] ${m}`); },
+    });
+    // Recorded on the run state so a later reader can tell "never offloaded" from
+    // "offloaded, and here is where it went" without going to look at the volume.
+    st.driveOffload = res;
+    if (res && res.ok && !res.alreadyOffloaded && res.drive) {
+      // The queue is the record the LMS polls, so the flag has to reach it.
+      try {
+        queue.markSavedToDrive(item.id, res.drive);
+      } catch (e) {
+        console.log(`  [drive] saved, but could not flag the queue item: ${e.message}`);
+      }
+    }
+  } catch (e) {
+    console.log(`  [drive] offload skipped: ${e.message}`);
+  }
+
+  return st;
+}
+
+/**
  * Append to .beads/failures.jsonl -- the corpus ILHAM plan 5.1 (self-repair)
  * matches known fixes against. Writing it now means 5.1 has history to learn
  * from on day one instead of starting blind.
@@ -505,4 +588,4 @@ function recordFailure(st, stageName, err) {
   });
 }
 
-module.exports = { execute, STAGE_ORDER, BlockedError, RejectedError, RedraftError, loadStages, MAX_REDRAFTS };
+module.exports = { execute, executeStages, STAGE_ORDER, BlockedError, RejectedError, RedraftError, loadStages, MAX_REDRAFTS };
