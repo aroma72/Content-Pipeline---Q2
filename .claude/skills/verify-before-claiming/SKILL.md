@@ -156,6 +156,18 @@ two fixtures of opposite shape so the next change cannot quietly break the other
 If a field is hardcoded, document it as hardcoded. Do not describe what it would mean if it were
 computed.
 
+## 9. A deploy is live when the new build answers, not when the CLI says so
+
+"Triggered a deploy", a green dashboard, and `/health` `ok:true` are all true of the **old** build
+too. On 2026-09-25 three redeploys reported success and changed nothing (`railway redeploy
+--from-source` rebuilds the last snapshot on this service), and `/health` was hardcoded
+`ok:true` besides.
+
+**Proof is something only the new build can say:** `/health.build.commit` equal to the hash you
+pushed (`scripts/deploy.sh` waits for exactly this), a field or route the old build did not have,
+or the fixed behaviour reproduced against production. Until one of those holds, the fix is not
+live and nobody should be told it is.
+
 ---
 
 ## How to report

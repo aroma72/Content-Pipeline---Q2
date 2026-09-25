@@ -1,6 +1,6 @@
 ---
 name: script-lint-preflight
-description: Applies the six content-lint rules and the free pre-spend sensors to an explainer script that already exists, so the gate does not reject it later and burn redrafts. Use to check or lint a draft beats.js or lesson script, before running the script gate, and before any paid art or TTS stage. Also use when a gate came back NEEDS WORK, when a run is stuck in a redraft loop, or when a rendered beat turned out blank or wordless. NOT for producing a script from scratch - that is writing-explainer-scripts.
+description: Checks an explainer script or beat list against the six content-lint rules and the free pre-spend sensors, so the gate does not reject it later and burn redrafts. Make sure to use this whenever someone asks whether a script or beat list is ready, good enough, okay to render, or wants art bought for it - even if they do not say "lint" or "check". Also use when asked to review, sanity-check or look over a script, when a gate came back NEEDS WORK, when a run is stuck in a redraft loop, or when a rendered beat turned out blank or wordless. NOT for producing a script from scratch - that is writing-explainer-scripts.
 type: skill
 last_verified: 2026-09-23
 owner: aroma
