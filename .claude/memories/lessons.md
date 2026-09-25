@@ -1020,3 +1020,43 @@ queue behind the build than skip the deploy. It is in the CLAUDE.md deploy line.
 LMS side, already in their memo: a repo says what was committed, `/health` says what is running.
 
 Related: [[H4]] (verify against production, not defaults), [[H27]] (a pause that is only a `break`).
+
+---
+
+### H32. The GitHub remote is PUBLIC, and the ignore rules are the only thing holding secrets back
+
+**Added:** 2026-09-25 | **Applies to:** any "push everything" / `git add -A --force` request
+**Invalidate if:** `gh repo view aroma72/Content-Pipeline---Q2` reports `"isPrivate": true`
+
+`origin` is `https://github.com/aroma72/Content-Pipeline---Q2.git` and it is **public**. Meanwhile
+the working tree holds, ignored-but-present, a root dotenv with a dozen live keys (Claude OAuth,
+Gemini, Kie, Notion, Slack bot+user, YouTube client/secret/refresh) and `orchestrator/.credentials/`
+containing `youtube-token.json`. A blanket force-add would publish all of it to the open internet in
+one push, and a public leak is not undone by a later commit — the objects stay reachable and the
+keys must be rotated.
+
+So a request to "push all things, even X" is scoped to X, never widened to the ignore list. What is
+ignored here falls into three groups and only the third is ever a candidate:
+- **secrets** — root dotenv, `orchestrator/.credentials/`, `.claude/logs/*.log` — never, at any ask.
+- **rebuildable views** — `.claude/memory-db/*.db`, `lessons-export.md`, `mistakes-export.md`,
+  `__pycache__/`, `.jobstore/` — deliberately untracked with reasons written into `.gitignore`;
+  re-adding them re-creates the merge conflicts those comments were written to stop.
+- **genuinely missing source** — e.g. `dist/` and `*~` files under `node_modules/`, which generic
+  patterns swept up even though ~8k node_modules files are already tracked on purpose.
+
+Two guards fire on the way and both are worth listening to rather than routing around. The
+PreToolUse `block-bad-commands.sh` hook pattern-matches the **command text**, so merely grepping for
+a dotenv name in a pipeline trips it; and building the string dynamically to dodge it is read as a
+bypass and gets denied by the auto-mode classifier. The honest move is to unstage at package
+granularity — `git restore --staged "node_modules/@ffmpeg-installer/"` — since that package ships
+its own dotenv file. The pre-commit scanner also WARNs (not fails) on Slack SDK type definitions
+named `token.d.ts` / `OauthTokenResponse.js`; confirm by grepping the commit for real value shapes
+(`xox[baprs]-`, `AIza…`, `sk-…`, `ghp_…`, `BEGIN … PRIVATE KEY`) before believing it.
+
+Also: `drawing-room-video/drawing-room-remotion` is a mode-160000 gitlink with **no** `.gitmodules`
+entry and an empty directory, so `git submodule status` errors and `cd` into it silently lands you
+back in the parent repo — with the parent's `git status` and HEAD, which looks like the submodule is
+dirty when it is not. There is nothing to commit there, so the CLAUDE.md "submodule FIRST" rule is
+satisfied trivially rather than skipped.
+
+Related: [[H5]] (concurrent sessions share this working tree — never stage a whole tree blindly).
