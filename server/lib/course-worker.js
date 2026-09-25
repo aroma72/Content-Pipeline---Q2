@@ -400,6 +400,15 @@ async function buildOne(item) {
       error: e.message, finishedAt: new Date().toISOString() };
     history.push(outcome);
     log(`${item.id} FAILED: ${e.message}`);
+    // The queue record, before anything else. A throw OUTSIDE the spine's stage
+    // handling (state.startStage writing to a full volume, for one) left the item
+    // `claimed`: not queued, not blocked, not failed -- invisible to /health and
+    // un-restartable until the next boot. "Starts processing, then nothing."
+    try {
+      queue.setStatus(item.id, queue.ITEM_STATUS.FAILED, { error: e.message, reason: null, blockedBy: null });
+    } catch (e2) {
+      log(`${item.id}: could not record the failure on the queue (${e2.message})`);
+    }
     settleSpend(item, 'failed');
     return outcome;
   } finally {

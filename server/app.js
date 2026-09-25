@@ -1073,7 +1073,12 @@ function createApp(opts = {}) {
    * /api/v1/courses/build stays unlimited for machine callers.
    */
   const demoBuilds = [];
-  app.post('/demo/course-builder/build', (req, res) => {
+  // A tenant credential is required since 2026-09-25. This route used to inject the
+  // service's own CONTENT_API_TOKEN for anyone holding the link -- the `default`
+  // tenant, which is unmetered unless DEFAULT_TENANT_MONTHLY_USD is set -- guarded
+  // only by an in-process one-build-an-hour counter that every redeploy reset.
+  // A build is N x $2.50 of real money. The demo page now needs a token to build.
+  app.post('/demo/course-builder/build', owner.requireTenant('produce'), (req, res) => {
     const hourAgo = Date.now() - 3600_000;
     while (demoBuilds.length && demoBuilds[0] < hourAgo) demoBuilds.shift();
     if (demoBuilds.length >= 1) {
@@ -1087,7 +1092,7 @@ function createApp(opts = {}) {
     // Reuse the authenticated route itself rather than a second copy of its
     // logic: supply the credential the service already holds, rewrite the path to
     // the one the API router expects, and hand the request straight to it.
-    req.headers.authorization = `Bearer ${process.env.CONTENT_API_TOKEN || ''}`;
+    // The caller's own credential rides through; nothing is injected any more.
     req.url = '/courses/build';
     demoBuilds.push(Date.now());
     apiRouter(req, res, () => res.status(404).end());

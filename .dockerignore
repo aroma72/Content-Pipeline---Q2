@@ -8,6 +8,8 @@
 # --- the code the server runs --------------------------------------------------
 !package.json
 !package-lock.json
+# Stamped by scripts/deploy.sh; /health.build.commit is the proof a deploy landed.
+!build.json
 !server
 !orchestrator
 !prompts

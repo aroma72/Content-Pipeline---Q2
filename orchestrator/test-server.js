@@ -1562,6 +1562,17 @@ async function resilienceChecks() {
 
 // ── 2c. /health tells the truth a deploy needs ───────────────────────────────
 
+async function demoSpendChecks() {
+  console.log('\n2d. the demo course-builder cannot spend the service\'s own money');
+
+  await check('POST /demo/course-builder/build without a tenant token is 401, and injects nothing',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      const r = await req(port, { method: 'POST', path: '/demo/course-builder/build', body: { plan: {} } });
+      assert(r.status === 401, `expected 401, got ${r.status}: ${r.text.slice(0, 120)}`);
+      return '401';
+    }); });
+}
+
 async function healthChecks() {
   console.log('\n2c. /health reports in-flight one-video jobs, and ok is computed');
 
@@ -1649,6 +1660,7 @@ async function healthChecks() {
   await moneyChecks();
   await resilienceChecks();
   await healthChecks();
+  await demoSpendChecks();
   await bridgeChecks();
   await lessonFileChecks();
   for (const d of storeDirs) { try { fs.rmSync(d, { recursive: true, force: true }); } catch { /* best effort */ } }

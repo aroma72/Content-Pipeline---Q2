@@ -1176,3 +1176,40 @@ where this recurs.
 
 Related: the `this-machine` skill (Git Bash vs the bash stub, MSYS path rewriting, `python3` as a
 Store stub).
+
+---
+
+### H37. A "no-op" redeploy still restarts the container; container-filesystem state is state you have agreed to lose
+
+**Added:** 2026-09-25 | **Applies to:** anything the server writes outside the volume, and every deploy
+**Invalidate if:** the render directory moves onto the volume, or Railway stops replacing the container on `railway up`
+
+Job `43a782dd45dd` was `written` on the LMS. `railway redeploy --from-source` is a no-op for CODE on
+this service (no GitHub source), and everyone had learned to read it that way -- but it still
+replaces the container. Two of them (10:22Z, 10:39Z) took `explainer-videos/made/<slug>/beats.js`
+with them. "Make the video" then failed in **9 ms** ("no gated script yet"), the catch put the
+job back to `written`, the LMS drew the identical page, and the Idempotency-Key was left
+`abandoned` -- which `begin()` treated as `replay`, so every later click for that video was
+answered from the dead attempt with no work. Four defects, one symptom; none of the five causes
+three parallel investigations ranked first was the real one. The volume settled it: a reserve
+and a $0 settle **9 ms apart**, `runId: null`.
+
+Rules that came out of it:
+- The job record held all 20 beats and could NOT rebuild the file: the projection kept
+  `info: {tpl}` and dropped `info.data`, so the rebuild would have rendered six blank cards. A
+  copy that cannot reproduce the artefact is not a backup. Now: persist the bytes to the volume
+  at `written`, keep `beatsFull` in the record, restore disk -> volume -> record, else fail
+  honestly (`409 script_lost`) rather than loop.
+- A failed non-terminal step needs its own field (`lastError`); reusing `error` reads as
+  terminal, and a UI keyed on `status === written` cannot show a failure that leaves status alone.
+- `abandoned` is not `replay`. An idempotency state added later must be handled by `begin()`.
+- `predeploy-check` read only the course worker. **A guard that checks one of two kinds of work
+  says "safe" for the other.** It now reads `jobs.inFlight`; the first build shipping a new
+  /health field cannot pass the check against the old build -- that needs an explicit, loud,
+  one-time override (`PREDEPLOY_ALLOW_UNKNOWN_JOBS=1`), never a silent default.
+- `.dockerignore` here starts with `*` and whitelists paths: a new root file (build.json) is
+  silently absent from the image until listed. The deploy "succeeded" and the proof step could
+  not see it.
+
+Related: [[H24]] (persist before the thing that can throw), [[H9]] (the artefact is the
+evidence), [[H4]] (verify against production -- the memory said budget was $0; production had 50).

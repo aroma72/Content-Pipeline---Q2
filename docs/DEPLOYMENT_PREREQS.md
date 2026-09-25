@@ -263,19 +263,35 @@ called durable is a dead question inside a university course.
 
 ---
 
-## Before deploying: is a lesson building?
+## Before deploying: is anything running?
 
-A redeploy restarts the container. A lesson mid-build becomes `blocked / interrupted`, its working
-files are gone, and its partial spend is unrecorded — the LMS's authorised lesson went this way on
-2026-09-23 at 06:11Z, three minutes after we had started it for them, with `/health` saying
-`building: true` the whole time.
+A redeploy restarts the container. A course lesson mid-build becomes `blocked / interrupted`
+(2026-09-23 06:11Z, three minutes after the LMS's authorised lesson started). A **one-video job**
+mid-write loses its script: on 2026-09-25 two redeploys (10:22Z, 10:39Z) landed on job
+`43a782dd45dd` while it was `written`, took `beats.js` with the container, and "Make the video"
+then failed in 9 ms and put the job back to `written` — the same page, no visible change. The
+check only looked at the course worker; it now reads `jobs.inFlight` too.
 
 ```bash
-node scripts/predeploy-check.js          # exit 1 while a lesson is building
-node scripts/predeploy-check.js --wait   # poll every 30s until the worker is idle, then exit 0
+bash scripts/deploy.sh                   # the only supported deploy; runs the check with --wait
+node scripts/predeploy-check.js          # the check alone: exit 1 while anything runs
 ```
 
-Read-only, one GET. Put it in front of the push, never after.
+**Bootstrap only:** the first build that ships `jobs.inFlight` cannot pass the check against
+the build before it. Read `/data/cq-jobs/jobs/*.json` on the volume yourself, confirm no job is
+`running`/`producing`/`publishing`, then `PREDEPLOY_ALLOW_UNKNOWN_JOBS=1 bash scripts/deploy.sh`.
+It announces itself and never overrides a building course worker.
+
+### Runbook: a job says `written` but "Make the video" does nothing
+
+1. `GET /demo/make-video/:jobId` — read `lastError.message`. Since 2026-09-25 a failed
+   produce leaves the reason there (the LMS shows it under the button).
+2. `railway logs` — look for `[produce <jobId>] beats.js from disk|volume|job-record`; then the
+   `estimated spend:` line. A `refused … script_lost` line means no faithful copy survived: the
+   job is now `failed` with the reason, and the person creates the video again (the script
+   write costs no media spend).
+3. Check the Idempotency record is not `abandoned` from before the fix — a retry now re-claims
+   it; before, every click was answered from the dead attempt.
 
 ## Before pushing
 

@@ -3411,6 +3411,22 @@ async function courseChecks() {
     return `stops after '${stop}'`;
   });
 
+  await checkAsync('a throw outside stage handling fails the lesson on the queue, never leaves it claimed', async () => {
+    freshQueue();
+    const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+    queue.enqueue({ topic: 'Lesson that explodes', series: 'demo', slug: 'boom', source: 'course-builder' });
+    // Not a BlockedError and not a stage failure: the spine itself dies, as it
+    // does when state.startStage() cannot write to a full volume.
+    const saved = spine.execute;
+    spine.execute = async () => { throw new Error('ENOSPC: no space left on device'); };
+    try { await cw.drain(); } finally { spine.execute = saved; }
+    const item = queue.get('demo/boom');
+    assert(item.status !== 'claimed', 'the lesson was left claimed -- invisible to /health, un-restartable until the next boot');
+    assert(item.status === 'failed', 'expected failed, got ' + item.status);
+    assert(/ENOSPC/.test(item.error || ''), 'the queue record does not carry the reason: ' + item.error);
+    return 'failed on the queue, with the reason';
+  });
+
   check('a lesson left mid-build is parked for a human, not silently rebuilt', () => {
     freshQueue();
     const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));

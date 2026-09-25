@@ -538,23 +538,31 @@ same rules before the paste. It never prints a token.
 
 ### 6.1 Deploying — read this before you deploy
 
-**Railway's configured source is GitHub branch `main`.** Verified from deployment
-metadata (`meta.branch`), not inferred.
+**There is one supported way to deploy:**
 
 ```bash
-railway deployment list --json    # meta.branch + commitHash = what is actually live
+git push origin <branch>:main      # deploying means fast-forwarding main
+bash scripts/deploy.sh             # refuses while anything runs, then uploads main
 ```
 
-Three traps, each of which cost real time on 2026-09-18:
+`deploy.sh` runs `predeploy-check.js --wait` (reads `/health`: course worker AND
+one-video `jobs.inFlight`), exports the pushed commit with `git archive` (tracked
+files only — no `.env`, no `orchestrator/.credentials/`), stamps it into `build.json`,
+uploads with `railway up --path-as-root`, then waits until `/health.build.commit`
+answers with that hash and runs `verify-live.js`. **"Triggered a deploy" is not proof
+of a deploy; `/health.build.commit` is.**
 
-1. **Pushing a feature branch deploys nothing.** Deploying means fast-forwarding
-   `main`: `git push origin <branch>:main`.
-2. **Pushing to `main` does not itself trigger a build.** Follow it with
-   `railway redeploy --from-source -y`. (This is why
-   `scripts/publish-checkpoint.js` pushes *and then* deploys.)
-3. **`railway redeploy --from-source` pulls the configured source, i.e. `main`.**
-   Run with unmerged work it **rolls production back** — it did exactly that here.
-   Only run it once `main` is what you want live.
+**Do not run `railway redeploy --from-source` on this service.** Corrected 2026-09-25:
+the service has no GitHub source connected (`railway status` prints no `repo:` line), so
+`--from-source` rebuilds the *last snapshot* — a no-op for code that still reports success
+— **and it restarts the container.** On 2026-09-25 two such restarts landed on a one-video
+job that was `written`, erased its `beats.js` from the container filesystem, and left
+"Make the video" failing in 9 ms with the job put back to `written`. The earlier claim here
+that it "pulls `main`" was wrong.
+
+Written scripts are now persisted to the volume at `written` (`deliverables.persist`) and
+rebuilt before produce (`jobs.materializeScript`: disk → volume → the complete copy in the
+job record). A job whose script has no faithful copy left is failed with `409 script_lost`.
 
 `railway up` times out from this repo and should not be relied on. The cause is the
 working tree, not the network: `explainer-videos/` alone is ~36 GB of render output,
@@ -565,6 +573,18 @@ expires first. Deploy through git instead.
 
 Changing a service *setting* (attaching a volume) triggers a rebuild of the current
 source, which can make new code appear live and confuse the picture.
+
+### 6.1a What a one-video job reports when produce fails to start
+
+`GET /demo/make-video/:jobId` keeps `status: written` (the script is still good) and
+`error: null` (the job is not over), and adds:
+
+```json
+"lastError": { "at": "2026-09-25T10:27:32Z", "stage": "produce", "message": "…", "runId": null }
+```
+
+An LMS that draws the "Make the video" button from `status === 'written'` alone shows the
+same page after a failed click — that is exactly what happened. Read `lastError` and say so.
 
 ### 6.2 The volume
 
