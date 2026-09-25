@@ -1,6 +1,6 @@
 ---
 type: reference
-last_verified: 2026-09-21
+last_verified: 2026-09-25
 owner: aroma
 ---
 
@@ -47,6 +47,19 @@ Names present in `.env` as of 2026-09-21 (values are never recorded here, and `.
 - **Media & AI** — `GEMINI_API_KEY`, `GOOGLE_STUDIO_API_KEY`, `KIE_API_KEY`
 - **Integrations** — `CONTENT_API_TOKEN`, `SLACK_BOT_TOKEN`, `SLACK_USER_TOKEN`, `SLACK_DEFAULT_CHANNEL`, `SLACK_BOT_USER_ID`, `NOTION_API_KEY`, `NOTION_DATABASE_ID`, `NOTION_PARENT_PAGE_ID`, `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`, `YOUTUBE_REFRESH_TOKEN`
 - **Harness** — `CLAUDE_CODE_OAUTH_TOKEN`
+
+**The `YOUTUBE_*` trio publishes to `@TaleemabadUniversity`** (verified 2026-09-24). The OAuth
+client is a **Desktop app** client in the **`cohort2lp`** Google Cloud project, consent screen set
+to **Internal**, consented as `taleemabad.university@taleemabad.com`, scope `youtube.upload` only.
+Before 2026-09-24 it was a personal channel and nothing recorded that.
+
+Two things to know before touching these:
+- The scope cannot read the channel back, so `youtube-auth.js --check` proves the credential works
+  and **not** where videos land. Prove the channel by uploading something unlisted and reading
+  `author_name` from `https://www.youtube.com/oembed?url=https://youtu.be/<id>&format=json`.
+- `loadToken()` reads the **env var before** `orchestrator/.credentials/youtube-token.json`. A
+  re-consent that only writes the file changes nothing on a machine where the env var is set, while
+  every check still reports success. Blank the var, consent, then paste the new token in.
 
 **There is no `ANTHROPIC_API_KEY` in this environment.** Anything that assumes one must degrade
 gracefully rather than fail — `.claude/memory-db/mem.py` is written that way deliberately.

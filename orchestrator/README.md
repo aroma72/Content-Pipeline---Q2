@@ -127,8 +127,16 @@ One-time human setup, then every run publishes itself with nobody present.
 
    a. **APIs & Services → Library** → enable **YouTube Data API v3**.
    b. **OAuth consent screen** (newer consoles: *Google Auth Platform → Audience*) →
-      **External** → fill in app name and emails → save. **Add your own Google account
-      under "Test users"**, or consent fails with "Access blocked".
+      fill in app name and emails → save, and set **User type: Internal** — available
+      because the project sits in the taleemabad.com Workspace.
+      Internal is not cosmetic. An **External** app left in *Testing* expires its
+      refresh tokens after **7 days**, so uploads work all week and then fail silently
+      long after anyone connects the two; it also rejects any account not listed under
+      "Test users" with "Access blocked". Internal has no expiry, no verification
+      review and no unverified-app warning.
+      Flipping an *existing* project to Internal locks consent to taleemabad.com for
+      **every** client in that project, not just this one — check the Audience page
+      reports 0 users first, or you may lock out someone else's integration.
       This must exist *before* step (c), or the Application type dropdown never appears.
    c. **Credentials → + Create credentials → OAuth client ID** → **Application type:
       Desktop app**. Desktop clients need NO redirect URI — Google permits loopback
@@ -151,6 +159,29 @@ node orchestrator/youtube-auth.js --check  # confirm it works
 That stores a refresh token in `orchestrator/.credentials/` (gitignored, mode 600).
 From then on the pipeline mints its own access tokens — no human in the loop.
 
+On a server there is no `.credentials/` directory, so set `YOUTUBE_REFRESH_TOKEN`
+instead. Note the precedence in `loadToken()`: **the env var wins over the file.**
+Re-running `youtube-auth.js --force` therefore does *not* change what a machine with
+that variable set actually uses — it writes a new file that is then ignored, and every
+check still reports "authorised" while uploads keep going to the old channel. Blank the
+variable before re-consenting, then copy the new token into it.
+
+**Which channel this publishes to, and how to tell**
+
+Since 2026-09-24 the grant belongs to **Taleemabad University**
+(`@TaleemabadUniversity`), consented as `taleemabad.university@taleemabad.com`, with the
+OAuth client in the **`cohort2lp`** Google Cloud project. Before that it was a personal
+channel for months and nothing in the repo recorded it.
+
+The `youtube.upload` scope **cannot read the channel back**, so `--check` passing proves
+the credential works and says nothing about where videos land. The only way to prove the
+channel is to upload something and ask YouTube's public oEmbed endpoint who owns it:
+
+```bash
+curl -s "https://www.youtube.com/oembed?url=https://youtu.be/<videoId>&format=json"
+# -> "author_name":"Taleemabad University"
+```
+
 **Before this can reach learners — the YouTube API audit**
 
 A Google Cloud project that uses the YouTube Data API and has **not** passed YouTube's
@@ -166,6 +197,11 @@ it is a form plus a review, not instant.
 `uploadVideo` reports back the privacy YouTube actually applied rather than the one it
 asked for, so a forced `private` shows up honestly in the run log instead of the
 pipeline claiming it published something unlisted.
+
+Observed on `cohort2lp` 2026-09-24: a test upload came back `unlisted`, not forced to
+`private`, so that project is not under the restriction today. One upload is not a
+policy guarantee — keep reading the returned `privacyStatus` rather than trusting this
+line.
 
 **What the upload stage guarantees:**
 

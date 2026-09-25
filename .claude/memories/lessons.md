@@ -1060,3 +1060,119 @@ dirty when it is not. There is nothing to commit there, so the CLAUDE.md "submod
 satisfied trivially rather than skipped.
 
 Related: [[H5]] (concurrent sessions share this working tree — never stage a whole tree blindly).
+
+---
+
+### H33. Verify an integration partner's readiness by reading their code, not by waiting for a reply
+**Added:** 2026-09-25 | **Applies to:** any deploy gated on "have they wired it yet?"
+**Invalidate if:** we stop having read access to the partner repo or their Railway project
+
+Contract 1.2's script-approval gate is ALWAYS ON: a course built against it stops at lesson one and
+waits for `POST .../script/approve`. We promised the LMS we would deploy only after they wired it,
+then had no way to know whether they had — the 09-24 reply doc asking them to confirm sits in our
+repo, and a doc in our repo is not a message anyone received.
+
+The answer was one directory away. `E:\Cohort2LP` is the LMS repo and is a configured working
+directory; `railway status`/`railway variables` from inside it reach their staging service. Ten
+minutes of grep settled in fact what a week of waiting would have settled in hope: no reference to
+`script-approval`, `script/approve`, `scriptSha` or contract 1.2 anywhere in their code, tests, docs
+or git log. Their env also confirmed the $50/10-per-instructor gates their budget request cited, so
+the same look verified a second claim we had taken on trust.
+
+Reading their code also produced a far better handover than prose could: the exact failure is
+`build-library.ts:197-201` labelling a script pause "Ready for review" when no video exists, and
+`:223-228` withholding the only action — named files, not a warning about "UI confusion".
+
+**Do:** before holding or shipping a deploy on a partner's readiness, grep their repo for the
+symbols your change introduces, and read their env/staging for the config they claim. State plainly
+in the handover that you did — it is their codebase, and being told beats being discovered.
+**Do not:** treat an unsent document, or silence, as either confirmation or refusal.
+
+Related: [[H4]] (verify against production, not code defaults), [[H28]] (read `/health` before a
+redeploy, not the log you remember).
+
+---
+
+### H34. "It's in" has five meanings and only the last one lifts a deploy gate
+**Added:** 2026-09-25 | **Applies to:** any deploy held on another team's integration landing
+**Invalidate if:** the partner's service stops deploying from a git remote we can inspect
+
+The LMS reported the script-approval gate done and, correctly, named a commit: `75464b4`,
+`feat/script-approval-gate`. The commit was real and the work was good — 1372 insertions across
+client, routes, poller, schema + migration, UI, tests and a vendored 1.2 contract, with every symbol
+they claimed actually present. Taking "it's in" at face value would have looked completely justified.
+
+It was written, committed — and nothing else. `git branch -r --contains 75464b4` returned nothing:
+never pushed. `git for-each-ref --contains` found exactly one ref, a local branch. Their
+`origin/main` was three days stale and predated the work. Their Railway service deploys from that
+same GitHub repo, so the code could not have been running, and our deploy would have stalled them
+exactly as if they had never started.
+
+The ladder is written → committed → pushed → merged → **deployed**, and only the last rung means
+the gate can lift. A commit sha is evidence of the second rung and is routinely offered as proof of
+the fifth — not dishonestly, just because on the author's machine they feel like the same event.
+
+**Do:** resolve the sha against the remote, not the object store — `git branch -r --contains <sha>`,
+then confirm the deployed commit (`railway status`, or a version on their `/health`). Confirm the
+remote you are checking is the one the service deploys from (`git remote -v` against the Railway
+`repo:` field) before concluding anything.
+**Do not:** accept a branch name, a commit sha, or a green test suite as evidence of a deployment.
+Ask "is it live?", which is a different question from "is it done?".
+
+Related: [[H33]] (read the partner's code rather than wait for a reply), [[H4]] (verify against
+production, not code defaults).
+
+---
+
+### H35. A partner's staging pointed at our production makes their test runs our real spend
+**Added:** 2026-09-25 | **Applies to:** every tenant we mint and every budget we set
+**Invalidate if:** we stand up a non-production surface partners can point test traffic at
+
+The LMS disclosed it plainly when rejecting the interrupted lesson: the call "called Content
+Automation's real production service, since staging has no override pointing it elsewhere." Their
+Railway project has exactly one environment, `Staging`, and it holds the `cohort2-lms` token.
+
+So their staging *is* a production client of ours. That is the actual origin of
+`lms-e2e-2026-09-23/where-the-error-actually-happened` — a throwaway E2E fixture that entered our
+real queue, held a real reservation, survived a redeploy as `interrupted`, and took two weeks of
+correspondence across two organisations to close. It was never real content and nobody could tell
+from our side.
+
+This compounds with the reservation rule: $2.50 is held per lesson from `build` until it finishes,
+is rejected or is skipped. Every test course they run eats their real `monthlyUsd` — so a ceiling
+sized for instructor demand is also absorbing test traffic, and a raise granted for real usage
+silently funds both.
+
+**Do:** when a partner's test environment talks to production, say so in the contract and decide
+deliberately whether test spend is theirs to pay. Treat a queue item that looks like a fixture as a
+question to ask, not an anomaly to clear. Expect an environment named `-production` in its URL to be
+their staging anyway — read the environment, not the hostname.
+**Do not:** size a tenant ceiling as though every dollar is instructor demand.
+
+Related: [[H34]] (written is not deployed), [[H33]] (read the partner's code and config yourself).
+
+---
+
+### H36. Commands handed to the user must be PowerShell; only my own tool calls are Bash
+**Added:** 2026-09-25 | **Applies to:** every command written into a reply, a doc, or an operator sheet
+**Invalidate if:** the user's terminal stops being PowerShell
+
+Handed over `cd /e/Content-Pipeline---Q2 && node scripts/predeploy-check.js && railway redeploy
+--from-source -y` at the one moment it mattered — a deploy held three days on partner readiness,
+finally clear. It failed twice at their prompt: `The token '&&' is not a valid statement separator
+in this version.` Windows PowerShell 5.1 has no `&&`, and `/e/...` is a Git Bash path that
+PowerShell cannot resolve.
+
+The trap is that I had been running the *identical* command successfully all session through the
+Bash tool, so it was verified — in the wrong shell. Two shells with two syntaxes exist here at once,
+and which one applies depends only on who is typing.
+
+**Do:** translate at the handoff boundary. `A && B` → `A; if ($LASTEXITCODE -eq 0) { B }` (prefer
+`$LASTEXITCODE -eq 0` over `$?` for native commands like `node` and `railway`). `/e/x` → `E:\x`.
+Drop the `cd` when their prompt already shows the directory.
+**Do not:** paste a command that worked in my Bash tool into a reply, a runbook, or an operator
+sheet without converting it. The operator sheets this repo produces for Railway work are exactly
+where this recurs.
+
+Related: the `this-machine` skill (Git Bash vs the bash stub, MSYS path rewriting, `python3` as a
+Store stub).

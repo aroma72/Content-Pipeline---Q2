@@ -1,6 +1,6 @@
 ---
 type: reference
-last_verified: 2026-09-23
+last_verified: 2026-09-25
 owner: Aroma Tahir
 ---
 
@@ -127,6 +127,28 @@ curl -s https://content-queen-production.up.railway.app/health | jq .tenants.ids
 `maxRunUsd 4` caps one lesson's media spend below the service ceiling; `monthly 10` buys
 about four lessons at the $2.50 reservation. Hand the LMS the token out of band, never in a
 document. After the redeploy, `POST /api/v1/courses/worker/resume` restarts the queue.
+
+### The YouTube grant — whose channel the videos land on
+
+| Variable | What it is |
+|---|---|
+| `YOUTUBE_CLIENT_ID` / `YOUTUBE_CLIENT_SECRET` | A **Desktop app** OAuth client in the **`cohort2lp`** Google Cloud project. Desktop is required, not a preference: `youtube-auth.js` redirects to an ephemeral loopback port and only Desktop clients accept an arbitrary one. |
+| `YOUTUBE_REFRESH_TOKEN` | Minted by `node orchestrator/youtube-auth.js`, consented as `taleemabad.university@taleemabad.com`. Carries the `youtube.upload` scope alone. |
+
+Uploads land on **Taleemabad University** (`@TaleemabadUniversity`) — verified 2026-09-24
+by publishing an unlisted video and reading `author_name` back from YouTube's public
+oEmbed endpoint. That is the only available check: the upload-only scope cannot read the
+channel, so a passing `youtube-auth.js --check` proves the credential mints and says
+nothing about the destination. **Until 2026-09-24 this was a personal channel**, and no
+document recorded which one — hence this table.
+
+The consent screen is **Internal**. That is what stops the refresh token expiring every
+7 days, which is what an External app left in *Testing* does.
+
+Rotating this pair is not free elsewhere: `GDRIVE_CLIENT_ID` / `_SECRET` fall back to it,
+and a Google refresh token is bound to the client that issued it. A Drive grant minted
+against the old client stops working the moment these change. No Drive token existed when
+they were last rotated, so nothing broke that time.
 
 ### Required for the Drive offload (otherwise the volume fills and never drains)
 

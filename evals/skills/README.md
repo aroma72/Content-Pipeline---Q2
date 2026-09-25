@@ -71,30 +71,51 @@ Omit `expect_error` to assert the fixture is accepted. Always add the opposite c
 `beats.js` legitimately changes, delete the file, re-run, and commit the new snapshot **in the same
 commit as the change that caused it**, so the diff explains itself.
 
-## The paid layer (not built)
+## The agent layer — `claude plugin eval` (built, costs plan usage)
 
-`claude plugin eval` is Anthropic's first-party runner and the only thing that measures whether a
-skill actually changes Claude's behaviour. It was deliberately deferred: it needs this repo wrapped
-as a plugin, and every run bills.
+The free harness proves a description *could* match. This layer proves the skill actually changes
+what Claude does. Three cases live in `evals/agent-plugin/evals/`:
 
-To pick it up: add `.claude-plugin/plugin.json`, then `evals/<case>/prompt.md` plus
-`evals/<case>/graders/*.md`. Give each case one grader on the result and one on the route:
+| case | asks | must |
+|---|---|---|
+| `quote-a-paid-run` | cost of a 22-beat lesson with 27s of motion | show the $0.05-per-**second** line and require approval before `--yes` |
+| `catch-missing-checkpoint` | "is this beat list ready to render?" | refuse, name the missing CHECKPOINT, flag "Aroma" in narration |
+| `exit-zero-is-not-evidence` | "it exited 0 through a pipe, is the guard working?" | refuse, blame the pipe, demand the guard be seen blocking |
 
-```yaml
----
-type: tool_used
-tool: Skill
-input_match: '"skill"\s*:\s*"(?:[\w-]+:)?script-lint-preflight"'
----
-```
-
-Run it pinned and capped, so a model rollout is not mistaken for a regression:
+Each case pairs a result grader with a `tool_used: Skill` routing grader, so a pass that happened
+without the skill firing is visible.
 
 ```bash
-claude plugin eval . --trust-plugin --json results.json --threshold 0.8 \
-  --model claude-sonnet-5 --judge-model claude-haiku-4-5 --no-publish --max-cost-usd 20
+npm run eval:agent:smoke   # 1 case, 1 run, no baseline - proves the wiring
+npm run eval:agent         # full suite with the no-plugin baseline arm
 ```
 
-A case scoring the same with and without the plugin means the plugin did not cause the pass. Treat
-this like any other paid stage in this repo: quote the estimate first, and do not run it without
-approval. See the `paid-run-protocol` skill.
+### Authentication — there is no token to set
+
+`claude plugin eval` spawns *"a full claude child on your own credential"*. There is no
+`ANTHROPIC_API_KEY` and no `apiKeyHelper` configured here, so it runs on the **subscription**. The
+CLI still prints a dollar figure, but that is **plan usage, not a bill**. Quote it that way — see
+`paid-run-protocol`.
+
+Measured: **~$0.11-equivalent and ~21s per agent run.** The full suite is 3 cases x 3 runs x 2 arms
+= 18 runs, so roughly **$2 of plan usage and ~7 minutes**. `--ablation none` halves it but gives no
+delta.
+
+### Why the plugin has its own root
+
+A plugin loads skills only from `<plugin root>/skills/`, and a manifest **cannot** point elsewhere —
+a `"skills"` key is silently ignored. This repo's root `skills/` is the Python API wrappers, so the
+eval plugin lives at `evals/agent-plugin/` and `evals/skills/build-plugin.js` copies `.claude/skills`
+into it. The copy is generated, gitignored, and rebuilt on every run so it cannot drift; the script
+exits 1 if it ever stages zero skills.
+
+That guard exists because the first attempt staged none: the run still completed and still scored
+0.75 off its other graders, reporting only `routing: Skill called 0x`. **A plugin that loads no
+skills spends money measuring nothing and looks like a result.** Always check the routing line.
+
+### Two flags that matter
+
+- **`--no-publish`** — publishing the HTML report to claude.ai is the *default*. The npm scripts
+  pass `--no-publish`; keep it unless you intend to share the report.
+- **`--ablation with-without`** (the default) is what makes the delta meaningful. A case scoring the
+  same with and without the plugin was not helped by the plugin.

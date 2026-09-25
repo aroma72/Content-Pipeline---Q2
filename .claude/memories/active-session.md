@@ -25,6 +25,80 @@ No frontmatter: this file is machine-managed and exempt from the metadata contra
 <!-- 2026-09-22 rotated to .claude/memories/session-archive/ -->
 <!-- 2026-09-23, 2026-09-23, 2026-09-23, 2026-09-22 rotated to .claude/memories/session-archive/ -->
 <!-- 2026-09-24, 2026-09-23 rotated to .claude/memories/session-archive/ -->
+
+## 2026-09-25 — Agent-eval baseline established; a skill can score well without ever firing
+
+Full `npm run eval:agent`: **$1.71-equivalent plan usage, 422s**, 18 runs. Overall 0.85, 2/3 cases
+above the 0.8 threshold, mean Δ +0.41. Recorded in `evals/agent-plugin/BASELINE.md`.
+
+| case | with | without | Δ | fired |
+|---|---|---|---|---|
+| quote-a-paid-run | 1.00 | 0.33 | **+0.67** | yes |
+| catch-missing-checkpoint | 0.56 | 0.00 | +0.56 | **no, 0/3** |
+| exit-zero-is-not-evidence | 1.00 | 1.00 | **0.00** | yes |
+
+**The finding worth keeping: `script-lint-preflight` scored an apparent improvement while
+`Skill called 0x` on every run.** The gain came from skill *descriptions* sitting in context, not
+from the skill being read. Claude judged a six-line beat list as something it could handle alone —
+Anthropic's documented under-triggering ("Claude only consults skills for tasks it can't easily
+handle on its own"). Grader detail: it found the missing CHECKPOINT 3/3 unaided, but caught the
+banned-name rule (rule 2, "Aroma") only 1/3 — i.e. it missed exactly the part only the skill
+teaches. **Always read the routing indicator before believing a delta.**
+
+**`exit-zero-is-not-evidence` is a dead case** — 1.00 in BOTH arms. It cannot measure anything;
+Claude already refuses that claim unaided. Replace it rather than keep a case that inflates the
+score.
+
+**Mechanics learned:** under `--ablation with-without` (the default), `arm: with-only` graders are
+correctly excluded from the score — verified by arithmetic (weights 2+1 denominator, routing
+omitted). Under `--ablation none` they ARE scored. `--json <path>` sends the score table to the
+file and leaves only 3 lines on stdout, so parse the JSON, do not grep the transcript.
+
+**Next session:** make `script-lint-preflight`'s description pushier so it fires on "check/review my
+script", replace the dead case, re-run and compare **Δ**, not absolute score. Another ~$1.70 and
+~7 min — quote it first.
+
+## 2026-09-25 — Paid skill evals run on the subscription; plugin skills must sit at <root>/skills/
+
+**There is no token to configure.** `claude plugin eval` (CLI 2.1.282) spawns "a full claude child
+on your own credential". No `ANTHROPIC_API_KEY` and no `apiKeyHelper` exist here, so it already
+authenticates as the subscription. Cost is plan usage, not billed dollars — quote it that way
+(`paid-run-protocol`), and do NOT repeat the 2026-09-22 mistake of alarming Aroma with a $ figure
+that is not billed.
+
+**The trap that would have made every score meaningless.** A plugin loads skills ONLY from
+`<plugin root>/skills/`. Real Anthropic plugin manifests have **no `skills` key** — I invented one
+(`"skills": "./.claude/skills"`) and it was silently ignored. First smoke run reported
+`routing: Skill called 0x` and still scored 0.75 off the other graders — a plugin that loads zero
+skills runs, spends, and looks like a result. Cost of finding out: $0.08.
+
+Root cause is this repo's name collision: `skills/` at the repo root is the **Python API wrappers**,
+so the eval plugin cannot live at the repo root.
+
+**Shape that works:** `evals/agent-plugin/` is its own plugin root with its own
+`.claude-plugin/plugin.json`; `evals/skills/build-plugin.js` wipes and re-copies `.claude/skills`
+into `evals/agent-plugin/skills/` (gitignored, generated, rebuilt every run so it cannot go stale —
+the copy-paste fan-out failure). It exits 1 if it stages 0 skills. Second smoke run:
+`Skill called 1x`, score 1.00, $0.11, 21s.
+
+**Measured numbers for quoting a full run:** ~$0.11-equivalent and ~21s per agent run. The suite is
+3 cases x 3 runs x 2 arms = 18 runs, so roughly **$2 of plan usage and ~7 minutes** serial.
+`--ablation none` halves both but gives no delta, and with no baseline arm the `arm: with-only`
+routing grader IS scored (observed: it counted toward 0.75/1.00).
+
+**Always pass `--no-publish`.** Publishing the HTML report to claude.ai is the DEFAULT.
+
+Commands: `npm run eval:skills` (free, 343 assertions) · `npm run eval:agent:smoke` (1 run) ·
+`npm run eval:agent` (full, with baseline).
+
+**Concurrent-session note:** another session committed my CLAUDE.md, the new skills and
+SKILL_AUTHORING.md inside its own commit `eeaa0a2`. Nothing was lost and the gates are green, but
+that is [[H5]] from the other direction — assume shared files will be swept into someone else's
+commit. **CLAUDE.md is now exactly 150 lines, at the hard `guard-file-writes.sh` limit**; the next
+addition must remove a line.
+
+---
+
 ## 2026-09-24
 
 ### Script-approval gate shipped into the spine and the course API (contract 1.2)
@@ -201,3 +275,129 @@ trivially.
   `__pycache__/`, `.jobstore/`, and `node_modules/@ffmpeg-installer/`. If any of those were
   genuinely wanted, the repo must go private first.
 - Consider whether a public repo should be vendoring `node_modules` at all.
+
+## 2026-09-25
+
+### The cohort2-lms budget raise is set but NOT live; the 1.2 deploy is held on the LMS
+
+**Budget.** The LMS asked (by email) to raise `cohort2-lms` `monthlyUsd` 10 → 50, `maxRunUsd`
+unchanged at 4. Approved by the user and **already set on Railway** via
+`railway variables --set ... --skip-deploys`, validated first with
+`node scripts/mint-tenant.js --check --file <scratch>` (1 tenant, `$50/month`, all usable).
+**It has not taken effect** — production is still running the old container, so it needs the next
+redeploy. Note `TENANTS_JSON` holds only the `cohort2-lms` entry; `default` comes from the legacy
+`CONTENT_API_TOKEN` and is loaded separately, so "2 tenants" on `/health` is 1 + 1, not an array
+of 2.
+
+**Pushed.** `eeaa0a2` — the script-approval stage, contract 1.2 docs, Drive offload
+(`gdrive.js`/`drive-offload.js`/`gdrive-auth.js`), YouTube migration notes — is on `origin/main`.
+Smoke test 11 pass / 1 warn (pre-existing frontmatter gaps) / 0 fail. Staged file-by-file, never
+`-A`, per [[H5]].
+
+**Deploy deliberately NOT run.** Deploying `eeaa0a2` turns the script gate on for everyone, and the
+LMS has not wired `POST .../script/approve` — **verified by reading their repo**, not inferred: zero
+hits for `script-approval` / `script/approve` / `scriptSha` / contract 1.2 across `E:\Cohort2LP`
+code, tests, docs and git log. The new lesson from this is [[lessons#H33]]. Concretely, if deployed
+today: `build-library.ts:197-201` labels the script pause "Ready for review" with no video,
+`:223-228` gives it no action, and `blocked-by.ts` falls through to its (good) unknown-value
+fallback. Their `content-course-poll.ts:281` already passes `blockedBy` through verbatim, so the
+slug itself needs no change on their side.
+
+**The compounding risk worth restating:** the $2.50/lesson reservation is held across the script
+pause, so a stalled 10-lesson course holds $25 of their $50 ceiling. Two stalled courses 402 every
+subsequent build, several steps removed from the real cause.
+
+**The ordering deadlock is not one.** Their integration is additive and inert against 1.1 — no
+lesson ever carries `script-approval` today, so their new branch never fires. They can ship to
+production first, safely, then we deploy. That is the unlock offered in the handover.
+
+**Written:** `docs/integration-requests/2026-09-25-script-approval-integration-guide.md` — a
+file-by-file map into their codebase, the four routes, the money interaction, and the ship-first
+argument. Uncommitted at the time of writing.
+
+### NEXT_STEPS (this thread)
+- Send the 09-25 guide to the LMS (it is a file in our repo, which is not the same as them having
+  received it — that ambiguity is what cost us this round).
+- On "the approve path is in": `node scripts/predeploy-check.js && railway redeploy --from-source -y`.
+  That one deploy carries BOTH the 1.2 gate and the $50 ceiling. If `--from-source` no-ops, the
+  service is not Git-connected — use the `git archive origin/main | tar -x` + `railway up
+  <dir> --path-as-root` workaround.
+- Then verify: `/health` shows `contractVersion: "1.2"`, tenants no errors, and `/demo/spend` under
+  their token reports `monthlyUsd: 50`.
+
+**2026-09-25 — channel identity written into the docs.** Updated `orchestrator/README.md`,
+`docs/DEPLOYMENT_PREREQS.md` (new "The YouTube grant" section, `last_verified` bumped) and
+`.claude/memories/deployment.md` to name `@TaleemabadUniversity`, the `cohort2lp` project, the
+Internal consent screen, the env-beats-file precedence trap, and the oEmbed proof technique. The
+README's setup steps had said to use **External + Test users**, which is now corrected — following
+them would have rebuilt the 7-day-expiry problem.
+
+**Near-miss worth remembering:** `orchestrator/lib/gdrive.js:72` falls back to
+`YOUTUBE_CLIENT_ID`/`_SECRET` when the `GDRIVE_` pair is unset, and a Google refresh token is bound
+to the client that issued it. Rotating the YouTube client therefore silently invalidates any
+existing Drive grant. It cost nothing this time only because `GDRIVE_*` was unset on Railway and no
+Drive token existed locally — checked, not assumed. Anyone minting `GDRIVE_REFRESH_TOKEN` must
+consent against the **new** `cohort2lp` client.
+
+Left alone deliberately: `docs/AUTONOMY_PLAN.md` and `docs/superpowers/specs/2026-09-01-*.md` are
+dated historical records of what was planned, not live operating docs, so naming today's channel in
+them would be revisionist.
+
+**2026-09-25, later — the LMS says the gate is wired; it is written but NOT deployed.** They
+reported `feat/script-approval-gate` / `75464b4`. Verified per [[lessons#H33]]: the commit is real
+and the work is genuinely good (1372 insertions — client, 4 routes, poller fields, schema +
+migration `0062_script_approval_gate.sql`, UI with the two gates kept apart, tests, and our frozen
+1.2 contract vendored). **But it exists only as a local branch on this machine:**
+`git branch -r --contains 75464b4` → nothing; the only ref is `refs/heads/feat/script-approval-gate`;
+their `origin/main` is `ff5f814` (Sep 22), predating the work. Their local `origin` IS
+`github.com/Orenda-Project/Taleemabad-University`, which is the repo their Railway service deploys
+from — so it cannot be live. New rule from this: [[lessons#H34]].
+
+**Deploy still held.** Three things outstanding, none of them ours: (1) they push + merge + deploy
+their side — our §6 ship-first argument holds, it is inert against 1.1 so it is safe to deploy
+before us; (2) their deploy window arrived as an unfilled placeholder, "[earliest we can watch it
+together]" — no actual time was named; (3) their own stated precondition, the approve/reject call on
+`lms-e2e-2026-09-23/where-the-error-actually-happened`, is explicitly still undecided.
+
+Our side remains ready: `eeaa0a2` on main, `TENANTS_JSON` already carrying `monthlyUsd: 50` on
+Railway and waiting on the same single redeploy.
+
+**Reply drafted:** `docs/integration-requests/2026-09-25-script-approval-ready-reply.md` — credits
+the work specifically (they honoured the `sha`-never-re-fetched line and pinned the "must never read
+Ready for review" case), shows the three git commands proving it never left their machine, and asks
+for push+merge+deploy, a real window, and the interrupted-lesson decision. Framed as the ordinary
+gap between *done* and *live*, not as a catch. Uncommitted, alongside the 09-25 guide.
+
+**2026-09-25, later still — the LMS is genuinely live; every claim verified; our deploy is the only
+thing left.** Checked per [[lessons#H34]] rather than on the hash: `3dae5b1` is on `origin/staging`
+(it was on no remote last round), their service reports `version: ccb1fd2` at `/health/deploy`,
+`ccb1fd2` contains `3dae5b1`, and the deployed tree carries the four routes and
+`VENDORED_CONTRACT_VERSION`. Crucially `railway environment` lists exactly ONE environment,
+`Staging` — so there is no second deployment of theirs sitting on old code, and their
+`origin/main` being stale at `ff5f814` (Sep 22) is not an operational problem today. It IS a latent
+one: the gate lives only on `staging`, so a future deploy from `main` would lose it.
+
+Their reject landed on our production and we verified it independently: `/health` now shows
+`awaitingApproval: 0` and `heldCourses: 0` (was 1 awaiting). `contractVersion` still `"1.1"`,
+tenants `{count:2, ids:[cohort2-lms, default], errors:[]}`. `predeploy-check` passes: worker idle.
+
+**Two disclosures from their agent worth carrying forward:** their staging calls our PRODUCTION with
+no override — new rule [[lessons#H35]], and the real origin of the E2E lesson that cost two weeks;
+and it pushed a docs-only memory commit to staging on "existing push authorization", i.e. an agent
+widening a prior grant to a later action. Harmless here, worth noticing as a pattern.
+
+### NEXT_STEPS (this thread)
+- **The deploy is the only open item and it is ours.** `node scripts/predeploy-check.js && railway
+  redeploy --from-source -y` — blocked for this session by the auto-mode classifier
+  ([Production Deploy]), so a person runs it. If `--from-source` no-ops, the service is not
+  Git-connected: use `git archive origin/main | tar -x` + `railway up <dir> --path-as-root`.
+- Ping the LMS as we deploy — they asked to watch `/health` for `contractVersion: "1.2"` with us.
+- Then the joint first run: one module, two lessons, script → revise → approve → review.
+- Ask them to get the gate onto `main`, not just `staging`.
+- Two docs still uncommitted: the 09-25 guide and the 09-25 reply.
+
+**2026-09-25 — handed the deploy command in the wrong shell.** Gave the user a Bash one-liner
+(`cd /e/... && ... && ...`) while they were at a PowerShell 5.1 prompt; it parse-errored twice
+before I caught it. Verified-in-the-wrong-shell, because my own Bash tool had been running it fine
+all session. New rule: [[lessons#H36]]. Correct handoff form:
+`node scripts/predeploy-check.js` then `if ($LASTEXITCODE -eq 0) { railway redeploy --from-source -y }`.

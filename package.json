@@ -10,7 +10,10 @@
     "lint": "eslint orchestrator server scripts .claude/skills gates",
     "test": "node orchestrator/test-regressions.js && node orchestrator/test-store.js && node orchestrator/test-server.js",
     "test:server": "node orchestrator/test-server.js",
-    "test:store": "node orchestrator/test-store.js"
+    "test:store": "node orchestrator/test-store.js",
+    "eval:skills": "node evals/skills/run.js",
+    "eval:agent": "node evals/skills/build-plugin.js && claude plugin eval evals/agent-plugin --trust-plugin --no-publish --threshold 0.8 --judge-model claude-haiku-4-5",
+    "eval:agent:smoke": "node evals/skills/build-plugin.js && claude plugin eval evals/agent-plugin --trust-plugin --no-publish --ablation none --runs 1 --max-cost-usd 1"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.97.1",
