@@ -69,9 +69,21 @@ function createApp(opts = {}) {
   });
 
   app.get('/health', (_req, res) => {
-    res.json({
-      ok: true,
+    const health = require('./lib/health');
+    const v = health.verdict({ store: jobStore, readiness });
+    res.status(v.status).json({
+      // Computed, not asserted. `true` was hardcoded here until 2026-09-25, so
+      // the deploy probe could not fail and a memory-backed store looked fine.
+      ok: v.ok,
+      ...(v.reasons.length ? { notOkBecause: v.reasons } : {}),
       contractVersion: require('./lib/api').CONTRACT_VERSION,
+      // Stamped by scripts/deploy.sh into the uploaded tree. "Triggered a deploy"
+      // is not proof of a deploy; this commit hash answering here is.
+      build: health.build(),
+      // One-video jobs a restart would interrupt. predeploy-check.js reads this
+      // alongside courses.worker -- it used to read only the latter, which is
+      // how two redeploys landed on a job being written through /demo/make-video.
+      jobs: { inFlight: health.inFlight(jobStore) },
       surfaces: readiness(),
       tick: tick.status(),
       // Say what the store actually is. A service that claimed durability it did
@@ -434,6 +446,14 @@ function createApp(opts = {}) {
               overlay: b.overlay ? { tpl: b.overlay.tpl || null } : null,
               info: b.info ? { tpl: b.info.tpl || null } : null,
             })),
+            // The COMPLETE beats, so the script can be rebuilt when the container
+            // that wrote it is gone. The projection above keeps an info card's
+            // template name and drops its data; a file rebuilt from it renders
+            // blank cards, which is why job 43a782dd45dd could not be recovered
+            // after the 2026-09-25 redeploys. This is a copy, not a second
+            // truth: beats.js on disk (and its volume copy below) stay
+            // authoritative, and jobs.materializeScript prefers them.
+            beatsFull: r.beats || [],
             // The question the LMS will pop. Never drawn, never spoken.
             checkpoint: checkpoint ? checkpoint.quiz : null,
             checkpointAfterBeat: checkpoint
@@ -444,6 +464,17 @@ function createApp(opts = {}) {
       }, jobOpts);
       console.log(`[make-video ${id}] READY: ${r.title} (${r.beats.length} beats, `
         + `${r.redrafts} redraft(s))`);
+      // Onto the volume the moment it is written. The render directory is
+      // container-local and .dockerignore'd; a redeploy between `written` and
+      // "Make the video" used to take the only copy with it. Never fatal.
+      try {
+        require('../orchestrator/lib/deliverables').persist({
+          series: r.series, slug: r.slug, videoDir: r.dir,
+          log: (m) => console.log(`[make-video ${id}]`, m),
+        });
+      } catch (e) {
+        console.warn(`[make-video ${id}] script NOT persisted to the volume: ${e.message}`);
+      }
     }).catch((e) => {
       jobsLib.transition(id, { status: 'failed', patch: { error: e.message } }, jobOpts);
       console.error(`[make-video ${id}] failed: ${e.message}`);
@@ -585,6 +616,27 @@ function createApp(opts = {}) {
       });
     }
 
+    // Put the script where produce will look for it, from whichever copy
+    // survived the last redeploy. Before any rate-limit slot or reservation is
+    // taken: a script that is genuinely gone must not cost the caller either.
+    const restored = jobsLib.materializeScript(job, { log: (m) => console.log(`[produce ${job.id}]`, m) });
+    if (!restored.ok) {
+      unclaim();
+      // `failed`, not `written`: the LMS draws `written` as "ready, press the
+      // button", which is the loop this route was stuck in. A lost script is
+      // terminal for this job; the person creates the video again.
+      jobsLib.transition(job.id, {
+        status: 'failed',
+        patch: {
+          error: restored.why,
+          lastError: { at: new Date().toISOString(), stage: 'produce', message: restored.why },
+        },
+      }, jobOpts);
+      console.error(`[produce ${job.id}] refused for ${tenant.id}: ${restored.why}`);
+      return res.status(409).json({ error: 'script_lost', message: restored.why });
+    }
+    console.log(`[produce ${job.id}] beats.js from ${restored.source}`);
+
     const budgetUsd = Math.min(
       config.pipeline.maxApprovableUsd,
       Number.isFinite(tenant.maxRunUsd) && tenant.maxRunUsd !== null ? tenant.maxRunUsd : Infinity
@@ -694,9 +746,16 @@ function createApp(opts = {}) {
       });
       jobsLib.transition(job.id, {
         status: 'written',   // the script is still good; only the render failed
-        patch: { spendRef: null, produce: { status: 'failed', error: e.message } },
+        patch: {
+          spendRef: null,
+          produce: { status: 'failed', error: e.message },
+          // Top-level and non-terminal, so the LMS can show it under `written`.
+          // `produce.error` alone was invisible: the page read `error`, which
+          // stayed null, and drew the button as if nothing had happened.
+          lastError: { at: new Date().toISOString(), stage: 'produce', message: e.message, runId: e.runId || null },
+        },
       }, jobOpts);
-      console.error(`[produce ${job.id}] failed: ${e.message}`);
+      console.error(`[produce ${job.id}] failed for ${tenant.id}: ${e.message}`);
       if (e.stack) console.error(e.stack.split('\n').slice(0, 8).join('\n'));
       unclaim();
     });

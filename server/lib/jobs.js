@@ -197,6 +197,69 @@ function hydrateScript(job) {
 }
 
 /**
+ * Put the script back on disk for produce to read, from wherever it survived.
+ *
+ * produce reads videoDir/beats.js, and videoDir is on the container filesystem.
+ * On 2026-09-25 two redeploys replaced the container while a job sat `written`;
+ * produce failed in 9 ms with "no gated script yet", the job went back to
+ * `written`, and the LMS drew the same page it had before the click. The bytes
+ * were gone but the job record still described every beat -- nothing rebuilt
+ * the file from it. Three sources, in order of fidelity:
+ *
+ *   disk        the file is where produce expects it (nothing to do)
+ *   volume      the copy persist() made when the job became `written`
+ *   job-record  `script.beatsFull`, the complete beats kept since this fix
+ *
+ * The old `script.beats` projection is NOT a source: it keeps an info card's
+ * template name and drops its data, so a file rebuilt from it renders blank
+ * cards. A job with nothing better than that has genuinely lost its script,
+ * and the honest answer is to say so rather than render six empty frames.
+ *
+ * Returns { ok:true, source, file } or { ok:false, why }. Never throws.
+ */
+function materializeScript(job, { log = () => {} } = {}) {
+  const s = job && job.script;
+  if (!s || !s.series || !s.slug) return { ok: false, why: 'this job has no script' };
+  const fs = require('fs');
+  const { videoDir } = require('../../orchestrator/lib/paths');
+  const dir = videoDir(s.series, s.slug);
+  const file = path.join(dir, 'beats.js');
+
+  if (fs.existsSync(file)) return { ok: true, source: 'disk', file };
+
+  try {
+    const held = require('../../orchestrator/lib/deliverables').findScript(s.series, s.slug);
+    if (held && held.beats) {
+      fs.mkdirSync(dir, { recursive: true });
+      fs.copyFileSync(held.beats, file);
+      if (held.durations) fs.copyFileSync(held.durations, path.join(dir, 'durations.json'));
+      log('beats.js restored from the volume copy');
+      return { ok: true, source: 'volume', file };
+    }
+  } catch (e) {
+    log(`could not restore beats.js from the volume (${e.message}); trying the job record`);
+  }
+
+  if (Array.isArray(s.beatsFull) && s.beatsFull.length) {
+    try {
+      const { renderBeatsFile } = require('../../orchestrator/lib/beats-file');
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(file, renderBeatsFile({ title: s.title || job.topic, beats: s.beatsFull }), 'utf8');
+      log(`beats.js rebuilt from the job record (${s.beatsFull.length} beats)`);
+      return { ok: true, source: 'job-record', file };
+    } catch (e) {
+      log(`could not rebuild beats.js from the job record: ${e.message}`);
+    }
+  }
+
+  return {
+    ok: false,
+    why: 'the script was lost when the service restarted before it had been saved; '
+      + 'nothing was bought. It has to be written again -- create the video once more.',
+  };
+}
+
+/**
  * The shape the API returns. Identical to what the routes built inline before,
  * plus the catalogue key -- see below.
  */
@@ -211,6 +274,11 @@ function toPublic(job, { includeScript = true, baseUrl = '' } = {}) {
     updatedAt: new Date(job.updatedAt || job.startedAt).toISOString(),
     error: job.error,
   };
+  // The last thing that went wrong on a job that is NOT terminal. `error` is
+  // what the LMS reads as "this is over"; a produce that failed to start puts the
+  // job back to `written` (the script is fine), and until this field existed
+  // that page could not say why the button had done nothing.
+  if (job.lastError) out.lastError = job.lastError;
   if (includeScript && job.script) out.script = job.script;
   if (job.produce) out.produce = job.produce;
 
@@ -279,6 +347,6 @@ function restore(opts = {}) {
 
 module.exports = {
   create, get, transition, claim, toPublic, listFor, restore,
-  resolveFinalPath, hydrateScript, ownerKey, ownedBy,
+  resolveFinalPath, hydrateScript, materializeScript, ownerKey, ownedBy,
   TERMINAL, IN_FLIGHT, newId,
 };

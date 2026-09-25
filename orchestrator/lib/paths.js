@@ -58,7 +58,10 @@ function runStatePath(runId) {
 
 /** Resolve the working folder for a video, e.g. explainer-videos/<series>/<slug>. */
 function videoDir(series, slug) {
-  return path.join(PATHS.explainerVideos, series, slug);
+  // Read at call time, not module load: the test suite points this at a temp
+  // dir per test, and this module is already cached by then.
+  const base = process.env.EXPLAINER_VIDEOS_DIR || PATHS.explainerVideos;
+  return path.join(base, series, slug);
 }
 
 /** Load a prompt by name from prompts/ -- mirrors the Python _load_prompt() rule. */

@@ -132,6 +132,13 @@ const server = app.listen(config.port, () => {
   }, sweepMs).unref();
 
   tick.startLoop();
+
+  // Record in-flight work on SIGTERM and on a crash, instead of discovering it
+  // at the next boot. See server/lib/shutdown.js.
+  require('./lib/shutdown').install({
+    jobs, store: jobStore, server,
+    courseWorker: require('./lib/course-worker'),
+  });
 });
 
 module.exports = { app, server };

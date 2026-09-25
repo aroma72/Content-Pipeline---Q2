@@ -224,8 +224,13 @@ async function authChecks() {
   await check('/health answers without a credential', () => withServer(BASE_ENV, {}, async (port) => {
     const r = await req(port, { path: '/health' });
     assert(r.status === 200, `expected 200, got ${r.status}`);
-    assert(r.json.ok === true, 'health should be ok');
-    return 'ok';
+    // `ok` is computed now (server/lib/health.js), and this test box has no model
+    // credential and no budget, so it is honestly false here. The contract is:
+    // a boolean, and when false, the reasons -- never a hardcoded true.
+    assert(typeof r.json.ok === 'boolean', `ok should be a boolean, got ${JSON.stringify(r.json.ok)}`);
+    if (!r.json.ok) assert(Array.isArray(r.json.notOkBecause) && r.json.notOkBecause.length, 'ok:false with no reasons');
+    assert(r.json.contractVersion, 'no contractVersion');
+    return r.json.ok ? 'ok' : `ok:false (${r.json.notOkBecause.length} reason(s) given)`;
   }));
 }
 
@@ -242,10 +247,21 @@ function storeEnv() {
 }
 
 /** A server with its own private job store, so tests cannot see each other. */
+/** A private render directory per test, so nothing a test writes lands in the repo tree. */
+function vidsEnv() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cq-vids-'));
+  storeDirs.push(dir);
+  return dir;
+}
+
 function freshEnv(extra = {}) {
   return {
     ...BASE_ENV,
     JOB_STORE_DIR: storeEnv(),
+    // jobs.materializeScript rebuilds beats.js under videoDir() before produce.
+    // Without this, a stub-written job in a test lands a real directory in
+    // explainer-videos/made/ -- which the catalogue then lists.
+    EXPLAINER_VIDEOS_DIR: vidsEnv(),
     OWNER_COOKIE_SECRET: 'a-test-cookie-secret-long-enough-to-sign',
     PIPELINE_MAX_APPROVABLE_USD: '5',
     ...extra,
@@ -1359,6 +1375,271 @@ async function bridgeChecks() {
 
 // ── run ───────────────────────────────────────────────────────────────────────
 
+// ── 2b. a written script survives the container; a failed produce is visible ──
+//
+// Earned on 2026-09-25. Job 43a782dd45dd was `written`; two redeploys replaced
+// the container; the click on "Make the video" failed in 9 ms with "no gated
+// script yet", the job was put back to `written`, the LMS drew the identical
+// page, and the Idempotency-Key was left `abandoned` so every later click was
+// answered from a run that never began. Four defects, one symptom.
+
+async function resilienceChecks() {
+  console.log('\n2b. a written script survives a redeploy, and a failed produce says so');
+
+  const { videoDir } = require(path.join(__dirname, 'lib', 'paths'));
+
+  /** A write stub whose beats need real data to render (an info card) and carry a checkpoint. */
+  const FULL_BEATS = [
+    { id: '01', mode: 'scene', vo: 'Ali opens his order book.', art: 'A tailor at a bench, no text', cap: 'The order book' },
+    { id: '02', mode: 'info', vo: 'Twelve orders came in.', info: { tpl: 'bignum', data: { big: 12, lab: 'orders' } } },
+    { id: '03', mode: 'checkpoint', quiz: { stem: 'What did Ali count?', options: ['Orders', 'Coins', 'Days'], answer: 0, explain: 'He counted the orders in the book, which is the thing the week is measured in.' } },
+    { id: '04', mode: 'scene', vo: 'So he writes the numbers down.', art: 'A notebook on a bench, no text', cap: 'Writing it down' },
+  ];
+  function writerReturning(slug, extra = {}) {
+    return async (body) => ({
+      runId: 'run-test', itemId: `made/${slug}`, slug, series: 'made', topic: body.topic,
+      title: 'A Test Lesson', brief: { slo: 'x', interpretation: 'y', ali_scenario: 'z' },
+      beats: FULL_BEATS, gate: { verdict: 'READY' }, redrafts: 0,
+      dir: videoDir('made', slug), ...extra,
+    });
+  }
+
+  await check('a produce that never started can be retried with the same Idempotency-Key',
+    () => {
+      const env = freshEnv();
+      let produceCalls = 0;
+      const pipeline = fakePipeline({
+        write: writerReturning('t-retry'),
+        produce: async () => { produceCalls++; throw new Error('boom: the render never began'); },
+      });
+      return withServer(env, { oneVideo: pipeline, store: freshStore(env) }, async (port) => {
+        const { jobId, cookie } = await makeJob(port);
+        await settle();
+        const auth = { authorization: `Bearer ${LMS_TOKEN}` };
+        await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/claim`, headers: auth, cookie });
+        const h = { ...auth, 'idempotency-key': 'lms-produce-stable-per-video' };
+        const first = await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/produce`, headers: h, body: {} });
+        assert(first.status === 202, `first produce: ${first.status} ${first.text}`);
+        await settle();
+        const second = await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/produce`, headers: h, body: {} });
+        assert(second.status === 202, `second produce: ${second.status} ${second.text}`);
+        assert(second.headers['idempotency-replayed'] !== 'true',
+          'the retry was answered from the abandoned first attempt -- the button is dead forever');
+        await settle();
+        assert(produceCalls === 2, `produce ran ${produceCalls} time(s); the retry did no work`);
+        return 'abandoned key re-claimed, work re-dispatched';
+      });
+    });
+
+  await check('a failed produce is reported on the job as lastError, not hidden in produce.error',
+    () => {
+      const env = freshEnv();
+      const pipeline = fakePipeline({
+        write: writerReturning('t-lasterr'),
+        produce: async () => { throw new Error('this video has no gated script yet -- write it first'); },
+      });
+      return withServer(env, { oneVideo: pipeline, store: freshStore(env) }, async (port) => {
+        const { jobId, cookie } = await makeJob(port);
+        await settle();
+        const auth = { authorization: `Bearer ${LMS_TOKEN}` };
+        await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/claim`, headers: auth, cookie });
+        await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/produce`, headers: auth, body: {} });
+        await settle();
+        const r = await req(port, { path: `/demo/make-video/${jobId}`, headers: auth, cookie });
+        assert(r.json.status === 'written', `expected written (the script is still good), got ${r.json.status}`);
+        assert(r.json.error === null || r.json.error === undefined, `error must stay null for a non-terminal job, got ${JSON.stringify(r.json.error)}`);
+        assert(r.json.lastError && /no gated script/.test(r.json.lastError.message),
+          `lastError not surfaced top-level: ${JSON.stringify(r.json.lastError)}`);
+        assert(r.json.lastError.stage === 'produce', `lastError.stage should name produce, got ${r.json.lastError.stage}`);
+        return 'lastError carries the reason the LMS could not see';
+      });
+    });
+
+  await check('a written script survives the render directory vanishing: rebuilt from the job record',
+    () => {
+      const vids = fs.mkdtempSync(path.join(os.tmpdir(), 'cq-vids-'));
+      storeDirs.push(vids);
+      const env = freshEnv({ EXPLAINER_VIDEOS_DIR: vids });
+      let produced = null;
+      const pipeline = fakePipeline({
+        write: writerReturning('t-record'),
+        produce: async (r) => { produced = r; return fakePipeline().produce(); },
+      });
+      return withServer(env, { oneVideo: pipeline, store: freshStore(env) }, async (port) => {
+        const { jobId, cookie } = await makeJob(port);
+        await settle();
+        const file = path.join(videoDir('made', 't-record'), 'beats.js');
+        assert(!fs.existsSync(file), 'precondition: the stub writer must not have written beats.js');
+        const auth = { authorization: `Bearer ${LMS_TOKEN}` };
+        await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/claim`, headers: auth, cookie });
+        const r = await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/produce`, headers: auth, body: {} });
+        assert(r.status === 202, `produce refused: ${r.status} ${r.text}`);
+        await settle();
+        assert(fs.existsSync(file), 'beats.js was not rebuilt before produce');
+        delete require.cache[require.resolve(file)];
+        const beats = require(file);
+        const info = beats.find((b) => b.mode === 'info');
+        assert(info && info.info && info.info.data && info.info.data.big === 12,
+          `the rebuilt info beat lost its data: ${JSON.stringify(info)}`);
+        const cp = beats.find((b) => b.mode === 'checkpoint');
+        assert(cp && cp.quiz && cp.quiz.options.length === 3, 'the rebuilt checkpoint lost its quiz');
+        assert(produced, 'produce was never dispatched');
+        return 'rebuilt from the record, info data and checkpoint intact';
+      });
+    });
+
+  await check('a written script survives the render directory vanishing: restored from the volume copy',
+    () => {
+      const vids = fs.mkdtempSync(path.join(os.tmpdir(), 'cq-vids-'));
+      storeDirs.push(vids);
+      const env = freshEnv({ EXPLAINER_VIDEOS_DIR: vids, JOB_STORE_DURABLE: '1' });
+      const jobStoreMod = require(path.join(__dirname, '..', 'server', 'lib', 'job-store'));
+      jobStoreMod.reset();
+      const ORIGINAL = '// hand-written bytes that must come back identical\nmodule.exports = '
+        + JSON.stringify(FULL_BEATS) + ';\n';
+      const pipeline = fakePipeline({
+        write: async (body) => {
+          const dir = videoDir('made', 't-volume');
+          fs.mkdirSync(dir, { recursive: true });
+          fs.writeFileSync(path.join(dir, 'beats.js'), ORIGINAL);
+          return writerReturning('t-volume')(body);
+        },
+      });
+      return withServer(env, { oneVideo: pipeline, store: freshStore(env) }, async (port) => {
+        const { jobId, cookie } = await makeJob(port);
+        await settle();
+        const deliverables = require(path.join(__dirname, 'lib', 'deliverables'));
+        const held = deliverables.findScript('made', 't-volume');
+        assert(held && held.beats, 'the script was not persisted to the volume when it became written');
+        const file = path.join(videoDir('made', 't-volume'), 'beats.js');
+        fs.rmSync(file);
+        const auth = { authorization: `Bearer ${LMS_TOKEN}` };
+        await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/claim`, headers: auth, cookie });
+        const r = await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/produce`, headers: auth, body: {} });
+        assert(r.status === 202, `produce refused: ${r.status} ${r.text}`);
+        await settle();
+        assert(fs.existsSync(file), 'beats.js was not restored from the volume');
+        assert(fs.readFileSync(file, 'utf8') === ORIGINAL, 'the restored bytes differ from what was approved');
+        return 'byte-identical restore from the volume';
+      });
+    });
+
+  await check('a script lost before it was ever saved is failed honestly, not put back to written',
+    () => {
+      const vids = fs.mkdtempSync(path.join(os.tmpdir(), 'cq-vids-'));
+      storeDirs.push(vids);
+      const env = freshEnv({ EXPLAINER_VIDEOS_DIR: vids });
+      let produceCalls = 0;
+      const store = freshStore(env);
+      const pipeline = fakePipeline({
+        write: writerReturning('t-lost'),
+        produce: async () => { produceCalls++; return fakePipeline().produce(); },
+      });
+      return withServer(env, { oneVideo: pipeline, store }, async (port) => {
+        const { jobId, cookie } = await makeJob(port);
+        await settle();
+        // Age the record to the pre-fix projection: no complete copy, info cards
+        // reduced to their template name. Exactly what 43a782dd45dd holds.
+        store.patch(jobId, (j) => {
+          delete j.script.beatsFull;
+          j.script.beats = j.script.beats.map((b) => ({ ...b, info: b.info ? { tpl: b.info.tpl } : null }));
+          return j;
+        });
+        const auth = { authorization: `Bearer ${LMS_TOKEN}` };
+        await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/claim`, headers: auth, cookie });
+        const r = await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/produce`, headers: auth, body: {} });
+        assert(r.status === 409, `expected 409, got ${r.status}: ${r.text}`);
+        assert(r.json.error === 'script_lost', `wrong error code: ${r.json.error}`);
+        await settle();
+        assert(produceCalls === 0, 'produce was dispatched for a script that does not exist');
+        const g = await req(port, { path: `/demo/make-video/${jobId}`, headers: auth, cookie });
+        assert(g.json.status === 'failed', `expected failed so the LMS shows it in red, got ${g.json.status}`);
+        assert(/written again/.test(g.json.error || ''), `the reason does not tell the person what to do: ${g.json.error}`);
+        return '409 script_lost, job failed with the reason';
+      });
+    });
+}
+
+// ── 2c. /health tells the truth a deploy needs ───────────────────────────────
+
+async function healthChecks() {
+  console.log('\n2c. /health reports in-flight one-video jobs, and ok is computed');
+
+  const health = require(path.join(__dirname, '..', 'server', 'lib', 'health'));
+  const shutdown = require(path.join(__dirname, '..', 'server', 'lib', 'shutdown'));
+  const jobsLib = require(path.join(__dirname, '..', 'server', 'lib', 'jobs'));
+
+  await check('/health counts a job being written, so predeploy-check can see it',
+    () => {
+      const env = freshEnv();
+      // A write that never finishes: the job sits in `running` for the whole test.
+      const pipeline = fakePipeline({ write: () => new Promise(() => {}) });
+      return withServer(env, { oneVideo: pipeline, store: freshStore(env) }, async (port) => {
+        await req(port, { method: 'POST', path: '/demo/make-video', body: { topic: 'a topic' } });
+        const h = await req(port, { path: '/health' });
+        assert(h.json.jobs && h.json.jobs.inFlight, `no jobs.inFlight on /health: ${h.text.slice(0, 200)}`);
+        assert(h.json.jobs.inFlight.writing === 1, `expected writing=1, got ${JSON.stringify(h.json.jobs.inFlight)}`);
+        assert(h.json.jobs.inFlight.any === true, 'any should be true while a job is being written');
+        return 'writing=1';
+      });
+    });
+
+  await check('/health.ok is computed: a memory job store is 503, a healthy one is 200',
+    () => {
+      const good = health.verdict({
+        store: { health: () => ({ durability: 'volume', writable: true }) },
+        readiness: { model: true, gemini: true, budgetAuthorised: true },
+      });
+      assert(good.ok === true && good.status === 200, `healthy store judged ${JSON.stringify(good)}`);
+      const mem = health.verdict({
+        store: { health: () => ({ durability: 'memory', writable: true }) },
+        readiness: { model: true, gemini: true, budgetAuthorised: true },
+      });
+      assert(mem.ok === false && mem.status === 503, `memory store judged ${JSON.stringify(mem)}`);
+      assert(/memory/.test(mem.reasons.join(' ')), 'the reason does not say the store is in memory');
+      const degraded = health.verdict({
+        store: { health: () => ({ durability: 'volume', writable: true }) },
+        readiness: { model: false, modelNote: 'no credential', gemini: true, budgetAuthorised: false },
+      });
+      assert(degraded.ok === false && degraded.status === 200, `degraded should be 200 ok:false, got ${JSON.stringify(degraded)}`);
+      assert(degraded.reasons.length === 2, `expected 2 reasons, got ${JSON.stringify(degraded.reasons)}`);
+      return '200 / 503 / degraded-200';
+    });
+
+  await check('the live /health route answers ok:false with reasons rather than a hardcoded true',
+    () => {
+      const env = freshEnv({ PIPELINE_BUDGET_USD: '0' });
+      return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+        const h = await req(port, { path: '/health' });
+        assert(h.json.ok === false, `ok should be false with PIPELINE_BUDGET_USD=0, got ${h.json.ok}`);
+        assert(Array.isArray(h.json.notOkBecause) && /PIPELINE_BUDGET_USD/.test(h.json.notOkBecause.join(' ')),
+          `notOkBecause missing or vague: ${JSON.stringify(h.json.notOkBecause)}`);
+        assert(h.status === 200, `a degraded-but-serving container must stay 200, got ${h.status}`);
+        return 'ok:false, 200, reason named';
+      });
+    });
+
+  await check('SIGTERM handling marks in-flight jobs now, not at the next boot',
+    () => {
+      const env = freshEnv();
+      const store = freshStore(env);
+      const writing = jobsLib.create({ topic: 'w', owner: null }, { store });
+      const producing = jobsLib.create({ topic: 'p', owner: null }, { store });
+      jobsLib.transition(producing.id, { status: 'producing' }, { store });
+      const done = jobsLib.create({ topic: 'd', owner: null }, { store });
+      jobsLib.transition(done.id, { status: 'written' }, { store });
+      const m = shutdown.markInterrupted({ jobs: jobsLib, store, reason: 'SIGTERM' });
+      assert(m.failed === 1 && m.interrupted === 1, `marked ${JSON.stringify(m)}`);
+      const w = jobsLib.get(writing.id, { store });
+      const p = jobsLib.get(producing.id, { store });
+      const d = jobsLib.get(done.id, { store });
+      assert(w.status === 'failed' && /restart/.test(w.error), `writing job: ${w.status} / ${w.error}`);
+      assert(p.status === 'interrupted' && p.resumable === true, `producing job: ${p.status}`);
+      assert(d.status === 'written' && !d.error, 'a written job must be left alone');
+      return 'writing->failed, producing->interrupted, written untouched';
+    });
+}
+
 (async () => {
   console.log(`\n${'='.repeat(64)}`);
   console.log('  SERVER HTTP TESTS');
@@ -1366,6 +1647,8 @@ async function bridgeChecks() {
 
   await authChecks();
   await moneyChecks();
+  await resilienceChecks();
+  await healthChecks();
   await bridgeChecks();
   await lessonFileChecks();
   for (const d of storeDirs) { try { fs.rmSync(d, { recursive: true, force: true }); } catch { /* best effort */ } }

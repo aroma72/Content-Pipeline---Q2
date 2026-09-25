@@ -65,6 +65,20 @@ function begin(store, { tenantId, jobId, key, bodyHash }) {
     return { state: 'conflict', record: existing, scopedKey };
   }
   if (existing.state === 'in_flight') return { state: 'in_flight', record: existing, scopedKey };
+  if (existing.state === 'abandoned') {
+    // `abandon()` means the first attempt never dispatched any work, so there is
+    // nothing to replay -- and answering from it anyway is what happened on
+    // 2026-09-25: a produce that failed in 9 ms left the key abandoned, the LMS
+    // sends one stable key per video, and every later click was answered with
+    // the dead attempt's 202. The button stayed inert for that video for good.
+    // A retry after an abandon is a fresh claim.
+    store.putIdem(tenantId, scopedKey, {
+      key, jobId, tenantId, bodyHash,
+      state: 'in_flight', at: new Date().toISOString(), response: null,
+      reclaimedFrom: existing.at || null,
+    });
+    return { state: 'fresh', scopedKey, reclaimed: true };
+  }
   return { state: 'replay', record: existing, scopedKey };
 }
 

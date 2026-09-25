@@ -630,8 +630,11 @@ async function beatChecks() {
     assert(/'ali', 'scene', 'info', 'checkpoint'/.test(src), "mode enum has no 'checkpoint'");
     assert(/required: \['stem', 'options', 'answer', 'explain'\]/.test(src),
       'no quiz field in the beat schema');
-    assert(/b\.quiz \?/.test(src), 'renderBeatsFile drops quiz, so the checkpoint never reaches beats.js');
-    assert(/mode === 'checkpoint' \? null/.test(src), 'a checkpoint would be written with a vo');
+    // The writer lives in lib/beats-file.js now, shared with the server so a
+    // script rebuilt from its durable copy is written by the same function.
+    const writerSrc = fs.readFileSync(path.join(__dirname, 'lib', 'beats-file.js'), 'utf8');
+    assert(/b\.quiz \?/.test(writerSrc), 'renderBeatsFile drops quiz, so the checkpoint never reaches beats.js');
+    assert(/mode === 'checkpoint' \? null/.test(writerSrc), 'a checkpoint would be written with a vo');
     return 'schema + writer + renderer';
   });
 
@@ -691,12 +694,8 @@ async function beatChecks() {
   });
 
   check('holdAfter survives the writer -> beats.js round trip', () => {
-    // Same extraction trick the applyEdits tests below use: the stage exports only
-    // its contract, so reach the pure helper out of the source.
-    const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'script.js'), 'utf8');
-    const fn = (src.match(/function renderBeatsFile[\s\S]*?\n\}/) || [])[0];
-    assert(fn, 'renderBeatsFile not found in script.js');
-    const renderBeatsFile = eval('(' + fn.replace('function renderBeatsFile', 'function') + ')');
+    // The real writer, not a copy eval-ed out of the source text.
+    const { renderBeatsFile } = require('./lib/beats-file');
     // okBeats() is now a checkpoint script, which carries no holdAfter by design,
     // so this builds the beat it is actually about.
     const out = renderBeatsFile({ title: 'T', beats: [
@@ -822,9 +821,7 @@ async function beatChecks() {
   });
 
   check('motion survives the writer -> beats.js round trip', () => {
-    const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'script.js'), 'utf8');
-    const fn = (src.match(/function renderBeatsFile[\s\S]*?\n\}/) || [])[0];
-    const renderBeatsFile = eval('(' + fn.replace('function renderBeatsFile', 'function') + ')');
+    const { renderBeatsFile } = require('./lib/beats-file');
     const out = renderBeatsFile({ title: 'T', beats: [
       { id: '01', mode: 'scene', vo: 'x', art: 'a', motion: 'he writes steadily down the page' },
     ] });
@@ -3142,7 +3139,8 @@ function browserChecks() {
     // And it must survive being written out. renderBeatsFile is the only thing
     // that puts a field into beats.js; a field it omits never reaches the
     // renderer no matter how well the model filled it in.
-    assert(/b\.cap \?/.test(src), 'renderBeatsFile drops cap, so the renderer never sees it');
+    const writerSrc = fs.readFileSync(path.join(__dirname, 'lib', 'beats-file.js'), 'utf8');
+    assert(/b\.cap \?/.test(writerSrc), 'renderBeatsFile drops cap, so the renderer never sees it');
 
     const prompt = fs.readFileSync(path.join(PATHS_REPO, 'prompts', 'video_script.txt'), 'utf8');
     assert(/\bcap\b/.test(prompt), 'the writer prompt never asks for a caption');
