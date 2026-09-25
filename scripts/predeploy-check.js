@@ -44,8 +44,17 @@ function busyReasons(s) {
   const out = [];
   if (s.course.building) out.push('the course worker is BUILDING a lesson');
   else if (s.course.running) out.push('the course worker is running');
-  if (!s.jobs) out.push('/health does not report jobs.inFlight (older build) -- cannot tell whether a one-video job is running');
-  else {
+  if (!s.jobs) {
+    // The build that FIRST ships jobs.inFlight can never satisfy this check
+    // against the build before it. For that one deploy -- and only after reading
+    // the job store on the volume yourself -- set PREDEPLOY_ALLOW_UNKNOWN_JOBS=1.
+    // It never overrides a running course worker.
+    if (process.env.PREDEPLOY_ALLOW_UNKNOWN_JOBS === '1') {
+      console.log('predeploy: NOTE /health does not report jobs.inFlight (older build); proceeding because PREDEPLOY_ALLOW_UNKNOWN_JOBS=1 says a person checked the job store by hand');
+    } else {
+      out.push('/health does not report jobs.inFlight (older build) -- cannot tell whether a one-video job is running (PREDEPLOY_ALLOW_UNKNOWN_JOBS=1 overrides this once you have read /data/cq-jobs/jobs yourself)');
+    }
+  } else {
     if (s.jobs.writing) out.push(`${s.jobs.writing} one-video job(s) being WRITTEN through /demo/make-video`);
     if (s.jobs.producing) out.push(`${s.jobs.producing} one-video job(s) being PRODUCED (art and voice already bought)`);
     if (s.jobs.publishing) out.push(`${s.jobs.publishing} one-video job(s) PUBLISHING`);

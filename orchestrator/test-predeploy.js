@@ -34,9 +34,12 @@ async function withHealth(body, status, fn) {
 // Async, never spawnSync: the stub /health server lives in THIS process, and a
 // synchronous spawn blocks the event loop the stub needs to answer the child.
 // The first version deadlocked on the very first case and was killed at 120s.
-function run(base) {
+function run(base, extraEnv = {}) {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [SCRIPT], { env: { ...process.env, BASE: base } });
+    const env = { ...process.env, BASE: base, ...extraEnv };
+    delete env.PREDEPLOY_ALLOW_UNKNOWN_JOBS;
+    Object.assign(env, extraEnv);
+    const child = spawn(process.execPath, [SCRIPT], { env });
     let out = '';
     child.stdout.on('data', (d) => { out += d; });
     child.stderr.on('data', (d) => { out += d; });
@@ -92,6 +95,23 @@ const noJobs = { writing: 0, producing: 0, publishing: 0, any: false };
       assert(r.code === 1, `exit ${r.code}: ${r.out}`);
       assert(/does not report jobs.inFlight/.test(r.out), r.out);
       return 'refused';
+    });
+  });
+
+  await withHealth({ ok: true, courses: { worker: idleWorker } }, 200, async (base) => {
+    await check('the bootstrap override lets the first jobs.inFlight build deploy, and says so', async () => {
+      const r = await run(base, { PREDEPLOY_ALLOW_UNKNOWN_JOBS: '1' });
+      assert(r.code === 0, `exit ${r.code}: ${r.out}`);
+      assert(/PREDEPLOY_ALLOW_UNKNOWN_JOBS=1/.test(r.out), 'the override must announce itself');
+      return 'proceeded, loudly';
+    });
+  });
+
+  await withHealth({ ok: true, courses: { worker: { ...idleWorker, running: true, building: true } } }, 200, async (base) => {
+    await check('the bootstrap override never overrides a building course worker', async () => {
+      const r = await run(base, { PREDEPLOY_ALLOW_UNKNOWN_JOBS: '1' });
+      assert(r.code === 1, `exit ${r.code}: ${r.out}`);
+      return 'still refused';
     });
   });
 
