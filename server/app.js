@@ -145,14 +145,20 @@ function createApp(opts = {}) {
             driveOffload: (() => {
               const gd = require('../orchestrator/lib/gdrive');
               // Never the token, the key or the folder id -- only whether they are
-              // present, and WHICH credential is in use. The last one matters:
-              // "authorised" was true for both paths and gave no way to tell a
-              // service account from a user grant that will eventually be revoked.
+              // present.
+              //
+              // `authKind: gd.identity().kind` belongs here too and is deliberately
+              // NOT here yet. It was written in another session's working tree, got
+              // swept into 2026-09-28's commit by a whole-file `git add`, and shipped
+              // without `gdrive.js`, which is where `identity()` lives. The whole
+              // storage block is inside one try/catch, so the throw cost /health its
+              // volume-usage numbers -- the exact figures disk growth is watched by --
+              // while still answering 200 ok:true. Restore this line in the same
+              // commit as gdrive.js, not before.
               return {
                 configured: gd.isConfigured(),
                 authorised: gd.isAuthorised(),
                 folderSet: Boolean(gd.folderId()),
-                authKind: gd.identity().kind,
               };
             })(),
             memory: { rssBytes: mem.rss, heapUsedBytes: mem.heapUsed, externalBytes: mem.external },

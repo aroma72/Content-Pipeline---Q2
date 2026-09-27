@@ -1326,3 +1326,78 @@ the truth take the store by injection now (`api.build({ store })`).
 
 Related: [[H37]] (container state is state you agreed to lose), [[H24]] (persist before the thing
 that can throw), [[H5]] (concurrent sessions share this repo).
+
+---
+
+### H37. Test a partner link from inside THEIR environment, so the credential is never handled
+**Added:** 2026-09-28 | **Applies to:** verifying any tenant/partner integration end to end
+**Invalidate if:** we lose `railway link` access to the partner project
+
+"Is it properly connected?" is only answered by an authenticated call over the real wire. The
+obstacle is that the proof seems to need their token, and copying one out to use it is exactly what
+should never happen — writing it to a file was refused here as credential materialisation, rightly.
+
+The way through is to never hold it: run the call *inside* their Railway environment, where the
+platform injects the variable, and return only a status code and public fields.
+
+```powershell
+cd <their repo>
+railway run -- node -e "const t=process.env.CONTENT_QUEEN_API_TOKEN||'';
+  fetch(BASE+'/api/v1',{headers:{Authorization:'Bearer '+t}}).then(r=>console.log(r.status))"
+```
+
+This proved in one call that their token authenticates (200), that they reach OUR production, and
+which `contractVersion` they see — none of it inferable from config files, and no secret in the
+transcript.
+
+Two mechanics that cost attempts: from **PowerShell** the token must be read as `process.env.X`
+*inside* the child — writing `$env:X` in the command line expands it in the parent, where it is
+empty, and the request silently goes out unauthenticated (here it collapsed the curl args and
+errored, but it could just as easily have looked like a 401 from a bad token). And `railway run --
+bash -c` fails from Git Bash on this box with "The system cannot find the path specified" — use the
+PowerShell tool with `node -e`, the inverse of the Git-Bash-only note in [[H28]]'s era.
+
+Related: [[H33]] (read their code), [[H34]] (deployed, not written), [[H36]] (their shell, not mine).
+
+---
+
+### H39. `git add <file>` stages another session's work; and local tests grade the wrong tree
+**Added:** 2026-09-28 | **Applies to:** every commit made while another Claude session shares this
+checkout — which is the normal case here
+**Invalidate if:** this repo stops being worked by concurrent sessions
+
+Two failures, one incident, and the second is the dangerous one.
+
+**1. Whole-file staging is not scoped to your own edits.** `git add server/app.js` took another
+session's in-progress `authKind: gd.identity().kind` along with my changes. `identity()` lives in
+`orchestrator/lib/gdrive.js`, which they had not committed. So production shipped a caller with no
+callee. [[H5]] already says never `git add` a whole file; it did not say *why the damage is
+invisible*, which is the next part.
+
+**2. `npm test` graded the working tree, not the commit.** Locally everything passed — because the
+uncommitted `gdrive.js` sitting on disk **does** export `identity`. The only tree where the bug
+exists is the one that deploys. I ran the full suite, got 368 green, and deployed a build that was
+broken before it left the machine.
+
+Proved by swapping the committed file in:
+
+```bash
+git show HEAD:orchestrator/lib/gdrive.js > orchestrator/lib/gdrive.js   # restore straight after
+node orchestrator/test-server.js      # FAIL: gd.identity is not a function
+```
+
+**The rule: a green local suite is evidence about your disk, not about your deploy.** With a dirty
+tree those are different programs. CI checks out the commit and is therefore the only run that
+grades what ships — so when a deploy is imminent and the tree is dirty, either wait for CI, or
+prove the commit locally with `git stash -u` / a `git worktree` / the swap above.
+
+**How it surfaced, and why nothing shouted.** `/health`'s whole `storage` block is one
+`try { ... } catch (e) { return { error: e.message } }`. The throw replaced every volume-usage
+figure with `{error}` while `/health` still answered **200, ok:true** — so `deploy.sh` proved the
+commit, `verify-live.js` passed 9/9, and the deploy looked perfect. Found by reading `/health` by
+hand afterwards. A coarse catch around a block of independent facts converts a hard failure into a
+silent hole; `orchestrator/test-server.js` now asserts `storage.deliverables`, `storage.driveOffload`
+and `storage.memory` are all present and that `storage.error` is absent.
+
+Related: [[H5]] (concurrent sessions share this repo), [[H9]] (the artefact is the evidence — but
+only if you look at the right artefact), [[H37]] (a deploy is live when the new build answers).

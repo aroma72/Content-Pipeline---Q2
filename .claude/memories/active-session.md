@@ -117,6 +117,35 @@ arguments, and refuses loudly rather than falling back. CLAUDE.md, §6.2a and DE
 now give the PowerShell form. **A trap that is only documented still costs the next person ten
 minutes; a wrapper costs them nothing.**
 
+**DONE: deployed `0c2c20c`, and production is EMPTY.** verify-live 9/9. The reset removed 4 job
+records, 3 deliverables (52.2 MB) and 9 queue items; the queue log is at
+`/data/cq-jobs/queue/archive/queue-2026-09-27T23-15-12-922Z.jsonl`. Ledger intact and checked
+afterwards: `spentUsd 2.1557`, `reservedUsd 0`, `monthlyUsd 50`, 2 runs. No open reservations
+existed, so nothing was released. One of the 9 queue items was still `queued` — pending work the
+worker would have built and paid for on resume; clearing it removed a live spend risk.
+
+**I BROKE `/health.storage` AND SHIPPED IT. Read `lessons.md` H39 before the next commit.**
+`git add server/app.js` swept in ANOTHER SESSION's uncommitted `authKind: gd.identity().kind`,
+while `orchestrator/lib/gdrive.js` — where `identity()` lives — stayed uncommitted in their tree.
+Production got a caller with no callee. The worse half: `npm test` was green because it graded
+the WORKING TREE, whose gdrive.js does export `identity`. The commit was broken before it left
+the machine and every local check said otherwise. Prove a commit with
+`git show HEAD:<file> > <file>` (restore straight after), a worktree, or CI — not a dirty tree.
+
+Nothing shouted because `/health`'s whole `storage` block is one try/catch: the throw replaced
+every volume-usage figure with `{error}` while still answering 200 ok:true, so deploy.sh proved
+the commit and verify-live passed 9/9. Found by reading /health by hand.
+
+Fixed: the `authKind` line is removed with a comment saying to restore it in the SAME commit as
+gdrive.js. **That line is the other session's work and they will need to re-add it** — their
+gdrive.js (176 lines, service-account auth) is still uncommitted and untouched. Their
+DEPLOYMENT_PREREQS.md Drive/service-account rewrite WAS swept in and is now published; docs only,
+coherent, left alone. A test now asserts storage.deliverables/driveOffload/memory are present and
+storage.error is absent — it fails against the committed tree and passes against the fixed one.
+
+**Needs one more deploy** to put the /health fix live: `.\scripts\deploy.ps1`. Production is
+serving `0c2c20c`, which still has the broken storage block.
+
 **What `bf457c3` adds.** `POST /api/v1/admin/reset` — the first way to empty the job store,
 the deliverables and the queue without unlinking files on the live volume. Five guards:
 `admin` scope (operator credential only, never grantable via TENANTS_JSON), nothing in flight,
@@ -388,3 +417,34 @@ hold (materialising it was refused, correctly). The LMS confirms it on the joint
   at `ff5f814` (Sep 22).
 - Reconnect the Railway repo so `--from-source` stops lying, then fix SERVICE_DURABILITY §6.1.
 - Watch the first real course for [[lessons#H35]]: their staging spends against the real $50.
+
+## 2026-09-28
+
+### Verified end to end: the pipeline IS properly connected to the live LMS
+
+Asked to check the connection; verified on artefacts per `verify-before-claiming`, not on config.
+
+**Live and correct:** our production serves `contractVersion 1.2` with `build.commit faef6b7`
+(a real commit in `origin/main` — the `/health.build` field now exists, so §9 proof is cheap).
+The LMS's deployed commit `b59bb8e` **contains the gate** (`script/approve`, `script-approval`,
+`VENDORED_CONTRACT_VERSION` all present), their client defaults to our production URL with
+`CONTENT_QUEEN_API_URL` unset, and an authenticated call from inside their Railway env returned
+**200** seeing `contractVersion 1.2` and the script routes. Technique: [[lessons#H37]].
+
+**The 09-25 open check is now closed:** `/demo/spend` under their token reports
+`tenant: cohort2-lms, monthlyUsd: 50, spentUsd 7.82, reservedUsd 0, remaining 42.18, runs 2`.
+The raise is live and nothing is stuck holding a reservation.
+
+**Also closed:** the gate reached their `main` — `origin/main` and `origin/staging` are converged
+at `96b6206`.
+
+**Drift worth knowing (neither breaks the link):** our production is **3 commits behind**
+`origin/main` and those commits DO touch code — `server/lib/tenants.js`, `ledger.js`, `api.js`,
+`app.js`, `orchestrator/lib/queue.js` and a new `scripts/reset-production-state.js`; the newest
+commit is literally "Correct the session record: pushed, not deployed". Their deployment is 1
+commit behind their own head. They still run exactly ONE environment, `Staging` — so their
+"production" and their test surface are the same deployment, the same tenant and the same $50
+([[lessons#H35]]).
+
+**Still unexercised:** no course has yet stopped at `script-approval` in production — the gate is
+served but has never fired against a real build. The joint first run is what proves it.

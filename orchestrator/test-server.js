@@ -1830,6 +1830,30 @@ async function healthChecks() {
       });
     });
 
+  await check('/health reports real storage numbers -- the storage block is not an error object',
+    () => {
+      const env = freshEnv({ JOB_STORE_DURABLE: '1' });
+      return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+        // The whole storage block sits inside ONE try/catch, so any throw inside
+        // it -- a renamed export, a module half-landed across two commits --
+        // replaces every volume-usage figure with {error}. /health still answers
+        // 200 ok:true, so nothing fails and nobody is told. That is exactly what
+        // happened on 2026-09-28: a gd.identity() call shipped without the
+        // module defining it, and production lost the numbers disk growth is
+        // watched by until somebody read /health by hand.
+        const h = await req(port, { path: '/health' });
+        const st = h.json.storage;
+        assert(st, 'no storage block on /health');
+        assert(!st.error, `the storage block threw and was swallowed: ${st.error}`);
+        assert(st.deliverables, 'no storage.deliverables -- the volume-usage numbers are gone');
+        assert(typeof st.deliverables.bytes === 'number', 'storage.deliverables.bytes is not a number');
+        assert(st.driveOffload, 'no storage.driveOffload');
+        assert(typeof st.driveOffload.configured === 'boolean', 'driveOffload.configured is not a boolean');
+        assert(st.memory && typeof st.memory.rssBytes === 'number', 'no storage.memory.rssBytes');
+        return 'deliverables, driveOffload and memory all present';
+      });
+    });
+
   await check('/health.ok is computed: a memory job store is 503, a healthy one is 200',
     () => {
       const good = health.verdict({

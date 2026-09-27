@@ -22,7 +22,19 @@
  * that really happened stays on the books.
  *
  * The token is read from the environment and never printed, not even truncated.
+ * It falls back to `.env`, which is gitignored and already holds this credential.
+ * Requiring it to be exported by hand does not make anything safer -- it makes a
+ * person paste a live token into a shell history, which is strictly worse.
  */
+
+const path = require('path');
+
+// `override: false` is dotenv's default and is the behaviour we want stated out
+// loud: a token already in the environment wins, so `--base` against staging
+// with a different credential still works.
+try {
+  require('dotenv').config({ path: path.join(__dirname, '..', '.env'), override: false });
+} catch { /* no dotenv, no .env -- the environment is then the only source */ }
 
 const BASE = (() => {
   const i = process.argv.indexOf('--base');
@@ -52,8 +64,10 @@ async function post(body) {
 
 (async () => {
   if (!TOKEN) {
-    console.error('CONTENT_API_TOKEN is not set. This route needs the operator credential;\n'
-      + 'a partner token carries no `admin` scope and will be refused with 403.');
+    console.error('CONTENT_API_TOKEN is not set, and .env does not carry it either.\n'
+      + 'This route needs the operator credential; a partner token has no `admin`\n'
+      + 'scope and is refused with 403.\n\n'
+      + 'PowerShell:  $env:CONTENT_API_TOKEN = "<token>"');
     process.exit(2);
   }
 
