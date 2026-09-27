@@ -26,216 +26,81 @@ No frontmatter: this file is machine-managed and exempt from the metadata contra
 <!-- 2026-09-23, 2026-09-23, 2026-09-23, 2026-09-22 rotated to .claude/memories/session-archive/ -->
 <!-- 2026-09-24, 2026-09-23 rotated to .claude/memories/session-archive/ -->
 
-## 2026-09-25 — Agent-eval baseline established; a skill can score well without ever firing
+<!-- 2026-09-25, 2026-09-25, 2026-09-25, 2026-09-24, 2026-09-24 rotated to .claude/memories/session-archive/ -->
+## 2026-09-28 — Production can be emptied now; apt retries; the demo Build button has a token
 
-Full `npm run eval:agent`: **$1.71-equivalent plan usage, 422s**, 18 runs. Overall 0.85, 2/3 cases
-above the 0.8 threshold, mean Δ +0.41. Recorded in `evals/agent-plugin/BASELINE.md`.
+**Committed `bf457c3` on `course-hold-2`. NOT pushed to main, NOT deployed** — the push to
+main was refused by the harness classifier as an out-of-place publication. Everything else is
+done and green. The next session (or Aroma) runs:
 
-| case | with | without | Δ | fired |
-|---|---|---|---|---|
-| quote-a-paid-run | 1.00 | 0.33 | **+0.67** | yes |
-| catch-missing-checkpoint | 0.56 | 0.00 | +0.56 | **no, 0/3** |
-| exit-zero-is-not-evidence | 1.00 | 1.00 | **0.00** | yes |
+```
+git push origin course-hold-2:main && bash scripts/deploy.sh
+CONTENT_API_TOKEN=<token> node scripts/reset-production-state.js          # rehearsal
+CONTENT_API_TOKEN=<token> node scripts/reset-production-state.js --yes --because "..."
+```
 
-**The finding worth keeping: `script-lint-preflight` scored an apparent improvement while
-`Skill called 0x` on every run.** The gain came from skill *descriptions* sitting in context, not
-from the skill being read. Claude judged a six-line beat list as something it could handle alone —
-Anthropic's documented under-triggering ("Claude only consults skills for tasks it can't easily
-handle on its own"). Grader detail: it found the missing CHECKPOINT 3/3 unaided, but caught the
-banned-name rule (rule 2, "Aroma") only 1/3 — i.e. it missed exactly the part only the skill
-teaches. **Always read the routing indicator before believing a delta.**
+**What `bf457c3` adds.** `POST /api/v1/admin/reset` — the first way to empty the job store,
+the deliverables and the queue without unlinking files on the live volume. Five guards:
+`admin` scope (operator credential only, never grantable via TENANTS_JSON), nothing in flight,
+`confirm` echoing the exact live counts, a written `because`, and an explicit `dryRun: false`.
+The ledger is never touched; open reservations on removed records are released, settled ones
+left alone. The queue log is renamed into `queue/archive/`, not deleted.
 
-**`exit-zero-is-not-evidence` is a dead case** — 1.00 in BOTH arms. It cannot measure anything;
-Claude already refuses that claim unaided. Replace it rather than keep a case that inflates the
-score.
+Also: the Dockerfile apt step retries with the package lists cleared between attempts (the
+`fcf961a` mirror failure), CI now builds the image when the Dockerfile or manifests change,
+and the demo course-builder page asks for a token instead of showing a bare `HTTP 401`.
 
-**Mechanics learned:** under `--ablation with-without` (the default), `arm: with-only` graders are
-correctly excluded from the score — verified by arithmetic (weights 2+1 denominator, routing
-omitted). Under `--ablation none` they ARE scored. `--json <path>` sends the score table to the
-file and leaves only 3 lines on stdout, so parse the JSON, do not grep the transcript.
+**Live inventory to clear, read 2026-09-28** — 4 job records, 3 deliverables (54.7 MB, 2 with
+video), queue history, **0 open reservations** (`reservedUsd: 0`, $2.1557 settled in September).
+Production was idle and on `faef6b7` when this was read.
 
-**Next session:** make `script-lint-preflight`'s description pushier so it fires on "check/review my
-script", replace the dead case, re-run and compare **Δ**, not absolute score. Another ~$1.70 and
-~7 min — quote it first.
+**Two traps worth remembering beyond this task.** `job-store.shared()` is a process-wide
+singleton fixed by the first caller, so under test every router read one other test's store —
+`api.build({ store })` now takes it by injection. And `test-regressions.js` reads `api.js` as
+TEXT and forbids `forget(` between the GET and DELETE of a lesson's `/file`; the reset route
+calls forget legitimately, so it lives at the END of the file rather than weakening that guard.
+Both are written up in `lessons.md` H38.
 
-## 2026-09-25 — Paid skill evals run on the subscription; plugin skills must sit at <root>/skills/
+**Sent to the LMS:** `docs/integration-requests/2026-09-28-clearing-the-test-content.md`. It
+warns them that their poller reads two 404s as `gone` and will report a deliberate cleanup as
+lost paid work unless they drop their rows too, and answers their 09-27 §3 question — keep
+`scriptApprovedBy`/`scriptApprovedAt`, an audit trail that clears is not one.
 
-**There is no token to configure.** `claude plugin eval` (CLI 2.1.282) spawns "a full claude child
-on your own credential". No `ANTHROPIC_API_KEY` and no `apiKeyHelper` exist here, so it already
-authenticates as the subscription. Cost is plan usage, not billed dollars — quote it that way
-(`paid-run-protocol`), and do NOT repeat the 2026-09-22 mistake of alarming Aroma with a $ figure
-that is not billed.
-
-**The trap that would have made every score meaningless.** A plugin loads skills ONLY from
-`<plugin root>/skills/`. Real Anthropic plugin manifests have **no `skills` key** — I invented one
-(`"skills": "./.claude/skills"`) and it was silently ignored. First smoke run reported
-`routing: Skill called 0x` and still scored 0.75 off the other graders — a plugin that loads zero
-skills runs, spends, and looks like a result. Cost of finding out: $0.08.
-
-Root cause is this repo's name collision: `skills/` at the repo root is the **Python API wrappers**,
-so the eval plugin cannot live at the repo root.
-
-**Shape that works:** `evals/agent-plugin/` is its own plugin root with its own
-`.claude-plugin/plugin.json`; `evals/skills/build-plugin.js` wipes and re-copies `.claude/skills`
-into `evals/agent-plugin/skills/` (gitignored, generated, rebuilt every run so it cannot go stale —
-the copy-paste fan-out failure). It exits 1 if it stages 0 skills. Second smoke run:
-`Skill called 1x`, score 1.00, $0.11, 21s.
-
-**Measured numbers for quoting a full run:** ~$0.11-equivalent and ~21s per agent run. The suite is
-3 cases x 3 runs x 2 arms = 18 runs, so roughly **$2 of plan usage and ~7 minutes** serial.
-`--ablation none` halves both but gives no delta, and with no baseline arm the `arm: with-only`
-routing grader IS scored (observed: it counted toward 0.75/1.00).
-
-**Always pass `--no-publish`.** Publishing the HTML report to claude.ai is the DEFAULT.
-
-Commands: `npm run eval:skills` (free, 343 assertions) · `npm run eval:agent:smoke` (1 run) ·
-`npm run eval:agent` (full, with baseline).
-
-**Concurrent-session note:** another session committed my CLAUDE.md, the new skills and
-SKILL_AUTHORING.md inside its own commit `eeaa0a2`. Nothing was lost and the gates are green, but
-that is [[H5]] from the other direction — assume shared files will be swept into someone else's
-commit. **CLAUDE.md is now exactly 150 lines, at the hard `guard-file-writes.sh` limit**; the next
-addition must remove a line.
+**Still open:** push + deploy + run the reset; LMS branch `af467b4` in E:\Cohort2LP still
+unpushed (their remote); `GDRIVE_*` unset. The `stdin warning` case in test-regressions is
+flaky on an untrusted workspace — it passes on re-run and is unrelated to any of this.
 
 ---
 
-## 2026-09-24
+## 2026-09-27 — Incident closed out: wave 2 live (86cc40a), tenant cap set, evals re-measured
 
-### Script-approval gate shipped into the spine and the course API (contract 1.2)
+**Live on production:** `86cc40a` proven by `/health.build.commit` (deploy.sh's proof step
+works now that `.dockerignore` admits `build.json`). `DEFAULT_TENANT_MONTHLY_USD=50` set on
+Railway (`--skip-deploys`; TENANTS_JSON is cached per boot, so it needs the deploy that
+followed). `/demo/course-builder/build` requires a tenant token — the demo page's Build button
+401s until it sends one; Aroma's call whether to wire the page or leave the demo read-only.
 
-Built the pre-spend human gate the LMS asked for: every course lesson now pauses TWICE -- once at
-`script-approval` (new stage, between `gate` and `references`, before a penny of media) and once at
-the existing `review`. New `BLOCKED_BY.SCRIPT_APPROVAL`; routes `GET .../script`, `.../script.md`,
-`POST .../script/approve` (sha required), `.../script/revise` (notes, capped at 5).
+**Phase E measured ($1.66, 394s).** `script-lint-preflight` fired 0/3 → **3/3**, its case 0.56 →
+1.00, Δ +1.00. The pushier description is what did it — keep that style
+(`.claude/standards/SKILL_AUTHORING.md` §3 should say so). `verify-before-claiming`'s replacement
+case ALSO scored 1.00 in both arms: Claude refuses "is this evidence?" claims natively. Decision:
+stop writing refusal cases for it; only a repo-specific-fact case could discriminate. Recorded in
+`evals/agent-plugin/BASELINE.md`.
 
-**The design decision worth defending: approval is bound to a sha of beats.js, and resume seeds from
-the VOLUME, not from run state.** `course-worker.buildOne` calls `state.create()` fresh every build,
-so a resumed lesson re-runs research/script/gate and would have rendered a DIFFERENT script than the
-one approved. Run state is deliberately off the volume (paths.js:36-39) and a script can wait days
-across a redeploy, so `state.load(runId)` was the wrong resume path. `seedFromScript()` rebuilds the
-artifacts from the persisted `beats.js` + a new `run-context.json` (which carries the research brief
--- script.js feeds it into every rewrite). Verified: changing beats.js under a standing approval
-re-blocks and `produce` never runs.
+**LMS:** `af467b4` on `feat/script-approval-gate` in E:\Cohort2LP, NOT pushed (their remote).
+Handover note: `docs/integration-requests/2026-09-25-last-error-on-written-jobs.md`. Both stuck
+videos must be re-created by the person; `43a782dd45dd` will fail honestly with
+`409 script_lost` on the next click.
 
-**Four bugs the design review caught that the first plan missed** (all confirmed against source):
-1. `buildOne` settled the ledger on EVERY outcome incl. blocked -- with the gate that closed the
-   $2.50 reservation at ~$0.05 before any media, leaving the approved build spending unbacked. Now
-   skipped when `blockedBy === 'script-approval'`.
-2. `humanReleased()` didn't count a script approval, so an approved lesson in a held course would
-   queue and never build.
-3. `queue.requeue` didn't clear `scriptApproved`/`scriptApprovedSha`.
-4. `test-regressions.js:3217` scans source with a REGEX for `code: '<literal>'`, so the stage must
-   throw the literal, not the constant. Pre-existing contradiction; commented at the throw site.
+**Deploy 3 (fcf961a) FAILED at build -- Debian mirror mid-sync during `apt-get install` (`File has unexpected size`, exit 100). Transient, not our code. Railway kept the old container; production stayed on 86cc40a, ok:true. `deploy.sh` timed out in its proof step rather than claiming success -- that is the guard working. Retried as deploy 4: **landed**, `/health.build.commit = faef6b7`, verify-live 9/9, booted after the variable was set so the $50 default-tenant cap is now effective. Production is on `faef6b7` = origin/main; nothing unpushed on our side. Note for the Dockerfile: the apt step has no retry; a `--fix-missing` retry or a second `apt-get update` would make this class self-healing (not done -- a Dockerfile change is its own review).
 
-**Routing trap:** `:lessonId(*)` is greedy, so `/lessons/a/b/script/approve` also matches the plain
-`/approve` route with lessonId `a/b/script`. The script routes MUST be registered before
-approve/reject. Caught by a test, not by reading.
+The $50 default-tenant cap is NOT effective until a build that booted after the variable was set is live (tenants are read at boot).
 
-**Mistake I made, and the fix:** wrote server tests that hit routes which `kick()` the real worker --
-`withCourse` didn't stub it, so a real spine run started and made two real model calls ($0.73, model
-only, no media) before I killed it. `course-worker`'s verbs call their own module-local `kick()`, so
-stubbing the export does NOT stop them; the only chokepoint that cannot be routed around is
-`spine.execute`. `withCourse` now stubs that. Rule: in server tests, neuter the spine, never the kick.
+**Next session:** push/PR the LMS branch with the team; decide the demo Build button; GDRIVE_*
+still unset (volume 54 MB); `SKILL_AUTHORING.md` §3 — add "be pushy, name the moment of spend"
+with the 0/3 → 3/3 evidence.
 
-**Shipped in this session (PR 1 + PR 2):** the stage, the worker verbs, the four routes, plan
-validation at `build`, `contractVersion` 1.2 + index entries, `docs/contracts/course-api-v1.2.md`,
-the `## 1.2` changelog section, `docs/integration-requests/2026-09-24-script-approval-reply.md`, and
-the verify-live floor + two new checks (both verified PASSING against a locally booted server).
-Tests: 236 + 34 + 53, lint clean (verified on a clean aggregate `npm test`, not just per-suite).
-
-**Not a regression, do not chase it:** `test-regressions.js` ~:2273 ("live: no 'waiting on stdin'
-warning from claude") shells out to the real `claude` CLI with a 120s timeout and makes a real Haiku
-call. It failed once under a backgrounded `timeout 500 npm test` and passed on every direct run --
-contention on the wrapper, not the code. It is also the one test in the suite that costs money by
-design.
-
-**Next session:** PR 3 (the `/api/v1/jobs` two-phase single-video flow) is NOT built yet -- design is
-in the approved plan (§5), including two bugs to fix while extracting: `app.js` passes
-`job.script.brief`, which the projection never sets, and the demo `claim` route is not needed on a
-token surface. Deploy
-ordering matters: the gate is ALWAYS ON, so a course built after this deploy stops at lesson 1 in ~2
-minutes and waits -- the LMS must have the approve call wired BEFORE this reaches production.
-
-## 2026-09-24 — Moving YouTube publishing to the Taleemabad University account (in progress)
-
-Continues the 2026-09-21 entry above. Decision made: the new OAuth client is being created in the
-**`Cohort2LP` Google Cloud project**, signed in as `taleemabad.university@taleemabad.com`, where
-YouTube Data API v3 is already enabled. That project is **not** the one holding the current
-`YOUTUBE_CLIENT_ID`, so this is a new client — **all three** of `YOUTUBE_CLIENT_ID`,
-`YOUTUBE_CLIENT_SECRET`, `YOUTUBE_REFRESH_TOKEN` change, locally and on Railway. A re-consent
-alone would not have been enough.
-
-Two choices worth defending later:
-- **Consent screen user type = Internal.** The account is a `taleemabad.com` Workspace identity, so
-  Internal is available, and it avoids the Testing-mode **7-day refresh-token expiry** that would
-  have made uploads fail silently a week after setup. It also skips verification review.
-- **Client type = Desktop app.** `orchestrator/youtube-auth.js` listens on an ephemeral loopback
-  port (`http://127.0.0.1:<port>/oauth2callback`); only Desktop clients accept an arbitrary
-  loopback port. A Web application client would force a hardcoded port.
-
-**Trap to re-read before touching this:** `loadToken()` (`orchestrator/lib/youtube.js:58`) reads
-`YOUTUBE_REFRESH_TOKEN` from the env **before** it looks at
-`orchestrator/.credentials/youtube-token.json`. Re-running `youtube-auth.js --force` writes the file
-but the stale env value still wins, so the pipeline keeps uploading to the old channel while every
-check reports "authorised". Blank the env var before consenting, then paste the new token in.
-
-Walking Ramsha through this one step per message, at their request.
-
-### NEXT_STEPS (this thread)
-- Remaining: create the OAuth client → blank + repopulate the three `.env` vars → `node
-  orchestrator/youtube-auth.js --force` as the university account (pick the right channel if a
-  brand-account picker appears) → prove the channel with the oEmbed check on one unlisted upload →
-  `railway variables --set` all three, **never** `railway redeploy --from-source` (rolls back
-  unmerged work).
-
-**2026-09-24 follow-up — Cohort2LP consent screen was External/Testing.** Found it at
-External + publishing status Testing, i.e. the 7-day refresh-token expiry was live and would have
-broken uploads a week after setup. Switched to Internal. Safe to switch because the Audience page
-showed **0 users (0 test, 0 other)** — no one had ever granted this project's OAuth, so the
-existing `Cohort2 LMS — Calendar` client had no external users to break. Check that user count
-before making any shared project Internal; Internal locks consent to `taleemabad.com` accounts
-for every client in the project, not just ours.
-
-**2026-09-24 progress.** Desktop-app OAuth client created in `cohort2lp` (verified: the downloaded
-JSON's top-level key is `installed`, which is what proves Desktop rather than Web). `.env` now holds
-the new `YOUTUBE_CLIENT_ID`/`YOUTUBE_CLIENT_SECRET` with `YOUTUBE_REFRESH_TOKEN` deliberately blank;
-`yt.isAuthorised()` correctly reports false. Backup of the previous `.env` is in this session's
-scratchpad only (it holds live secrets — never copy it into the repo). Consent run is next.
-
-**2026-09-24 — consent granted, token in place.** Consent completed against the new `cohort2lp`
-Desktop client; scope came back as `youtube.upload` only, as intended. Refresh token copied from
-`orchestrator/.credentials/youtube-token.json` into `.env`, and `loadToken()` now reports its source
-as `env:YOUTUBE_REFRESH_TOKEN` with a live access token minting successfully — so the env value in
-use is the new one, not a leftover. Channel identity is still UNPROVEN: the upload-only scope cannot
-read the channel back, so the only proof is one unlisted upload checked via the oEmbed endpoint.
-
-**2026-09-24 — VERIFIED: uploads now land on Taleemabad University.** A real unlisted upload through
-`yt.uploadVideo()` resolved via oEmbed to `Taleemabad University` / `@TaleemabadUniversity`. The
-migration off `@AromaTahir` is proven for **local** runs. Railway still holds the old three vars at
-the time of writing — production is unchanged until they are set.
-
-**2026-09-24 — Railway production switched to the Taleemabad University credential.** All three
-`YOUTUBE_*` vars set on `ContentQueen` / production via `railway variables --set` (three `--set`
-flags in one call, which is one redeploy rather than three). Verified by re-reading
-`railway variables --json` and comparing SHA-256 prefixes against `.env` — all three MATCH. Note
-`PIPELINE_STOP_AFTER=upload` on production, so production really does publish and this change was
-load-bearing, not cosmetic. `PIPELINE_COURSE_STOP_AFTER` is unset there, so courses fall back to the
-code default `upload`.
-
-Technique worth reusing: compare secrets between environments by printing only an 8-char SHA-256
-prefix. It proves same/different without ever putting the value in the transcript or a tracked file.
-
-Unrelated warning surfaced by the CLI: Railway Config-as-Code (`railway.json`) is deprecated in
-favour of `.railway/railway.ts`; existing files keep working until **2026-12-01**. Not actioned.
-
-### NEXT_STEPS (this thread)
-- Delete the unlisted verification upload from YouTube Studio once reviewed (a duplicate lesson,
-  kept only as channel proof).
-- `docs/DEPLOYMENT_PREREQS.md` and `.claude/memories/deployment.md` both describe the YouTube grant
-  without naming a channel — worth adding "@TaleemabadUniversity, OAuth client in the `cohort2lp`
-  Cloud project, consent screen Internal" so the next person does not have to re-derive it.
-- Old @AromaTahir grant is now orphaned; revoke it at myaccount.google.com/permissions when
-  convenient.
+---
 
 ## 2026-09-25
 
@@ -401,3 +266,47 @@ widening a prior grant to a later action. Harmless here, worth noticing as a pat
 before I caught it. Verified-in-the-wrong-shell, because my own Bash tool had been running it fine
 all session. New rule: [[lessons#H36]]. Correct handoff form:
 `node scripts/predeploy-check.js` then `if ($LASTEXITCODE -eq 0) { railway redeploy --from-source -y }`.
+
+**2026-09-25 — pushed, and the redeploy silently did nothing. Again.** `origin/main` is now
+`0121da5` (smoke test 11 pass / 1 pre-existing warn / 0 fail; 27 files, staged with a plain
+gitignore-respecting `git add` and scanned for live value shapes first — the remote is PUBLIC,
+[[lessons#H32]]). That commit carries the two LMS handover docs, H33-H36, and another session's
+agent-plugin eval scaffold.
+
+**The deploy did NOT take.** `railway redeploy --from-source -y` reported "Triggered a deploy",
+built, and went Online — and production still answers `contractVersion: "1.1"` with **no script
+routes on `/api/v1`**. Same root cause as 2026-09-23, still unfixed: `railway status` prints no
+`repo:` line for `content-queen` (the LMS's service does print one), so the service has no GitHub
+source and `--from-source` just rebuilt the last snapshot. **"Triggered a deploy" is not evidence;
+`/health` is** — this is [[lessons#H34]] wearing a Railway costume, and it has now cost two rounds.
+
+Workaround prepared, not run (classifier blocks [Production Deploy] for this session): a clean
+965 MB tree extracted from `origin/main` via `git archive` into this session's scratchpad
+`deploy-src/` — verified tracked-only (no `.env`, no `orchestrator/.credentials/`) and confirmed to
+contain the script routes. A person runs:
+`railway up <dir> --path-as-root -s content-queen -e production --detach -y`.
+
+**Permanent fix still open and now twice-proven necessary:** reconnect the service in Railway
+(Settings → Source → `aroma72/Content-Pipeline---Q2`, branch `main`), then correct
+SERVICE_DURABILITY §6.1, which still claims `--from-source` pulls main.
+
+**2026-09-25 — CONTRACT 1.2 IS LIVE.** `railway up <scratch>/deploy-src --path-as-root` flipped
+production in ~40s where two `--from-source` redeploys had done nothing. Verified on the artefact,
+not the trigger: `/health` `contractVersion: "1.2"`, `ok: true`, tenants
+`{count:2, ids:[cohort2-lms, default], errors:[]}`, worker idle, jobStore on volume and writable;
+all four script routes listed on the `/api/v1` index; `script-approval` present in the published
+`blockedBy` set (now 11 values). `node scripts/verify-live.js` → **9 passed, 0 failed**. Working
+deploy path recorded in [[deployment]].
+
+**One check deliberately left to them:** `cohort2-lms` at `monthlyUsd: 50` loaded without error, but
+the value itself is only readable via `/demo/spend` under THEIR token, which this session does not
+hold (materialising it was refused, correctly). The LMS confirms it on the joint first run.
+
+### NEXT_STEPS (this thread)
+- Tell the LMS 1.2 is live — they are watching `/health` for it — and run the joint first course:
+  one module, two lessons, script → revise → approve → review. Ask them to read `monthlyUsd` off
+  `/demo/spend` while they are there.
+- Ask them to get the gate onto their `main`; it is on `staging` only, and `origin/main` is stale
+  at `ff5f814` (Sep 22).
+- Reconnect the Railway repo so `--from-source` stops lying, then fix SERVICE_DURABILITY §6.1.
+- Watch the first real course for [[lessons#H35]]: their staging spends against the real $50.

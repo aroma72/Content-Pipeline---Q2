@@ -441,14 +441,39 @@ every course lesson.
 - `GET /deliverables` — `videoBytes`, `offloadedCount`, `localVideoCount`. The bare
   `bytes` total stopped being a capacity signal once metadata outlived videos.
 
-### 4a.7 Backfilling and operating it
+### 4a.7 Which Google account, and why no consent screen
+
+The service account Cohort2LP already uses,
+`taleemabad-university@cohort2-learning-platform.iam.gserviceaccount.com`, is
+**already granted on this Shared Drive**. Its `GOOGLE_DRIVE_ROOT_FOLDER_ID` is
+`0AIFc0tqEg-G-Uk9PVA` — the same Drive root that holds `UnPublished-CQ-Videos`.
+So the offload reuses that key and needs no browser consent at all.
+
+Verified live on 2026-09-28, not assumed: `probeFolder` returns
+`{ok: true, visible: true, name: "UnPublished-CQ-Videos", sharedDrive: true}`, and a
+full round trip of a real 26.8 MB deliverable returned a Drive `md5Checksum`
+identical to the local one, downloaded back byte-identical. The test file was
+trashed afterwards.
+
+Scope is the broad `drive`, not `drive.file`, because `drive.file` is blind to
+files it did not create and so cannot write into a pre-existing Shared Drive
+folder — the same conclusion `apps/api/src/services/google-drive.ts` records. What
+bounds it is the grant: a service account sees only what has been shared with it.
+
+The OAuth path (`gdrive-auth.js`) remains for a machine with no service account
+key. It is a fallback, not the plan.
+
+### 4a.8 Backfilling and operating it
 
 ```bash
-node orchestrator/gdrive-auth.js               # once, as the TU account
-node orchestrator/gdrive-auth.js --check       # scopes + folder; prints no secret
+node orchestrator/gdrive-auth.js --check       # names the acting account; prints no secret
 node scripts/offload-deliverables-to-drive.js  # DRY RUN by default
 node scripts/offload-deliverables-to-drive.js --yes --limit 1
 ```
+
+Every run prints which account it is acting as before it uploads anything —
+sending a course's videos to the wrong Google account is quiet, plausible, and
+tedious to undo.
 
 The script is dry-run by default on purpose: a tool whose default mode deletes
 things is one somebody eventually runs by accident. Every skip leaves that lesson's
@@ -599,6 +624,52 @@ railway volume list
 
 `numReplicas` must stay `1` — a Railway volume cannot be shared and the store
 assumes a single writer.
+
+### 6.2a Emptying it — `POST /api/v1/admin/reset`
+
+Everything in this service is append-only or TTL'd. The queue is an event log
+whose fold never deletes a key (§2), and a job record that is not terminal is not
+swept for 30 days. That is deliberate — a lesson that could be deleted is a lesson
+whose spend could be deleted with it — but until 2026-09-28 it meant the only way
+to clear state off production was to unlink files on the live volume by hand.
+
+```bash
+CONTENT_API_TOKEN=<token> node scripts/reset-production-state.js          # rehearsal
+CONTENT_API_TOKEN=<token> node scripts/reset-production-state.js --yes \
+  --because "clearing the pipeline test runs"
+```
+
+Dry run by default. The script reads the live counts from the server and passes
+them straight back, because the route refuses unless `confirm` echoes them
+exactly — and hand-typing them turns that guard into a transcription exercise.
+
+Five guards, all of which must pass:
+
+| | |
+|---|---|
+| `admin` scope | Granted only to the legacy `CONTENT_API_TOKEN` tenant, never through `TENANTS_JSON` — an entry there names its own scopes, so a partner could otherwise grant itself the scope that empties the store. A tenant token gets **403**. |
+| nothing in flight | **409** `work_in_flight`. This deletes records; it cannot cancel work. A running produce would carry on writing to a record that had gone. |
+| `confirm` | **409** `confirm_mismatch`, carrying the real counts. A plan that went stale between reading and acting is refused, not applied. |
+| `because` | **400**. Written into `queue/archive/<file>.why.txt`. |
+| `dryRun: false` | Must be explicit. Anything else is a rehearsal. |
+
+**What it removes:** job records, deliverable directories, and the queue log —
+which is *renamed* into `queue/archive/queue-<ISO>.jsonl`, not deleted. It is
+kilobytes on a 50 GB volume and the only record of what this service ever built.
+
+**What it never touches: the ledger.** Its month files fold into the monthly
+ceiling (§3.5), so deleting one would hand a tenant back the full budget and erase
+what was really spent. Open reservations belonging to the records being removed
+are **released** — an appended row — because a hold whose job no longer exists
+would otherwise sit against the ceiling until the month rolled over with nothing
+left to explain it. A settled reservation is left exactly alone.
+
+A partial run answers **207**, not 200, and names the steps that did not land.
+
+**Tell the LMS before you run it.** Their poller reads two consecutive 404s as
+`gone` and tells an instructor the video was lost with money committed. A
+deliberate cleanup on this side looks exactly like data loss on theirs unless
+they drop their rows too.
 
 ### 6.3 Verifying the live service
 

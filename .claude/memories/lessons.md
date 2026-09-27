@@ -1213,3 +1213,44 @@ Rules that came out of it:
 
 Related: [[H24]] (persist before the thing that can throw), [[H9]] (the artefact is the
 evidence), [[H4]] (verify against production -- the memory said budget was $0; production had 50).
+
+---
+
+### H38. An append-only store needs a deliberate reset path from the day it ships
+
+**Added:** 2026-09-28 | **Applies to:** any event log, job store or ledger in this repo
+**Invalidate if:** `POST /api/v1/admin/reset` is removed or its guards are loosened
+
+The queue is an append-only JSONL log folded on read, and `currentItems()` never deletes a key.
+Job records leave only through a TTL sweep that ignores a non-terminal job for 30 days. Both
+defaults are right: a lesson that could be deleted is a lesson whose spend could be deleted with
+it.
+
+The cost of never writing the other half: when Aroma asked to clear the pipeline's own test runs
+off production, the only available move was unlinking files on the live volume by hand. No review,
+no receipt, no guard against deleting a record somebody was mid-way through reading.
+
+**The lesson is not "make things deletable".** It is that an irreversible operation somebody will
+eventually need should be built deliberately, with its guards, rather than improvised under
+pressure with `rm`. The shape that worked:
+
+- **a scope that cannot be self-granted** — `admin` lives on the operator's own credential and is
+  never readable from `TENANTS_JSON`, where a partner names its own scopes;
+- **echo the live counts** — the caller must send the exact numbers the server sees, so a plan
+  that went stale between reading and acting is refused rather than applied to unseen state. Have
+  the *script* read them back; hand-typing turns the guard into a transcription exercise;
+- **dry run by default**, sharing the code path with the real run so it cannot describe a
+  different operation;
+- **rename, do not delete**, where the artefact is small and irreplaceable — the queue log is
+  kilobytes on a 50 GB volume and the only record of what was ever built;
+- **money is not state.** The ledger is never touched. Open reservations on the records being
+  removed are *released* (an appended row), because a hold whose job no longer exists sits against
+  the tenant's ceiling until the month rolls over. A settled reservation is left alone — releasing
+  one would erase real spend, since `spentUsd` skips any ref carrying a release row.
+
+A second thing this turned up: `job-store.shared()` is a process-wide singleton fixed by whoever
+calls it first, so under test every router silently read one other test's store. Routes that need
+the truth take the store by injection now (`api.build({ store })`).
+
+Related: [[H37]] (container state is state you agreed to lose), [[H24]] (persist before the thing
+that can throw), [[H5]] (concurrent sessions share this repo).
