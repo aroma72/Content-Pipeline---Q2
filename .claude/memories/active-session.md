@@ -143,8 +143,28 @@ DEPLOYMENT_PREREQS.md Drive/service-account rewrite WAS swept in and is now publ
 coherent, left alone. A test now asserts storage.deliverables/driveOffload/memory are present and
 storage.error is absent — it fails against the committed tree and passes against the fixed one.
 
-**Needs one more deploy** to put the /health fix live: `.\scripts\deploy.ps1`. Production is
-serving `0c2c20c`, which still has the broken storage block.
+**CLOSED OUT: `f42c891` is live and verified.** verify-live 9/9, and the thing verify-live does
+NOT cover was checked by hand, which is the whole point of H39: `/health.storage.error` is gone
+and `deliverables` / `driveOffload` / `memory` are real again. Production state now —
+`jobs 0`, `deliverables 0 bytes`, worker idle with `eligible 0`, tenants `cohort2-lms` +
+`default`, ledger untouched at `spentUsd 2.1557 / reservedUsd 0 / monthlyUsd 50 / runs 2`.
+
+The reset route was exercised against production and refuses correctly: no credential → 401;
+operator credential with impossible counts → 409 `confirm_mismatch` carrying the real
+`{jobs:0, deliverables:0, queueItems:0}` and changing nothing. The demo build route answers a
+readable sentence instead of a bare code.
+
+**NEXT SESSION — three things, none urgent:**
+1. The other session owns `orchestrator/lib/gdrive.js` (176 uncommitted lines, service-account
+   auth). When they land it they must re-add `authKind: gd.identity().kind` to the driveOffload
+   block in `server/app.js` — there is a comment there saying so. Their
+   `docs/DEPLOYMENT_PREREQS.md` Drive rewrite was already swept in and published.
+2. Send `docs/integration-requests/2026-09-28-clearing-the-test-content.md` to the LMS team.
+   Their rows for the cleared videos are still there, and their poller reads two 404s as lost
+   paid work. Also tells them to keep `scriptApprovedBy`/`scriptApprovedAt`.
+3. LMS branch `af467b4` on `feat/script-approval-gate` in E:\Cohort2LP is still unpushed
+   (their remote). `GDRIVE_*` still unset, though the volume is now at 0 bytes so there is
+   nothing to offload.
 
 **What `bf457c3` adds.** `POST /api/v1/admin/reset` — the first way to empty the job store,
 the deliverables and the queue without unlinking files on the live volume. Five guards:
