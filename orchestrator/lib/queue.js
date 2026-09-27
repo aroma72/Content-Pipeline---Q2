@@ -290,6 +290,47 @@ const requeue = (id, extra) => setStatus(id, ITEM_STATUS.QUEUED, {
   ...(extra || {}),
 });
 
+/**
+ * Move the whole event log aside and start an empty one.
+ *
+ * The queue is append-only and `currentItems()` is a fold that never deletes a
+ * key, so there is no such thing as removing one item -- by design, because a
+ * lesson that could be deleted is a lesson whose spend could be deleted with it.
+ * The only honest way to empty the queue is therefore to retire the log.
+ *
+ * RENAMED, NOT DELETED. The file is kilobytes and it is the only record of what
+ * this service ever built; the volume it sits on has 50 GB. It lands in
+ * `<queue dir>/archive/queue-<ISO>.jsonl`, outside the fold, and the next
+ * enqueue recreates an empty log at the usual path.
+ *
+ * This releases no money. Any item holding an open ledger reservation must have
+ * it released BEFORE this is called, or the hold counts against the tenant's
+ * monthly ceiling until the month rolls over with nothing left to explain it.
+ * `server/lib/api.js`'s admin reset is the caller that does so.
+ *
+ * Added 2026-09-28: production carried the pipeline's own test lessons and the
+ * only way to clear them was to rewrite a file on the live volume by hand.
+ */
+function archive({ because } = {}) {
+  if (!because) throw new Error('queue.archive requires a `because` -- it retires the only record of what was built');
+  const file = queueFile();
+  if (!fs.existsSync(file)) return { ok: true, archived: null, items: 0, note: 'queue log does not exist yet' };
+  const items = currentItems().length;
+  const dir = path.join(path.dirname(file), 'archive');
+  fs.mkdirSync(dir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const dest = path.join(dir, `queue-${stamp}.jsonl`);
+  fs.renameSync(file, dest);
+  // A note beside it, so the archive says why it exists without needing this
+  // session's memory files to be readable.
+  try {
+    fs.writeFileSync(`${dest}.why.txt`, `${new Date().toISOString()}
+${because}
+`);
+  } catch { /* the archive is the artefact; its note is a courtesy */ }
+  return { ok: true, archived: dest, items, because };
+}
+
 module.exports = {
   ITEM_STATUS,
   // Re-exported from spine-errors.js, which is where the throwers live. The
@@ -305,5 +346,5 @@ module.exports = {
   // Exported so the split it produces can be tested without settling a real
   // lesson: the media/model breakdown is a published contract now.
   spendFields,
-  queueFile, durability, durableSince, resetPathCache,
+  queueFile, durability, durableSince, resetPathCache, archive,
 };

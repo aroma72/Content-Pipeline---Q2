@@ -40,18 +40,57 @@ ENV NODE_ENV=production \
     # message, no stack. The cap cannot measure the limit, so state the limit.
     RENDER_WORKERS=2
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      chromium \
-      ffmpeg \
-      python3 \
-      python3-pil \
-      python3-numpy \
-      # Chromium refuses to start headless without these.
-      fonts-liberation fonts-dejavu-core libnss3 libatk1.0-0 libatk-bridge2.0-0 \
-      libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 \
-      libxrandr2 libgbm1 libasound2 libpango-1.0-0 libcairo2 \
-      ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+# Retried, because a Debian mirror mid-sync is not a broken build.
+#
+# Deploy fcf961a died here with "File has unexpected size" and exit 100: the
+# index had been fetched from a mirror that was part-way through a sync, so it
+# described packages the mirror did not yet serve. Railway kept the previous
+# container and production was unaffected, but the deploy was lost to something
+# entirely outside this repo.
+#
+# The lists MUST be cleared between attempts. `Acquire::Retries` alone only
+# retries the download and re-reads the same stale index, so it fails
+# identically -- this class of failure is an index/package mismatch, not a
+# dropped connection. Only a fresh `apt-get update` against a re-resolved
+# mirror can resolve it, which is why update lives inside the loop.
+#
+# `[ -n "$ok" ]` is load-bearing: a bare `for` loop exits 0 even when every
+# attempt failed, and the build would then ship an image with no Chromium and
+# no ffmpeg -- discovered minutes into the first paid render.
+#
+# The fonts-* and lib* packages are not optional padding: Chromium refuses to
+# start headless without them.
+RUN set -eux; \
+    printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\n' \
+      > /etc/apt/apt.conf.d/80-retries; \
+    ok=; \
+    for i in 1 2 3; do \
+      if apt-get update && apt-get install -y --no-install-recommends --fix-missing \
+           chromium \
+           ffmpeg \
+           python3 \
+           python3-pil \
+           python3-numpy \
+           fonts-liberation fonts-dejavu-core libnss3 libatk1.0-0 libatk-bridge2.0-0 \
+           libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 \
+           libxrandr2 libgbm1 libasound2 libpango-1.0-0 libcairo2 \
+           ca-certificates; \
+      then ok=1; break; fi; \
+      echo "apt attempt $i failed -- clearing package lists and retrying"; \
+      rm -rf /var/lib/apt/lists/*; \
+      sleep $((i * 10)); \
+    done; \
+    [ -n "$ok" ]; \
+    rm -rf /var/lib/apt/lists/*
+
+# Proof the image really has what the pipeline shells out to. The retry above
+# can only fail the build loudly; this catches the other direction -- an install
+# that "succeeded" without the binaries, which would otherwise surface as an
+# ENOENT minutes into a paid render.
+RUN set -eux; \
+    /usr/bin/chromium --version; \
+    /usr/bin/ffmpeg -version | head -1; \
+    python3 -c "import PIL, numpy; print('pillow', PIL.__version__, 'numpy', numpy.__version__)"
 
 # produce.js invokes `python`, but Debian ships only `python3`. On Windows the
 # repo's shell.js papers over this with a PATH probe; on Linux it passes the name

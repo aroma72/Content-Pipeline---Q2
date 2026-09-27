@@ -128,7 +128,16 @@ function sendJson(req, res, payload) {
 /** The course-API contract version. docs/CONTRACT-CHANGELOG.md says what each one added. */
 const CONTRACT_VERSION = '1.2';
 
-function build() {
+/**
+ * @param {object} [opts]
+ * @param {object} [opts.store] The job store this app was built with. Passed in
+ *   rather than reached for, because `job-store.shared()` is a process-wide
+ *   singleton fixed by whoever calls it first -- so under test every router
+ *   silently read one other test's store. Routes that predate this still call
+ *   `shared()` directly; only the admin reset, which must see the true count or
+ *   refuse, takes the injected one.
+ */
+function build(opts = {}) {
   const router = express.Router();
   router.use(cors);
 
@@ -1275,6 +1284,202 @@ function build() {
       deleted: req.params.lessonId,
       note: 'Our copy is gone. Yours is now the only one unless the lesson was published.',
     });
+  });
+
+  /**
+   * Empty this service's state, on purpose, once.
+   *
+   * WHY THIS EXISTS. Everything here is append-only or TTL'd: the queue is an
+   * event log whose fold never deletes a key, and job records only ever leave
+   * through a sweep that ignores a non-terminal job for 30 days. That is the
+   * right default -- a lesson that could be deleted is a lesson whose spend
+   * could be deleted with it -- but it left exactly one way to clear the
+   * pipeline's own test runs off production: unlinking files on the live volume
+   * by hand. This route is the reviewable version of that.
+   *
+   * WHAT IT WILL NOT TOUCH. The ledger. Its month files fold into the monthly
+   * ceiling, so deleting them would hand a tenant back the full budget and
+   * erase the record of what was really spent. Open reservations belonging to
+   * the records being removed are RELEASED -- an appended row, not a deletion --
+   * because a hold whose job no longer exists would otherwise sit against the
+   * ceiling until the month rolled over with nothing left to explain it.
+   *
+   * FIVE GUARDS, and every one of them has to pass:
+   *   1. the `admin` scope, which only the operator's own credential carries;
+   *   2. nothing in flight -- this deletes records, it does not cancel work, and
+   *      a running produce would carry on writing to a record that had gone;
+   *   3. `confirm` echoing the exact live counts, so a stale plan refuses rather
+   *      than removing something that arrived since you looked (the discipline
+   *      POST /courses/build already uses for `confirmLessons`);
+   *   4. a non-empty `because`, which is written beside the queue archive;
+   *   5. `dryRun: false` stated explicitly -- the default is a rehearsal.
+   *
+   * WHY IT IS LAST IN THE FILE. test-regressions.js reads this file as text and
+   * asserts that no `forget(` appears between the GET and the DELETE of a
+   * lesson's /file -- the guard that stops a half-finished download being read
+   * as "they have it now" and destroying the last copy of a paid render. This
+   * route calls `deliverables.forget` legitimately, so it lives outside that
+   * window instead of weakening the guard. Do not move it back up.
+   */
+  router.post('/admin/reset', requireScope('admin'), (req, res) => {
+    const jobsLib = require('./jobs');
+    const health = require('./health');
+    const ledger = require('./ledger');
+    const deliverables = require('../../orchestrator/lib/deliverables');
+    const queue = require('../../orchestrator/lib/queue');
+    const store = opts.store || require('./job-store').shared();
+
+    const body = req.body || {};
+    const because = String(body.because || '').trim();
+    const confirm = body.confirm || {};
+
+    // 2. Nothing in flight. Checked before anything is read, so the answer names
+    //    the reason a caller can act on rather than a count they cannot use.
+    const inFlight = health.inFlight(store);
+    let building = null;
+    try {
+      building = (require('./course-worker').status() || {}).building || null;
+    } catch {
+      building = null;
+    }
+    if (inFlight.any || building) {
+      return res.status(409).json({
+        error: 'work_in_flight',
+        message: 'Something is running. A reset deletes records, it does not cancel work, so a '
+          + 'running job would keep writing to a record that no longer exists. Wait for it, or '
+          + 'reject the lesson first.',
+        inFlight,
+        building: building ? building.id || true : null,
+      });
+    }
+
+    const jobRows = jobsLib.listAll({ store });
+    const listed = deliverables.list();
+    const items = queue.currentItems();
+    const actual = {
+      jobs: jobRows.length,
+      deliverables: listed.items.length,
+      queueItems: items.length,
+    };
+
+    // 3. The counts must be echoed exactly.
+    const mismatched = ['jobs', 'deliverables', 'queueItems']
+      .filter((k) => Number(confirm[k]) !== actual[k]);
+    if (mismatched.length) {
+      return res.status(409).json({
+        error: 'confirm_mismatch',
+        message: 'Send `confirm` with the exact live counts. They did not match, which means the '
+          + 'state changed since you looked -- read it again before deleting anything.',
+        mismatched,
+        actual,
+      });
+    }
+
+    // 4. Say why.
+    if (!because) {
+      return res.status(400).json({
+        error: 'because_required',
+        message: 'Send `because` -- a sentence saying what is being cleared and why. It is written '
+          + 'beside the queue archive and is the only explanation the next person gets.',
+      });
+    }
+
+    // What would go. Computed identically for the rehearsal and the real thing,
+    // so a dry run cannot describe a different operation from the one that runs.
+    const openHolds = [];
+    const seenTenants = new Set(
+      [...jobRows.map((j) => j.tenantId), ...items.map((i) => i.tenantId)].filter(Boolean),
+    );
+    const refsToRelease = new Set(
+      [...jobRows.map((j) => j.spendRef), ...items.map((i) => i.spendRef)].filter(Boolean),
+    );
+    if (store.canRecordSpend()) {
+      for (const tenantId of seenTenants) {
+        for (const hold of ledger.openRefs(store, tenantId)) {
+          if (refsToRelease.has(hold.ref)) openHolds.push({ tenantId, ...hold });
+        }
+      }
+    }
+
+    const plan = {
+      jobs: jobRows.map((j) => ({ id: j.id, status: j.status, tenantId: j.tenantId || null })),
+      deliverables: listed.items.map((i) => ({ id: i.id, bytes: i.bytes })),
+      queueItems: items.map((i) => ({ id: i.id, status: i.status })),
+      releasing: openHolds,
+      bytesReclaimed: listed.bytes || 0,
+    };
+
+    // 5. A rehearsal unless told otherwise.
+    if (body.dryRun !== false) {
+      return res.status(200).json({
+        dryRun: true,
+        because,
+        note: 'Nothing was changed. Send `"dryRun": false` to carry this out.',
+        wouldRemove: actual,
+        ...plan,
+      });
+    }
+
+    const receipt = {
+      dryRun: false,
+      because,
+      at: new Date().toISOString(),
+      by: req.tenant.id,
+      released: [],
+      jobsRemoved: [],
+      deliverablesRemoved: [],
+      queueArchived: null,
+      queueItemsArchived: 0,
+      bytesReclaimed: 0,
+      errors: [],
+    };
+
+    // Money first. If anything below throws, the holds are already back rather
+    // than stranded against a ceiling with no record left to explain them.
+    for (const hold of openHolds) {
+      const done = ledger.release(store, {
+        tenantId: hold.tenantId,
+        ref: hold.ref,
+        jobId: hold.jobId,
+        why: 'admin reset: ' + because,
+      });
+      if (done) receipt.released.push({ tenantId: hold.tenantId, ref: hold.ref, usd: hold.usd });
+      else receipt.errors.push({ step: 'release', ref: hold.ref, message: 'ledger is not recordable' });
+    }
+
+    for (const j of jobRows) {
+      if (jobsLib.remove(j.id, { store })) receipt.jobsRemoved.push(j.id);
+      else receipt.errors.push({ step: 'job', id: j.id, message: 'delete returned false' });
+    }
+
+    for (const d of listed.items) {
+      const slash = String(d.id).indexOf('/');
+      const series = slash > 0 ? d.id.slice(0, slash) : d.id;
+      const slug = slash > 0 ? d.id.slice(slash + 1) : '';
+      const r = deliverables.forget(series, slug);
+      if (r && r.ok) {
+        receipt.deliverablesRemoved.push(d.id);
+        receipt.bytesReclaimed += d.bytes || 0;
+      } else {
+        receipt.errors.push({ step: 'deliverable', id: d.id, message: (r && r.why) || 'forget failed' });
+      }
+    }
+
+    try {
+      const a = queue.archive({ because: 'admin reset by ' + req.tenant.id + ': ' + because });
+      receipt.queueArchived = a.archived;
+      receipt.queueItemsArchived = a.items;
+    } catch (e) {
+      receipt.errors.push({ step: 'queue', message: e.message });
+    }
+
+    console.log('[admin reset] by=%s jobs=%d deliverables=%d queue=%s released=%d because=%s',
+      req.tenant.id, receipt.jobsRemoved.length, receipt.deliverablesRemoved.length,
+      receipt.queueArchived ? 'archived' : 'none', receipt.released.length, because);
+
+    // 207 when part of it did not land: a 200 here would be the exact failure
+    // this repo keeps relearning -- reporting success for work that half ran.
+    return res.status(receipt.errors.length ? 207 : 200).json(receipt);
   });
 
   return router;

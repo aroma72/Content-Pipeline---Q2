@@ -144,8 +144,16 @@ function createApp(opts = {}) {
             },
             driveOffload: (() => {
               const gd = require('../orchestrator/lib/gdrive');
-              // Never the token or the folder id -- only whether they are present.
-              return { configured: gd.isConfigured(), authorised: gd.isAuthorised(), folderSet: Boolean(gd.folderId()) };
+              // Never the token, the key or the folder id -- only whether they are
+              // present, and WHICH credential is in use. The last one matters:
+              // "authorised" was true for both paths and gave no way to tell a
+              // service account from a user grant that will eventually be revoked.
+              return {
+                configured: gd.isConfigured(),
+                authorised: gd.isAuthorised(),
+                folderSet: Boolean(gd.folderId()),
+                authKind: gd.identity().kind,
+              };
             })(),
             memory: { rssBytes: mem.rss, heapUsedBytes: mem.heapUsed, externalBytes: mem.external },
           };
@@ -188,7 +196,7 @@ function createApp(opts = {}) {
   // The read API the LMS calls for a video's in-video questions. Mounted before
   // the Slack routes because it shares nothing with them: no signature check, no
   // worker, no spend. See server/lib/api.js for the auth and CORS rules.
-  const apiRouter = require('./lib/api').build();
+  const apiRouter = require('./lib/api').build({ store: jobStore });
   app.use('/api/v1', apiRouter);
 
   /**
@@ -1095,7 +1103,16 @@ function createApp(opts = {}) {
     // The caller's own credential rides through; nothing is injected any more.
     req.url = '/courses/build';
     demoBuilds.push(Date.now());
-    apiRouter(req, res, () => res.status(404).end());
+    // A BODY on the 404, because this one is not the browser's fault. It fires
+    // only when the rewritten path misses the API router, i.e. this proxy and
+    // that router have drifted apart. Answering with an empty body made the
+    // page's `res.json()` throw a parse error, so a person saw a SyntaxError
+    // where the server had actually said "no such route".
+    apiRouter(req, res, () => res.status(404).json({
+      error: 'route_missing',
+      message: 'The demo build proxy could not reach POST /api/v1/courses/build. '
+        + 'That is a server-side mismatch, not a problem with your request. Nothing was bought.',
+    }));
   });
 
   /** Build progress for the demo page, again using the server's own credential. */

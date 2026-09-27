@@ -345,8 +345,37 @@ function restore(opts = {}) {
   return out;
 }
 
+/**
+ * Every job on this store, unfiltered.
+ *
+ * `listFor` is owner-scoped and paged, which is right for a poller and wrong for
+ * an operator who has to know the true count before emptying the store. This is
+ * the only caller-facing way to see jobs that belong to nobody you can name --
+ * an anon cookie owner whose browser is long gone, say.
+ */
+function listAll(opts = {}) {
+  return store(opts).all();
+}
+
+/**
+ * Delete a job record outright.
+ *
+ * Deliberately NOT a cancel. Nothing here stops work: a `producing` job holds a
+ * promise in this process that would carry on writing to a record that no longer
+ * exists. The one caller (the admin reset in server/lib/api.js) refuses while
+ * anything is in flight, and any future caller must do the same.
+ *
+ * Added 2026-09-28. Until then `store.delete` existed but was reachable only
+ * from the TTL sweep, so the sole way to empty the store on production was to
+ * unlink files on the live volume by hand.
+ */
+function remove(id, opts = {}) {
+  return store(opts).delete(id);
+}
+
 module.exports = {
   create, get, transition, claim, toPublic, listFor, restore,
   resolveFinalPath, hydrateScript, materializeScript, ownerKey, ownedBy,
+  listAll, remove,
   TERMINAL, IN_FLIGHT, newId,
 };

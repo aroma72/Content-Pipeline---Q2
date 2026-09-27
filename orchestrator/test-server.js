@@ -1571,6 +1571,241 @@ async function demoSpendChecks() {
       assert(r.status === 401, `expected 401, got ${r.status}: ${r.text.slice(0, 120)}`);
       return '401';
     }); });
+
+  await check('with a tenant token the proxy reaches the API router, and never answers a bodyless 404',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      // The sibling the 401 case never had. `req.url` is rewritten to
+      // /courses/build and handed to the API router; if those two drift apart
+      // the fallback fires, and it used to send an EMPTY 404 -- so the demo
+      // page's res.json() threw a SyntaxError and showed that instead of the
+      // refusal. An empty plan is refused by the real route, which is the proof
+      // it was reached: nothing is queued and nothing is bought.
+      const r = await req(port, {
+        method: 'POST',
+        path: '/demo/course-builder/build',
+        headers: { authorization: `Bearer ${LMS_TOKEN}` },
+        body: { plan: {} },
+      });
+      assert(r.status !== 401 && r.status !== 403, `the tenant token was refused: ${r.status}`);
+      assert(r.json, `the answer had no JSON body -- a page calling res.json() would throw: ${r.text.slice(0, 120)}`);
+      assert(r.json.error !== 'route_missing',
+        'the proxy could not reach POST /api/v1/courses/build -- the rewrite and the router have drifted');
+      assert(r.status >= 400, `an empty plan must be refused, got ${r.status}`);
+      return `reached the router, refused with ${r.status} ${r.json.error}`;
+    }); });
+}
+
+// -- 2e. the admin reset: the only way to empty this service -------------------
+
+/**
+ * These exist because the reset is irreversible and runs against production.
+ * Each guard gets its own case, and the two that protect money -- the ledger
+ * month file and an open reservation -- are asserted against the ledger itself
+ * rather than the route's own receipt, which could happily agree with a bug.
+ *
+ * Counts are PROBED, never hardcoded. The route refuses unless `confirm` echoes
+ * the live state exactly, and a test that guessed the numbers would break for
+ * the wrong reason the first time a fixture changed. Probing also exercises the
+ * refusal on every single case, which is the behaviour the operator script
+ * depends on.
+ */
+async function adminResetChecks() {
+  console.log('\n2e. POST /api/v1/admin/reset empties the service, once, on purpose');
+
+  const admin = { authorization: `Bearer ${LEGACY_TOKEN}` };
+  const lms = { authorization: `Bearer ${LMS_TOKEN}` };
+  const jobsLib = require(path.join(__dirname, '..', 'server', 'lib', 'jobs'));
+  const ledger = require(path.join(__dirname, '..', 'server', 'lib', 'ledger'));
+
+  const post = (port, body, headers = admin) => req(port, {
+    method: 'POST', path: '/api/v1/admin/reset', headers, body,
+  });
+
+  /** Ask the route what it can see, by handing it a count it can never match. */
+  async function liveCounts(port) {
+    const r = await post(port, {
+      because: 'probe', confirm: { jobs: -1, deliverables: -1, queueItems: -1 },
+    });
+    assert(r.status === 409 && r.json.error === 'confirm_mismatch',
+      `probe expected 409 confirm_mismatch, got ${r.status} ${r.text.slice(0, 160)}`);
+    return r.json.actual;
+  }
+
+  await check('the LMS tenant is refused with 403 -- the scope is the gate, not the token',
+    () => {
+      const env = freshEnv();
+      return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+        const r = await post(port, { because: 'x', confirm: {}, dryRun: false }, lms);
+        assert(r.status === 403, `expected 403, got ${r.status}: ${r.text.slice(0, 160)}`);
+        assert(r.json.error === 'forbidden', `expected forbidden, got ${r.json.error}`);
+        return '403 forbidden';
+      });
+    });
+
+  await check('no credential at all is 401, never a silent success',
+    () => {
+      const env = freshEnv();
+      return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+        const r = await req(port, {
+          method: 'POST', path: '/api/v1/admin/reset', body: { because: 'x', confirm: {}, dryRun: false },
+        });
+        assert(r.status === 401, `expected 401, got ${r.status}`);
+        return '401';
+      });
+    });
+
+  await check('a job still being written blocks the reset -- it deletes records, it cannot cancel work',
+    () => {
+      const env = freshEnv();
+      const pipeline = fakePipeline({ write: () => new Promise(() => {}) });
+      return withServer(env, { oneVideo: pipeline, store: freshStore(env) }, async (port) => {
+        await req(port, { method: 'POST', path: '/demo/make-video', body: { topic: 'a topic' } });
+        // Deliberately correct counts, so the only thing that can refuse is the guard under test.
+        const r = await post(port, {
+          because: 'clearing test runs',
+          confirm: { jobs: 1, deliverables: 0, queueItems: 0 },
+          dryRun: false,
+        });
+        assert(r.status === 409, `expected 409, got ${r.status}: ${r.text.slice(0, 160)}`);
+        assert(r.json.error === 'work_in_flight', `expected work_in_flight, got ${r.json.error}`);
+        assert(r.json.inFlight.writing === 1, `expected writing=1, got ${JSON.stringify(r.json.inFlight)}`);
+        return '409 work_in_flight, checked before the counts';
+      });
+    });
+
+  await check('counts that do not match the live state are refused, and the real ones are returned',
+    () => {
+      const env = freshEnv();
+      const store = freshStore(env);
+      return withServer(env, { oneVideo: fakePipeline(), store }, async (port) => {
+        const a = jobsLib.create({ topic: 'one', owner: null }, { store });
+        const b = jobsLib.create({ topic: 'two', owner: null }, { store });
+        // Out of `running`, or the in-flight guard answers first and this tests nothing.
+        jobsLib.transition(a.id, { status: 'written' }, { store });
+        jobsLib.transition(b.id, { status: 'written' }, { store });
+
+        const live = await liveCounts(port);
+        assert(live.jobs === 2, `expected the route to see 2 jobs, got ${live.jobs}`);
+
+        const r = await post(port, {
+          because: 'clearing test runs',
+          confirm: { ...live, jobs: live.jobs + 1 },
+          dryRun: false,
+        });
+        assert(r.status === 409, `expected 409, got ${r.status}: ${r.text.slice(0, 160)}`);
+        assert(r.json.error === 'confirm_mismatch', `expected confirm_mismatch, got ${r.json.error}`);
+        assert(r.json.mismatched.join() === 'jobs', `expected only jobs mismatched, got ${JSON.stringify(r.json.mismatched)}`);
+        assert(jobsLib.listAll({ store }).length === 2, 'a refused reset must not have removed anything');
+        return '409 confirm_mismatch, nothing removed';
+      });
+    });
+
+  await check('an empty `because` is refused -- the archive would have no explanation',
+    () => {
+      const env = freshEnv();
+      return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+        const live = await liveCounts(port);
+        const r = await post(port, { confirm: live, because: '   ', dryRun: false });
+        assert(r.status === 400, `expected 400, got ${r.status}: ${r.text.slice(0, 160)}`);
+        assert(r.json.error === 'because_required', `expected because_required, got ${r.json.error}`);
+        return '400 because_required';
+      });
+    });
+
+  await check('a dry run is the default, and it changes nothing',
+    () => {
+      const env = freshEnv();
+      const store = freshStore(env);
+      return withServer(env, { oneVideo: fakePipeline(), store }, async (port) => {
+        const job = jobsLib.create({ topic: 'keep me', owner: null }, { store });
+        jobsLib.transition(job.id, { status: 'written' }, { store });
+        const live = await liveCounts(port);
+        const r = await post(port, { confirm: live, because: 'clearing test runs' });
+        assert(r.status === 200, `expected 200, got ${r.status}: ${r.text.slice(0, 200)}`);
+        assert(r.json.dryRun === true, 'omitting dryRun must NOT carry out the reset');
+        assert(r.json.wouldRemove.jobs === live.jobs, `wouldRemove disagrees with the probe: ${JSON.stringify(r.json.wouldRemove)}`);
+        assert(jobsLib.get(job.id, { store }), 'the dry run deleted a job');
+        return 'dryRun defaults true, job survived';
+      });
+    });
+
+  await check('a real reset removes the job records and says which ones',
+    () => {
+      const env = freshEnv({ JOB_STORE_DURABLE: '1' });
+      const store = freshStore(env);
+      return withServer(env, { oneVideo: fakePipeline(), store }, async (port) => {
+        const a = jobsLib.create({ topic: 'test run one', owner: null }, { store });
+        const b = jobsLib.create({ topic: 'test run two', owner: null }, { store });
+        jobsLib.transition(a.id, { status: 'written' }, { store });
+        jobsLib.transition(b.id, { status: 'failed' }, { store });
+
+        const live = await liveCounts(port);
+        assert(live.jobs === 2, `expected 2 jobs, got ${live.jobs}`);
+        const r = await post(port, { confirm: live, because: 'clearing test runs', dryRun: false });
+        assert(r.status === 200, `expected 200, got ${r.status}: ${r.text.slice(0, 200)}`);
+        assert(r.json.jobsRemoved.length === 2, `expected 2 removed, got ${JSON.stringify(r.json.jobsRemoved)}`);
+        assert(jobsLib.listAll({ store }).length === 0, 'the store is not empty after a reset');
+        assert(!jobsLib.get(a.id, { store }), 'a written job survived the reset');
+        return '2 jobs removed, store empty';
+      });
+    });
+
+  await check('an OPEN reservation is released, a SETTLED one is left exactly alone',
+    () => {
+      const env = freshEnv({ JOB_STORE_DURABLE: '1' });
+      const store = freshStore(env);
+      return withServer(env, { oneVideo: fakePipeline(), store }, async (port) => {
+        // One job holding $4 that never settled, one that really did cost $2.
+        const open = jobsLib.create({ topic: 'never started', owner: null }, { store });
+        const spent = jobsLib.create({ topic: 'really ran', owner: null }, { store });
+        const heldRef = ledger.reserve(store, { tenantId: 'default', jobId: open.id, usd: 4 });
+        const spentRef = ledger.reserve(store, { tenantId: 'default', jobId: spent.id, usd: 4 });
+        ledger.settle(store, { tenantId: 'default', ref: spentRef.ref, jobId: spent.id, usd: 2, outcome: 'done' });
+        jobsLib.transition(open.id, { status: 'written', patch: { tenantId: 'default', spendRef: heldRef.ref } }, { store });
+        jobsLib.transition(spent.id, { status: 'published', patch: { tenantId: 'default', spendRef: spentRef.ref } }, { store });
+
+        const before = ledger.spentUsd(store, 'default');
+        assert(before.reserved === 4, `setup: expected $4 held, got ${before.reserved}`);
+        assert(before.settled === 2, `setup: expected $2 settled, got ${before.settled}`);
+        const rows = store.readLedger('default', ledger.monthKey()).length;
+
+        const live = await liveCounts(port);
+        const r = await post(port, { confirm: live, because: 'clearing test runs', dryRun: false });
+        assert(r.status === 200, `expected 200, got ${r.status}: ${r.text.slice(0, 200)}`);
+        assert(r.json.released.length === 1, `expected exactly 1 release, got ${JSON.stringify(r.json.released)}`);
+        assert(r.json.released[0].ref === heldRef.ref, 'the wrong reservation was released');
+
+        const after = ledger.spentUsd(store, 'default');
+        assert(after.reserved === 0, `the hold was not released: ${after.reserved}`);
+        assert(after.settled === 2, `REAL SPEND WAS ERASED: expected $2 still settled, got ${after.settled}`);
+        assert(store.readLedger('default', ledger.monthKey()).length === rows + 1,
+          'the ledger month file must only ever gain one release row -- it was rewritten');
+        return 'held $4 released, settled $2 untouched';
+      });
+    });
+
+  await check('the queue log is archived beside itself, not deleted',
+    () => {
+      const env = freshEnv({ JOB_STORE_DURABLE: '1' });
+      const store = freshStore(env);
+      const queue = require(path.join(__dirname, 'lib', 'queue'));
+      return withServer(env, { oneVideo: fakePipeline(), store }, async (port) => {
+        queue.resetPathCache();
+        const before = queue.currentItems().length;
+        queue.enqueue({ topic: 'a test lesson', series: 'cb-e2e', source: 'course-builder' });
+        assert(queue.currentItems().length === before + 1, 'setup: the queue item was not written');
+
+        const live = await liveCounts(port);
+        const r = await post(port, { confirm: live, because: 'clearing test runs', dryRun: false });
+        assert(r.status === 200, `expected 200, got ${r.status}: ${r.text.slice(0, 200)}`);
+        assert(r.json.queueArchived, 'no archive path in the receipt');
+        assert(fs.existsSync(r.json.queueArchived), `the archive is not on disk: ${r.json.queueArchived}`);
+        assert(fs.existsSync(`${r.json.queueArchived}.why.txt`), 'the archive has no explanation beside it');
+        assert(queue.currentItems().length === 0, 'the queue still folds to items after a reset');
+        queue.resetPathCache();
+        return 'queue archived, fold empty';
+      });
+    });
 }
 
 async function healthChecks() {
@@ -1661,6 +1896,7 @@ async function healthChecks() {
   await resilienceChecks();
   await healthChecks();
   await demoSpendChecks();
+  await adminResetChecks();
   await bridgeChecks();
   await lessonFileChecks();
   for (const d of storeDirs) { try { fs.rmSync(d, { recursive: true, force: true }); } catch { /* best effort */ } }

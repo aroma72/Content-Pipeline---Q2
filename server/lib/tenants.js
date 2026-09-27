@@ -163,7 +163,12 @@ function loadTenants(env = process.env) {
           : null,
         maxRunUsd: null,
         limits: normaliseLimits(null),
-        scopes: new Set(['produce', 'approve', 'catalogue']),
+        // `admin` is granted HERE ONLY, never through TENANTS_JSON: an entry
+        // there names its own scopes, so a partner could otherwise write itself
+        // the scope that empties the job store. This is the operator's own
+        // credential, and the single route behind the scope additionally
+        // refuses unless it is handed the exact live counts.
+        scopes: new Set(['produce', 'approve', 'catalogue', 'admin']),
         webhookSecret: null,
         legacy: true,
       }, legacyToken);

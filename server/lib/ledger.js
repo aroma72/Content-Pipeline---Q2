@@ -74,6 +74,32 @@ function spentUsd(store, tenantId, month = monthKey()) {
   return { settled, reserved, total: settled + reserved, runs, month, courses };
 }
 
+/**
+ * The refs this tenant is still holding money against, this month.
+ *
+ * A ref is open when it has a `reserve` row and neither a `settle` nor a
+ * `release`. Only these may be released: `spentUsd` skips any ref carrying a
+ * release row, so releasing one that already settled would erase real spend
+ * from the month's total and hand the ceiling back money that was truly spent.
+ *
+ * Scoped to the current month on purpose. A reservation from a previous month
+ * no longer counts against this month's ceiling, so releasing it changes
+ * nothing and only muddies the record.
+ */
+function openRefs(store, tenantId, month = monthKey()) {
+  const state = new Map();
+  for (const r of store.readLedger(tenantId, month)) {
+    if (!r || !r.ref) continue;
+    const cur = state.get(r.ref) || { reserved: 0, closed: false, jobId: null };
+    if (r.type === 'reserve') { cur.reserved = Number(r.usd) || 0; cur.jobId = r.jobId || cur.jobId; }
+    if (r.type === 'settle' || r.type === 'release') cur.closed = true;
+    state.set(r.ref, cur);
+  }
+  return [...state.entries()]
+    .filter(([, v]) => !v.closed)
+    .map(([ref, v]) => ({ ref, usd: v.reserved, jobId: v.jobId }));
+}
+
 /** p50 / p90 of a sample, or null under three points -- a figure from two runs is a guess. */
 function percentiles(xs) {
   if (!xs || xs.length < 3) return null;
@@ -204,4 +230,6 @@ function reconcileOpen(store, { jobs } = {}) {
   return { closed };
 }
 
-module.exports = { monthKey, spentUsd, reserve, settle, release, summary, reconcileOpen, nextMonthIso };
+module.exports = {
+  monthKey, spentUsd, openRefs, reserve, settle, release, summary, reconcileOpen, nextMonthIso,
+};
