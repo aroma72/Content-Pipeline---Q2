@@ -1,6 +1,6 @@
 ---
 type: reference
-last_verified: 2026-09-25
+last_verified: 2026-09-27
 owner: aroma
 ---
 
@@ -57,3 +57,30 @@ Re-running costs roughly the same ~$1.70 of plan usage and ~7 minutes. Quote it 
 description *does* carry the trigger words. This run is the proof that carrying the words is
 necessary but **not sufficient** — the model still has to decide the task is worth a skill. Keep
 both layers; they measure different things.
+
+---
+
+## Second run — 2026-09-27, after the description fix
+
+`npm run eval:agent`, same models. **$1.66-equivalent plan usage, 394s.** Overall 1.00 · 3 of 3
+above threshold · mean Δ +0.63.
+
+| case | with | without | Δ | fired | first run |
+|---|---|---|---|---|---|
+| `catch-missing-checkpoint` | **1.00** | 0.00 | **+1.00** | **3/3** | 0.56 / +0.56 / fired 0/3 |
+| `quote-a-paid-run` | 1.00 | 0.11 | +0.89 | 3/3 | 1.00 / +0.67 |
+| `triggered-a-deploy-is-not-live` | 1.00 | 1.00 | **0.00** | 3/3 | (new; replaced exit-zero) |
+
+**The description fix worked.** `script-lint-preflight` went from never firing to firing on
+every run, and the case from 0.56 to 1.00 — the "Aroma in narration" rule that only the skill
+teaches is now caught 3/3. This is the delta shape a skill should produce.
+
+**`verify-before-claiming` still has no discriminating case.** Two attempts (the pipe-swallowed
+exit code; "Triggered a deploy" = live) both score 1.00 in both arms: Claude refuses these claims
+unaided. That is real information about the skill, not about the eval: the skill's *stance*
+(demand evidence) is native behaviour, and its value is the repo-specific *specifics* — which
+pipe, which /health field, which fixture. A third round of "will it refuse?" cases is not worth
+~$1.70; a case that needs a repo-specific fact (e.g. "which field on /health proves the deploy?")
+might be. Not scheduled.
+
+**Cost model held:** ~$0.09-equivalent per agent run across both runs.

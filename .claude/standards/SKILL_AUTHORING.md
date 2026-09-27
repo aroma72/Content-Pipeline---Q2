@@ -1,6 +1,6 @@
 ---
 type: standard
-last_verified: 2026-09-23
+last_verified: 2026-09-27
 owner: aroma
 ---
 
@@ -81,6 +81,13 @@ Rules:
   named the symptom.
 - **Put a `NOT for` clause last**, as its own sentence. The eval strips a sentence-initial `NOT`
   clause before scoring, so naming a sibling skill there does not steal its triggers.
+- **Be pushy. Name the moment, not the verb.** Claude under-triggers: it consults a skill only
+  for work it thinks it cannot do alone. `script-lint-preflight` said "use to check or lint a
+  script" and fired **0 of 3** times when asked "is this beat list ready to render?". Rewritten to
+  "whenever someone asks whether a script is ready, good enough, okay to render, or wants art
+  bought for it — even if they do not say lint", it fired **3 of 3** and the case went 0.56 → 1.00
+  (`evals/agent-plugin/BASELINE.md`). Name the situation a person is in, especially the moment
+  before money is spent.
 - **Do not claim a neighbour's job.** `script-lint-preflight` saying "use while writing" tied it
   with `writing-explainer-scripts` on every drafting query.
 
