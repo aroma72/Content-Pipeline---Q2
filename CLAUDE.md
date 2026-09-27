@@ -146,5 +146,5 @@ All in `.claude/standards/`. **SCRIPTING_STANDARDS** (concept depth, single prot
 ---
 
 ## Pre-Push Quality Gate: `bash .claude/scripts/smoke-test.sh` — install it: `bash scripts/install-hooks.sh` (once per clone; also adds pre-commit). Audit: `docs/HARNESS_AUDIT.md`
-🚫 **Deploy = `git push origin <branch>:main && bash scripts/deploy.sh`** — NEVER `railway redeploy --from-source`: it is a code no-op on this service AND restarts the container (erased a written script on 2026-09-25). deploy.sh refuses while a lesson or a one-video job is running, then proves the deploy by `/health.build.commit`.
+🚫 **Deploy = `git push origin <branch>:main`, then `.\scripts\deploy.ps1` (PowerShell) or `scripts/deploy.sh` (Git Bash)** — plain `bash x.sh` from PowerShell hits the WSL launcher and dies with "cannot find the file specified". NEVER `railway redeploy --from-source`: a code no-op here that still restarts the container (erased a written script 2026-09-25). Refuses while anything runs; proves itself by `/health.build.commit`. Empty the service: `scripts/reset-production-state.js` (§6.2a).
 *Last updated: 2026-09-23*

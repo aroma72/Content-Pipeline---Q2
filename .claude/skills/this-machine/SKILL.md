@@ -51,13 +51,38 @@ for c in py python; do "$c" --version >/dev/null 2>&1 && { PY="$c"; break; }; do
 different stub that fails with a **UTF-16** "The system cannot find the file specified." — a message
 that will not even match a normal string comparison.
 
+**The stub has a name.** `bash` on PATH here is `C:\Windows\System32\bash.exe`, the *Microsoft Bash
+Launcher* (WSL). No WSL distro is installed, so it always fails, and it fails badly: the error names
+no file, mentions neither bash nor WSL, and reads exactly like the script being missing. On
+2026-09-28 `bash scripts/deploy.sh` from PowerShell cost a deploy window to this — the script was
+present, executable and LF-clean the whole time.
+
+**This is not a Python problem.** It bites anything that launches `bash` by name: PowerShell, cmd,
+a hook, an npm script. PATH order decides, and System32 wins.
+
 **Check the identity, not the presence:**
 
 ```bash
 bash --version | head -1 | grep -q 'GNU bash' || { echo "not Git Bash" >&2; exit 1; }
 ```
 
-In Python, call the absolute path (`C:/Program Files/Git/bin/bash.exe`), not `"bash"`.
+Call the absolute path (`C:/Program Files/Git/bin/bash.exe`), never `"bash"` — in Python, and from
+PowerShell:
+
+```powershell
+& "C:\Program Files\Git\bin\bash.exe" scripts/deploy.sh
+```
+
+For anything a person runs often, ship a `.ps1` beside the `.sh` that resolves Git Bash and
+forwards its arguments. `scripts/deploy.ps1` is the worked example: it tries the usual install
+locations, then derives `bin\bash.exe` from wherever `git.exe` on PATH lives, and refuses loudly
+rather than falling back to the launcher.
+
+Telling them apart, if you are unsure which one you have:
+
+```powershell
+(Get-Item "C:\Windows\System32\bash.exe").VersionInfo.FileDescription   # -> Microsoft Bash Launcher
+```
 
 ## 3. `/tmp` does not exist for native programs
 

@@ -157,26 +157,40 @@ copies are then reclaimed. **Unset these and nothing breaks** — the service be
 exactly as it did before the offload existed, which also means the 50 GB volume
 grows monotonically until a full-volume resize restarts the service mid-render.
 
+**Use the service account.** Cohort2LP already authenticates to this exact Shared
+Drive as `taleemabad-university@cohort2-learning-platform.iam.gserviceaccount.com`
+(`apps/api/src/services/google-drive.ts`). Reusing that key means **no browser
+consent, ever** — nothing in this pipeline waits on a person being at a browser —
+and one credential to rotate instead of two accounts that can drift apart.
+
 | Variable | Default | Effect |
 |---|---|---|
-| `GDRIVE_REFRESH_TOKEN` | *(unset)* | OAuth refresh token scoped to `drive.file`. **The existing `YOUTUBE_REFRESH_TOKEN` will not work** — a Google refresh token is bound to the scopes it was consented with, and that one carries `youtube.upload` alone. Mint this one with `node orchestrator/gdrive-auth.js`, signed in as the Taleemabad University account. |
-| `GDRIVE_FOLDER_ID` | *(unset)* | The target Drive folder. Currently `UnPublished-CQ-Videos`, which sits on a **Shared Drive** — so the files are owned by the Drive rather than by a person and survive anyone leaving. |
-| `GDRIVE_CLIENT_ID` / `GDRIVE_CLIENT_SECRET` | falls back to the `YOUTUBE_` pair | Only needed if Drive should use a different OAuth client. The same Google Cloud project and account serve both, so normally leave these unset. |
+| `GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_JSON` | *(unset)* | **Preferred.** The service account key as inline JSON — same variable name Cohort2LP uses. Scope is the broad `drive`, which is required: `drive.file` cannot write into a pre-existing Shared Drive folder. Breadth is bounded by the grant, not the scope — the account can only see Drives shared *with* it. |
+| `GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_PATH` | *(unset)* | The same key as a file path, for local dev. Inline JSON wins if both are set. |
+| `GDRIVE_FOLDER_ID` | *(unset)* | The target folder — `UnPublished-CQ-Videos`, on the Taleemabad University **Shared Drive**, so files are owned by the Drive and survive anyone leaving. |
 
-Two separate tokens rather than one re-consented for both scopes, deliberately: it
-keeps publishing and Drive in separate failure domains, so a botched Drive consent
-cannot take YouTube uploads down with it.
+Fallback only, if there is no service account key:
+
+| Variable | Default | Effect |
+|---|---|---|
+| `GDRIVE_REFRESH_TOKEN` | *(unset)* | OAuth refresh token scoped to `drive.file`, via `node orchestrator/gdrive-auth.js`. **`YOUTUBE_REFRESH_TOKEN` will not work** — a Google refresh token is bound to the scopes it was consented with, and that one carries `youtube.upload` alone (verified, not assumed). |
+| `GDRIVE_CLIENT_ID` / `GDRIVE_CLIENT_SECRET` | falls back to the `YOUTUBE_` pair | Only if Drive should use a different OAuth client. |
+
+Two credentials rather than one re-consented for both scopes, deliberately: it keeps
+publishing and Drive in separate failure domains.
 
 Check it without uploading anything:
 
 ```bash
-node orchestrator/gdrive-auth.js --check      # scopes + folder, prints no secret
+node orchestrator/gdrive-auth.js --check      # names the acting account; prints no secret
 node scripts/offload-deliverables-to-drive.js # DRY RUN by default; says what it would move
 ```
 
-`--check` reporting that the folder is *not visible* is **expected, not an error**:
-under `drive.file` a folder this client did not create is invisible by design. Only
-a real upload settles it — `--yes --limit 1`.
+`--check` prints which account is live (`service-account` vs `oauth-user`). On the
+**OAuth** path only, "folder not visible" is **expected, not an error** — under
+`drive.file` a folder this client did not create is invisible by design, and only a
+real upload settles it. On the service-account path a 404 is a real finding: share
+the Shared Drive with that account as Content manager.
 
 ### Optional
 
@@ -273,13 +287,15 @@ then failed in 9 ms and put the job back to `written` — the same page, no visi
 check only looked at the course worker; it now reads `jobs.inFlight` too.
 
 ```bash
-bash scripts/deploy.sh                   # the only supported deploy; runs the check with --wait
+scripts/deploy.sh                        # the only supported deploy; runs the check with --wait
+                                         # From PowerShell use .\scripts\deploy.ps1 -- a bare
+                                         # `bash` there is the WSL launcher, not Git Bash.
 node scripts/predeploy-check.js          # the check alone: exit 1 while anything runs
 ```
 
 **Bootstrap only:** the first build that ships `jobs.inFlight` cannot pass the check against
 the build before it. Read `/data/cq-jobs/jobs/*.json` on the volume yourself, confirm no job is
-`running`/`producing`/`publishing`, then `PREDEPLOY_ALLOW_UNKNOWN_JOBS=1 bash scripts/deploy.sh`.
+`running`/`producing`/`publishing`, then `PREDEPLOY_ALLOW_UNKNOWN_JOBS=1 scripts/deploy.sh`.
 It announces itself and never overrides a building course worker.
 
 ### Runbook: a job says `written` but "Make the video" does nothing

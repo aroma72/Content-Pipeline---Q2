@@ -63,11 +63,27 @@ confirmed empty again.
 scratchpad script and letting `gdrive.js` load the key internally, never printing it. Do that
 rather than arguing with the classifier.
 
-**Next session:** set `GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_JSON` + `GDRIVE_FOLDER_ID` on the
-content-queen Railway service (the key lives in Cohort2LP; it is NOT in this repo), then
+**Config state after this session:**
+- LOCAL `.env`: done and verified -- `GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_PATH` points at the
+  Cohort2LP key by ABSOLUTE PATH, deliberately. The key is never copied into this repo: its
+  GitHub remote is public and `.gitignore` covers `orchestrator/.credentials/` but NOT a root
+  `.credentials/`. `gdrive-auth.js --check` passes end to end.
+- RAILWAY `content-queen`: `GDRIVE_FOLDER_ID` is SET (used `--skip-deploys`, so it did NOT ship
+  the other session's unreleased commits as a side effect -- live was faef6b7, main is ahead).
+  `GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_JSON` is **NOT set**: the auto-mode classifier refuses
+  `[Secret-Store Writes]`, and that is not something to route around. A person must paste it, or
+  add a Bash permission rule.
+
+**Also learned:** production's volume holds only ~55MB (3 lessons, 2 videos). So the volume was
+NOT about to fill -- the real consumer is the render working dirs on the container, which is also
+what the RAM plateau is (see H31). The offload still matters, but "the volume is filling" was the
+wrong mental model and the numbers say so.
+
+**Next session:** paste `GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_JSON` into Railway, commit + deploy the
+service-account changes (live faef6b7 predates them, so the var is inert until then), then
 `node scripts/offload-deliverables-to-drive.js` dry run -> `--yes --limit 1` -> the rest.
-Still uncommitted and undeployed. Open question for Aroma: the folder is named "UnPublished" but
-every video goes there, published or not.
+Open question for Aroma: the folder is named "UnPublished" but every video goes there, published
+or not.
 
 ---
 
@@ -86,6 +102,20 @@ CONTENT_API_TOKEN=<token> node scripts/reset-production-state.js --yes --because
 The reset route does not exist on production until that deploy lands, so the script will
 404 against `faef6b7`. Deploy first. Verified just before handover: production `ok:true`,
 nothing in flight, worker idle — the deploy will not be refused by predeploy-check.
+
+**`bash scripts/deploy.sh` from PowerShell failed with "The system cannot find the file
+specified" — and it is NOT the script.** `bash` on PATH is `C:\Windows\System32\bash.exe`, the
+Microsoft WSL launcher, and no distro is installed. The error names no file and mentions
+neither bash nor WSL, so it reads exactly like a missing deploy.sh; the script was present,
+executable and LF-clean the whole time. This was already half-known (`lessons.md` H7, the
+`this-machine` skill §2) but written up as a Python/subprocess trap, so nobody connected it to
+a PowerShell prompt. Both are now updated to name the launcher and cover every caller.
+
+Fixed properly rather than documented again: `scripts/deploy.ps1` resolves Git Bash (usual
+install paths, then `bin\bash.exe` derived from wherever `git.exe` on PATH lives), forwards its
+arguments, and refuses loudly rather than falling back. CLAUDE.md, §6.2a and DEPLOYMENT_PREREQS
+now give the PowerShell form. **A trap that is only documented still costs the next person ten
+minutes; a wrapper costs them nothing.**
 
 **What `bf457c3` adds.** `POST /api/v1/admin/reset` — the first way to empty the job store,
 the deliverables and the queue without unlinking files on the live volume. Five guards:

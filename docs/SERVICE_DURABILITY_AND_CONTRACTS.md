@@ -567,7 +567,8 @@ same rules before the paste. It never prints a token.
 
 ```bash
 git push origin <branch>:main      # deploying means fast-forwarding main
-bash scripts/deploy.sh             # refuses while anything runs, then uploads main
+scripts/deploy.sh                  # Git Bash. From PowerShell: .\scripts\deploy.ps1
+                                   # refuses while anything runs, then uploads main
 ```
 
 `deploy.sh` runs `predeploy-check.js --wait` (reads `/health`: course worker AND
