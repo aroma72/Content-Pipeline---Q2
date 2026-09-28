@@ -305,16 +305,16 @@ async function tier3() {
   console.log('  not in that figure: the Gemini judges produce runs (qa-art, eval-text) -- real money, fractions of a cent;'
     + ' and one Claude call -- plan usage, not dollars.');
 
-  // produce's qa-art repair re-buys rejected images up to TWICE and does not check
-  // the budget before it does (orchestrator/lib/stages/produce.js repairArt). The
-  // first paid run of this tier spent $0.20 against a $0.09 estimate that way.
-  // So the ceiling applies to the worst case, not the estimate.
-  const worst = Number((est.totalUsd + 2 * est.images * 0.04).toFixed(2));
-  console.log(`  worst case: $${worst} -- if qa-art rejects every image and produce re-buys them twice (not budget-checked)`);
+  // The ceiling is passed to produce as its budget, and since 2026-09-28 the qa-art
+  // repair loop answers to that budget too (produce.js repairAffordable). Before
+  // that fix it re-bought images past it: a run quoted $0.09 spent $0.20. So the
+  // worst case is now the ceiling itself, and the estimate is what must fit under it.
   const ceiling = Number((process.argv.find((a) => a.startsWith('--ceiling=')) || '').split('=')[1]) || CEILING_USD;
-  if (worst > ceiling) {
-    record(3, 'real produce run', 'skip', `worst case $${worst} is over the $${ceiling} ceiling -- refusing. `
-      + `Raise it deliberately with --ceiling=${worst}, or fix produce's repair loop to respect the budget`);
+  const unbounded = Number((est.totalUsd + 2 * est.images * 0.04).toFixed(2));
+  console.log(`  worst case: $${Math.min(unbounded, ceiling).toFixed(2)} -- repairs of rejected art stop at the $${ceiling} budget`);
+  if (est.totalUsd > ceiling) {
+    record(3, 'real produce run', 'skip', `estimate $${est.totalUsd} is over the $${ceiling} ceiling -- refusing. `
+      + `Raise it deliberately with --ceiling=<usd>`);
     return;
   }
   const browser = await browserOk();

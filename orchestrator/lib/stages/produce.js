@@ -78,6 +78,17 @@ function i2vSeconds(secs) {
  * `info` beats are CSS/SVG infographics and buy no art; every beat buys one
  * TTS clip. Art already on disk is not re-bought, so it is excluded too.
  */
+/**
+ * May a purchase made AFTER the spend gate still go ahead? True with no budget set
+ * (the gate already decided to spend), otherwise only while total media spend stays
+ * within it. The qa-art repair loop is the caller: it used to re-buy art with no
+ * budget check at all.
+ */
+function repairAffordable({ spentUsd, costUsd, budgetUsd }) {
+  if (budgetUsd === null || budgetUsd === undefined || budgetUsd === '') return true;
+  return Number(spentUsd) + Number(costUsd) <= Number(budgetUsd) + 1e-9;
+}
+
 function estimateSpend(beats, dir) {
   // PER BEAT, on the same basis the regeneration paths use.
   //
@@ -344,7 +355,7 @@ function copyTemplates(src, dest, log) {
 
 // Exported for the regression tests; not part of the stage contract.
 module.exports._internals = { estimateSpend, isFresherThanInputs, copyTemplates,
-  i2vSeconds, COST, missingPerBeat, staleVo, pruneOrphans, isEnvironmentFailure };
+  i2vSeconds, COST, missingPerBeat, staleVo, pruneOrphans, isEnvironmentFailure, repairAffordable };
 
 module.exports = Object.assign(module.exports, {
   name: 'produce',
@@ -465,6 +476,25 @@ module.exports = Object.assign(module.exports, {
           const ids = m[1].replace(/\s+/g, '');
           const generator = m[2];
           if (!fs.existsSync(path.join(dir, generator))) return;
+
+          // A repair is a purchase, so it answers to the same budget the spend gate
+          // checked before the first image was bought. Without this, two repair rounds
+          // could re-buy the whole art set past an approved budget: a $0.09 run with a
+          // $0.10 budget spent $0.20 this way. Stop repairing instead; the qa-art
+          // sensor then reports the rejection exactly as it would have anyway.
+          const repairCost = Number((ids.split(',').filter(Boolean).length * COST.imagePerImage).toFixed(4));
+          const budgetUsd = opts.budgetUsd;
+          if (!repairAffordable({ spentUsd: state.mediaSpend(st), costUsd: repairCost, budgetUsd })) {
+            log(`qa-art rejected art ${ids}, but re-buying it ($${repairCost.toFixed(2)}) would take media spend `
+              + `past the $${budgetUsd} budget -- not repairing`);
+            state.recordIntervention(st, {
+              stage: 'produce',
+              kind: 'art_repair_over_budget',
+              detail: `qa-art rejected art ${ids}; repair would cost $${repairCost.toFixed(2)} on top of `
+                + `$${state.mediaSpend(st).toFixed(2)} spent, over the $${budgetUsd} budget.`,
+            });
+            return;
+          }
 
           log(`qa-art rejected art ${ids} -- regenerating just those (attempt ${attempt}/2)`);
           try {
@@ -934,6 +964,23 @@ module.exports = Object.assign(module.exports, {
 
     if (!opts.dryRun && !fs.existsSync(barePath)) {
       throw new Error(`compile-lesson.js reported success but ${bare} is missing`);
+    }
+
+    // The encoded lesson now exists, and frames/ (~10,800 PNGs a lesson) is dead
+    // weight: compile-lesson.js wipes it on every run and is never called with
+    // --reuse here, and nothing after this point reads it (qa-frames renders its
+    // own off lesson.html). Left on the container disk it sat in page cache and on
+    // the memory bill until the next redeploy. Removed now, before the bumpers.
+    if (!opts.dryRun) {
+      const framesDir = path.join(dir, 'frames');
+      if (fs.existsSync(framesDir)) {
+        try {
+          fs.rmSync(framesDir, { recursive: true, force: true });
+          log('removed frames/ after encoding');
+        } catch (e) {
+          log(`could not remove frames/ after encoding: ${e.message}`);
+        }
+      }
     }
 
     // 6. brand bumpers -- the deliverable (LAW 1)
