@@ -230,6 +230,29 @@ function reconcileOpen(store, { jobs } = {}) {
   return { closed };
 }
 
+/**
+ * How much one run may reserve: the per-run ceiling, cut down to what the month has
+ * left. Returns `{ usd }`, or `{ refused }` when even this video's own estimate does
+ * not fit. With no monthly budget the ceiling stands. Pure, so the arithmetic is
+ * testable apart from the store.
+ */
+function capToMonth({ monthlyUsd, spentUsd: spent, ceilingUsd, needUsd = 0, tenantId = 'this tenant' }) {
+  if (!Number.isFinite(monthlyUsd)) return { usd: ceilingUsd };
+  const left = Math.max(0, monthlyUsd - (Number(spent) || 0));
+  const usd = Math.min(ceilingUsd, Math.floor(left * 100) / 100);
+  // Under a cent left rounds to a $0 budget, which is a refusal, not a 503.
+  if (left + 1e-9 < Number(needUsd || 0) || !(usd > 0)) {
+    return { refused: {
+      error: 'tenant_budget_exhausted', reason: 'tenant_budget_exhausted', ok: false,
+      message: `this video needs about $${Number(needUsd).toFixed(2)} and ${tenantId} has `
+        + `$${left.toFixed(2)} of its $${monthlyUsd} monthly budget left`,
+      monthlyUsd, spentUsd: Number((Number(spent) || 0).toFixed(4)),
+      remainingUsd: Number(left.toFixed(4)), estimatedUsd: Number(needUsd), resetsAt: nextMonthIso(),
+    } };
+  }
+  return { usd };
+}
+
 module.exports = {
-  monthKey, spentUsd, openRefs, reserve, settle, release, summary, reconcileOpen, nextMonthIso,
+  monthKey, spentUsd, openRefs, reserve, settle, release, summary, reconcileOpen, nextMonthIso, capToMonth,
 };

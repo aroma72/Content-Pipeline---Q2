@@ -386,7 +386,28 @@ async function moneyChecks() {
       return '202 with the existing run';
     }); });
 
-  await check('a tenant at its monthly ceiling gets 402, and is told what remains',
+  await check('a tenant whose month cannot cover this video gets 402, and is told what remains',
+    () => {
+      const env = freshEnv({
+        TENANTS_JSON: JSON.stringify([{ id: 'tiny', name: 'Tiny', token: LMS_TOKEN, monthlyUsd: 0.001 }]),
+      });
+      return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+        const { jobId, cookie } = await makeJob(port);
+        await settle();
+        const auth = { authorization: `Bearer ${LMS_TOKEN}` };
+        await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/claim`, headers: auth, cookie });
+        const r = await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/produce`, headers: auth, body: {} });
+        assert(r.status === 402, `expected 402, got ${r.status}: ${r.text}`);
+        assert(r.json.error === 'tenant_budget_exhausted', `wrong error: ${r.json.error}`);
+        assert(typeof r.json.remainingUsd === 'number', 'the refusal did not say what remains');
+        return `402, $${r.json.remainingUsd} left`;
+      });
+    });
+
+  // Production, 2026-09-28: a tenant with no per-run wall reserved the whole $50
+  // service ceiling against a $50 month, so $7.93 of earlier spend made a $1.52
+  // video a 402. The reservation is now cut to what the month has left.
+  await check('a month that can afford the video produces it, with the budget cut to what remains',
     () => {
       const env = freshEnv({
         TENANTS_JSON: JSON.stringify([{ id: 'tiny', name: 'Tiny', token: LMS_TOKEN, monthlyUsd: 1 }]),
@@ -396,13 +417,17 @@ async function moneyChecks() {
         await settle();
         const auth = { authorization: `Bearer ${LMS_TOKEN}` };
         await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/claim`, headers: auth, cookie });
-        // The per-run budget is $5 and the monthly ceiling is $1, so the very
-        // first reservation cannot fit.
         const r = await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/produce`, headers: auth, body: {} });
-        assert(r.status === 402, `expected 402, got ${r.status}: ${r.text}`);
-        assert(r.json.error === 'tenant_budget_exhausted', `wrong error: ${r.json.error}`);
-        assert(typeof r.json.remainingUsd === 'number', 'the refusal did not say what remains');
-        return `402, $${r.json.remainingUsd} left`;
+        assert(r.status === 202, `a $1 month was refused a video it can afford: ${r.status} ${r.text}`);
+        assert(r.json.budgetUsd > 0 && r.json.budgetUsd <= 1, `budget not cut to the month: $${r.json.budgetUsd}`);
+        const { capToMonth } = require('../server/lib/ledger');
+        assert(capToMonth({ monthlyUsd: 50, spentUsd: 7.93, ceilingUsd: 50, needUsd: 1.52 }).usd === 42.07,
+          'the production case ($42.07 left, $1.52 video) is not capped to the month');
+        assert(capToMonth({ monthlyUsd: 50, spentUsd: 49.5, ceilingUsd: 50, needUsd: 1.52 }).refused,
+          'a video the month cannot cover was not refused');
+        assert(capToMonth({ monthlyUsd: undefined, spentUsd: 99, ceilingUsd: 4 }).usd === 4,
+          'an unmetered tenant lost its per-run ceiling');
+        return `202 at $${r.json.budgetUsd}; $42.07 of $50 reserved in the production case`;
       });
     });
 

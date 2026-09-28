@@ -508,6 +508,24 @@ function createApp(opts = {}) {
    * twelve-character id space into an enumeration oracle -- and confirming the id
    * is most of what someone holding a stray jobId wanted.
    */
+  /** The run budget for one produce: see the call site. A number, or `{ refused }`. */
+  function monthlyCap({ tenant, ceilingUsd, job }) {
+    const monthlyUsd = Number.isFinite(tenant.monthlyUsd) ? tenant.monthlyUsd : null;
+    if (monthlyUsd === null) return ceilingUsd;
+    let needUsd = 0;
+    try {
+      const { _internals } = require('../orchestrator/lib/stages/produce');
+      const { videoDir } = require('../orchestrator/lib/paths');
+      needUsd = _internals.estimateSpend(job.script.beats, videoDir(job.script.series, job.script.slug)).totalUsd;
+    } catch { /* no estimate: the ceiling cut to the month still bounds the run */ }
+    // A stubbed ledger (tests) may not keep balances; the real reserve() still guards the month.
+    if (typeof ledger.spentUsd !== 'function') return ceilingUsd;
+    const r = require('./lib/ledger').capToMonth({
+      monthlyUsd, spentUsd: ledger.spentUsd(jobStore, tenant.id).total, ceilingUsd, needUsd, tenantId: tenant.id,
+    });
+    return r.refused ? r : r.usd;
+  }
+
   function ownedJob(req, res) {
     const job = jobsLib.get(req.params.jobId, jobOpts);
     if (!job || !jobsLib.ownedBy(job, req.owner)) { owner.notFound(res); return null; }
@@ -650,10 +668,21 @@ function createApp(opts = {}) {
     }
     console.log(`[produce ${job.id}] beats.js from ${restored.source}`);
 
-    const budgetUsd = Math.min(
+    const ceilingUsd = Math.min(
       config.pipeline.maxApprovableUsd,
       Number.isFinite(tenant.maxRunUsd) && tenant.maxRunUsd !== null ? tenant.maxRunUsd : Infinity
     );
+    // Never reserve more than the month has left. A tenant with no per-run wall
+    // reserved the whole service ceiling ($50) against its monthly budget, so the
+    // first dollar spent in a month made every later video a 402 -- production,
+    // 2026-09-28: $42 left, a $1.52 video, refused. Cap the reservation (and so the
+    // run's budget) at what remains, and refuse only when this video's own
+    // estimate does not fit.
+    const budgetUsd = monthlyCap({ tenant, ceilingUsd, job });
+    if (budgetUsd && budgetUsd.refused) {
+      unclaim();
+      return res.status(402).json(budgetUsd.refused);
+    }
     if (!(budgetUsd > 0)) {
       unclaim();
       return res.status(503).json({

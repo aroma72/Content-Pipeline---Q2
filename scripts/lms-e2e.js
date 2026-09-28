@@ -268,8 +268,11 @@ async function singleFlow() {
 
   let w = await waitFor(['written'], 20 * 60 * 1000);
   if (!expect(F, 'job reaches written', w.job && w.job.status === 'written', w.timedOut ? 'timed out' : `${w.job && w.job.status} ${w.job && (w.job.error || '')}`)) return { jobId, jp };
-  const beats = (w.job.script && w.job.script.beats) || [];
-  expect(F, 'job carries its script and a checkpoint', beats.length && beats.some((b) => b.mode === 'checkpoint' && b.quiz), `${beats.length} beats`);
+  // `script.beats` is the reader's summary (no quiz, no motion); `beatsFull` is what produce renders.
+  const sc = w.job.script || {};
+  const beats = sc.beatsFull || sc.beats || [];
+  expect(F, 'job carries its script and a checkpoint', beats.length && sc.checkpoint && sc.checkpoint.stem
+    && beats.some((b) => b.mode === 'checkpoint'), `${beats.length} beats, checkpoint after ${sc.checkpointAfterBeat}`);
   const md = await http('GET', `${jp}/script.md`);
   expect(F, 'GET .../script.md', md.status === 200 && String(md.data || '').length > 200, `${String(md.data || '').length} chars`);
   const early = await http('GET', `${jp}/video`, { raw: true });
