@@ -2266,21 +2266,31 @@ async function integrationChecks() {
   });
 
   // Live: the warning must be gone. This is what actually broke the QA stage.
+  //
+  // Only the WARNING is the regression. The CLI not completing -- absent (ENOENT),
+  // a non-zero exit from an auth or rate-limit refusal, a hang past the timeout --
+  // says nothing about shell.js, and is a SKIP that names its cause. It used to be
+  // a FAIL: this check passed twice and failed once within an hour with no code
+  // change, while the same machine's other suites were logging subscription
+  // auth/limit refusals from this same CLI. A healthy call here takes 12-17s.
+  // A warning inside a non-zero exit's stderr tail still fails: it is in the message.
+  const t0 = Date.now();
   try {
     const r = await shell.run('claude', ['-p', 'Say ok.', '--max-turns', '1',
       '--model', 'claude-haiku-4-5-20251001', '--output-format', 'json'], { timeoutMs: 120000 });
     assert(!/no stdin data received/i.test(r.stderr || ''), 'the stdin warning is still emitted');
-    pass++; console.log('  PASS  live: no "waiting on stdin" warning from claude');
+    pass++; console.log(`  PASS  live: no "waiting on stdin" warning from claude  (${Date.now() - t0}ms)`);
   } catch (e) {
-    // A runner without the Claude CLI installed is not a regression in shell.js.
-    // ENOENT means the binary is absent, which is the normal state of CI; anything
-    // else means the call was made and went wrong, and that still fails.
-    if (/ENOENT/.test(e.message)) {
-      skipped++;
-      console.log('  SKIP  live: no "waiting on stdin" warning from claude  (claude CLI not installed)');
+    const first = String(e.message).split('\n')[0];
+    if (/no stdin data received|stdin warning is still emitted/i.test(e.message)) {
+      failures.push({ name: 'stdin warning', message: first });
+      console.log(`  FAIL  stdin warning\n          ${first}`);
     } else {
-      failures.push({ name: 'stdin warning', message: e.message.split('\n')[0] });
-      console.log(`  FAIL  stdin warning\n          ${e.message.split('\n')[0]}`);
+      skipped++;
+      const why = /ENOENT/.test(e.message)
+        ? 'claude CLI not installed'
+        : `claude CLI did not complete after ${Date.now() - t0}ms: ${first.slice(0, 160)}`;
+      console.log(`  SKIP  live: no "waiting on stdin" warning from claude  (${why})`);
     }
   }
 
@@ -2597,7 +2607,14 @@ async function llmChecks() {
 
   // The live call. Skipped rather than failed if the CLI is unavailable, so this
   // suite still passes on a machine without Claude Code installed.
+  //
+  // "Unavailable" includes a CLI that is installed but does not COMPLETE: an
+  // auth or rate-limit refusal, a non-zero exit, a hang past the timeout. None
+  // of those say anything about askJson, and each used to be a FAIL here. The
+  // regression this guards is a completed call whose reply is not the JSON
+  // asked for -- that still fails.
   if (await cliLlm.isAvailable()) {
+    const t0 = Date.now();
     try {
       const noKey = { ...process.env };
       delete noKey.ANTHROPIC_API_KEY;
@@ -2617,10 +2634,18 @@ async function llmChecks() {
 
       assert(typeof got.summary === 'string' && got.summary.length > 0, 'no summary returned');
       pass++;
-      console.log('  PASS  live call with ANTHROPIC_API_KEY unset returns valid JSON');
+      console.log(`  PASS  live call with ANTHROPIC_API_KEY unset returns valid JSON  (${Date.now() - t0}ms)`);
     } catch (e) {
-      failures.push({ name: 'live CLI call', message: e.message.split('\n')[0] });
-      console.log(`  FAIL  live CLI call\n          ${e.message.split('\n')[0]}`);
+      const first = String(e.message).split('\n')[0];
+      const notCompleted = e.name === 'LlmUnavailableError'
+        || /^(Exit \d+|Timed out after|Failed to spawn)|not authenticated|ENOENT/i.test(e.message);
+      if (notCompleted) {
+        skipped++;
+        console.log(`  SKIP  live call  (claude CLI did not complete after ${Date.now() - t0}ms: ${first.slice(0, 160)})`);
+      } else {
+        failures.push({ name: 'live CLI call', message: first });
+        console.log(`  FAIL  live CLI call\n          ${first}`);
+      }
     }
   } else {
     console.log('  SKIP  live call (claude CLI not available on this machine)');
