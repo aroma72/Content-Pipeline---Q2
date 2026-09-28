@@ -121,6 +121,11 @@ async function produce(req, { log = () => {}, onStage = () => {} } = {}) {
     // approval up front. Absent, the run stops at review and waits, which is
     // still the default: silence is never consent.
     reviewApproved: req.publishAs || null,
+    // Pressing produce IS the script approval here, for whatever script the run
+    // ends up with -- no sha, so produce may still redraft it. Without this, a
+    // produce-stage redraft rewound through script-approval and blocked there,
+    // failing a job whose owner had already said "make it".
+    scriptApproved: 'produce-request',
     // The stages before `produce` are not re-run; their output is already on
     // disk. Seeding records them as skipped, never as done.
     seedArtifacts: {

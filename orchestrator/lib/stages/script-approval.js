@@ -77,6 +77,23 @@ module.exports = {
       return { approved: true, by: '(dry run)', sha: null };
     }
 
+    // First pass only: run produce's free script checks BEFORE asking anyone. A
+    // finding redrafts here (RedraftError -> 'script'), before the sha is taken,
+    // so the script a person reads is one produce will accept. Without it the
+    // course flow looped on production (2026-09-28): approve -> produce redrafts
+    // on qa-cutouts -> new sha -> approve again -> redrafts on qa-visuals -> ...
+    // On resume (approved) this is skipped: the sha check below is the whole job.
+    let checkFindings = [];
+    if (!opts.scriptApproved) {
+      const { _internals } = require('./produce');
+      const r = await _internals.preApprovalChecks({
+        dir, beats: script.beats, log, lenient: Boolean(opts.lenient),
+      });
+      checkFindings = r.findings;
+      log(`free script checks passed before approval (${r.checked.join(', ')})`
+        + (checkFindings.length ? ` -- ${checkFindings.length} unresolved, shown to the reader` : ''));
+    }
+
     const sha = deliverables.fingerprint(beatsPath);
 
     // Durable BEFORE the block, not after. The only reason a person can read this
@@ -142,6 +159,8 @@ module.exports = {
           // Where a route can read it while this run is parked -- or long over.
           durableDir: deliverables.dirFor(item.series, item.slug),
           redraftRounds: Number(st.redrafts) || 0,
+          // Findings two redraft rounds did not settle. The reader decides with them in view.
+          ...(checkFindings.length ? { unresolvedChecks: checkFindings } : {}),
         },
         queueFields: {
           scriptSha: sha,

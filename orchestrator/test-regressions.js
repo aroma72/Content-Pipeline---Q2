@@ -1504,6 +1504,71 @@ async function beatChecks() {
     return 'over-budget repair refused; checked before the purchase';
   });
 
+  // 2026-09-28, production: approve -> produce redrafted on qa-cutouts -> new sha ->
+  // approve again -> redrafted on qa-visuals -> ... Each resumed run restarted the
+  // redraft counter, so the loop had no bound. The free checks now run before the
+  // person is asked, and on a sha-approved script produce records instead of redrafting.
+  await checkAsync('script-approval runs the free script checks before it asks anyone', async () => {
+    const os = require('os');
+    const { RedraftError, BlockedError } = require(path.join(__dirname, 'lib', 'spine-errors'));
+    const produce = require(path.join(__dirname, 'lib', 'stages', 'produce'));
+    const stage = require(path.join(__dirname, 'lib', 'stages', 'script-approval'));
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sa-checks-'));
+    const saved = { v: process.env.EXPLAINER_VIDEOS_DIR, j: process.env.JOB_STORE_DIR, f: produce._internals.preApprovalChecks };
+    process.env.EXPLAINER_VIDEOS_DIR = path.join(tmp, 'videos');
+    process.env.JOB_STORE_DIR = path.join(tmp, 'store');
+    const item = { id: 's/l', series: 's', slug: 'l', topic: 't' };
+    const dir = require(path.join(__dirname, 'lib', 'paths')).videoDir('s', 'l');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'beats.js'), 'module.exports = [{ id: "b1", vo: "x" }];');
+    const ctx = (opts) => ({ item, state: { runId: 'r', redrafts: 0, interventions: [] }, log: Object.assign(() => {}, { always: () => {} }),
+      artifacts: { script: { beats: [{ id: 'b1', vo: 'x' }], beatsPath: path.join(dir, 'beats.js') } }, opts });
+    let calls = 0;
+    try {
+      produce._internals.preApprovalChecks = async () => {
+        calls++;
+        throw new RedraftError('half-cut props FAILED (qa-cutouts.js)', { fromStage: 'script', verdict: 'SENSOR_FAIL', feedback: 'x' });
+      };
+      let err = null;
+      try { await stage.run(ctx({})); } catch (e) { err = e; }
+      assert(calls === 1, 'script-approval never ran the free checks before asking');
+      assert(err instanceof RedraftError && err.fromStage === 'script',
+        `a failing free check must redraft BEFORE the pause, got ${err && err.constructor.name}`);
+
+      produce._internals.preApprovalChecks = async () => { calls++; return { checked: ['qa-cutouts.js'], findings: [] }; };
+      err = null;
+      try { await stage.run(ctx({})); } catch (e) { err = e; }
+      assert(err instanceof BlockedError && /awaiting script approval/.test(err.message),
+        'with the checks passing, the stage must pause for the person');
+
+      const before = calls;
+      const sha = require(path.join(__dirname, 'lib', 'deliverables')).fingerprint(path.join(dir, 'beats.js'));
+      const ok = await stage.run(ctx({ scriptApproved: 'p', scriptApprovedSha: sha }));
+      assert(ok.approved && calls === before, 'an approved resume re-ran the checks (it must only verify the sha)');
+    } finally {
+      produce._internals.preApprovalChecks = saved.f;
+      if (saved.v === undefined) delete process.env.EXPLAINER_VIDEOS_DIR; else process.env.EXPLAINER_VIDEOS_DIR = saved.v;
+      if (saved.j === undefined) delete process.env.JOB_STORE_DIR; else process.env.JOB_STORE_DIR = saved.j;
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+
+    // produce: a sha-approved script records findings; an unapproved one still redrafts.
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'produce.js'), 'utf8');
+    assert(/humanApproved = Boolean\(opts\.scriptApproved && opts\.scriptApprovedSha\)/.test(src)
+      && /if \(redraftable && \(opts\.lenient \|\| humanApproved\)\)/.test(src),
+      'produce redrafts a script a person approved by sha -- the approval loop is back');
+    assert(produce._internals.SCRIPT_SENSORS.map(([s]) => s).join() === 'qa-visuals.js,qa-cutouts.js,qa-checkpoint.js,qa-info.js,eval-text.js',
+      'the shared script-sensor list changed; script-approval and produce must run the same checks');
+    const preSpend = [...src.slice(0, src.indexOf('--- spend gate')).matchAll(/await sensor\('([\w.-]+)',[^;]*redraftable: true[^;]*\);/g)].map((m) => m[1]);
+    assert(preSpend.join() === produce._internals.SCRIPT_SENSORS.map(([sc]) => sc).join(),
+      `produce's redraftable sensors (${preSpend}) and SCRIPT_SENSORS differ -- script-approval would pass a script produce then redrafts`);
+    // single video: pressing produce is the approval, so a produce redraft can pass script-approval.
+    const ov = fs.readFileSync(path.join(__dirname, '..', 'server', 'lib', 'one-video.js'), 'utf8');
+    assert(/scriptApproved: 'produce-request'/.test(ov),
+      'single-video produce passes no script approval: a produce redraft would block at script-approval and fail the job');
+    return 'redraft before the pause; pause when clean; approved resume only checks the sha';
+  });
+
   check('a finding AFTER the render parks the video for a person instead of killing the run', () => {
     const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'produce.js'), 'utf8');
 

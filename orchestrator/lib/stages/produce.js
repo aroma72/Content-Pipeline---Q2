@@ -89,6 +89,67 @@ function repairAffordable({ spentUsd, costUsd, budgetUsd }) {
   return Number(spentUsd) + Number(costUsd) <= Number(budgetUsd) + 1e-9;
 }
 
+/**
+ * The checks that read only beats.js. Free (no art, no voice), and each finding is
+ * a redraft brief. Shared by produce and script-approval so the two can never drift.
+ */
+const SCRIPT_SENSORS = [
+  ['qa-visuals.js', 'the Evals-Grade Visual Standard'],
+  ['qa-cutouts.js', 'half-cut props on cutout beats'],
+  // CLAUDE.md: "enforced by qa-checkpoint.js (fails the build)". The rules about
+  // whether the QUESTION works -- 3-4 options, a real answer index, distinct
+  // options, feedback that explains the mistake -- live only here.
+  ['qa-checkpoint.js', 'the in-video checkpoint question'],
+  ['qa-info.js', 'info-beat data shapes'],
+  // Grammar and clarity read beats.js and nothing else: a mixed-up pronoun found
+  // after the spend threw a whole video away; found here it is a redraft brief.
+  ['eval-text.js', 'grammar and clarity of the spoken and on-screen text'],
+];
+
+/**
+ * Run every free script check BEFORE a person is asked to approve the script.
+ *
+ * Without this, the course flow asked a person to approve a script that produce
+ * then rejected on these same checks and redrafted -- which changes the sha, so
+ * the approval no longer applied and the person was asked again, indefinitely.
+ * A script shown for approval must already be one produce will accept.
+ *
+ * Throws RedraftError (fromStage 'script') on a finding. With `lenient` set (the
+ * spine's last pass) it returns the findings instead, for the reader to see.
+ */
+async function preApprovalChecks({ dir, beats, log = () => {}, lenient = false }) {
+  copyTemplates(PATHS.videoTemplates, dir, log);
+  const findings = [];
+  const { errors } = validateBeats(beats, dir);
+  if (errors.length) {
+    // Deterministic: never softened by the lenient pass (spine skips it for INVALID_BEATS).
+    throw new RedraftError(
+      `beats.js will not render correctly:\n  - ${errors.join('\n  - ')}`,
+      { fromStage: 'script', verdict: 'INVALID_BEATS', feedback: errors }
+    );
+  }
+  for (const [script, what] of SCRIPT_SENSORS) {
+    if (!fs.existsSync(path.join(dir, script))) {
+      throw new Error(`${script} is missing from ${dir} -- the quality gate for ${what} cannot run.`);
+    }
+    try {
+      await shell.run('node', [script], { cwd: dir, timeoutMs: 20 * 60 * 1000 });
+    } catch (e) {
+      if (!(e instanceof shell.CommandError) || e.code === null) throw e;
+      if (e.code === 3 || isEnvironmentFailure(e)) {
+        log(`${script} could not run (${what}) -- continuing without its verdict`);
+        continue;
+      }
+      const found = `${e.stdout || ''}\n${e.stderr || ''}`.split(/\r?\n/).map((l) => l.trim())
+        .filter((l) => l && !/^\[.*\] (Reviewed|Judge)/.test(l)).slice(-25).join('\n');
+      if (lenient) { findings.push({ sensor: script, what, findings: found.slice(0, 800) }); continue; }
+      throw new RedraftError(`${what} FAILED (${script}):\n${found}`,
+        { fromStage: 'script', verdict: 'SENSOR_FAIL', feedback: found });
+    }
+  }
+  return { checked: SCRIPT_SENSORS.map(([sc]) => sc), findings };
+}
+
 function estimateSpend(beats, dir) {
   // PER BEAT, on the same basis the regeneration paths use.
   //
@@ -355,7 +416,8 @@ function copyTemplates(src, dest, log) {
 
 // Exported for the regression tests; not part of the stage contract.
 module.exports._internals = { estimateSpend, isFresherThanInputs, copyTemplates,
-  i2vSeconds, COST, missingPerBeat, staleVo, pruneOrphans, isEnvironmentFailure, repairAffordable };
+  i2vSeconds, COST, missingPerBeat, staleVo, pruneOrphans, isEnvironmentFailure, repairAffordable,
+  SCRIPT_SENSORS, preApprovalChecks };
 
 module.exports = Object.assign(module.exports, {
   name: 'produce',
@@ -600,11 +662,21 @@ module.exports = Object.assign(module.exports, {
         // Killing the run instead would mean the strictest gates could only ever
         // reject a video, never improve one, and the LLM reviewer that passed it
         // has no way to learn what the deterministic check saw.
-        if (redraftable && opts.lenient) {
+        // A person approved THIS script (course flow, sha-bound). Redrafting it now
+        // would throw away what they read and send them back to approve a new one:
+        // on 2026-09-28 that looped on production -- qa-cutouts, then qa-visuals,
+        // each lap a fresh draft, a fresh approval request and ~$0.45 of model
+        // spend, because the redraft counter restarts with every resumed run. The
+        // same checks already passed before the approval, so a finding here is an
+        // LLM judge disagreeing with itself: it goes to the review step instead.
+        // Sha-bound only: a single video's "produce" press approves no particular text.
+        const humanApproved = Boolean(opts.scriptApproved && opts.scriptApprovedSha);
+        if (redraftable && (opts.lenient || humanApproved)) {
           // The lenient pass: two rounds did not settle this, so it is recorded
           // and carried to the review step rather than ending the run. A person
           // reads it there; it is not discarded and not hidden.
-          log.always(`${script}: ${what} still not satisfied after redrafting -- `
+          log.always(`${script}: ${what} ${humanApproved && !opts.lenient
+            ? 'flagged on a script a person already approved' : 'still not satisfied after redrafting'} -- `
             + 'accepted with a warning for review');
           sensorResults.push({ ok: false, sensor: script, what, accepted: true,
             detail: findings.slice(0, 800) });
@@ -657,22 +729,14 @@ module.exports = Object.assign(module.exports, {
 
     // Script-level sensors run BEFORE the spend gate: both read only beats.js, so
     // a script that would produce a bad video costs nothing to reject here.
+    //
+    // These five are SCRIPT_SENSORS, which script-approval runs BEFORE it asks a
+    // person to read the script -- test-regressions keeps the two lists equal. On a
+    // script a person has approved by sha they record, they do not redraft (sensor()).
     await sensor('qa-visuals.js', 'the Evals-Grade Visual Standard', { redraftable: true });
     await sensor('qa-cutouts.js', 'half-cut props on cutout beats', { redraftable: true });
-    // CLAUDE.md has said "enforced by qa-checkpoint.js (fails the build)" since the
-    // format was settled, and nothing ran it -- not this stage, not CI, not a hook.
-    // validate-beats.js covers whether a checkpoint exists, where it sits and that it
-    // is never spoken; the rules about whether the QUESTION works -- 3-4 options, an
-    // answer index that indexes something, no two options the same, feedback long
-    // enough to explain the mistake -- live only here and were checked nowhere.
     await sensor('qa-checkpoint.js', 'the in-video checkpoint question', { redraftable: true });
     await sensor('qa-info.js', 'info-beat data shapes', { redraftable: true });
-    // Grammar and clarity read beats.js and nothing else, so there is no reason to
-    // learn about them only after paying for art and a voice. Measured: a run got
-    // all the way through art, TTS and the render before failing on "he names the
-    // fear out loud, in her own words, with his son's name in it" -- a mixed-up
-    // pronoun, caught after the spend, with the whole video thrown away for it.
-    // Here the same finding is a redraft brief instead of a write-off.
     await sensor('eval-text.js', 'grammar and clarity of the spoken and on-screen text',
       { redraftable: true });
 
