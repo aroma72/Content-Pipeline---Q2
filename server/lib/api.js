@@ -894,7 +894,9 @@ function build(opts = {}) {
       lessonId: r.item.id,
       status: r.item.status,
       ...(r.item.blockedBy ? { blockedBy: r.item.blockedBy } : {}),
-      awaitingApproval: r.item.blockedBy === 'script-approval',
+      // Status too, not blockedBy alone: the queue fold never deletes a key, so a
+      // claimed lesson can still carry the blockedBy of the pause it just left.
+      awaitingApproval: r.item.status === 'blocked' && r.item.blockedBy === 'script-approval',
       humanRevisions: Number(r.item.humanRevisions) || 0,
       maxRevisions: require('./course-worker').MAX_HUMAN_REVISIONS,
       ...(r.item.scriptApprovedBy || r.item.scriptApproved

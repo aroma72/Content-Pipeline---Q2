@@ -3427,6 +3427,36 @@ async function courseChecks() {
     return 'failed on the queue, with the reason';
   });
 
+  await checkAsync('a spine whose final queue write was lost does not leave the lesson claimed', async () => {
+    // settleQueue() swallows a failed block/fail/done so the run's outcome
+    // stands. When that write was the one taking the item off `claimed`, the
+    // lesson sat claimed with nobody building it: every script approve was
+    // refused "(claimed)" while the LMS still showed it waiting to be read.
+    freshQueue();
+    const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+    queue.enqueue({ topic: 'Lesson whose block is lost', series: 'demo', slug: 'lostclaim', source: 'course-builder' });
+    const saved = spine.execute;
+    // Returns as if it blocked, but writes nothing to the queue -- exactly what a
+    // swallowed queue.block() leaves behind.
+    spine.execute = async () => ({ status: 'blocked' });
+    try { await cw.drain(); } finally { spine.execute = saved; }
+    const item = queue.get('demo/lostclaim');
+    assert(item.status !== 'claimed', 'the lesson was left claimed with nobody building it');
+    assert(item.status === 'blocked' && item.blockedBy === 'interrupted',
+      `expected blocked/interrupted, got ${item.status}/${item.blockedBy}`);
+    assert(/cents/.test(item.reason || ''), 'no script was fingerprinted, so the quote must be cents: ' + item.reason);
+
+    // And the refusal the LMS met, pinned: approving the script of a claimed
+    // lesson is refused and changes nothing.
+    queue.enqueue({ topic: 'Lesson being built', series: 'demo', slug: 'busy', source: 'course-builder' });
+    queue.claim('demo/busy', 'run-live');
+    const before = JSON.stringify(queue.get('demo/busy'));
+    const r = cw.approveScript('demo/busy', 'x', 'abc123');
+    assert(r.ok === false && /claimed/.test(r.why), 'a claimed lesson accepted a script approval: ' + JSON.stringify(r));
+    assert(JSON.stringify(queue.get('demo/busy')) === before, 'a refused approval changed the lesson');
+    return 'parked as interrupted; a claimed lesson refuses a script approval untouched';
+  });
+
   check('a lesson left mid-build is parked for a human, not silently rebuilt', () => {
     freshQueue();
     const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));

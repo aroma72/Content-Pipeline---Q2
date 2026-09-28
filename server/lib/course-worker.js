@@ -326,6 +326,23 @@ function humanFeedback(item, ctx) {
   };
 }
 
+/**
+ * The sentence on a lesson parked as `interrupted`. The cost of a rebuild depends
+ * on how far it got: a lesson interrupted before its script was ever
+ * fingerprinted had not reached the spend at all, and quoting ~$1.50 at that
+ * person is wrong by two orders of magnitude -- they may reject a lesson to avoid
+ * a bill that does not exist.
+ */
+function interruptedReason(i, cause) {
+  return i.scriptSha
+    ? `interrupted ${cause} before it finished. Nothing was published, `
+      + 'and the partial render did not survive. Approve to rebuild this lesson '
+      + '(about $1.50 and 30 minutes), or reject to stop the course.'
+    : `interrupted ${cause} before anything was bought. Approve to write `
+      + 'its script again (cents, a couple of minutes); it will then pause for you to '
+      + 'read it, as it would have. Or reject to stop the course.';
+}
+
 async function buildOne(item) {
   const st = state.create(item);
   // Record that this lesson is being built BEFORE any of it is paid for. The
@@ -381,6 +398,30 @@ async function buildOne(item) {
     };
     history.push(outcome);
     log(`${item.id} -> ${outcome.status}`);
+    // The spine settles the queue through settleQueue(), which logs and swallows
+    // a failed write so the run's outcome stands. If that write was the one that
+    // moves the item OFF `claimed` (block, fail, done), the lesson is left claimed
+    // with nobody building it: the course view stops saying what it waits for,
+    // every approve is refused "(claimed)", and only the next boot's restore()
+    // frees it. Park it the way restore() would, now, and hold the reservation --
+    // how far the run got, and so what it owes, is exactly what was not recorded.
+    const after = queue.get(item.id);
+    if (after && after.status === queue.ITEM_STATUS.CLAIMED) {
+      log(`${item.id}: spine returned '${outcome.status}' but the queue still says claimed -- `
+        + 'its final queue write was lost; parking it as interrupted');
+      try {
+        queue.setStatus(item.id, queue.ITEM_STATUS.BLOCKED, {
+          interrupted: true,
+          interruptedAt: new Date().toISOString(),
+          previousRunId: st.runId,
+          blockedBy: 'interrupted',
+          reason: interruptedReason(after, 'when its progress could not be saved'),
+        });
+      } catch (e2) {
+        log(`${item.id}: could not park the lost-claim lesson either (${e2.message}); restore() will at next boot`);
+      }
+      return outcome;
+    }
     // Do NOT close the reservation for a pause that happens BEFORE the spend it
     // was taken for. Settling at the script gate would release $2.50 against a
     // lesson that has cost about five cents, and the approved build that follows
@@ -756,17 +797,7 @@ function restore() {
       interruptedAt: new Date().toISOString(),
       previousRunId: i.runId || null,
       blockedBy: 'interrupted',
-      // The cost of a rebuild depends on how far it got. A lesson interrupted
-      // before its script was ever fingerprinted had not reached the spend at all,
-      // and quoting ~$1.50 at that person is wrong by two orders of magnitude --
-      // they may reject a lesson to avoid a bill that does not exist.
-      reason: i.scriptSha
-        ? 'interrupted by a server restart before it finished. Nothing was published, '
-          + 'and the partial render did not survive. Approve to rebuild this lesson '
-          + '(about $1.50 and 30 minutes), or reject to stop the course.'
-        : 'interrupted by a server restart before anything was bought. Approve to write '
-          + 'its script again (cents, a couple of minutes); it will then pause for you to '
-          + 'read it, as it would have. Or reject to stop the course.',
+      reason: interruptedReason(i, 'by a server restart'),
     });
     interrupted++;
   }
