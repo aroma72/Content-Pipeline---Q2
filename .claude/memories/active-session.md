@@ -496,3 +496,41 @@ failed across 3 suites — the `&&` chain then skipped predeploy + layout) while
 going. Not reproduced in two clean runs (full chain: 411 passed, 0 failed). Its name was lost because
 verify-all kept only the summary; verify-all now prints failing test names and flags suites the chain
 never reached. If it recurs, that line says which test.
+
+### Pushed to origin/course-hold-2 at 0756ca6 (2026-09-28) — NOT main, NOT deployed
+
+Six commits on top of 6259001: 34832fe untrack node_modules · 03375cc the reorg · df4588f
+test-layout + verify-all · e41d7dc memory · 92352b1 guard fix · 0756ca6 env templates. Pre-push
+smoke test 0 fail; layout test 38/0 on the committed tree. `origin/main` is untouched at 6259001, so
+nothing is live — merging to main is a separate decision (and is what deploys).
+
+Near-miss while staging, now [[lessons#H49]]: reset-and-restage with `git add -A` would have
+untracked ~1,520 files under the gitignored `media/video_production/`. The tracked-file count check
+caught it.
+
+Guard change: `.claude/hooks/block-bad-commands.sh` now allows env TEMPLATES (example / sample /
+template) and still blocks every real env file; 12 cases verified. It was a false positive that
+made the root template and the avatar kit's uncommittable.
+
+Left in the working tree on purpose (not this session's): `.beads/*.jsonl`, `settings.local.json`,
+`deployment.md`, `mistakes.md`, `session-archive/*`, another session's H40 in `lessons.md` (note: it
+REUSES the number H40 — an H40 already exists at ~line 1056), and the rotation of this file.
+`.claude/logs/health.json` is my health-check run's output, generated.
+
+### Paid tier run, Chrome installed, dry-run fixed, then merge to main (2026-09-28)
+
+Aroma approved the paid render ("simple and cost effective") and asked to then merge everything to
+main and delete every other branch.
+
+- Chrome 153 installed for Puppeteer (user cache) — preflight is now all green; this box can render.
+- `orchestrator/lib/stages/script.js` dry-run fixture now carries a real checkpoint beat, so
+  `run.js run --dry-run` passes the script stage; the layout test upgraded that SKIP to PASS.
+- **Paid tier: three attempts, no video, $0.20 real spend.** 1) my 4-beat script failed the free
+  qa-visuals gate and the spine redrafted it with Claude (plan usage) — verify-all now refuses
+  redrafts. 2) produce judged the TEMPLATE's placeholder beats.js because it reads beats.js from
+  disk — verify-all now writes it. 3) art bought, qa-art (Gemini) rejected it, and produce's repair
+  loop re-bought images twice without a budget check: $0.20 against a $0.09 quote / $0.10 ceiling.
+  Durable detail → `.claude/memories/pipeline-mechanics.md` ("The budget caps the first art
+  purchase"). verify-all now quotes the worst case ($0.25) and refuses at the $0.10 ceiling.
+- NOT done, needs Aroma: a budget check inside `repairArt` (live code); another paid attempt.
+

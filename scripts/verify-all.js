@@ -230,16 +230,29 @@ async function tier2() {
 
 // ── Tier 3 ────────────────────────────────────────────────────────────────────
 
-/** One image, three spoken beats, the mandatory checkpoint. The smallest video the gates accept. */
+/**
+ * The smallest video the free gates accept: two illustrated scenes (the Visual
+ * Standard wants >=28% scene beats), three DIFFERENT data templates carrying real
+ * numbers, and the mandatory checkpoint between two spoken beats. Two images and
+ * five speech clips. A four-beat version was cheaper and failed qa-visuals.
+ */
 const PAID_BEATS = [
-  { id: '01', mode: 'scene', vo: 'Ali opens the weekly report and the totals do not add up.', cap: 'The totals are wrong',
-    art: 'a teacher named Ali at a wooden desk reading a printed weekly report with a puzzled look, warm morning light, flat vector illustration, soft cream background, no text' },
-  { id: '02', mode: 'info', vo: 'He checks each column against the source sheet, one row at a time.', cap: 'Check against the source',
-    info: { tpl: 'statement', data: { text: 'Check each column against the source.', hi: 'source' } } },
-  { id: '03', mode: 'checkpoint', quiz: { stem: 'What should Ali check first?', options: ['The font of the report', 'The source sheet the numbers came from'], answer: 1,
-    correctNote: 'Right: the numbers come from the source.', explain: 'Formatting cannot change a total. The source data can.' } },
-  { id: '04', mode: 'info', vo: 'The mismatch was one copied formula, and now he knows where to look.', cap: 'One copied formula',
-    info: { tpl: 'statement', data: { text: 'One copied formula broke the total.', hi: 'copied formula' } } },
+  { id: '01', mode: 'scene', vo: 'Ali opens the weekly attendance report and frowns at the total.', cap: 'The total looks wrong',
+    art: 'a teacher named Ali at a wooden desk opening a printed attendance report, frowning, warm morning light, flat vector illustration, soft cream background, no text' },
+  { id: '02', mode: 'info', vo: 'The report says 120 students, but the register shows 112.', cap: 'Two numbers that should match',
+    info: { tpl: 'bignum', data: { left: { big: '120', lab: 'in the report', tone: 'bad' }, sep: '≠', right: { big: '112', lab: 'in the register', tone: 'good' } } } },
+  { id: '03', mode: 'scene', vo: 'He lays the two sheets side by side and traces each row with a pencil.', cap: 'Row by row',
+    art: 'a teacher named Ali laying two printed sheets side by side on a desk and tracing a row with a pencil, focused, flat vector illustration, soft cream background, no text' },
+  { id: '04', mode: 'info', vo: 'Nine rows match, and three do not.', cap: 'Three rows disagree',
+    info: { tpl: 'tally', data: { rows: [{ label: 'Match', count: 9, tone: 'good' }, { label: 'Do not match', count: 3, tone: 'bad' }] } } },
+  { id: '05', mode: 'checkpoint', quiz: { stem: 'Where should Ali look first?',
+    options: ['The font and layout of the report', 'The three rows that disagree', 'The total at the bottom of the page'], answer: 1,
+    correctNote: 'Right: the gap of eight lives in the rows that disagree.',
+    explain: 'The answer is the three rows that disagree, because a wrong total is only a symptom of wrong rows. '
+      + 'The total at the bottom is tempting because that is where the mistake shows, but it is calculated from the rows, '
+      + 'so fixing it by hand would hide the cause. The font cannot change a number at all.' } },
+  { id: '06', mode: 'info', vo: 'One copied formula caused all three, and fixing it brings all twelve rows into line.', cap: 'One formula, fixed',
+    info: { tpl: 'bars', data: { max: 12, items: [{ label: 'Rows matching now', value: 12, tone: 'big' }, { label: 'Rows still wrong', value: 0, tone: 'bad' }] } } },
 ];
 
 function produceScript() {
@@ -254,15 +267,29 @@ function produceScript() {
     const state = require(path.join(ROOT, 'orchestrator/lib/state'));
     const beats = JSON.parse(process.env.VERIFY_BEATS);
     const item = { id: 'verify/tiny', series: 'verify', slug: 'tiny', topic: 'Verify: a tiny video' };
+    // produce reads beats.js FROM DISK (the script stage normally writes it), and
+    // scaffolds the template's placeholder beats.js when none is there -- the gates
+    // then judge the placeholder. Write the test script first, as run.js --from does.
+    const fs = require('fs');
+    const { videoDir } = require(path.join(ROOT, 'orchestrator/lib/paths'));
+    const vdir = videoDir(item.series, item.slug);
+    fs.mkdirSync(vdir, { recursive: true });
+    fs.writeFileSync(path.join(vdir, 'beats.js'), 'module.exports = ' + JSON.stringify(beats, null, 2) + ';\\n');
+    // A redraft would hand the fixed test script to an LLM to rewrite -- model
+    // calls, and a test of a DIFFERENT script. Refuse it and report why instead.
+    const noRedraft = { name: 'script', maxAttempts: 1, async run() {
+      throw new Error('verify-all: a gate asked for a redraft of the fixed test script -- refusing (see the gate output above)');
+    } };
     spine.executeStages(item, {
-      quiet: true, fromStage: 'produce', stopAfter: 'produce',
+      quiet: true, fromStage: 'produce', stopAfter: 'produce', stageOverrides: { script: noRedraft },
       budgetUsd: Number(process.env.VERIFY_BUDGET),
       seedArtifacts: { script: { title: 'Verify: a tiny video', beats, beatCount: beats.length, handWritten: true } },
       scriptApproved: true,
     }).then((st) => {
       const p = st.stages.produce || {};
       const a = (st.artifacts && st.artifacts.produce) || {};
-      process.stdout.write('\\n@@' + JSON.stringify({ status: st.status, stage: p.status, error: p.error || null,
+      const failed = Object.entries(st.stages).filter(([, s]) => s.error).map(([n, s]) => n + ': ' + String(s.error).split('\\n')[0]);
+      process.stdout.write('\\n@@' + JSON.stringify({ status: st.status, stage: p.status || null, error: p.error || failed[0] || null,
         finalPath: a.finalPath || null, media: state.mediaSpend(st) })); process.exit(0);
     }).catch((e) => { process.stdout.write('\\n@@' + JSON.stringify({ threw: e.message })); process.exit(0); });`;
 }
@@ -278,8 +305,16 @@ async function tier3() {
   console.log('  not in that figure: the Gemini judges produce runs (qa-art, eval-text) -- real money, fractions of a cent;'
     + ' and one Claude call -- plan usage, not dollars.');
 
-  if (est.totalUsd > CEILING_USD) {
-    record(3, 'real produce run', 'fail', `estimate $${est.totalUsd} is over the $${CEILING_USD} ceiling -- refusing`);
+  // produce's qa-art repair re-buys rejected images up to TWICE and does not check
+  // the budget before it does (orchestrator/lib/stages/produce.js repairArt). The
+  // first paid run of this tier spent $0.20 against a $0.09 estimate that way.
+  // So the ceiling applies to the worst case, not the estimate.
+  const worst = Number((est.totalUsd + 2 * est.images * 0.04).toFixed(2));
+  console.log(`  worst case: $${worst} -- if qa-art rejects every image and produce re-buys them twice (not budget-checked)`);
+  const ceiling = Number((process.argv.find((a) => a.startsWith('--ceiling=')) || '').split('=')[1]) || CEILING_USD;
+  if (worst > ceiling) {
+    record(3, 'real produce run', 'skip', `worst case $${worst} is over the $${ceiling} ceiling -- refusing. `
+      + `Raise it deliberately with --ceiling=${worst}, or fix produce's repair loop to respect the budget`);
     return;
   }
   const browser = await browserOk();
@@ -308,7 +343,7 @@ async function tier3() {
   const media = typeof res.media === 'number' ? ` -- media spend $${res.media.toFixed(3)}` : '';
   const ok = res.stage === 'done' && res.finalPath && fs.existsSync(path.isAbsolute(res.finalPath) ? res.finalPath : path.join(vids, 'verify', 'tiny', res.finalPath));
   record(3, 'real produce run (art -> TTS -> compile -> bumpers -> verify)', ok ? 'pass' : 'fail',
-    ok ? `deliverable at ${res.finalPath}${media}` : `${res.stage}: ${String(res.error || '').slice(0, 300)}`);
+    ok ? `deliverable at ${res.finalPath}${media}` : `run ${res.status}, produce ${res.stage || 'did not finish'}: ${String(res.error || 'no error recorded').slice(0, 300)}${media}`);
 
   const claude = await run('claude', ['-p', 'Say ok.', '--max-turns', '1', '--model', 'claude-haiku-4-5-20251001', '--output-format', 'json'], { timeoutMs: 120000 });
   record(3, 'one real Claude call (plan usage)', claude.code === 0 && /"result"/.test(claude.out) ? 'pass' : 'fail', tail(claude.out, 1));

@@ -77,6 +77,23 @@ to match — `ffmpeg -i in.mp4 -vn -acodec aac -y out.aac`.
 
 ---
 
+## The budget caps the first art purchase, not the repairs (found 2026-09-28)
+
+`produce`'s spend gate compares the **up-front estimate** with the budget. After art is bought,
+`repairArt` (`orchestrator/lib/stages/produce.js`) runs `qa-art.js`, and for each rejected image it
+re-runs the generator — **up to two rounds, with no budget check** — and records the spend after the
+fact. Worst case is the estimate plus `2 × images × $0.04`.
+
+Observed: a 2-image, 5-clip test video quoted **$0.09** with a **$0.10** budget spent **$0.20**
+(2 images, then 2 repaired, then 1 more), and `qa-art` still rejected the art, so it produced no
+video and bought no speech. `scripts/verify-all.js` now quotes that worst case and applies its
+ceiling to it. The real fix is a budget check inside `repairArt` before each re-buy — live pipeline
+code, not yet made (awaiting Aroma).
+
+Also learned on that run: with `fromStage: 'produce'`, `produce` reads `beats.js` **from disk**. Seeding
+the script only in memory makes it scaffold the template's placeholder `beats.js`, and every gate then
+judges the placeholder. `run.js --from` writes the file first; any other caller must too.
+
 ## Invalidation triggers
 
 Any change to the beats format, art generation, TTS provider, cutout, compile, bumpers, or the

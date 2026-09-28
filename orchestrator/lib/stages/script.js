@@ -368,13 +368,21 @@ module.exports = {
         ? { edits: [] }
         : {
           title: item.topic,
+          // Must pass the same validation as a real script, or `run.js run --dry-run`
+          // stops here. It used an `info` quiz beat until the checkpoint rule made a
+          // mode:'checkpoint' beat -- between two spoken beats, never voiced -- mandatory.
           beats: [
-            { id: '01', mode: 'scene', vo: '(dry run)', art: '(dry run) no text' },
+            { id: '01', mode: 'scene', vo: '(dry run) the first sentence.', art: '(dry run) no text' },
+            { id: '02', mode: 'scene', vo: '(dry run) the second sentence.', art: '(dry run) no text' },
             {
-              id: '02', mode: 'info', vo: '(dry run) here is your question.', holdAfter: 2,
-              info: { tpl: 'quiz', data: { stem: '(dry run)', options: ['A', 'B'], answer: 0 } },
+              id: '03', mode: 'checkpoint',
+              quiz: {
+                stem: '(dry run) which option?', options: ['A', 'B'], answer: 0,
+                correctNote: '(dry run) right.',
+                explain: '(dry run) B looks right at a glance, but only A matches the rule.',
+              },
             },
-            { id: '03', mode: 'scene', vo: '(dry run) and the answer.', art: '(dry run) no text' },
+            { id: '04', mode: 'scene', vo: '(dry run) and the answer.', art: '(dry run) no text' },
           ],
         },
     });
