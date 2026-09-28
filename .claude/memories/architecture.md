@@ -4,7 +4,7 @@ last_verified: 2026-05-07
 owner: aroma
 ---
 
-> **Migrated 2026-09-21** from `memory/` into the warm tier, verbatim — no content was
+> **Migrated 2026-09-21** from the old repo-root `memory` store into the warm tier, verbatim — no content was
 > summarised or dropped. It has **not** been re-verified against the codebase since
 > 2026-05-07, and much of it describes the originally-planned pipeline rather than the
 > explainer-video pipeline that now ships. Treat it per the decay schedule in
@@ -60,11 +60,11 @@ How Drawing Room is built: model choices, media tooling, and the schema contract
 ### Local Workflow Storage
 ```
 ContentQueen/
-├── recordings/               # Raw ingest
-├── drafts/                  # Working files (transcript, segments, timelines)
-├── published/               # Final assets before platform push
-├── weekly_artifacts/        # Markdown logs (decisions, health scores)
-└── review_queue/            # Flagged items for human approval
+├── media/recordings/               # Raw ingest
+├── content/drafts/                  # Working files (transcript, segments, timelines)
+├── content/published/               # Final assets before platform push
+├── content/weekly_artifacts/        # Markdown logs (decisions, health scores)
+└── content/review_queue/            # Flagged items for human approval
 ```
 
 ### Backup & Archival
@@ -85,7 +85,7 @@ ContentQueen/
 ### In-Pilot (Weeks 1-4)
 - **No external DB** — use local filesystem
 - **Artifact storage**: JSON + Markdown files per weekly cycle
-- **Schema persistence**: JSON files in `weekly_artifacts/`
+- **Schema persistence**: JSON files in `content/weekly_artifacts/`
 - **Assignment submissions**: Pulled from LMS API per cycle
 
 ### Post-Pilot (Scale Phase)
@@ -101,7 +101,7 @@ ContentQueen/
 
 ### Pilot (Weeks 1-4)
 - **Where**: Aroma's local machine (Windows 11 Pro)
-- **Trigger**: File watcher on `recordings/` folder (Python watchdog or similar)
+- **Trigger**: File watcher on `media/recordings/` folder (Python watchdog or similar)
 - **Execution**: Synchronous (recording arrives → process immediately, blocking)
 
 ### Scale (Post-Pilot, optional)
@@ -187,7 +187,7 @@ ContentOrchestrator (Claude API)
 <!-- migrated verbatim from memory/arch_schemas.md on 2026-09-21 -->
 
 ## Reference
-Full schema definitions are in [planning/planning.md](../planning/planning.md) under "Content Schema Definitions" section. **This is a quick reference; source of truth is the planning doc.**
+Full schema definitions are in [content/planning/planning.md](../../content/planning/planning.md) under "Content Schema Definitions" section. **This is a quick reference; source of truth is the planning doc.**
 
 ## Key Contracts
 

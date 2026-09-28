@@ -4,7 +4,7 @@ last_verified: 2026-05-07
 owner: aroma
 ---
 
-> **Migrated 2026-09-21** from `memory/` into the warm tier, verbatim — no content was
+> **Migrated 2026-09-21** from the old repo-root `memory` store into the warm tier, verbatim — no content was
 > summarised or dropped. It has **not** been re-verified against the codebase since
 > 2026-05-07, and much of it describes the originally-planned pipeline rather than the
 > explainer-video pipeline that now ships. Treat it per the decay schedule in
@@ -1401,3 +1401,232 @@ and `storage.memory` are all present and that `storage.error` is absent.
 
 Related: [[H5]] (concurrent sessions share this repo), [[H9]] (the artefact is the evidence — but
 only if you look at the right artefact), [[H37]] (a deploy is live when the new build answers).
+---
+
+## H41. `config.py` cannot move: its BASE_DIR silently forks the whole data tree
+
+> **Superseded 2026-09-28 by [[H45]].** `config.py` *did* move, to `legacy/python/`, together with
+> `agents/` and `skills/`, with `BASE_DIR` re-anchored to `Path(__file__).resolve().parents[2]`.
+> The trap described below is still real; the conclusion "cannot move" is not. The file and line
+> numbers below are as they were at the repo root before the move.
+
+**Added:** 2026-09-28 | **Applies to:** any reorganisation that touches root-level Python
+**Invalidate if:** `config.py` stops deriving `BASE_DIR` from `__file__`, or the `mkdir` loop goes
+
+```python
+config.py:19   BASE_DIR = Path(__file__).parent
+config.py:27   for d in [...]: d.mkdir(parents=True, exist_ok=True)
+```
+
+Moving `config.py` raises nothing. The `mkdir(parents=True, exist_ok=True)` loop **creates a second
+`recordings/ drafts/ published/ review_queue/ weekly_artifacts/ prompts/` tree** beside wherever the
+file landed, and every agent then reads and writes there. CI's `prompts/` check keeps passing
+against the old, now-empty root copy. No error, wrong directory — the [[H21]] shape again.
+
+It is immovable for a second reason: all 13 files in `agents/` and all 20 in `skills/` open with
+`sys.path.insert(0, Path(__file__).parent.parent)`, i.e. "the repo root is where `config.py` lives".
+`tests/conftest.py:19` does the same, so a bad move fails pytest at collection, not in one test.
+
+Same trap, weaker form, in ~30 other root scripts carrying
+`sys.path.insert(0, Path(__file__).parent)`: that line means "repo root" only while the file sits at
+root. Several also build output paths from `__file__` (`generate_agentic_ai_vo.py:130` →
+`Path(__file__).parent / 'voiceovers'`), so a missed edit writes to the wrong folder in silence.
+
+**Do:** before moving any root `.py`, grep it for `sys.path` and `__file__`. Clean of both, and
+imported by nothing → free to move. Otherwise leave it, or move it and run it. After any such move,
+assert the tree did not fork: `find . -name prompts -type d` must return the same count as before.
+
+---
+
+## H42. The root clutter is not deployed — `.dockerignore` is deny-all with an allowlist
+
+**Added:** 2026-09-28 | **Applies to:** judging the blast radius of any root-level change
+**Invalidate if:** `.dockerignore` stops opening with a bare `*`
+
+`.dockerignore:6` is `*`, then ~16 `!` lines re-admit `package.json`, `package-lock.json`,
+`build.json`, and the dirs `server/ orchestrator/ prompts/ .claude/ explainer-videos/`, plus three
+files from `prototypes/`. `Dockerfile:126` is `COPY . .`, but the context is already filtered, so
+**no loose root file reaches the image** — not one `.md`, `.py`, `.ps1`, `.js` or `.pdf`.
+
+So "reorganise the root" is a near-zero-risk change to production, and the real risk is entirely in
+Python imports ([[H41]]). Cheapest proof that an image is unchanged: check whether the allowlist
+names anything that moved — that beats running `docker build`, which matters on this box because the
+Docker daemon is usually stopped ([[this-machine]]).
+
+The opposite polarity trips people up: `.railwayignore` is a **deny-list**, and it names 19 root
+directories one by one. A new root directory uploads on `railway up` unless you add it.
+
+**Do:** read `.dockerignore`'s polarity before reasoning about what ships. Deny-all-plus-allowlist
+and deny-list look alike and imply opposite conclusions about a file nobody named.
+
+---
+
+## H43. An ignore pattern's anchoring decides whether a directory can be moved
+
+**Added:** 2026-09-28 | **Applies to:** moving any directory that `.gitignore`/`.dockerignore`/`.railwayignore` names
+**Invalidate if:** git changes gitignore matching semantics
+
+A pattern with **no internal slash** (`video_production/`, `updated/`, `voiceovers/`,
+`*-video-output/`, `node_modules/`) matches at **any depth**, so it keeps working after the
+directory is nested. A pattern with an **internal slash** (`fashion-tech-*/node_modules/`,
+`blender/Blender/`) is anchored to the ignore file's own directory and **silently stops matching** —
+the move does not error, git just starts offering thousands of vendor files for commit.
+
+Check before moving, never after, and check the destination path rather than reasoning about it:
+
+```bash
+git check-ignore -v media/fashion-tech/avatar/node_modules/x   # exit 1 = no longer covered
+```
+
+Same trap, opposite sign, in `.railwayignore`: it is a **deny-list**, so a *new* top-level directory
+uploads unless you add it, while `.dockerignore` is deny-all-plus-allowlist ([[H42]]), so a new
+directory is excluded automatically. Two files, gitignore syntax, opposite defaults.
+
+**Do:** when a move is planned, run `git check-ignore -v` over every destination path an ignored dir
+would occupy. Prefer collapsing several anchored patterns into one unanchored one.
+
+---
+
+## H44. A gitlink with no `.gitmodules` is a phantom, not a submodule
+
+**Added:** 2026-09-28 | **Applies to:** `media/drawing-room-video/drawing-room-remotion`
+**Invalidate if:** a real `.gitmodules` is restored, or the gitlink is deleted
+
+The index holds `160000 bf3f1ff… drawing-room-remotion`, but there is **no `.gitmodules`, no
+`.git/modules/`, and the directory on disk is empty**. `git submodule status` errors outright. It
+has presumably been this way for a long time while docs and CLAUDE.md kept calling it a submodule.
+
+Two consequences that look like bugs and are not:
+
+- `smoke-test.sh` Test 8 **does not test a submodule.** `cd`-ing into an empty dir with no `.git`
+  and running `git status -s` discovers the **parent** repo, so the test reports the main repo's
+  dirty state. It prints "Submodule has unstaged changes" whenever anything in the repo is dirty.
+- The five scripts that `require()` puppeteer from inside it
+  (`prototypes/build.js`, `scripts/record-demo.js`, …) use **try/catch candidate lists** and have
+  always fallen through to the `explainer-videos/` copies. The first candidate has never resolved.
+
+`git mv` moves such a gitlink cleanly — mode and SHA survive, and with no `.gitmodules` there is
+nothing to update.
+
+**Do:** before trusting anything called a submodule here, run `git ls-files -s <path>` and look for
+`.gitmodules`. Before "fixing" code that points into one, check whether the path resolves at all —
+the reference may be dead already, which makes the change free.
+
+---
+
+## H45. Move a Python layer whole, and its `sys.path` contract moves with it
+
+**Added:** 2026-09-28 | **Applies to:** relocating any Python tree that uses `sys.path` self-location
+**Invalidate if:** the layer gains `__init__.py` files or is pip-installed
+
+The 33 files in `agents/` and `skills/` each open with
+`sys.path.insert(0, Path(__file__).parent.parent)` — a *relative* claim: "my grandparent is where
+`config.py` lives". Relative claims survive relocation as long as **everything the claim spans moves
+together**.
+
+So moving the whole layer into `legacy/python/` needed **zero** edits to those 33 lines, while the
+intuitive half-measure — leave the four core modules at the root, move the other 31 scripts — would
+have needed ~32 edits, one per orphaned file. **Moving more cost less.** Check the direction of the
+path claims before deciding how much to move; `parent.parent` idioms reward moving the whole subtree
+and punish splitting it.
+
+The corollary is that **depth is the thing that breaks**, not location. At `legacy/python/x.py`,
+`Path(__file__).parent` is `legacy/python`, so every use that meant "repo root" becomes
+`.resolve().parents[2]` — and `parents[3]` one level deeper. Separate the two kinds of site before
+editing: `sys.path` lines (often need no change) from data paths (always do). `config.py`'s
+`BASE_DIR` is the one that fails silently, per [[H41]].
+
+**Do:** grep for `Path(__file__).parent` and split the hits into sys.path vs data before touching
+any of them. Anything importing `config` must stay a direct sibling of it.
+
+---
+
+## H46. A file named `test_*.py` that is not a test can spend money on import
+
+**Added:** 2026-09-28 | **Applies to:** any repo with ad-hoc scripts named like tests
+**Invalidate if:** `testpaths` is pinned in a pytest config
+
+Nine root files were named `test_*.py` but were ad-hoc scripts, and six had no `__main__` guard.
+`test_claude.py` built an Anthropic client and called `messages.create` **at module level**. With no
+`pytest.ini`/`pyproject.toml` setting `testpaths`, a bare `pytest` at the repo root collected them,
+and *collection imports the module* — so a routine `pytest` would have issued billed API calls.
+
+It never fired only because every caller happened to type `pytest tests/…` explicitly. That is a
+convention, not a guard.
+
+Renaming them `check_*.py` puts them outside pytest's default `python_files` glob
+(`test_*.py`, `*_test.py`) permanently. Prove it rather than assume it:
+
+```bash
+py -m pytest --collect-only -q      # must collect only the real suite
+```
+
+**Do:** treat "collection imports the module" as the rule it is. A script that does real work at
+import must never carry a name pytest collects. Pinning `testpaths` also works, but a name that
+cannot be collected survives someone running `pytest <path>` directly.
+
+---
+
+## H47. A move audit must read the moved files' own paths, not just the references to them
+
+**Added:** 2026-09-28 | **Applies to:** any file or directory move
+**Invalidate if:** never -- this is how relative paths work
+
+The first pass moved 21 Node/PowerShell scripts into `legacy/` because "nothing references them".
+True, and irrelevant: seven of them built paths from their own `__dirname`
+(`path.join(__dirname, 'animation-frames')`), so after the move their output landed inside
+`legacy/node/` and their inputs pointed nowhere. Two Python skills counted
+`Path(__file__).parent.parent` up to a `node_modules` that is now one level short, and fell back to
+PATH ffmpeg without saying so. **Unreferenced is not the same as safe to move.** A move changes two
+things: who can find the file (inbound), and what the file can find (outbound). I audited only the
+first.
+
+The same audit found two tools that failed *open*: `.claude/scripts/infrastructure-check.sh` grepped
+`skills/ agents/` for hardcoded prompts, the folders were gone, grep printed nothing, and zero read as
+PASS. A check over a path that no longer exists must fail, not report clean.
+
+**Do:** for every moved file, list each `__dirname` / `__file__` / `../` it uses and resolve it from
+the NEW location. `orchestrator/test-layout.js` §5 (forms B and D) and §9 now do this on every
+`npm test`. Before trusting that test, plant a regression of each kind and watch it fail -- the first
+green run here hid two gaps (a gitignored mutation, and moved files named as commands).
+
+---
+
+## H48. The Bash tool can turn backslash escapes in a heredoc into control bytes
+
+**Added:** 2026-09-28 | **Applies to:** any Bash command that writes file content through a heredoc
+**Invalidate if:** a heredoc body containing a backslash-v round-trips byte-for-byte
+
+Even inside a quoted heredoc (`<<'EOF'`), backslash sequences in the command text were delivered to
+the program already interpreted. Two edits were silently corrupted: a PowerShell path
+`media` + backslash + `voiceover-windows-formal` became `media` + a vertical-tab byte (0x0B) +
+`oiceover-windows-formal`, and a JS regex `split(/` + backslash-r + `?` + backslash-n + `/)` became a
+literal CR and LF, which is a syntax error. Python's `replace` then "did nothing" because my search
+string had been mangled the same way.
+
+**Do:** write content containing backslashes with the Write/Edit tools, or build the bytes from hex
+(`bytes([0x2f, 0x5c, 0x72, ...])`). After any scripted multi-file edit, scan the changed files for
+control bytes other than tab, LF and CR -- that scan is what caught the PowerShell one. See
+[[this-machine]].
+
+---
+
+## H49. `git add -A` silently drops a tracked file that now sits under a gitignored path
+
+**Added:** 2026-09-28 | **Applies to:** staging any move of a folder a `.gitignore` pattern also matches
+**Invalidate if:** git starts re-adding tracked files at ignored destinations
+
+`video_production/` and `voiceovers/` are unanchored ignore patterns, so they also match
+`media/video_production/`. Yet ~1,520 files under them were tracked. `git mv` carried them across as
+renames. To split the work into separate commits I ran `git reset` (index only) and restaged with
+`git add -A` -- which **skipped every ignored new path and staged only the old paths' deletions**. The
+commit would have looked like a normal reorg and quietly untracked them all; they would have lived on
+only on disk. Same for the empty phantom gitlink, which `add -A` cannot recreate from an empty folder.
+
+Caught only because the staged summary said `1531 D` where renames were expected.
+
+**Do:** after restaging any move, compare `git ls-tree -r --name-only HEAD | wc -l` with
+`git ls-files | wc -l` -- the difference must equal the files you meant to add or delete. Re-add
+ignored destinations with `git add -f --pathspec-from-file=`, and a gitlink with
+`git update-index --add --cacheinfo 160000,<sha>,<path>`. Prefer staging the `git mv` result
+directly over reset-and-restage.

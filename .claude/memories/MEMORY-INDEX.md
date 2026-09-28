@@ -40,7 +40,7 @@ listed at the foot of each file and in `MEMORY_TIERS.md` §3.
 | `architecture.md` | 2026-05-07 ⚠️ · hook contract is 2026-09-21 | 90d | Model choices, media tooling, schema contracts, Claude Code hook contract |
 | `reference-anthropic-practices.md` | 2026-05-07 ⚠️ | 90d | Agent design principles from Anthropic's guidance |
 
-⚠️ **The May files were migrated verbatim from `memory/` on 2026-09-21 and have not been
+⚠️ **The May files were migrated verbatim from the old repo-root `memory` store on 2026-09-21 and have not been
 re-verified since 2026-05-07.** Much of their content describes the originally-planned pipeline
 rather than the explainer-video pipeline that now ships. Over 180 days old — per the decay
 schedule, re-verify before acting on them.
@@ -73,5 +73,5 @@ schedule, re-verify before acting on them.
 ## Elsewhere
 
 - `.beads/*.jsonl` — work, decision, failure and QA ledgers. A **cold source**; `mem.py ingest-beads` reads `failures.jsonl`. Nothing here writes to `.beads/`.
-- `agent_memory.json` + `memory_manager.py` — the **application's** runtime memory for video agents. A different concern; not managed here.
-- `memory/` — the former store. Migrated here 2026-09-21; only a pointer stub remains.
+- `agent_memory.json` + `legacy/python/memory_manager.py` — the **application's** runtime memory for video agents. A different concern; not managed here.
+- `content/memory/` (formerly `memory` at the repo root) — the former store. Migrated here 2026-09-21; only a pointer stub remains.

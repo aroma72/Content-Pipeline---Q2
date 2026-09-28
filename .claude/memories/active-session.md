@@ -323,3 +323,176 @@ Worth reusing: to test the COMMITTED tree rather than a dirty one ([[lessons#H39
 One caveat — the `refresh token path is gitignored` test shells out to `git check-ignore`, which
 cannot work in an exported tree with no `.git`. That FAIL is the harness, not the commit.
 
+
+### `.env.example` rewritten from what the code actually reads (2026-09-28)
+
+The old template listed 4 keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `LMS_*`) — all four belong
+to the LEGACY Python pipeline, and none of them get you an explainer video. A newcomer following it
+could not have run the default pipeline at all.
+
+Rebuilt it by grepping every `process.env.X` / `os.getenv("X")` in the tree (~135 distinct names),
+then splitting them: real setup keys vs per-run CLI knobs (`LESSON_NAME`, `ART_IDS`, `SEG_IDS`,
+`BRAND_DIR`…) that must NOT go in `.env`, vs image-pinned paths (`PUPPETEER_EXECUTABLE_PATH`,
+`FFMPEG_BIN`) the Dockerfile owns and `orchestrator/test-regressions.js` asserts on.
+
+Two findings worth keeping:
+- `NOTION_PARENT_PAGE_ID` is set on Railway (and listed in [[deployment]] §Integrations) but **no
+  code reads it**. Left out of the template deliberately. If nothing claims it, drop it from Railway.
+- The minimum to make one video is `GEMINI_API_KEY` (art + TTS) plus ONE Anthropic credential; the
+  service additionally needs `CONTENT_API_TOKEN` or `TENANTS_JSON` or its data routes 503 by design.
+
+Note for whoever greps this repo next: a plain `grep -r` over the root takes >120s because it walks
+`node_modules`. Use ripgrep with `!**/node_modules/**`.
+
+### Root folder reorganised: 156 tracked root files → 51 (2026-09-28)
+
+Moved 104 files into `docs/{guides,archive,onboarding,course-materials}` and
+`legacy/{python,node,powershell,scratch}`; deleted one binary Word lock file. All `git mv`, so
+history follows. Verified: root modules + `agents`/`skills` import, `py main.py --dry-run`,
+`pytest tests/` 27 passed, `npm run lint` clean, `npm test` 78+9 passed, smoke-test 0 fail.
+
+The two durable findings are now [[lessons#H41]] (`config.py` BASE_DIR forks the data tree) and
+[[lessons#H42]] (`.dockerignore` is deny-all, so root clutter never deploys).
+
+Judgement calls worth knowing:
+- **`generate_setup_manual.py` went to `docs/onboarding/`, not `legacy/`** — it reads 5 onboarding
+  PDFs from its own directory (`:111` `base = dirname(abspath(__file__))`, `SOURCE_PDFS` at `:92`).
+  Keeping script beside its inputs meant zero code edits.
+- **38 `.py` deliberately left at root.** 6 are pinned (`config/logger/schemas/memory_manager`, plus
+  `main.py` for CI `test.yml:59` and `video_quality_orchestrator.py` for `.claude/agents/
+  quality-checker.md`). The other ~32 carry `sys.path.insert(0, Path(__file__).parent)`. A second
+  pass could move them by rewriting to `.parent.parent` and running each — not attempted.
+- Root and `agents/` both have a `video_quality_orchestrator.py`. **Different files. Do not dedupe.**
+
+Next session could pick up: `docs/` itself is now the messiest folder (30+ loose files, a
+`temp docs/` folder, its own `~$` lock file); and 34 markdown files still lack the frontmatter
+CLAUDE.md mandates — I added it only to the 13 guides I was already editing.
+
+Trap hit: the `block-bad-commands.sh` PreToolUse hook scans the **whole command string**, so a
+heredoc that merely *mentions* the paid-TTS vendor is blocked as if it were an API call. Writing
+prose about a banned tool needs the Write tool, not a Bash heredoc.
+
+### Root directories consolidated: 41 → 18, and node_modules untracked (2026-09-28)
+
+Second pass on the root, after the file pass earlier today. 25 directories moved under two
+umbrellas: `media/` (render output + the kits that make it) and `content/` (authored material +
+pipeline state). The four `fashion-tech-*` siblings became
+`media/fashion-tech/{avatar,broll,clean,real}`.
+
+Also untracked **10,042 committed `node_modules` files** (root 8,464 + `gates/` 1,488 +
+`drawing-room-video/` 90). `.gitignore` had only `fashion-tech-*/node_modules/`; it now has one
+unanchored `node_modules/`. Files stay on disk — `git rm --cached` only. Root deps rebuild via
+`npm ci`; **`gates/` needs `cd gates && npm ci`, which nothing automated does** — now documented in
+README.md and docs/guides/FILE_STRUCTURE.md.
+
+Verified: imports, `main.py --dry-run`, pytest 27, lint, `npm test` 78+9, smoke-test **0 fail**,
+gitlink intact at `160000 bf3f1ff`, and `git status --porcelain media content` shows no newly
+visible files (ignore coverage held).
+
+Durable findings → [[lessons#H43]] (ignore-pattern anchoring decides movability) and
+[[lessons#H44]] (the drawing-room "submodule" is a phantom).
+
+What made this safe:
+- **`config.py` was the lever.** `MEDIA_DIR`/`CONTENT_DIR` defined once; the 24 agents/skills that
+  import `VIDEO_PRODUCTION_DIR`, `DRAFTS_DIR` etc. followed with no edits. Only hardcoded string
+  literals needed per-file work (~30 files).
+- **`prompts/` stayed at root** — the one place "move everything" had to stop. It is on the
+  `.dockerignore` allowlist, and `test.yml:35/168` + `.github/hooks/pre-commit:47` assert on it.
+- Kept a **danger list** so no blind sed ran: `'published'` is a job-status string in `server/`;
+  `gates/prompts/` ≠ root `prompts/`; `VIDEO_PRODUCTION_DIR / "voiceovers"` is nested and must NOT
+  be re-prefixed; `video_production` is also a filename substring
+  (`video_production_orchestrator.py`), so always match with the trailing slash.
+
+Next session could pick up: the phantom gitlink is still in the index (delete it, or restore a real
+`.gitmodules`); `smoke-test.sh` Test 8 is meaningless and should be rewritten or dropped; `docs/` is
+now the messiest folder; 34 markdown files still lack required frontmatter.
+
+Trap, again: that same hook also matches the skill filename `voiceover_gen…_skill.py`, so even a
+`sed -n` read of it is refused. Use Read/Edit for those paths. And a quoted bash heredoc still
+mangled `\\` on this box — build backslashes via `chr(92)` instead.
+
+### Python layer moved to legacy/python/ — root now 13 files, 14 dirs (2026-09-28)
+
+Third and final consolidation pass. All 38 root `.py` plus `agents/`, `skills/` and `utils/` moved
+into `legacy/python/`. **Zero loose `.py` at the root.** Started the day at 156 files + 41 dirs.
+
+Moved as one piece deliberately: the 33 `sys.path.insert(0, parent.parent)` lines in `agents/` and
+`skills/` resolve to wherever `config.py` sits, so taking `config.py` along meant **zero edits** to
+them. See [[lessons#H45]] — the half-measure would have cost ~32 edits instead of ~22.
+
+The nine `test_*.py` ad-hoc scripts became `legacy/python/checks/check_*.py`. `check_claude.py`
+called the Anthropic API at module import, and a bare `pytest` at the repo root used to collect it.
+Now proven closed: `pytest --collect-only` reports exactly 27 tests. See [[lessons#H46]].
+
+Verified: imports from the new home, `py legacy/python/main.py --dry-run`, pytest 27,
+`npm run lint`, `npm test` (252 + 34 + 78 + 9), smoke-test **0 fail**, and no forked
+`legacy/python/media|content` tree.
+
+Edits that mattered:
+- `config.py` `BASE_DIR` → `Path(__file__).resolve().parents[2]`, or the mkdir loop builds a second
+  `media/` + `content/` inside `legacy/python/`. 16 data-path sites re-anchored the same way
+  (`parents[3]` from `checks/`).
+- `tests/conftest.py` + `tests/test_signal_intake.py` now insert `<repo>/legacy/python`.
+- CI: `test.yml:26,55,59,168` and `pre-commit:23`. **CI still actively covers this code**
+  (`--cov=legacy/python/skills`), so a folder called `legacy/` that CI tests is a known
+  contradiction — Aroma chose the name with that stated.
+- `CLAUDE.md` had a `src/` row for a directory that has never existed; removed (now 148 lines).
+
+Known and deliberately left: the three `drawing-room-remotion` paths in `render_*.py` /
+`check_part1_render.py` were re-anchored to `media/drawing-room-video/drawing-room-remotion`, which
+is the **empty phantom gitlink** — they are not functional and were not before.
+`agents/video_quality_orchestrator.py:221` has a pre-existing `SyntaxWarning: invalid escape
+sequence '\,'` in an ffmpeg filter string; untouched.
+
+Next session: the phantom gitlink is still in the index; `smoke-test.sh` Test 8 tests the parent
+repo, not a submodule; `docs/` is the messiest folder left; 34 markdown files lack frontmatter.
+
+Trap: `python` heredocs on this box hit `UnicodeEncodeError` (cp1252) the moment a `print` touches
+a non-ASCII char — prefix with `PYTHONIOENCODING=utf-8`. The write happens after the print, so a
+crash there silently skips the file edit.
+
+### Post-reorg audit, the layout test, and the file map (2026-09-28)
+
+Three-way audit (code / docs / test infra) after the three moves. **Live service was clean** —
+`server/`, `orchestrator/`, image contents untouched. But the moves had broken 17+ code/config
+references and ~290 doc lines, incl. two tools that run unattended: the daily
+`.claude/scripts/infrastructure-check.sh` (1 false PASS, 2 false FAILs) and the installed
+`.git/hooks/pre-commit` (a stale copy; re-run `scripts/install-hooks.sh` after editing its source).
+All fixed. Root cause worth keeping → [[lessons#H47]].
+
+New, permanent: **`orchestrator/test-layout.js`** (in `npm test`, offline, $0, no repo writes) —
+root contract, nothing resurrected, PATHS/prompts exist, config names real paths, a 4-form stale-path
+scanner (A path strings, B `__dirname`/`__file__` depth, C bare dir names, D moved files as commands),
+link + backtick-path checks, ignore coverage, every Node module loads, in-process HTTP route wiring,
+spine dry run gate→upload with zero repo writes, Python imports from `legacy/python`. Mutation-tested:
+four planted regressions all caught. **`scripts/verify-all.js`** (`npm run verify`): tier 1 suites,
+`--live` free credential probes + prod /health, `--paid --yes` one real tiny video through the real
+produce stage (quote $0.05, ceiling $0.10).
+
+Progressive disclosure: `CLAUDE.md` (141 lines, was 148) → **`docs/FILE_STRUCTURE.md`** (moved from
+docs/guides/; root map, "where do I find" index, old→new table) → new `media/`, `content/`,
+`legacy/`, `docs/` READMEs.
+
+Two of my earlier claims were wrong and are corrected: the puppeteer candidate lists did NOT fall
+through to working copies on this machine (none existed — now `'../node_modules/puppeteer'`, the
+root dependency), and "unreferenced so safe to move" missed the moved files' own relative paths.
+H41 now carries a "Superseded by H45" note; `lessons-export.md` / the memory DB still hold the old
+H41 text until someone runs `mem.py rebuild` (not run: it resets DB-only reinforcement counts).
+
+Found, NOT fixed, and why:
+- **No launchable Chrome here** (puppeteer 25 wants Chrome 153). Nothing renders locally; the paid
+  tier and the DOM gates skip. Fix: `npx puppeteer browsers install chrome` — installs software
+  outside the repo, so it was offered, not done.
+- `orchestrator/lib/stages/script.js` dry-run fixture has no checkpoint beat, so
+  `run.js run --dry-run` stops at `script`. Live service code; pre-existing. The layout test SKIPs
+  it by name and upgrades itself to PASS once fixed.
+- `reportlab` and `gdown` are imported by 3 legacy skills but are not in `requirements.txt`.
+
+Trap hit, and it corrupted two edits → [[lessons#H48]]: backslash escapes in Bash heredocs arrive
+interpreted. Scan for control bytes after scripted edits.
+
+Unexplained, watch for it: one test failed ONCE inside `npm run verify -- --live` (363 passed / 1
+failed across 3 suites — the `&&` chain then skipped predeploy + layout) while a second heavy run was
+going. Not reproduced in two clean runs (full chain: 411 passed, 0 failed). Its name was lost because
+verify-all kept only the summary; verify-all now prints failing test names and flags suites the chain
+never reached. If it recurs, that line says which test.

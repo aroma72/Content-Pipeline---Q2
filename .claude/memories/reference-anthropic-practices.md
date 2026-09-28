@@ -4,7 +4,7 @@ last_verified: 2026-05-07
 owner: aroma
 ---
 
-> **Migrated 2026-09-21** from `memory/` into the warm tier, verbatim — no content was
+> **Migrated 2026-09-21** from the old repo-root `memory` store into the warm tier, verbatim — no content was
 > summarised or dropped. It has **not** been re-verified against the codebase since
 > 2026-05-07, and much of it describes the originally-planned pipeline rather than the
 > explainer-video pipeline that now ships. Treat it per the decay schedule in
@@ -149,7 +149,7 @@ VideoOrchestrator.enqueue_job(
 - Logged to decision_log for audit
 
 ### Cross-Session State
-- ContentUnit definitions: persisted in `weekly_artifacts/`
+- ContentUnit definitions: persisted in `content/weekly_artifacts/`
 - Decision history: persisted in `decision_log/`
 - Learner submission data: pulled from LMS API per cycle (no local cache)
 

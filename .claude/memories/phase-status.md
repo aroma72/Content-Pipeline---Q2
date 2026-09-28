@@ -4,7 +4,7 @@ last_verified: 2026-05-07
 owner: aroma
 ---
 
-> **Migrated 2026-09-21** from `memory/` into the warm tier, verbatim — no content was
+> **Migrated 2026-09-21** from the old repo-root `memory` store into the warm tier, verbatim — no content was
 > summarised or dropped. It has **not** been re-verified against the codebase since
 > 2026-05-07, and much of it describes the originally-planned pipeline rather than the
 > explainer-video pipeline that now ships. Treat it per the decay schedule in
@@ -21,7 +21,7 @@ What each build phase set out to ship, and where it got to.
 - Lock learner/instructor template formats (markdown + MP4 spec)
 - Define content health scoring rubric + keep/rebuild/kill decision matrix
 - Define assignment schema + evaluation rubric template
-- **Deliverable**: schemas.json + templates/ folder + rubrics.md
+- **Deliverable**: schemas.json + content/templates/ folder + rubrics.md
 - **No code implementation yet** — contracts only
 
 **Why**: Week 2 devs need zero ambiguity on data contracts. A week of planning saves 2 weeks of rework.
