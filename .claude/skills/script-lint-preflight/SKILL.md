@@ -86,6 +86,12 @@ node qa-cutouts.js      # exit 1 - LAW 5, half-cut props
 A failure here rewinds to the script stage **before** art or voice is bought. A failure after
 `generate-lesson-art.js` blocks a run that has already spent money.
 
+In the course flow these same checks (plus `eval-text.js`) also run **at script-approval, before a
+person is asked to approve** (`SCRIPT_SENSORS` in `orchestrator/lib/stages/produce.js`, run by
+`preApprovalChecks`). Before that, produce redrafted an already-approved script, the sha changed,
+and the person was asked again in a loop (H50). **A new free, beats-only check must be added to
+`SCRIPT_SENSORS`**; `test-regressions.js` keeps the two lists equal.
+
 ### The ones that fail most often
 
 **CHECKPOINT beat** — mandatory, never spoken, never drawn, never first or last. `explain` needs at

@@ -17,6 +17,7 @@ owner: aroma
 |--|--|
 | **Find any file / "where does X live?"** | **`docs/FILE_STRUCTURE.md`** (root map, lookup index, what moved) → each folder's `README.md` |
 | **Check everything still works** | **`npm run verify`** (`--live` probes keys, `--paid --yes` one real render) |
+| **Test / debug the pipeline end to end (LMS APIs, production)** | **`testing-the-pipeline-end-to-end` skill** → `scripts/lms-e2e.js` (quote only without `--yes`) |
 | **Make an explainer/lesson video (DEFAULT pipeline)** | **`creating-explainer-videos` skill → `explainer-videos/EXPLAINER-VIDEO-PIPELINE-SPEC.md`** |
 | Produce a video with reviewer gates (human-approved, step-by-step) | `/pipeline-review` → `.claude/standards/REVIEWER_GATED_PIPELINE.md` |
 | Evaluate video quality (QA rating system) | `docs/QA_QUICK_REFERENCE.md` → `.claude/standards/QA_RATING_SYSTEM.md` |
@@ -118,7 +119,7 @@ Claude picks these from their `description`, so a skill with a broken one is inv
 
 **Making video** — `creating-explainer-videos` (DEFAULT) · `writing-explainer-scripts` · `reviewing-explainer-scripts` (step-0 gate) · `script-lint-preflight` (six lint rules + free sensors, before any spend) · `animation-motion-design` · `creating-avatar-videos` (talking head) · `video-render` + `audio-mux` (legacy Remotion)
 
-**Working safely** — `paid-run-protocol` (quote → ceiling → approve → persist → commit) · `verify-before-claiming` (assert on the artefact, never the exit code) · `this-machine` (Windows / Git-Bash / hook traps) · `git-workflow` · `pipeline-review`
+**Working safely** — `paid-run-protocol` (quote → ceiling → approve → persist → commit) · `verify-before-claiming` (assert on the artefact, never the exit code) · `this-machine` (Windows / Git-Bash / hook traps) · `testing-the-pipeline-end-to-end` (the LMS is the end goal: test ladder, regressions, deploy, debugging) · `git-workflow` · `pipeline-review`
 
 **Memory** — `memory-distill` (archive → warm) · `memory-stats` (health)
 

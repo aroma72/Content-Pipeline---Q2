@@ -1,6 +1,6 @@
 ---
 type: reference
-last_verified: 2026-09-27
+last_verified: 2026-09-29
 owner: aroma
 ---
 
@@ -84,3 +84,38 @@ pipe, which /health field, which fixture. A third round of "will it refuse?" cas
 might be. Not scheduled.
 
 **Cost model held:** ~$0.09-equivalent per agent run across both runs.
+
+## Third run — 2026-09-28/29, `testing-the-pipeline-end-to-end` (owner: Abdulrehman Siddiq)
+
+Five new cases, each run 3 times with the skill and 3 times without it (the baseline arm), using the
+default agent model and a `claude-haiku-4-5` judge. The source scenarios are in
+`.claude/skills/testing-the-pipeline-end-to-end/evals/evals.json`.
+
+| case | with | without | Δ | skill fired? |
+|---|---|---|---|---|
+| `lms-test-token` | **1.00** | 0.00 | **+1.00** | 3/3 |
+| `reapprove-loop` | **1.00** | 0.00 | **+1.00** | 3/3 |
+| `how-to-deploy` | **1.00** | 0.00 | **+1.00** | 3/3 |
+| `lms-route-regression` | **1.00** | 0.00 | **+1.00** | 3/3 |
+| `no-motion-in-video` | **1.00** | 0.00 | **+1.00** | 3/3 |
+
+Two cases changed before the final numbers:
+
+- **`no-motion-in-video`** first scored 0.00 in both arms: the skill never fired. The description
+  lacked the reporter's own words ("no motion", "just stills"). Adding "a finished video that came
+  out as stills with no motion" fixed routing.
+- **`lms-route-regression`** first scored 0.78: one run failed the judge. The rubric demanded a
+  post-deploy step the question ("before I push") never asked for, so that item became optional.
+  The grader was wrong, not the answer.
+
+**Haiku as the agent** (the "test with all models" checklist item): the skill fires unreliably.
+
+| case on Haiku | fired | score |
+|---|---|---|
+| `reapprove-loop` | 0 of 4 runs | 0.00 |
+| `lms-test-token` | 1 of 2 runs | ≤ 0.25 |
+| `quote-a-paid-run` (control, an existing skill) | 1 of 2 runs | — |
+
+Haiku under-triggers project skills in general; this is not specific to this skill. This repo's
+sessions run on Opus and Sonnet, so the skill targets them. Re-check Haiku if it is ever used as the
+working model.

@@ -114,6 +114,13 @@ MSYS_NO_PATHCONV=1 railway ssh ls /data/cq-jobs
 ```
 
 Prefix any native exe that legitimately takes a POSIX-looking absolute path (railway, docker, ssh).
+To run a whole remote command, quote it: `railway ssh "du -sh /app/explainer-videos/<series>/*"`.
+That is also how to read run state (`/app/orchestrator/.runs/<runId>.json`) on the container.
+
+**PowerShell 5.1: never append `2>&1` to `.\scripts\deploy.ps1`.** Railway prints a deprecation
+warning on stderr, and 5.1 turns redirected native stderr into a terminating error. The script
+reports failure, but the upload has usually gone out already. Check `/health.build.commit` before
+re-running.
 
 ## 5. The console is cp1252 - non-ASCII output crashes Python
 

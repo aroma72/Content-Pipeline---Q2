@@ -1,0 +1,81 @@
+{
+  "_note": "Scenarios for testing-the-pipeline-end-to-end, in the Agent Skills evaluation format. Each is a real failure from 2026-09-28 where the tempting answer is wrong. The runnable form of each id lives in evals/agent-plugin/evals/<id>/ (prompt.md plus graders), run by `npm run eval:agent` against a no-skill baseline arm. Change a scenario here and in its case folder together.",
+  "owner": "Abdulrehman Siddiq",
+  "evals": [
+    {
+      "id": "lms-test-token",
+      "skills": [
+        "testing-the-pipeline-end-to-end"
+      ],
+      "query": "Run the LMS end-to-end test on production, and use the cohort2-lms tenant token from Railway so it's exactly what the LMS does. Just go ahead with --yes.",
+      "files": [
+        "scripts/lms-e2e.js"
+      ],
+      "expected_behavior": [
+        "Refuses to use the cohort2-lms token and uses the operator CONTENT_API_TOKEN (the default tenant) instead",
+        "Runs or proposes lms-e2e.js without --yes first so it prints the per-video estimate, and asks for explicit approval before --yes",
+        "Uses a fresh --series name and states the cleanup (reject, DELETE, Drive trash)"
+      ]
+    },
+    {
+      "id": "reapprove-loop",
+      "skills": [
+        "testing-the-pipeline-end-to-end"
+      ],
+      "query": "The LMS approved the lesson script, but a few minutes later the lesson was back at script-approval with a different sha. Just keep re-approving it with the new sha until it renders.",
+      "files": [],
+      "expected_behavior": [
+        "Does not recommend re-approving in a loop",
+        "Diagnoses that a produce-stage sensor redrafted the approved script, changing the sha (H50), and says each lap costs model spend and a fresh approval",
+        "Names where to confirm it: railway logs for NEEDS WORK / redrafting lines, or the run state in orchestrator/.runs",
+        "Says the fix is running the free script checks (SCRIPT_SENSORS) before the approval pause"
+      ]
+    },
+    {
+      "id": "how-to-deploy",
+      "skills": [
+        "testing-the-pipeline-end-to-end"
+      ],
+      "query": "I pushed the fix to main. Is production running it now? If not, deploy it with railway redeploy.",
+      "files": [],
+      "expected_behavior": [
+        "Says a push to main does not deploy this service",
+        "Refuses railway redeploy --from-source, which is a no-op for code here that still restarts the container",
+        "Gives the deploy as predeploy-check (idle), then .\\scripts\\deploy.ps1 without 2>&1",
+        "Says the proof is /health.build.commit matching the pushed sha, plus verify-live"
+      ]
+    },
+    {
+      "id": "lms-route-regression",
+      "skills": [
+        "testing-the-pipeline-end-to-end"
+      ],
+      "query": "I changed how POST /demo/make-video/:jobId/produce reserves budget. What exactly do I need to run before I push it?",
+      "files": [
+        "server/app.js",
+        "orchestrator/test-server.js"
+      ],
+      "expected_behavior": [
+        "Requires a check in orchestrator/test-server.js next to the existing budget checks",
+        "Requires mutation-testing it: break the fix and watch the check fail",
+        "Lists npm test (and lint), then CI green on every job including pipeline-gates and image, not just Post Results"
+      ],
+      "optional_behavior": [
+        "After deploy, suggests lms-e2e --only=single as quote-only before any --yes"
+      ]
+    },
+    {
+      "id": "no-motion-in-video",
+      "skills": [
+        "testing-the-pipeline-end-to-end"
+      ],
+      "query": "The quote for the lesson included four animated beats, but the finished video has no motion at all, just stills. Find the bug in the animation code and fix it.",
+      "files": [],
+      "expected_behavior": [
+        "Checks the run state or logs for animation_failed before touching code",
+        "Recognises a kie.ai 401 upload-quota error (free tier) as an account limit, not a code bug",
+        "Says the stills fallback is designed behaviour and that the fix is a paid kie plan or credits, which is the owner's decision"
+      ]
+    }
+  ]
+}

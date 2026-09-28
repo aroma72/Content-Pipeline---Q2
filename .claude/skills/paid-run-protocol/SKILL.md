@@ -107,8 +107,16 @@ check CI — a green local suite is not a green build. See `git-workflow` and
 
 ## 7. Deploying
 
-`railway redeploy --from-source` pulls `main`, so it **rolls back any unmerged work**. The deploy
-is `git push origin <branch>:main` first, then the redeploy.
+A push to `main` **does not deploy** content-queen, which has no GitHub source. `railway redeploy
+--from-source` is a code no-op here that still restarts the container, and anything outside
+`/data` is lost with it (H34, H37a). The deploy is `git push origin <branch>:main`, then
+`.\scripts\deploy.ps1` (no `2>&1`) once `node scripts/predeploy-check.js` says idle. Proof is
+`/health.build.commit`. See `testing-the-pipeline-end-to-end`.
+
+**The LMS end-to-end test is a paid run too.** `node scripts/lms-e2e.js` without `--yes` writes
+the scripts and prints each video's estimate line. Quote from that, get approval, then re-run with
+`--yes`, a fresh `--series` and the owner's per-video `--cap`. Its cap covers **media** only. Model
+spend (~$3 per course lesson on 2026-09-28) is on top of it; quote it separately, as §2 says.
 
 ---
 

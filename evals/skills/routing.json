@@ -62,7 +62,14 @@
     { "query": "about to generate art, what is the estimate", "expect": "paid-run-protocol" },
     { "query": "quote me the spend for this lesson", "expect": "paid-run-protocol" },
 
+    { "query": "test the pipeline end to end on production like the LMS would", "expect": "testing-the-pipeline-end-to-end" },
+    { "query": "run a regression on the LMS APIs", "expect": "testing-the-pipeline-end-to-end" },
+    { "query": "the LMS says the lesson is stuck, debug it", "expect": "testing-the-pipeline-end-to-end" },
+    { "query": "check every API still works after the deploy", "expect": "testing-the-pipeline-end-to-end" },
+    { "query": "the produce call returned 402 even though we have budget left", "expect": "testing-the-pipeline-end-to-end" },
+
     { "query": "what is the capital of France", "expect": null },
+    { "query": "debug why my laptop wifi keeps dropping", "expect": null },
     { "query": "rename this variable across the repo", "expect": null },
     { "query": "what time is the standup", "expect": null }
   ]

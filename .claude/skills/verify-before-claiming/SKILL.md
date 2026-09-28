@@ -168,6 +168,11 @@ pushed (`scripts/deploy.sh` waits for exactly this), a field or route the old bu
 or the fixed behaviour reproduced against production. Until one of those holds, the fix is not
 live and nobody should be told it is.
 
+For anything the LMS touches, "live" is still not "working". The proof continues up the ladder in
+`testing-the-pipeline-end-to-end`: `verify-live.js`, then the LMS flow itself over HTTP
+(`scripts/lms-e2e.js`). On 2026-09-28 three LMS-breaking bugs passed every local test and were found
+only by that last rung.
+
 ---
 
 ## How to report

@@ -2,7 +2,7 @@
 name: creating-explainer-videos
 description: Produces a branded, narrated explainer or lesson MP4 where every voiceover sentence has its own matching animated visual, at near-zero render cost. Use when creating a lesson, explainer or teaching video from a topic or a written script, or when asked to make a video for the LMS. This is the DEFAULT video pipeline - beats.js, Imagen art, Python cutout, Gemini TTS, Puppeteer/ffmpeg, brand bumpers. NOT for talking-head avatars (creating-avatar-videos) or legacy Remotion videos (video-render).
 type: skill
-last_verified: 2026-07-09
+last_verified: 2026-09-29
 owner: aroma
 ---
 
@@ -20,7 +20,12 @@ cost anything, and both are gated behind a spend confirmation.
 - Any concept / lesson / explainer video for the Agentic AI Mastery course.
 - Script must first pass the gate (`reviewing-explainer-scripts`) — only animate a READY script.
 - Companion skills: `writing-explainer-scripts` (draft), `reviewing-explainer-scripts` (gate),
-  `animation-motion-design` (cutout-puppet mechanics).
+  `animation-motion-design` (cutout-puppet mechanics), `testing-the-pipeline-end-to-end` (proving
+  it works for the LMS).
+- **End goal: this pipeline runs behind the LMS.** In production, content-queen on Railway runs
+  these same steps when the Cohort2 LMS calls its HTTP API (course lessons and single videos). A
+  video rendered locally proves the steps. Proving the product means testing the LMS flow with
+  `testing-the-pipeline-end-to-end`.
 
 ## Architecture — one source of truth: `beats.js`
 One beat = one voiceover sentence + the visual played while it's spoken. Modes:
@@ -58,6 +63,7 @@ Pipeline: `beats.js` → `generate-lesson-art.js` (Imagen) → `segment-all.py` 
 | 7 | `node compile-lesson.js` | `out/<name>.mp4` — the **bare** lesson (NOT the deliverable) |
 | 8 | `node stitch-brand.js --title "<Title>" --lesson out/<name>.mp4 --out out/<name>_final.mp4` | **the deliverable** |
 | 9 | `node verify.js` | acceptance checklist (Section 11 of the spec) |
+| 10 | *(production)* `node scripts/lms-e2e.js` from the repo root | the same pipeline driven through the LMS API on Railway: quote only without `--yes`. See `testing-the-pipeline-end-to-end` |
 
 `--yes` (or `CONFIRM_SPEND=1`) is required on steps 3, 5 and 5b — the cost guard blocks paid calls otherwise.
 Two non-negotiables the gate enforces before you reach step 3: a **QUESTION card** carrying a `quiz`

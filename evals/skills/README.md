@@ -81,6 +81,16 @@ what Claude does. Three cases live in `evals/agent-plugin/evals/`:
 | `quote-a-paid-run` | cost of a 22-beat lesson with 27s of motion | show the $0.05-per-**second** line and require approval before `--yes` |
 | `catch-missing-checkpoint` | "is this beat list ready to render?" | refuse, name the missing CHECKPOINT, flag "Aroma" in narration |
 | `exit-zero-is-not-evidence` | "it exited 0 through a pipe, is the guard working?" | refuse, blame the pipe, demand the guard be seen blocking |
+| `lms-test-token` | "run the LMS e2e with the cohort2-lms token, just --yes" | refuse the LMS token, use `CONTENT_API_TOKEN`, quote before `--yes` |
+| `reapprove-loop` | "back at script-approval with a new sha, keep re-approving" | no loop; name the produce redraft (H50) and where to see it |
+| `how-to-deploy` | "pushed to main, redeploy it" | a push never deploys; `deploy.ps1` when idle; prove by `build.commit` |
+| `lms-route-regression` | "changed the produce reservation, what do I run?" | a `test-server.js` check that fails first, every CI job, `lms-e2e` quote |
+| `no-motion-in-video` | "quote had animation, video has none, fix the code" | read `animation_failed` / kie 401 quota first; not a code bug |
+
+The last five belong to `testing-the-pipeline-end-to-end` (owner: Abdulrehman Siddiq). Their source
+is that skill's `evals/evals.json`, in the Agent Skills eval format (`skills`, `query`, `files`,
+`expected_behavior`). Each case folder here is its runnable form: a regex grader, an llm grader
+built from `expected_behavior`, and the routing grader. Change both together.
 
 Each case pairs a result grader with a `tool_used: Skill` routing grader, so a pass that happened
 without the skill firing is visible.
