@@ -619,7 +619,37 @@ async function downloadFile({ fileId, toPath, log = () => {} }) {
   return { path: toPath, bytes };
 }
 
+/**
+ * Move one of OUR files to the Drive trash. Never a hard delete, and never a file
+ * outside the configured folder: this exists so a test can clean up after itself,
+ * and the parent check is what stops a wrong id from binning somebody else's work.
+ * Trash is recoverable for 30 days, which a hard delete on a Shared Drive is not.
+ */
+async function trashFile(fileId, { folder = folderId() } = {}) {
+  if (!fileId) throw new Error('trashFile needs a fileId');
+  if (!folder) throw new Error('GDRIVE_FOLDER_ID is not set; refusing to trash without a scope');
+  const meta = await getFile(fileId, 'id,name,parents,trashed');
+  if (!(meta.parents || []).includes(folder)) {
+    throw new Error(`refusing to trash ${fileId} (${meta.name}): it is not in the configured folder`);
+  }
+  if (meta.trashed) return { fileId, name: meta.name, trashed: true, already: true };
+  const token = await accessToken();
+  const res = await fetch(url(`${API}/files/${encodeURIComponent(fileId)}`), {
+    method: 'PATCH',
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ trashed: true }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const e = new Error(`Drive trash ${fileId} failed: ${(body.error && body.error.message) || `HTTP ${res.status}`}`);
+    e.status = res.status;
+    throw e;
+  }
+  return { fileId, name: meta.name, trashed: Boolean(body.trashed !== false) };
+}
+
 module.exports = {
+  trashFile,
   uploadFile,
   downloadFile,
   getFile,

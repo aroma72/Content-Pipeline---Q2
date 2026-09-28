@@ -28,6 +28,7 @@ const path = require('path');
 
 const spine = require('../../orchestrator/lib/spine');
 const queue = require('../../orchestrator/lib/queue');
+const deliverables = require('../../orchestrator/lib/deliverables');
 const { PATHS, videoDir } = require('../../orchestrator/lib/paths');
 
 /** Videos made from a typed topic live together, apart from the hand-made series. */
@@ -150,7 +151,9 @@ async function produce(req, { log = () => {}, onStage = () => {} } = {}) {
     awaitingReview: Boolean(waiting),
     // Carried so approve() can resume without re-running anything that was paid for.
     artifacts: waiting ? { produce: st.artifacts.produce, qa: st.artifacts.qa } : null,
-    finalPath: finishedFile(dir, item.slug),
+    finalPath: finishedFile(dir, item.slug)
+      || ((deliverables.find(item.series, item.slug) || {}).file || null),
+    drive: deliverables.driveCopy(item.series, item.slug),
     dir,
   };
 }
@@ -168,7 +171,12 @@ async function approve(req, { log = () => {}, onStage = () => {} } = {}) {
   if (!item) throw Object.assign(new Error(`no queued video '${req.itemId}'`), { status: 404 });
 
   const dir = videoDir(item.series, item.slug);
-  if (!finishedFile(dir, item.slug)) {
+  // After a verified Drive offload the render dir and the volume copy are gone by
+  // design, and the upload stage fetches the video back from Drive -- so any one of
+  // the three counts. Refusing on the local file alone made every offloaded video
+  // impossible to approve.
+  if (!finishedFile(dir, item.slug) && !deliverables.find(item.series, item.slug)
+      && !deliverables.driveCopy(item.series, item.slug)) {
     throw Object.assign(new Error('there is no finished video here to approve'), { status: 409 });
   }
 
@@ -266,7 +274,9 @@ function finished() {
   const root = path.join(PATHS.explainerVideos, SERIES);
   let dirs = [];
   try { dirs = fs.readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory()); }
-  catch { return []; }
+  // No render dir -- e.g. a fresh container after a redeploy. Offloaded videos still
+  // exist, so fall through and list them rather than returning an empty list.
+  catch { dirs = []; }
 
   return dirs.map((e) => {
     const dir = path.join(root, e.name);
@@ -286,7 +296,31 @@ function finished() {
       bytes: st.size,
       madeAt: st.mtime.toISOString(),
     };
-  }).filter(Boolean).sort((a, b) => b.madeAt.localeCompare(a.madeAt));
+  }).filter(Boolean).concat(offloadedFinished(dirs.map((e) => e.name)))
+    .sort((a, b) => b.madeAt.localeCompare(a.madeAt));
+}
+
+/**
+ * Videos of this series that now live only on Drive. Without these the list
+ * shrank every time a video was offloaded, which read as the video being lost.
+ */
+function offloadedFinished(localSlugs) {
+  const have = new Set(localSlugs);
+  let items = [];
+  try { items = deliverables.list().items || []; } catch { return []; }
+  return items
+    .filter((i) => i.saved2drive && !i.videoLocal && i.id.startsWith(`${SERIES}/`))
+    .map((i) => {
+      const slug = i.id.slice(SERIES.length + 1);
+      if (have.has(slug)) return null;
+      const copy = deliverables.driveCopy(SERIES, slug) || {};
+      return {
+        slug, itemId: i.id, title: slug, bytes: copy.bytes || 0,
+        madeAt: copy.savedAt || new Date(0).toISOString(),
+        saved2drive: true, driveUrl: copy.driveUrl || i.driveUrl || null,
+      };
+    })
+    .filter(Boolean);
 }
 
 /** The finished file for one slug, or null. */
@@ -295,4 +329,10 @@ function fileForSlug(slug) {
   return finishedFile(path.join(PATHS.explainerVideos, SERIES, slug), slug);
 }
 
-module.exports = { write, produce, approve, finished, fileForSlug, finishedFile, SERIES, slugify };
+/** The Drive copy for one slug, once it has been offloaded, or null. */
+function driveCopyForSlug(slug) {
+  if (!/^[a-z0-9-]{1,80}$/.test(String(slug))) return null;
+  return deliverables.driveCopy(SERIES, slug);
+}
+
+module.exports = { write, produce, approve, finished, fileForSlug, driveCopyForSlug, finishedFile, SERIES, slugify };

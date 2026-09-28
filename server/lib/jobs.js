@@ -182,6 +182,22 @@ function resolveFinalPath(job, opts = {}) {
     return found ? found.file : null;
   } catch { return null; }
 }
+/**
+ * The Drive copy of a job's video, when no local file is left -- the same
+ * answer the course `/file` route gives. After a verified offload the render
+ * dir and the volume copy are both gone by design, and without this the
+ * single-video routes answered 404 for a video that exists.
+ */
+function resolveDriveCopy(job) {
+  const from = (job && job.review && job.review.series && job.review.slug)
+    ? job.review
+    : (job && job.script && job.script.series && job.script.slug ? job.script : null);
+  if (!from) return null;
+  try {
+    return require('../../orchestrator/lib/deliverables').driveCopy(from.series, from.slug);
+  } catch { return null; }
+}
+
 /** Re-read the beats from disk when something actually needs them. */
 function hydrateScript(job) {
   if (!job || !job.script || !job.script.series || !job.script.slug) return null;
@@ -375,7 +391,7 @@ function remove(id, opts = {}) {
 
 module.exports = {
   create, get, transition, claim, toPublic, listFor, restore,
-  resolveFinalPath, hydrateScript, materializeScript, ownerKey, ownedBy,
+  resolveFinalPath, resolveDriveCopy, hydrateScript, materializeScript, ownerKey, ownedBy,
   listAll, remove,
   TERMINAL, IN_FLIGHT, newId,
 };

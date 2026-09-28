@@ -85,7 +85,8 @@ async function resolveSource(finalPath, item, log) {
       throw new BlockedError(
         `This lesson's video was offloaded to Google Drive (${drive.driveFileId}) and the ` +
         'local copies were reclaimed, but Drive is not authorised on this machine so it ' +
-        'cannot be fetched back.\n  Set GDRIVE_REFRESH_TOKEN, or run: node orchestrator/gdrive-auth.js',
+        'cannot be fetched back.\n  Set GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_JSON (the TU service account, preferred), '
+        + 'or GDRIVE_REFRESH_TOKEN via: node orchestrator/gdrive-auth.js',
         { blocker: 'video is on Drive but Drive is not authorised', code: 'upload' }
       );
     }

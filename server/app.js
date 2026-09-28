@@ -147,18 +147,17 @@ function createApp(opts = {}) {
               // Never the token, the key or the folder id -- only whether they are
               // present.
               //
-              // `authKind: gd.identity().kind` belongs here too and is deliberately
-              // NOT here yet. It was written in another session's working tree, got
-              // swept into 2026-09-28's commit by a whole-file `git add`, and shipped
-              // without `gdrive.js`, which is where `identity()` lives. The whole
-              // storage block is inside one try/catch, so the throw cost /health its
-              // volume-usage numbers -- the exact figures disk growth is watched by --
-              // while still answering 200 ok:true. Restore this line in the same
-              // commit as gdrive.js, not before.
+              // `authKind` says WHICH credential answered -- 'service-account', 'oauth-user'
+              // or 'none' -- never the key or the account. Wrapped: this whole storage
+              // block shares one try/catch, and a throw here once cost /health its volume
+              // numbers while it still answered 200 ok:true.
+              let authKind = 'unknown';
+              try { authKind = gd.identity().kind; } catch { /* reported as unknown */ }
               return {
                 configured: gd.isConfigured(),
                 authorised: gd.isAuthorised(),
                 folderSet: Boolean(gd.folderId()),
+                authKind,
               };
             })(),
             memory: { rssBytes: mem.rss, heapUsedBytes: mem.heapUsed, externalBytes: mem.external },
@@ -828,6 +827,11 @@ function createApp(opts = {}) {
     if (!job) return undefined;
     const file = jobsLib.resolveFinalPath(job, { oneVideo });
     if (!file || !fs.existsSync(file)) {
+      // Offloaded: the video is on Drive and nowhere here. Answer like the course
+      // /file route does -- 200 with the link and the md5 proof -- not a 404 for a
+      // video that exists.
+      const copy = jobsLib.resolveDriveCopy ? jobsLib.resolveDriveCopy(job) : null;
+      if (copy) return res.status(200).json({ ...copy, status: job.status });
       return res.status(404).type('text')
         .send('No finished video for this job on this container. If it was published, the YouTube link is the durable copy.');
     }
@@ -1035,7 +1039,11 @@ function createApp(opts = {}) {
 
   app.get('/demo/videos/:slug/file', owner.requireTenant(), (req, res) => {
     const file = oneVideo.fileForSlug(req.params.slug);
-    if (!file) return res.status(404).type('text').send('No finished video by that name.');
+    if (!file) {
+      const copy = oneVideo.driveCopyForSlug ? oneVideo.driveCopyForSlug(req.params.slug) : null;
+      if (copy) return res.status(200).json(copy);
+      return res.status(404).type('text').send('No finished video by that name.');
+    }
     return streamFile(req, res, file);
   });
 

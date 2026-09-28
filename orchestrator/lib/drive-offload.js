@@ -64,6 +64,20 @@ const SKIPPED = (why) => ({ ok: false, skipped: why, freedBytes: 0 });
  */
 const RECLAIMABLE = ['art', 'frames', 'audio', 'clips', 'layers', 'out'];
 
+/**
+ * Pure scratch: rebuilt for free on the next render, never an input anyone paid
+ * for, so removed after EVERY finished run -- whether or not Drive is configured.
+ *
+ * This is the idle memory bill. Renders live on the container disk, and the
+ * kernel keeps these files in page cache, which Railway's memory graph counts
+ * (lessons H7, H31): ~10,800 frame PNGs per lesson, a ~133 MB per-video
+ * node_modules (`npm i` in produce), a ~160 MB Chrome profile. The Node process
+ * itself is ~110 MB. Paid inputs -- art, audio, clips, layers -- and the finished
+ * out/ stay in RECLAIMABLE, gated on a verified Drive upload, because deleting
+ * them before that would re-buy them on any re-render.
+ */
+const SCRATCH = ['frames', 'node_modules', '.chrome-profile', 'preview-lesson', '__pycache__'];
+
 function dirBytes(dir) {
   let total = 0;
   const walk = (d) => {
@@ -103,11 +117,11 @@ function isOffloaded(series, slug) {
  * already offloaded on an earlier pass -- the working dirs are the larger half of
  * the problem and should not be held hostage to a re-upload.
  */
-function reclaimWorkingDirs(videoDir, log = () => {}) {
+function reclaimWorkingDirs(videoDir, log = () => {}, names = RECLAIMABLE) {
   if (!videoDir || !fs.existsSync(videoDir)) return { freedBytes: 0, removed: [] };
   let freed = 0;
   const removed = [];
-  for (const name of RECLAIMABLE) {
+  for (const name of names) {
     const d = path.join(videoDir, name);
     if (!fs.existsSync(d)) continue;
     const size = dirBytes(d);
@@ -316,11 +330,23 @@ async function offload({
   return { ok: true, drive: record, meta, freedBytes: freed };
 }
 
+/** Remove pure scratch from a render dir. Never throws; needs no Drive. */
+function sweepScratch(videoDir, log = () => {}) {
+  try {
+    return reclaimWorkingDirs(videoDir, log, SCRATCH);
+  } catch (e) {
+    log(`scratch sweep failed: ${e.message}`);
+    return { freedBytes: 0, removed: [] };
+  }
+}
+
 module.exports = {
   offload,
   isOffloaded,
   driveRecord,
   reclaimWorkingDirs,
+  sweepScratch,
+  SCRATCH,
   dirBytes,
   RECLAIMABLE,
 };

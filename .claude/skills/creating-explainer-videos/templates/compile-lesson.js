@@ -263,6 +263,11 @@ function encode() {
   if (isSample) { await renderSample(); return; }
   await renderFull();
   encode();
+  // The mp4 is written; the frame PNGs are only an intermediate. Kept with --reuse
+  // (that mode exists to re-encode from them) and kept when encode() throws, so a
+  // failure can still be inspected. Otherwise they sat on disk -- and in page cache
+  // on the container's memory bill -- until the next render wiped them.
+  if (!reuse) { rmrf(framesDir); console.log('[compile] removed frames/ after encoding'); }
 })().catch((err) => {
   const e = explain(err);
   console.error(`\n[compile] FAILED: ${e.message}`);

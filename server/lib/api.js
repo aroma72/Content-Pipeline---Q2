@@ -1067,39 +1067,14 @@ function build(opts = {}) {
     // So: 200, with everything needed to go and get it, plus the measured
     // attributes captured before the local copy was removed. Checked BEFORE the
     // `!found` branches because after an offload `found` is null by design.
-    const drive = deliverables.driveRecord(item.series, item.slug);
-    if (!found && drive && drive.saved2drive) {
-      const meta = deliverables.videoMeta(item.series, item.slug);
+    const copy = deliverables.driveCopy(item.series, item.slug);
+    if (!found && copy) {
+      const { message, ...fields } = copy;
       return res.status(200).json({
-        saved2drive: true,
-        driveFileId: drive.driveFileId,
-        driveUrl: drive.driveUrl,
-        driveName: drive.driveName || null,
-        savedAt: drive.savedAt || null,
-        // Byte-for-byte proof the copy on Drive is the video we made: `verified`
-        // is true only when Drive's own server-side md5 matched ours before we
-        // deleted anything.
-        bytes: drive.bytes || null,
-        md5: drive.md5 || null,
-        sha256: drive.sha256 || null,
-        verified: Boolean(drive.verified),
-        // What the video IS, measured from the file itself rather than asserted.
-        ...(meta ? {
-          video: {
-            durationSeconds: meta.durationSeconds,
-            width: meta.width,
-            height: meta.height,
-            fps: meta.fps,
-            videoCodec: meta.videoCodec,
-            pixelFormat: meta.pixelFormat,
-            audioCodec: meta.audioCodec,
-          },
-        } : {}),
+        ...fields,
         status: item.status,
         ...(item.blockedBy ? { blockedBy: item.blockedBy } : {}),
-        message: 'This video is stored on the Taleemabad University Google Drive and is no '
-          + 'longer served from here. Fetch it at driveUrl. Its questions and timings are '
-          + 'unaffected -- they are still served from this API.',
+        message,
       });
     }
 

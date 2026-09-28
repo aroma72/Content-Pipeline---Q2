@@ -1476,6 +1476,34 @@ async function beatChecks() {
     return `${paid.length} paid call sites, all recorded`;
   });
 
+  // 2026-09-28: a verify run quoted $0.09 with a $0.10 budget and spent $0.20. The
+  // spend gate checks the ESTIMATE; after the art was bought, qa-art rejected it and
+  // repairArt re-bought images twice with no budget check at all.
+  check('a qa-art repair cannot re-buy art past the approved budget', () => {
+    const { repairAffordable } = require(path.join(__dirname, 'lib', 'stages', 'produce'))._internals;
+    assert(typeof repairAffordable === 'function', 'produce._internals.repairAffordable is missing');
+    // The real run: 2 images bought ($0.08) under a $0.10 budget.
+    assert(repairAffordable({ spentUsd: 0.08, costUsd: 0.08, budgetUsd: 0.10 }) === false,
+      'a second 2-image purchase ($0.16 total) was allowed under a $0.10 budget');
+    assert(repairAffordable({ spentUsd: 0.04, costUsd: 0.04, budgetUsd: 0.10 }) === true,
+      'a repair that fits the budget was refused');
+    assert(repairAffordable({ spentUsd: 0.06, costUsd: 0.04, budgetUsd: 0.10 }) === true,
+      'a repair landing exactly on the budget was refused (float edge)');
+    assert(repairAffordable({ spentUsd: 5, costUsd: 5, budgetUsd: undefined }) === true,
+      'with no budget set the gate already decided to spend; repair must not start refusing');
+
+    // And repairArt actually consults it BEFORE the paid re-run, not after.
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'produce.js'), 'utf8');
+    const start = src.indexOf('const repairArt = async');
+    assert(start !== -1, 'repairArt not found in produce.js');
+    const body = src.slice(start, src.indexOf('\n    };', start));
+    const guard = body.indexOf('repairAffordable(');
+    const paidRun = body.search(/run\('node', \[generator, '--yes'\]/);
+    assert(guard !== -1, 'repairArt never calls repairAffordable -- repairs are unbudgeted again');
+    assert(paidRun !== -1 && guard < paidRun, 'repairArt checks the budget only after it has already bought the art');
+    return 'over-budget repair refused; checked before the purchase';
+  });
+
   check('a finding AFTER the render parks the video for a person instead of killing the run', () => {
     const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'produce.js'), 'utf8');
 
@@ -4306,6 +4334,77 @@ async function driveOffloadChecks() {
       assert(!fs.existsSync(path.join(vd, d)), `${d}/ survived the sweep`);
     }
     return `freed ${r.freedBytes} bytes from ${r.removed.length} dirs`;
+  });
+
+  // 2026-09-28: the idle memory graph sat at ~2 GB with the Node process at ~110 MB.
+  // Renders live on the container disk, and frames/, a per-video node_modules and a
+  // Chrome profile stayed there -- in page cache, on the bill -- until a redeploy,
+  // because the only cleanup ran after a Drive upload and Drive was not configured.
+  check('the scratch list names only rebuildable scratch, never a paid input or the script', () => {
+    const ALLOWED = new Set(['frames', 'node_modules', '.chrome-profile', 'preview-lesson', '__pycache__']);
+    const extra = driveOffload.SCRATCH.filter((d) => !ALLOWED.has(d));
+    assert(extra.length === 0, `SCRATCH gained something not known to be free to rebuild: ${extra.join(', ')}`);
+    for (const paidOrScript of ['art', 'audio', 'clips', 'layers', 'out', 'beats.js', 'durations.json', '.', '..', '']) {
+      assert(!driveOffload.SCRATCH.includes(paidOrScript),
+        `'${paidOrScript}' is on the scratch list -- it would be deleted with no Drive copy`);
+    }
+    return driveOffload.SCRATCH.join(', ');
+  });
+
+  check('the scratch sweep runs with Drive unconfigured and keeps every paid input', () => {
+    const vd = fs.mkdtempSync(path.join(osMod.tmpdir(), 'cq-scratch-'));
+    for (const d of [...driveOffload.SCRATCH, ...driveOffload.RECLAIMABLE]) {
+      fs.mkdirSync(path.join(vd, d), { recursive: true });
+      fs.writeFileSync(path.join(vd, d, 'junk.bin'), 'x'.repeat(500));
+    }
+    fs.writeFileSync(path.join(vd, 'beats.js'), 'module.exports = [];');
+    fs.writeFileSync(path.join(vd, 'durations.json'), '{}');
+    const wasConfigured = gdrive.isConfigured;
+    gdrive.isConfigured = () => false;
+    let r;
+    try { r = driveOffload.sweepScratch(vd); } finally { gdrive.isConfigured = wasConfigured; }
+    for (const d of driveOffload.SCRATCH) assert(!fs.existsSync(path.join(vd, d)), `${d}/ survived the scratch sweep`);
+    for (const d of ['art', 'audio', 'clips', 'layers', 'out']) {
+      assert(fs.existsSync(path.join(vd, d)), `${d}/ was deleted by the scratch sweep -- a re-render would re-buy it`);
+    }
+    assert(fs.existsSync(path.join(vd, 'beats.js')) && fs.existsSync(path.join(vd, 'durations.json')),
+      'the scratch sweep removed beats.js or durations.json');
+    return `removed ${r.removed.length} scratch dirs, kept art/audio/clips/layers/out and the script`;
+  });
+
+  check('every finished run sweeps scratch, outside the Drive offload', () => {
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'spine.js'), 'utf8');
+    const start = src.indexOf('async function execute(');
+    const body = src.slice(start, src.indexOf('\n}\n', start));
+    const offloadAt = body.indexOf('driveOffload.offload(');
+    const sweepAt = body.indexOf('sweepScratch(');
+    assert(sweepAt !== -1, 'spine.execute never calls sweepScratch -- scratch waits for a redeploy again');
+    assert(offloadAt !== -1 && sweepAt > offloadAt, 'the sweep must run after the offload, so a verified upload goes first');
+    // The offload's own catch ends before the sweep begins: a skipped or failed
+    // offload (Drive unconfigured) must not skip the sweep with it.
+    const between = body.slice(offloadAt, sweepAt);
+    assert(/offload skipped/.test(between), 'the sweep is inside the offload try -- an unconfigured Drive would skip it');
+    return 'sweep runs after, and independent of, the offload';
+  });
+
+  check('a DELETE on an offloaded lesson keeps its Drive link; an unoffloaded one is removed', () => {
+    const a = freshLesson();
+    fs.writeFileSync(path.join(a.dest, 'drive.json'),
+      JSON.stringify({ saved2drive: true, driveFileId: 'f-1', driveUrl: 'https://drive.example/f-1', verified: true }));
+    const r = deliverables.forget('fixtures', 'a-lesson');
+    assert(r.ok && r.keptDriveRecord, `forget did not report keeping the Drive record: ${JSON.stringify(r)}`);
+    assert(!fs.existsSync(a.mp4), 'the local mp4 survived the DELETE');
+    for (const keep of ['drive.json', 'beats.js', 'durations.json']) {
+      assert(fs.existsSync(path.join(a.dest, keep)), `${keep} was erased by the DELETE -- the lesson's only pointer to its video`);
+    }
+    assert(deliverables.driveCopy('fixtures', 'a-lesson').driveUrl === 'https://drive.example/f-1',
+      'the Drive link no longer resolves after the DELETE');
+
+    const b = freshLesson();
+    const r2 = deliverables.forget('fixtures', 'a-lesson');
+    assert(r2.ok && !r2.keptDriveRecord, 'an unoffloaded lesson was not fully forgotten');
+    assert(!fs.existsSync(b.dest), 'an unoffloaded lesson dir survived the DELETE');
+    return 'offloaded: link kept, mp4 gone; not offloaded: removed';
   });
 
   // The bare render has no brand bumpers. LAW 1 says it is not the deliverable,

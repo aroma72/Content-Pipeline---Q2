@@ -622,6 +622,46 @@ async function lessonFileChecks() {
       return 'blocked, but the bytes are there and it serves them';
     }, { withMp4: true }));
 
+  // The single-video flow had no Drive branch at all: after a verified offload the
+  // render dir and the volume copy are gone by design, and GET .../video answered
+  // 404 for a video that exists. Same answer as the course route, now.
+  await check('an offloaded single video answers with its Drive link, not a 404', async () => {
+    const env = freshEnv({ JOB_STORE_DURABLE: '1' });
+    for (const m of [
+      path.join(__dirname, '..', 'server', 'lib', 'job-store'),
+      path.join(__dirname, 'lib', 'deliverables'),
+      path.join(__dirname, '..', 'server', 'lib', 'jobs'),
+    ]) { try { delete require.cache[require.resolve(m)]; } catch { /* not loaded */ } }
+    const saved = {};
+    for (const k of Object.keys(env)) { saved[k] = process.env[k]; process.env[k] = env[k]; }
+    try {
+      const store = freshStore(env);
+      const jobsLib = require(path.join(__dirname, '..', 'server', 'lib', 'jobs'));
+      const deliverables = require(path.join(__dirname, 'lib', 'deliverables'));
+      // owner.js resolves a tenant token to id `tenant:<tenantId>`.
+      const job = jobsLib.create({ topic: 'a video that went to Drive', owner: { kind: 'tenant', id: 'tenant:taleemabad-u' } }, { store });
+      jobsLib.transition(job.id, { status: 'awaiting_review', patch: { review: { series: 'made', slug: 'went-to-drive' } } }, { store });
+      const dest = deliverables.dirFor('made', 'went-to-drive');
+      fs.mkdirSync(dest, { recursive: true });
+      fs.writeFileSync(path.join(dest, 'drive.json'), JSON.stringify({
+        saved2drive: true, driveFileId: 'drive-mv-1',
+        driveUrl: 'https://drive.google.com/file/d/drive-mv-1/view',
+        bytes: 2048, md5: 'cccc', verified: true, savedAt: '2026-09-28T00:00:00.000Z',
+      }));
+      return await withServer(env, { oneVideo: fakePipeline(), store, jobs: jobsLib }, async (port) => {
+        const auth = { authorization: `Bearer ${LMS_TOKEN}` };
+        const r = await req(port, { path: `/demo/make-video/${job.id}/video`, headers: auth });
+        assert(r.status === 200, `expected 200 with the Drive link, got ${r.status} ${r.text}`);
+        assert(r.json && r.json.saved2drive === true, `saved2drive not set: ${r.text}`);
+        assert(r.json.driveFileId === 'drive-mv-1' && /drive\.google\.com/.test(r.json.driveUrl || ''), `no Drive link: ${r.text}`);
+        assert(r.json.verified === true, 'the md5 proof is not reported');
+        return '200 with the Drive link, like the course /file route';
+      });
+    } finally {
+      for (const k of Object.keys(saved)) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; }
+    }
+  });
+
   // OFFLOADED IS NOT MISSING.
   //
   // The whole storage fix rests on deleting our copy once TU's Drive has one. If

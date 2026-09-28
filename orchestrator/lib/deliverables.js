@@ -211,6 +211,22 @@ function fingerprint(beatsPath) {
 function forget(series, slug) {
   const dest = dirFor(series, slug);
   if (!dest || !fs.existsSync(dest)) return { ok: false, why: 'nothing persisted' };
+  // Once a lesson is on Drive, drive.json IS the lesson's only pointer to its video,
+  // and beats.js / durations.json still answer its questions and timings. Deleting
+  // the directory here erased all of that while the queue went on saying
+  // `saved2drive`. So an offloaded lesson loses only its video bytes, if any remain.
+  const drive = driveRecord(series, slug);
+  if (drive && drive.saved2drive) {
+    let removed = 0;
+    try {
+      for (const f of fs.readdirSync(dest)) {
+        if (/\.mp4$/i.test(f)) { fs.unlinkSync(path.join(dest, f)); removed++; }
+      }
+      return { ok: true, keptDriveRecord: true, removedVideos: removed };
+    } catch (e) {
+      return { ok: false, why: e.message };
+    }
+  }
   try {
     fs.rmSync(dest, { recursive: true, force: true });
     return { ok: true };
@@ -265,6 +281,45 @@ function videoMeta(series, slug) {
 }
 
 /**
+ * What an API answers for a video that now lives only on Drive, or null.
+ *
+ * One shape for every route that serves a finished video -- the course
+ * `/lessons/:id/file` and the single-video `/demo/make-video/:jobId/video` -- so an
+ * LMS reads the same fields whichever path produced the lesson. `verified` is true
+ * only when Drive's own md5 matched ours before the local copy was deleted.
+ */
+function driveCopy(series, slug) {
+  const drive = driveRecord(series, slug);
+  if (!drive || !drive.saved2drive) return null;
+  const meta = videoMeta(series, slug);
+  return {
+    saved2drive: true,
+    driveFileId: drive.driveFileId,
+    driveUrl: drive.driveUrl,
+    driveName: drive.driveName || null,
+    savedAt: drive.savedAt || null,
+    bytes: drive.bytes || null,
+    md5: drive.md5 || null,
+    sha256: drive.sha256 || null,
+    verified: Boolean(drive.verified),
+    ...(meta ? {
+      video: {
+        durationSeconds: meta.durationSeconds,
+        width: meta.width,
+        height: meta.height,
+        fps: meta.fps,
+        videoCodec: meta.videoCodec,
+        pixelFormat: meta.pixelFormat,
+        audioCodec: meta.audioCodec,
+      },
+    } : {}),
+    message: 'This video is stored on the Taleemabad University Google Drive and is no '
+      + 'longer served from here. Fetch it at driveUrl. Its questions and timings are '
+      + 'unaffected -- they are still served from this API.',
+  };
+}
+
+/**
  * Everything currently held, so the volume can be watched rather than discovered full.
  *
  * Reports `videoLocal` and `saved2drive` per item because the total byte count
@@ -312,5 +367,5 @@ function list() {
 
 module.exports = {
   persist, find, findScript, fingerprint, forget, forgetVideoOnly,
-  driveRecord, videoMeta, list, dirFor,
+  driveRecord, driveCopy, videoMeta, list, dirFor,
 };

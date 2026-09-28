@@ -565,6 +565,21 @@ async function execute(item, opts = {}) {
     console.log(`  [drive] offload skipped: ${e.message}`);
   }
 
+  // Scratch goes whatever Drive did -- including when Drive is not configured,
+  // which is when the offload above skipped its own cleanup entirely. These files
+  // (frames, the per-video node_modules, the Chrome profile) are rebuilt for free
+  // on any re-render and are most of the idle memory the container is billed for.
+  try {
+    const { sweepScratch } = require('./drive-offload');
+    const { videoDir } = require('./paths');
+    const produced = st.artifacts && st.artifacts.produce;
+    const dir = (produced && produced.dir) || videoDir(item.series, item.slug);
+    const swept = sweepScratch(dir, (m) => { if (!opts.quiet) console.log(`  [scratch] ${m}`); });
+    st.scratchSwept = { removed: swept.removed, freedBytes: swept.freedBytes };
+  } catch (e) {
+    console.log(`  [scratch] sweep skipped: ${e.message}`);
+  }
+
   return st;
 }
 
