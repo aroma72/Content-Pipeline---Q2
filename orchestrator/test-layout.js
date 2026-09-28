@@ -170,13 +170,48 @@ function git(args) {
     throw e;
   }
 }
+/**
+ * Would git ignore this path? Also asked in its directory form: `git check-ignore
+ * media/updated` does NOT match the pattern `updated/` when the folder is absent
+ * (git cannot know it would be a directory), but `media/updated/` does. On this
+ * machine those folders exist, so the plain form worked; on a clean CI clone they
+ * do not, and the whole layout test went red. Cached: it runs inside every scan.
+ */
+const ignoreCache = new Map();
 function gitIgnored(relPath) {
-  try {
-    execFileSync('git', ['check-ignore', '-q', relPath], { cwd: ROOT, stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
+  const key = toPosix(String(relPath)).replace(/\/+$/, '');
+  if (ignoreCache.has(key)) return ignoreCache.get(key);
+  let hit = false;
+  for (const p of [key, `${key}/`]) {
+    try {
+      execFileSync('git', ['check-ignore', '-q', p], { cwd: ROOT, stdio: 'ignore' });
+      hit = true;
+      break;
+    } catch { /* not ignored in this form */ }
   }
+  ignoreCache.set(key, hit);
+  return hit;
+}
+
+/**
+ * Exists here, or is one of the KNOWN generated locations git ignores (created on
+ * first use, so absent from a clean clone). Deliberately not "anything ignored":
+ * `video_production/` is an unanchored pattern, so `docs/video_production/` is
+ * ignored too, and accepting it would let a stale `video_production/x` in any doc
+ * pass -- the detector would be switched off exactly where it matters.
+ */
+let KNOWN_GENERATED = null;
+function presentOrGenerated(abs) {
+  if (exists(abs)) return true;
+  if (!KNOWN_GENERATED) {
+    KNOWN_GENERATED = [...new Set([
+      ...Object.values(MOVED_DIRS),          // the homes the move created (media/updated, content/published...)
+      'evals/agent-plugin',                  // rebuilt from .claude/skills by evals/skills/build-plugin.js
+      'orchestrator/.credentials',           // local OAuth tokens, never committed
+    ])];
+  }
+  const r = rel(abs);
+  return KNOWN_GENERATED.some((g) => r === g || r.startsWith(`${g}/`)) && gitIgnored(r);
 }
 let TRACKED = null;
 function tracked() {
@@ -295,7 +330,7 @@ function formAHits(line, fileRel, mode = modeOf(fileRel)) {
     if (mode === 'code' && CODE_AMBIGUOUS.has(name)) continue;
     if (mode === 'code' && QUOTED_ONLY.has(name) && !/['"`]$/.test(text.slice(0, m.index))) continue;
     const local = path.join(dir, name);
-    if (exists(local)) continue;                        // a real sub-folder beside this file
+    if (presentOrGenerated(local)) continue;            // a real (or generated) sub-folder beside this file
     if (exists(path.join(ROOT, name))) continue;        // (would mean it was resurrected; section 2 fails that)
     hits.push({ name, text: m[0] });
   }
@@ -330,7 +365,7 @@ function formCHits(line, fileRel, mode = modeOf(fileRel)) {
     const last = before.slice(-1);
     if (mode === 'shell' ? last !== '=' : !(last === '=' || last === '(')) continue;
     if (last === '(' && NOT_A_PATH_CALL.test(before.slice(0, -1))) continue;
-    if (exists(path.join(dir, name))) continue;
+    if (presentOrGenerated(path.join(dir, name))) continue;
     hits.push({ name, text: m[0] });
   }
   return hits;
@@ -442,7 +477,7 @@ function formBHits(line, fileRel) {
     // real directory OTHER than an old name -- e.g. media/updated/ on a clean clone.
     const idx = segs.findIndex((s) => OLD_NAMES.includes(s.split('/')[0]));
     const upTo = path.resolve(base, ...segs.slice(0, idx + 1));
-    if (exists(resolved) || exists(upTo)) return;
+    if (presentOrGenerated(resolved) || presentOrGenerated(upTo)) return;
     hits.push({ name: firstOld.split('/')[0], text: `${text} -> ${toPosix(path.relative(ROOT, resolved)) || '.'}` });
   };
 
@@ -894,6 +929,16 @@ function scannerChecks() {
     return '6 must-flag / 6 must-not';
   });
 
+  check('an ignored-but-unknown location is still flagged (the generated-folder exemption is narrow)', () => {
+    // `video_production/` is an unanchored ignore pattern, so docs/video_production/ is
+    // ignored too. It must not count as a generated home.
+    assert(formAHits('open video_production/x/ first', 'docs/__synthetic__.md').length === 1,
+      'a stale video_production/ in docs/ passed because git ignores docs/video_production/');
+    assert(presentOrGenerated(path.join(ROOT, 'media', 'updated')), 'media/updated is a known generated home');
+    assert(!presentOrGenerated(path.join(ROOT, 'docs', 'video_production')), 'docs/video_production must not count as generated');
+    return 'exemption limited to known homes';
+  });
+
   check('form A respects a real local sub-folder of the same name', () => {
     const f = '.claude/skills/creating-explainer-videos/SKILL.md';
     assert(formAHits('copy templates/lib/config.js', f).length === 0, 'flagged a skill describing its own templates/');
@@ -1296,6 +1341,18 @@ async function pythonChecks() {
   if (!py) {
     for (const n of ['config.py resolves to the repo root', 'library modules import', 'main.py --dry-run', 'pytest collects only tests/']) {
       report(n, skip('no Python 3 on PATH (py/python)'));
+    }
+    return;
+  }
+
+  // CI runs this file in the Node job, which installs no requirements.txt; the
+  // Python job installs it and runs `main.py --dry-run` itself. Without the
+  // packages these checks can only fail for a reason that is not the layout.
+  const deps = await runChild(py, ['-c', 'import dotenv, pydantic, anthropic'], { timeoutMs: 60000 });
+  if (deps.code !== 0) {
+    const missing = (/No module named '([^']+)'/.exec(deps.err) || [])[1] || 'a requirement';
+    for (const n of ['config.py resolves to the repo root', 'library modules import', 'main.py --dry-run', 'pytest collects only tests/']) {
+      report(n, skip(`'${missing}' is not installed here (requirements.txt not installed in this job; the Python CI job covers these)`));
     }
     return;
   }
