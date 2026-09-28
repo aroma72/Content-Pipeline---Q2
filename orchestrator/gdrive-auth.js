@@ -60,13 +60,35 @@ async function reportFolder() {
 
 async function check() {
   if (!gd.isAuthorised()) {
-    console.log('not authorised — run: node orchestrator/gdrive-auth.js');
+    console.log('not authorised.');
+    console.log('  Preferred: set GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_JSON (or _PATH) to the');
+    console.log('  Taleemabad University service account key — no browser consent needed.');
+    console.log('  Otherwise: node orchestrator/gdrive-auth.js  (one-time OAuth consent)');
     return 1;
   }
+
+  // The service account path needs no consent at all, so saying "authorised, now
+  // go and click something" would send someone off to do work that is already done.
+  if (gd.hasServiceAccount()) {
+    const who = gd.identity();
+    console.log(`authorised as a SERVICE ACCOUNT — ${who.email}`);
+    console.log(`  project: ${who.project || '(not stated in the key)'}`);
+    console.log(`  scope:   ${gd.SA_SCOPE}  (broad, but bounded by what is shared WITH this account)`);
+    console.log('  No browser consent is needed, now or ever.');
+    try {
+      await gd.accessToken();
+      console.log('  a fresh access token was just minted successfully');
+    } catch (e) {
+      console.log(`  BUT the key does not work: ${e.message}`);
+      return 1;
+    }
+    return reportFolder();
+  }
+
   try {
     await gd.accessToken();   // throws with a precise message if the scope is wrong
     const t = gd.loadToken();
-    console.log(`authorised — credential from ${t.obtained_at === 'env:GDRIVE_REFRESH_TOKEN'
+    console.log(`authorised as a USER (OAuth) — credential from ${t.obtained_at === 'env:GDRIVE_REFRESH_TOKEN'
       ? 'GDRIVE_REFRESH_TOKEN' : `${rel(gd.TOKEN_PATH)} (obtained ${t.obtained_at})`}`);
     console.log(`a fresh access token was just minted, and it carries ${gd.SCOPE}`);
     return reportFolder();
@@ -222,6 +244,16 @@ function printToken() {
   const args = process.argv.slice(2);
   if (args.includes('--print-token')) { process.exitCode = printToken(); return; }
   if (args.includes('--check')) { process.exitCode = await check(); return; }
+
+  // A service account makes this whole script unnecessary. Refuse to open a
+  // browser rather than mint a second, weaker credential nobody asked for --
+  // and leave --force as the deliberate way to add one anyway.
+  if (gd.hasServiceAccount() && !args.includes('--force')) {
+    console.log('A service account key is already configured, so no consent is needed.\n');
+    process.exitCode = await check();
+    return;
+  }
+
   if (gd.isAuthorised() && !args.includes('--force')) {
     console.log('already authorised; use --force to replace the stored token\n');
     process.exitCode = await check();

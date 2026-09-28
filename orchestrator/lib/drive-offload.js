@@ -151,7 +151,10 @@ async function offload({
   if (!gdrive.isConfigured()) {
     // Said once, plainly. Not an error: a machine without Drive credentials should
     // behave exactly as it did before this module existed.
-    return SKIPPED('Drive is not configured (GDRIVE_REFRESH_TOKEN / GDRIVE_FOLDER_ID)');
+    return SKIPPED(
+      'Drive is not configured (needs GDRIVE_FOLDER_ID, plus either '
+      + 'GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_JSON/_PATH or GDRIVE_REFRESH_TOKEN)'
+    );
   }
 
   const dest = deliverables.dirFor(series, slug);

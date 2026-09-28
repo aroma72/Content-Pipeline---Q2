@@ -52,6 +52,21 @@ const OAUTH_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 // Per-file access. Cannot enumerate or touch files it did not create.
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
 
+/**
+ * The service-account scope is the BROAD one, and that is not an oversight.
+ *
+ * `drive.file` is blind to files the client did not create, which makes it unable
+ * to write into a pre-existing Shared Drive folder. Cohort2LP hit this already and
+ * its google-drive.ts carries the same note: "drive scope required for Shared Drive
+ * (Team Drive) access".
+ *
+ * What bounds the damage is not the scope but the grant: a service account can only
+ * see Drives and folders somebody has explicitly shared WITH it. This one is shared
+ * on the Taleemabad University Shared Drive and nothing else, so `drive` here means
+ * "everything on that one Drive", not "everything at Taleemabad".
+ */
+const SA_SCOPE = 'https://www.googleapis.com/auth/drive';
+
 const API = 'https://www.googleapis.com/drive/v3';
 const UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3/files';
 
@@ -60,6 +75,132 @@ const UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3/files';
 const FILE_FIELDS = 'id,name,size,md5Checksum,webViewLink,mimeType,createdTime,parents';
 
 class GDriveAuthError extends Error {}
+
+// --- service account (preferred) ---------------------------------------------
+
+/**
+ * A Google service account key, or null.
+ *
+ * PREFERRED over the OAuth flow below, and the reason is operational rather than
+ * technical: a service account needs no human to click through a consent screen,
+ * so nothing about this pipeline waits on a person being at a browser. The OAuth
+ * path is kept for a machine that has only a refresh token.
+ *
+ * Variable names deliberately match Cohort2LP's (`apps/api/src/services/
+ * google-drive.ts`), which already authenticates as
+ * `taleemabad.university@taleemabad.com` against this same Shared Drive. Same
+ * names means one credential to rotate, and no chance of two services drifting
+ * onto two different accounts while both believe they are "the TU account".
+ *
+ * Inline JSON is checked first, because that is what a cloud env can hold; the
+ * path form is for local dev.
+ */
+function serviceAccountCredentials() {
+  const inline = process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_JSON
+    || process.env.GDRIVE_SERVICE_ACCOUNT_KEY_JSON;
+  if (inline && inline.trim()) {
+    try {
+      const parsed = JSON.parse(inline);
+      if (parsed && parsed.client_email && parsed.private_key) return parsed;
+      return null;
+    } catch {
+      // A malformed key is worth saying out loud rather than silently falling
+      // through to "Drive is not configured", which sends someone hunting for a
+      // missing variable that is actually present and broken.
+      throw new GDriveAuthError(
+        'GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_JSON is set but is not valid JSON.'
+      );
+    }
+  }
+
+  const keyPath = process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_PATH
+    || process.env.GDRIVE_SERVICE_ACCOUNT_KEY_PATH;
+  if (keyPath && keyPath.trim()) {
+    const resolved = path.resolve(PATHS.repoRoot, keyPath.trim());
+    if (!fs.existsSync(resolved)) {
+      throw new GDriveAuthError(
+        `GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_PATH points at ${resolved}, which does not exist.`
+      );
+    }
+    try {
+      const parsed = JSON.parse(fs.readFileSync(resolved, 'utf8'));
+      if (parsed && parsed.client_email && parsed.private_key) return parsed;
+      return null;
+    } catch (e) {
+      throw new GDriveAuthError(`Could not read the service account key: ${e.message}`);
+    }
+  }
+  return null;
+}
+
+function hasServiceAccount() {
+  try { return Boolean(serviceAccountCredentials()); } catch { return false; }
+}
+
+/** base64url, which JWT uses and Buffer's 'base64' is not. */
+function b64url(input) {
+  return Buffer.from(input).toString('base64')
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/**
+ * Mint an access token from a service account key.
+ *
+ * The signed-JWT grant, by hand, so this module stays dependency-free like its
+ * sibling youtube.js. It is about twenty lines and avoids pulling the ~50MB
+ * googleapis SDK into an image that needs three HTTP calls.
+ *
+ * Tokens last an hour; cached until a minute before expiry so a backfill run over
+ * forty lessons does not mint forty tokens.
+ */
+let saTokenCache = { token: null, expiresAt: 0 };
+
+async function serviceAccountToken() {
+  const now = Math.floor(Date.now() / 1000);
+  if (saTokenCache.token && saTokenCache.expiresAt > now + 60) return saTokenCache.token;
+
+  const key = serviceAccountCredentials();
+  if (!key) throw new GDriveAuthError('No service account key configured');
+
+  const header = { alg: 'RS256', typ: 'JWT' };
+  const claims = {
+    iss: key.client_email,
+    scope: SA_SCOPE,
+    aud: key.token_uri || OAUTH_TOKEN_URL,
+    iat: now,
+    exp: now + 3600,
+  };
+  const unsigned = `${b64url(JSON.stringify(header))}.${b64url(JSON.stringify(claims))}`;
+  const signature = require('crypto')
+    .createSign('RSA-SHA256')
+    .update(unsigned)
+    .sign(key.private_key)
+    .toString('base64')
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+  const body = await postForm(key.token_uri || OAUTH_TOKEN_URL, {
+    grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+    assertion: `${unsigned}.${signature}`,
+  });
+  if (!body.access_token) {
+    throw new GDriveAuthError('The service account grant returned no access_token');
+  }
+  saTokenCache = {
+    token: body.access_token,
+    expiresAt: now + (Number(body.expires_in) || 3600),
+  };
+  return saTokenCache.token;
+}
+
+/** Who we are acting as. An email address, never the key. Safe to log. */
+function identity() {
+  try {
+    const key = serviceAccountCredentials();
+    if (key) return { kind: 'service-account', email: key.client_email, project: key.project_id || null };
+  } catch { /* fall through to the OAuth answer */ }
+  if (oauthAuthorised()) return { kind: 'oauth-user', email: null, project: null };
+  return { kind: 'none', email: null, project: null };
+}
 
 // --- credential storage ------------------------------------------------------
 
@@ -113,8 +254,14 @@ function saveToken(tok) {
   return TOKEN_PATH;
 }
 
-function isAuthorised() {
+/** Is the OAuth (refresh-token) path usable? */
+function oauthAuthorised() {
   try { loadToken(); clientCredentials(); return true; } catch { return false; }
+}
+
+/** Either path will do. The service account is tried first. */
+function isAuthorised() {
+  return hasServiceAccount() || oauthAuthorised();
 }
 
 /** The target folder, or null. Kept here so every caller reads the same variable. */
@@ -192,6 +339,10 @@ async function exchangeCode(code, redirectUri) {
  * surface as a confusing 403 partway through an upload.
  */
 async function accessToken() {
+  // Service account first: no human, no consent screen, and it is the credential
+  // that already has a grant on the Taleemabad University Shared Drive.
+  if (hasServiceAccount()) return serviceAccountToken();
+
   const { id, secret } = clientCredentials();
   const { refresh_token } = loadToken();
   const tok = await postForm(OAUTH_TOKEN_URL, {
@@ -250,10 +401,13 @@ function getFile(fileId, fields = FILE_FIELDS) {
 /**
  * Confirm the configured folder is writable by this token, without writing.
  *
- * Under `drive.file` a pre-existing folder is normally invisible, so a 404 here
- * is NOT proof that the folder is missing or that access is wrong -- it is the
- * expected answer for a folder this client did not create. Said plainly in the
- * return value rather than left for the caller to misread.
+ * With a SERVICE ACCOUNT this is a real answer: the broad `drive` scope can see
+ * the whole Shared Drive, so visible-and-writable means exactly that.
+ *
+ * On the OAuth path it is not. Under `drive.file` a pre-existing folder is
+ * invisible by design, so a 404 there is NOT proof the folder is missing or that
+ * access is wrong. `ok: null` distinguishes "cannot tell" from "no" rather than
+ * leaving the caller to misread a 404 as a misconfiguration.
  */
 async function probeFolder(id = folderId()) {
   if (!id) return { ok: false, why: 'GDRIVE_FOLDER_ID is not set' };
@@ -269,6 +423,18 @@ async function probeFolder(id = folderId()) {
     };
   } catch (e) {
     if (e.status === 404) {
+      // A service account CAN see the folder if it has been shared with it, so a
+      // 404 here is a real finding: the account is not on that Drive. Only on the
+      // narrow OAuth scope is a 404 uninformative.
+      if (hasServiceAccount()) {
+        const who = identity();
+        return {
+          ok: false,
+          visible: false,
+          why: `the service account ${who.email} cannot see that folder -- share the Shared `
+            + 'Drive with it as Content manager, or check GDRIVE_FOLDER_ID',
+        };
+      }
       return {
         ok: null,
         visible: false,
@@ -459,6 +625,11 @@ module.exports = {
   getFile,
   probeFolder,
   accessToken,
+  hasServiceAccount,
+  serviceAccountCredentials,
+  oauthAuthorised,
+  identity,
+  SA_SCOPE,
   consentUrl,
   exchangeCode,
   isAuthorised,

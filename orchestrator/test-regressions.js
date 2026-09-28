@@ -4373,6 +4373,69 @@ async function driveOffloadChecks() {
   gdrive.uploadFile = realUpload;
   gdrive.isConfigured = realConfigured;
   gdrive.folderId = realFolderId;
+
+  // AUTH SELECTION.
+  //
+  // Two credentials can satisfy Drive and they fail differently: a service
+  // account needs nobody at a browser, a user's refresh token expires and gets
+  // revoked when somebody leaves. Which one is live must be a fact the service
+  // states, not something inferred from whether uploads happen to be working.
+  const SA_JSON = process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_JSON;
+  const SA_PATH = process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_PATH;
+  const restoreSaEnv = () => {
+    if (SA_JSON === undefined) delete process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_JSON;
+    else process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_JSON = SA_JSON;
+    if (SA_PATH === undefined) delete process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_PATH;
+    else process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_PATH = SA_PATH;
+  };
+
+  check('a service account key is recognised and named, without reading the key out', () => {
+    delete process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_PATH;
+    // Structurally a key, cryptographically nothing -- this asserts detection and
+    // identity reporting, never signing, so no real credential is involved.
+    process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_JSON = JSON.stringify({
+      type: 'service_account',
+      client_email: 'someone@example.iam.gserviceaccount.com',
+      project_id: 'a-project',
+      private_key: '-----BEGIN PRIVATE KEY-----\nnot-a-real-key\n-----END PRIVATE KEY-----\n',
+    });
+    try {
+      assert(gdrive.hasServiceAccount(), 'a valid-looking service account key was not detected');
+      assert(gdrive.isAuthorised(), 'a service account alone does not count as authorised');
+      const who = gdrive.identity();
+      assert(who.kind === 'service-account', `identity says '${who.kind}'`);
+      assert(who.email === 'someone@example.iam.gserviceaccount.com', 'the acting account is not reported');
+      // An email and a project id are safe to log; the key must never be.
+      assert(!JSON.stringify(who).includes('PRIVATE KEY'), 'identity() leaks the private key');
+      return `${who.kind} / ${who.email}`;
+    } finally { restoreSaEnv(); }
+  });
+
+  check('a malformed service account key says so instead of reading as "not configured"', () => {
+    delete process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_PATH;
+    process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_JSON = '{not json';
+    try {
+      let msg = null;
+      try { gdrive.serviceAccountCredentials(); } catch (e) { msg = e.message; }
+      assert(msg && /not valid JSON/i.test(msg),
+        'a broken key is silently treated as absent, which sends someone hunting for a missing variable that is present');
+      // hasServiceAccount() must still be safe to call in a boolean context.
+      assert(gdrive.hasServiceAccount() === false, 'hasServiceAccount threw instead of returning false');
+      return 'named as malformed';
+    } finally { restoreSaEnv(); }
+  });
+
+  check('the service-account scope is the broad one, deliberately', () => {
+    // drive.file cannot write into a pre-existing Shared Drive folder, so the
+    // narrow scope is not an option here. Pinned so nobody "tightens" it back to
+    // drive.file and breaks every upload with a puzzling 404 on a folder that is
+    // plainly there.
+    assert(gdrive.SA_SCOPE === 'https://www.googleapis.com/auth/drive',
+      `service account scope is ${gdrive.SA_SCOPE}; drive.file cannot write to a shared folder it did not create`);
+    assert(gdrive.SCOPE === 'https://www.googleapis.com/auth/drive.file',
+      'the OAuth path should stay on the narrow scope');
+    return 'sa=drive, oauth=drive.file';
+  });
 }
 
 

@@ -47,12 +47,19 @@ const mb = (b) => `${(b / 1e6).toFixed(1)}MB`;
   const limit = Number(arg('limit', '0')) || 0;
 
   if (!gdrive.isConfigured()) {
-    console.error('\nDrive is not configured.');
-    console.error('  GDRIVE_REFRESH_TOKEN  -- run: node orchestrator/gdrive-auth.js');
-    console.error('  GDRIVE_FOLDER_ID      -- the target Drive folder id');
+    console.error('\nDrive is not configured. Needs a credential AND a destination:');
+    console.error('  GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_JSON (or _PATH)  -- preferred, no consent needed');
+    console.error('  ...or GDRIVE_REFRESH_TOKEN                        -- node orchestrator/gdrive-auth.js');
+    console.error('  GDRIVE_FOLDER_ID                                  -- the target Drive folder id');
     process.exitCode = 1;
     return;
   }
+
+  // Which account is about to own these files. Printed every run, because
+  // uploading a course's videos to the wrong Google account is quiet, plausible
+  // and tedious to undo -- and the only moment it is cheap to notice is now.
+  const who = gdrive.identity();
+  console.log(`\nacting as: ${who.kind}${who.email ? ` (${who.email})` : ''}`);
 
   const listed = deliverables.list();
   if (!listed.durable) {
