@@ -40,7 +40,7 @@ ffmpeg -i input.mp4 -vn -acodec aac -y output.aac
 **Example:**
 ```bash
 ffmpeg -i drawing-room-remotion/output/autonomous_session_part1_silent.mp4 \
-  -vn -acodec aac -y video_production/voiceovers/part_1_vo.aac
+  -vn -acodec aac -y media/video_production/voiceovers/part_1_vo.aac
 ```
 
 ### Step 2: Validate Audio Duration
@@ -81,10 +81,10 @@ ffmpeg -i silent_video.mp4 -i audio.aac \
 
 **Example:**
 ```bash
-ffmpeg -i video_production/autonomous_part1_silent.mp4 \
-  -i video_production/voiceovers/part_1_vo.aac \
+ffmpeg -i media/video_production/autonomous_part1_silent.mp4 \
+  -i media/video_production/voiceovers/part_1_vo.aac \
   -c:v copy -c:a aac -map 0:v:0 -map 1:a:0 -y \
-  updated/autonomous_part1_final.mp4
+  media/updated/autonomous_part1_final.mp4
 ```
 
 ---
@@ -174,7 +174,7 @@ Precondition: User approval + --permission-granted flag
 - [ ] Audio mux successful (ffmpeg no errors)
 - [ ] Final video plays audio correctly (spot check 2-3 sections)
 - [ ] No blank slides extending beyond audio
-- [ ] Video saved to `updated/` folder (not video_production/)
+- [ ] Video saved to `media/updated/` folder (not media/video_production/)
 
 ---
 

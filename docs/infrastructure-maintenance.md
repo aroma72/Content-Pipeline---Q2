@@ -82,10 +82,10 @@ bash .claude/scripts/infrastructure-check.sh
 pytest tests/ -v --tb=short
 
 # 2. Validate pipeline
-python main.py --dry-run
+python legacy/python/main.py --dry-run
 
 # 3. Verify no hardcoded prompts
-grep -r "^SYSTEM_PROMPT = " skills/ agents/ && echo "FAIL: Found hardcoded prompts" || echo "OK"
+grep -r "^SYSTEM_PROMPT = " legacy/python/skills/ legacy/python/agents/ && echo "FAIL: Found hardcoded prompts" || echo "OK"
 
 # 4. Check for logs directory
 ls -la .claude/logs/
@@ -214,15 +214,15 @@ find ~/.claude/projects/*/memory -name "*.md" -mtime +60 -exec ls -la {} \;
 **Fix:**
 1. Verify directory exists: `mkdir -p .claude/logs`
 2. Check permissions: `chmod 755 .claude/logs`
-3. Verify logger.py: `python -c "from logger import log_info; log_info('test', 'hello')"`
+3. Verify logger.py: `python -c "import sys; sys.path.insert(0,'legacy/python'); from logger import log_info; log_info('test', 'hello')"`
 
 ### Pipeline Validation Fails
 **Symptom:** `main.py --dry-run` doesn't show "PERCEIVE"
 
 **Fix:**
 1. Check main.py syntax: `python -m py_compile main.py`
-2. Run with full output: `python main.py --dry-run 2>&1`
-3. Verify orchestrator.py exists and imports
+2. Run with full output: `python legacy/python/main.py --dry-run 2>&1`
+3. Verify legacy/python/orchestrator.py exists and imports
 
 ---
 
@@ -243,7 +243,7 @@ find ~/.claude/projects/*/memory -name "*.md" -mtime +60 -exec ls -la {} \;
 ### If Memory System Breaks
 1. Check memory directory exists: `ls ~/.claude/projects/*/memory/`
 2. Verify MEMORY.md is readable: `cat ~/.claude/projects/*/memory/MEMORY.md`
-3. If corrupted: restore from git: `git checkout memory/`
+3. If corrupted: restore from git: `git checkout .claude/memories/`
 
 ---
 
@@ -257,7 +257,7 @@ find ~/.claude/projects/*/memory -name "*.md" -mtime +60 -exec ls -la {} \;
 - Logger writing >1 entry/day
 - All 4 prompts versioned in `prompts/`
 - All memories <90 days old
-- 90%+ test coverage on skills/agents
+- 90%+ test coverage on legacy/python/skills/agents
 
 ---
 
@@ -274,4 +274,4 @@ find ~/.claude/projects/*/memory -name "*.md" -mtime +60 -exec ls -la {} \;
 ---
 
 *Last updated: 2026-05-20*  
-*See also:* `CONTEXT_LOSS_AUDIT_FIXES.md` for background on why this infrastructure exists.
+*See also:* `docs/archive/CONTEXT_LOSS_AUDIT_FIXES.md` for background on why this infrastructure exists.

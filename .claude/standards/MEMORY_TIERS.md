@@ -137,10 +137,10 @@ backlog invisible. If a pass cannot finish, it says so and does not advance.
 
 | Store | What it is | Relationship |
 |---|---|---|
-| `agent_memory.json` + `memory_manager.py` | The **application's** runtime memory: locked rules and past mistakes injected into video-agent prompts at dispatch | Different concern. Not managed here, not read by these hooks, not touched by `/memory-distill`. |
+| `agent_memory.json` + `legacy/python/memory_manager.py` | The **application's** runtime memory: locked rules and past mistakes injected into video-agent prompts at dispatch | Different concern. Not managed here, not read by these hooks, not touched by `/memory-distill`. |
 | `.beads/*.jsonl` | Append-only work, decision, failure and QA ledgers | A **cold source**. `mem.py ingest-beads` reads `failures.jsonl`; nothing here writes to `.beads/`. |
 | `server/lib/job-store.js` | Job/queue durability ladder | Unrelated. That ladder resolves *one* directory and is correctly flat — see `docs/HARNESS_AUDIT.md`. |
-| `memory/` (repo root) | The former store | Migrated into this one on 2026-09-21. Left as a pointer stub. |
+| `content/memory/` (formerly `memory` at the repo root) | The former store | Migrated into this one on 2026-09-21. Left as a pointer stub. |
 | `~/.claude/projects/e--Content-Pipeline---Q2/memory/` | The harness's own per-session notes | Machine-local. Its `MEMORY.md` points here. |
 
 ---

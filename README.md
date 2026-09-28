@@ -35,18 +35,22 @@
 
 ```
 .
-├── src/                          # Python orchestrators & agents
-├── skills/                       # Claude API wrappers (synchronous)
-├── agents/                       # Async workers (ingest, edit, publish)
-├── docs/                         # Reference documentation
-├── .claude/                      # Harness config (standards, agents, skills)
-├── .beads/                       # Work tracking (append-only JSONL)
-├── drawing-room-video/           # Remotion video components (git submodule)
-│   └── drawing-room-remotion/
-├── video_production/             # Rendered output (staging)
-├── updated/                      # Final published videos (VO muxed)
-└── CLAUDE.md                     # Project operating manual
+├── server/            # the live Express service (Railway runs server/index.js)
+├── orchestrator/      # pipeline spine, stages, job store, regression suites
+├── explainer-videos/  # the DEFAULT video pipeline: one folder per video
+├── prompts/           # system prompts (never inline one)
+├── scripts/           # deploy, predeploy, live verification, verify-all
+├── gates/  evals/  prototypes/  tests/
+├── media/             # render output + the kits that produce it
+├── content/           # authored material + pipeline working state
+├── legacy/            # pre-explainer code, incl. the Python pipeline
+├── docs/              # reference documentation
+└── .claude/  .beads/  .github/
 ```
+
+Finding a specific file: **[docs/FILE_STRUCTURE.md](docs/FILE_STRUCTURE.md)** has the full map, a
+"where do I find…" index, and the table of everything that moved on 2026-09-28. Each of `media/`,
+`content/`, `legacy/` and `docs/` has its own README.
 
 ---
 
@@ -108,9 +112,11 @@ PUBLISH → Taleemabad LMS
 # Install Python dependencies
 pip install -r requirements.txt
 
-# Install Node dependencies (for Remotion)
-cd drawing-room-video/drawing-room-remotion
-npm install
+# Install Node dependencies (root: server, orchestrator, scripts)
+npm ci
+
+# The gate layer has its own dependency tree and nothing else installs it
+cd gates && npm ci && cd ..
 
 # Load environment variables
 # Create .env with:
@@ -121,9 +127,9 @@ npm install
 ### Running the Pipeline
 
 ```bash
-# View available skills/agents
+# View available skills and agents
 ls .claude/skills/
-ls src/agents/
+ls legacy/python/agents/
 
 # Run video rendering
 /video-render
@@ -201,7 +207,7 @@ cat .beads/qa_ratings.jsonl | jq '.[] | {video, score, factors}'
 Videos are published to the Taleemabad learning platform (see `ref_taleemabad.md` for integration details).
 
 ### Remotion (Video Rendering)
-Open-source React video framework. Components live in `drawing-room-video/drawing-room-remotion/src/`.
+Open-source React video framework. Components live in `media/drawing-room-video/drawing-room-remotion/src/`.
 
 See [Remotion docs](https://www.remotion.dev) for custom composition development.
 
@@ -211,7 +217,7 @@ See [Remotion docs](https://www.remotion.dev) for custom composition development
 
 Reviewer feedback is logged to:
 - **`.beads/content_feedback.jsonl`** — Structured feedback from each review gate
-- **`video_production/<project>/REVIEW_LOG.md`** — Human-readable review history
+- **`media/video_production/<project>/REVIEW_LOG.md`** — Human-readable review history
 
 See `.claude/standards/REVIEWER_GATED_PIPELINE.md` for feedback workflow.
 

@@ -24,23 +24,23 @@ Both converge at the **QA gate → publish** stages.
 
 ## Stage 0 — Trigger / Ingestion
 
-**Runs:** file watcher on `recordings/`
-**Input:** raw `.mp4` / `.webm` / `.mov` dropped into `recordings/`, optional `session_metadata.json` (course, topic, instructor, learner count)
+**Runs:** file watcher on `media/recordings/`
+**Input:** raw `.mp4` / `.webm` / `.mov` dropped into `media/recordings/`, optional `session_metadata.json` (course, topic, instructor, learner count)
 
 **Sub-steps**
-1. Watcher detects new file in `recordings/`.
+1. Watcher detects new file in `media/recordings/`.
 2. Quality precheck — audio ≥ −20 dB RMS, ≥ 720p (1080p preferred), duration > 15 min.
 3. If checks fail → flagged, not ingested.
 4. Creates the working folder for this session.
 
 **Files generated**
-- `drafts/YYYY-MM-DD_session-N/` (working folder created)
+- `content/drafts/YYYY-MM-DD_session-N/` (working folder created)
 
 ---
 
 ## Stage 1 — Perceive (Transcribe & Diarize)
 
-**Runs:** `agents/recording_ingest_agent.py` (Opus, ~45–90 min)
+**Runs:** `legacy/python/agents/recording_ingest_agent.py` (Opus, ~45–90 min)
 **Input:** raw recording from Stage 0
 
 **Sub-steps**
@@ -49,14 +49,14 @@ Both converge at the **QA gate → publish** stages.
 3. Word-error-rate check (pass criterion: < 5% WER).
 
 **Files generated**
-- `drafts/<session>/transcript.vtt`
-- `drafts/<session>/speaker_segments.json`
+- `content/drafts/<session>/transcript.vtt`
+- `content/drafts/<session>/speaker_segments.json`
 
 ---
 
 ## Stage 2 — Plan (Concept Segmentation)
 
-**Runs:** `agents/concept_segmentation_agent.py` (Opus, ~15–30 min)
+**Runs:** `legacy/python/agents/concept_segmentation_agent.py` (Opus, ~15–30 min)
 **Input:** `transcript.vtt` + topic metadata
 
 **Sub-steps**
@@ -66,7 +66,7 @@ Both converge at the **QA gate → publish** stages.
 4. Pass criterion: ≥ 85% of kept segments are truly essential.
 
 **Files generated**
-- `drafts/<session>/segments.json` (labeled segments + concept map)
+- `content/drafts/<session>/segments.json` (labeled segments + concept map)
 - `ContentSignal` records (observed learning issues → backlog)
 
 ---
@@ -77,7 +77,7 @@ This is where the two entry points diverge. **3A** for recordings, **3B** for sc
 
 ### 3A — Essential Edit + Concept Clips (recording path)
 
-**Runs:** `agents/essential_edit_agent.py` (Opus, ~30–120 min) then `agents/micro_video_agent.py` (Opus, ~30–90 min, parallelizable)
+**Runs:** `legacy/python/agents/essential_edit_agent.py` (Opus, ~30–120 min) then `legacy/python/agents/micro_video_agent.py` (Opus, ~30–90 min, parallelizable)
 **Input:** transcript + `segments.json` + `speaker_segments.json`
 
 **Sub-steps**
@@ -87,9 +87,9 @@ This is where the two entry points diverge. **3A** for recordings, **3B** for sc
 4. Pass criteria: instructor approval ≥ 4/5; 100% of clips between 2–4 min.
 
 **Files generated**
-- `drafts/<session>/edit_timeline.json`
-- `drafts/<session>/essential_edit_draft.mp4`
-- `drafts/<session>/concept_clips/` (5+ MP4s, one per concept)
+- `content/drafts/<session>/edit_timeline.json`
+- `content/drafts/<session>/essential_edit_draft.mp4`
+- `content/drafts/<session>/concept_clips/` (5+ MP4s, one per concept)
 
 ### 3B — Scripted Concept Video (Remotion path)
 
@@ -109,7 +109,7 @@ This is the path used for the Consumer→Producer series, Course Overview, "Why 
 
 #### 3B.2 — Remotion Composition
 
-**Runs:** edit `drawing-room-video/drawing-room-remotion/src/<Name>.tsx` + register in `src/Root.tsx`
+**Runs:** edit `media/drawing-room-video/drawing-room-remotion/src/<Name>.tsx` + register in `src/Root.tsx`
 **Sub-steps**
 1. Build/edit the `.tsx` composition (scenes, opacity fades, interpolation).
 2. Register the composition in `Root.tsx` with `durationInFrames`.
@@ -117,7 +117,7 @@ This is the path used for the Consumer→Producer series, Course Overview, "Why 
 4. SVG safety: viewBox ≥ 850px height for 7-node radials; 60px label clearance.
 
 **Files generated**
-- `drawing-room-video/drawing-room-remotion/src/<Name>.tsx`
+- `media/drawing-room-video/drawing-room-remotion/src/<Name>.tsx`
 - updated `src/Root.tsx` (composition registered)
 
 #### 3B.3 — Render to Silent Video
@@ -129,12 +129,12 @@ This is the path used for the Consumer→Producer series, Course Overview, "Why 
 3. Validate: file exists, duration ≈ VO + 0–1 s.
 
 **Files generated**
-- `video_production/<project>/animated/scene_*_frame_*.png` (frame sequence, when used)
-- `video_production/<project>/<NAME>_FINAL.mp4` (silent)
+- `media/video_production/<project>/animated/scene_*_frame_*.png` (frame sequence, when used)
+- `media/video_production/<project>/<NAME>_FINAL.mp4` (silent)
 
 #### 3B.4 — Voiceover
 
-**Runs:** `agents/voiceover_agent.py` / `scripts/generate_missing_vo.py` (ElevenLabs v2 turbo, Rachel voice)
+**Runs:** `legacy/python/agents/voiceover_agent.py` / `scripts/generate_missing_vo.py` (ElevenLabs v2 turbo, Rachel voice)
 **Critical policy (`VOICEOVER_POLICY.md`)**
 1. **Never** call ElevenLabs without explicit permission.
 2. **Never regenerate** existing VO — extract from the existing file and only generate the *missing* segment.
@@ -142,7 +142,7 @@ This is the path used for the Consumer→Producer series, Course Overview, "Why 
 3. Moderate, deliberate pacing; natural 0.5–1 s pauses between concepts.
 
 **Files generated**
-- `video_production/<project>/vo.mp3` (or `vo.aac`)
+- `media/video_production/<project>/vo.mp3` (or `vo.aac`)
 
 #### 3B.5 — Mux Audio + Video
 
@@ -153,7 +153,7 @@ This is the path used for the Consumer→Producer series, Course Overview, "Why 
 2. The `-map` flags are mandatory — omitting them produces a silent/blank deliverable (known failure).
 
 **Files generated**
-- `video_production/<project>/<NAME>_WITH_AUDIO.mp4` (final deliverable)
+- `media/video_production/<project>/<NAME>_WITH_AUDIO.mp4` (final deliverable)
 
 ---
 
@@ -173,8 +173,8 @@ This is the path used for the Consumer→Producer series, Course Overview, "Why 
 **Files generated**
 - quality flags on the `SessionAssetBundle`
 - append row to `.beads/qa_ratings.jsonl`
-- `video_production/<project>/PRODUCTION_SUMMARY.md`
-- `video_production/<project>/DELIVERY_MANIFEST.md`
+- `media/video_production/<project>/PRODUCTION_SUMMARY.md`
+- `media/video_production/<project>/DELIVERY_MANIFEST.md`
 
 **Human review queue** (Notion / Slack): triggered on `needs_review`, assignment pass-rate < 70%, or instructor-reported confusion. SLA 24 h. > 3 rejections → escalate to course lead. Rejected items re-run **fresh** (no reuse of the prior attempt).
 
@@ -182,18 +182,18 @@ This is the path used for the Consumer→Producer series, Course Overview, "Why 
 
 ## Stage 5 — Act (Publish)
 
-**Runs:** `agents/learner_pack_publisher_agent.py` (Haiku, ~30 min)
+**Runs:** `legacy/python/agents/learner_pack_publisher_agent.py` (Haiku, ~30 min)
 **Input:** `publish_ready` SessionAssetBundle
 
 **Sub-steps**
 1. Assemble the learner pack (video, clips, summary, glossary, watch order, transcript).
 2. Push to the Taleemabad LMS API.
 3. Receive published URLs.
-4. Git: **commit submodule FIRST**, then the main-repo submodule pointer. Final videos land in `updated/`.
+4. Git: **commit submodule FIRST**, then the main-repo submodule pointer. Final videos land in `media/updated/`.
 
 **Files generated**
-- `published/YYYY-MM-DD_session-N/` (pack + URLs)
-- `updated/<final video>.mp4`
+- `content/published/YYYY-MM-DD_session-N/` (pack + URLs)
+- `media/updated/<final video>.mp4`
 
 ---
 
@@ -209,7 +209,7 @@ This is the path used for the Consumer→Producer series, Course Overview, "Why 
 4. New issues become `ContentSignal`s → re-enter Perceive.
 
 **Files generated**
-- `weekly_artifacts/week-W-YYYY/` (signal backlog, content map, health table)
+- `content/weekly_artifacts/week-W-YYYY/` (signal backlog, content map, health table)
 - append to `.beads/status.jsonl`, `.beads/decisions.jsonl`, `.beads/failures.jsonl`
 
 ---
@@ -218,22 +218,22 @@ This is the path used for the Consumer→Producer series, Course Overview, "Why 
 
 | File / Folder | Stage | Produced by |
 |---|---|---|
-| `drafts/<session>/transcript.vtt` | 1 | recording_ingest_agent |
-| `drafts/<session>/speaker_segments.json` | 1 | recording_ingest_agent |
-| `drafts/<session>/segments.json` | 2 | concept_segmentation_agent |
-| `drafts/<session>/edit_timeline.json` | 3A | essential_edit_agent |
-| `drafts/<session>/essential_edit_draft.mp4` | 3A | essential_edit_agent |
-| `drafts/<session>/concept_clips/*.mp4` | 3A | micro_video_agent |
+| `content/drafts/<session>/transcript.vtt` | 1 | recording_ingest_agent |
+| `content/drafts/<session>/speaker_segments.json` | 1 | recording_ingest_agent |
+| `content/drafts/<session>/segments.json` | 2 | concept_segmentation_agent |
+| `content/drafts/<session>/edit_timeline.json` | 3A | essential_edit_agent |
+| `content/drafts/<session>/essential_edit_draft.mp4` | 3A | essential_edit_agent |
+| `content/drafts/<session>/concept_clips/*.mp4` | 3A | micro_video_agent |
 | `docs/<NAME>_SCRIPT.md` | 3B.1 | author (SCRIPTING_STANDARDS) |
 | `src/<Name>.tsx` + `src/Root.tsx` | 3B.2 | Remotion |
-| `video_production/<project>/animated/*.png` | 3B.3 | render_video_from_frames.py |
-| `video_production/<project>/<NAME>_FINAL.mp4` | 3B.3 | /video-render |
-| `video_production/<project>/vo.mp3` | 3B.4 | voiceover_agent / generate_missing_vo.py |
-| `video_production/<project>/<NAME>_WITH_AUDIO.mp4` | 3B.5 | /audio-mux |
+| `media/video_production/<project>/animated/*.png` | 3B.3 | render_video_from_frames.py |
+| `media/video_production/<project>/<NAME>_FINAL.mp4` | 3B.3 | /video-render |
+| `media/video_production/<project>/vo.mp3` | 3B.4 | voiceover_agent / generate_missing_vo.py |
+| `media/video_production/<project>/<NAME>_WITH_AUDIO.mp4` | 3B.5 | /audio-mux |
 | `PRODUCTION_SUMMARY.md` · `DELIVERY_MANIFEST.md` | 4 | quality gate |
 | `.beads/qa_ratings.jsonl` | 4 | QA scoring |
-| `published/<session>/` · `updated/*.mp4` | 5 | learner_pack_publisher_agent |
-| `weekly_artifacts/week-W/` | 6 | content-reflection |
+| `content/published/<session>/` · `media/updated/*.mp4` | 5 | learner_pack_publisher_agent |
+| `content/weekly_artifacts/week-W/` | 6 | content-reflection |
 | `.beads/status|decisions|failures.jsonl` | 6 | reflection logging |
 
 ---
@@ -266,4 +266,4 @@ This is the path used for the Consumer→Producer series, Course Overview, "Why 
 
 ---
 
-*Related: `docs/content-pipeline.md` · `planning/planning.md` · `.claude/standards/` · `docs/QA_QUICK_REFERENCE.md`*
+*Related: `docs/content-pipeline.md` · `content/planning/planning.md` · `.claude/standards/` · `docs/QA_QUICK_REFERENCE.md`*

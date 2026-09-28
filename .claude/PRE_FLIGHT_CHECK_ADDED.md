@@ -1,7 +1,7 @@
 # Pre-Flight Check System — Added to VideoProductionOrchestrator
 
 **Date**: 2026-05-21  
-**File**: `video_production_orchestrator_remotion.py`  
+**File**: `legacy/python/video_production_orchestrator_remotion.py`  
 **Purpose**: Validate critical preconditions BEFORE ANY agent starts  
 **Status**: ✅ Integrated and ready
 

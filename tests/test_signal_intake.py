@@ -14,7 +14,9 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# The Python layer moved to legacy/python/ on 2026-09-28; config, schemas and
+# skills.* resolve from there, not from the repo root.
+sys.path.insert(0, str(Path(__file__).parent.parent / 'legacy' / 'python'))
 
 from skills.signal_intake import SignalIntakeSkill
 from schemas import ContentSignal

@@ -18,7 +18,7 @@ Never write beats from memory alone. Before drafting, ground the script in **cur
 
 Run BOTH search tracks (several queries each — fan out, don't stop at one):
 1. **Topic currency & accuracy** — latest developments, correct up-to-date definitions, current
-   tools/models/numbers, and the mistakes practitioners actually make. Queries like:
+   tools, models and numbers, and the mistakes practitioners actually make. Queries like:
    `"<topic> 2026"`, `"<topic> latest / state of the art"`, `"<topic> best practices"`,
    `"<topic> common mistakes / pitfalls"`.
 2. **Pedagogy — how to teach it best** — the most effective explanations, analogies, worked examples,

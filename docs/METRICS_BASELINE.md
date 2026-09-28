@@ -6,12 +6,12 @@ owner: aroma
 
 # Turnaround Baseline (for Goal 1: ≥40% reduction metric)
 
-Captured 2026-08-04 from `updated/` file history + git + `.beads` logs, to anchor the
+Captured 2026-08-04 from `media/updated/` file history + git + `.beads` logs, to anchor the
 "turnaround time (draft → published) reduced by ≥40%" success metric.
 
 ## Honest limitation (why this is provisional)
 A clean wall-clock **draft → published** number is NOT cleanly recoverable from history because:
-- Final MP4s in `updated/` are **git-ignored / untracked** — git has no add-date for them.
+- Final MP4s in `media/updated/` are **git-ignored / untracked** — git has no add-date for them.
 - Source folders are only captured by the **noon daily-git-sync**, so their first-commit
   timestamps (e.g. `explainer-videos/evals` first commit `2026-07-23 12:00:03`) are *sync* times,
   not *draft-start* times.
@@ -26,7 +26,7 @@ Per-video **publish cadence during an active batch session** (finished MP4s land
 | 2026-06-17 | 4 (16:35→19:34) | 2h59m | ~45 min/video |
 
 - `.beads/status.jsonl`: a fully reviewer-gated **6s reel** logged **~1.0 hr** hands-on effort.
-- (The 2026-06-05 14:08–14:09 cluster of ~24 files is a **bulk copy** into `updated/`, not
+- (The 2026-06-05 14:08–14:09 cluster of ~24 files is a **bulk copy** into `media/updated/`, not
   production cadence — excluded.)
 
 ## Provisional baseline (use until W2 instrumented runs replace it)

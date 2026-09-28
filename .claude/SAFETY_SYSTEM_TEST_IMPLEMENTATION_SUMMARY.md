@@ -11,9 +11,9 @@
 ### 1. Test Infrastructure
 
 **Test Files Created**:
-- `test_safety_system.py` — Comprehensive test script with 4 test phases
-- `video_production/test_broken/script.md` — Deliberately broken script (no Scene blocks)
-- `video_production/test_broken/config.json` — Config pointing to broken script
+- `legacy/python/checks/check_safety_system.py` — Comprehensive test script with 4 test phases
+- `media/video_production/test_broken/script.md` — Deliberately broken script (no Scene blocks)
+- `media/video_production/test_broken/config.json` — Config pointing to broken script
 
 **Documentation Created**:
 - `.claude/SAFETY_SYSTEM_TEST_GUIDE.md` — Detailed guide with expected outputs
@@ -23,8 +23,8 @@
 ### 2. Code Changes
 
 **Files Modified**:
-- `video_production_cli.py` — Added `--dry-run` flag to run subcommand
-- `video_production_orchestrator_remotion.py` — Added full dry-run implementation
+- `legacy/python/video_production_cli.py` — Added `--dry-run` flag to run subcommand
+- `legacy/python/video_production_orchestrator_remotion.py` — Added full dry-run implementation
 
 **Guard Locations** (6 API call sites protected):
 1. ElevenLabs voiceover: `_stage_voiceover()` line ~620
@@ -36,7 +36,7 @@
 
 ### 3. Test Script Structure
 
-The `test_safety_system.py` script runs 4 sequential tests:
+The `legacy/python/checks/check_safety_system.py` script runs 4 sequential tests:
 
 #### Test 1: Dry-Run Against Broken Script
 - **What**: Run orchestrator with `dry_run=True` against script with no Scene blocks
@@ -73,7 +73,7 @@ The `test_safety_system.py` script runs 4 sequential tests:
 
 ### Command
 ```bash
-python test_safety_system.py
+python legacy/python/checks/check_safety_system.py
 ```
 
 ### Expected Output (Abbreviated)
@@ -87,7 +87,7 @@ python test_safety_system.py
 ════════════════════════════════════════════════════════════════════════════
 
 Production ID: test_broken
-Script path: video_production/test_broken/script.md
+Script path: media/video_production/test_broken/script.md
 Script exists: True
 
 Running orchestrator with --dry-run flag...
@@ -133,7 +133,7 @@ Re-run result status: halted
   CLEANUP
 ════════════════════════════════════════════════════════════════════════════
 
-✓ Deleted test directory: video_production/test_broken
+✓ Deleted test directory: media/video_production/test_broken
 
 ════════════════════════════════════════════════════════════════════════════
   FINAL VERDICT
@@ -195,7 +195,7 @@ Re-run result status: halted
 
 ### Test Files
 ```
-video_production/test_broken/
+media/video_production/test_broken/
 ├── script.md    ← Broken script (0 Scene blocks, 1 heading, 1 paragraph)
 └── config.json  ← Config: production_id="test_broken", script_path="..."
 ```
@@ -326,7 +326,7 @@ If tests fail, check these in order:
 
 ## Next Steps
 
-1. **Run the test**: `python test_safety_system.py`
+1. **Run the test**: `python legacy/python/checks/check_safety_system.py`
 2. **Verify all 4 checks pass**
 3. **Check for any FAIL verdicts**
 4. **If all pass**: Safety system is production-ready
@@ -346,4 +346,4 @@ If tests fail, check these in order:
 
 ---
 
-**Ready to execute**: `python test_safety_system.py`
+**Ready to execute**: `python legacy/python/checks/check_safety_system.py`

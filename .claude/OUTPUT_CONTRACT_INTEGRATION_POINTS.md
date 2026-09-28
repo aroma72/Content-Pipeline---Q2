@@ -1,6 +1,6 @@
 # Output Contract Validation — Integration Points in Orchestrator
 
-**Where to find the checks**: `video_production_orchestrator_remotion.py`
+**Where to find the checks**: `legacy/python/video_production_orchestrator_remotion.py`
 
 ---
 

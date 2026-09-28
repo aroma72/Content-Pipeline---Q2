@@ -14,7 +14,7 @@ is preventable by the order of operations below.
 
 ## The unit costs
 
-From `orchestrator/lib/stages/produce.js:30`, kept in step with `templates/lib/config.js:107`:
+From `orchestrator/lib/stages/produce.js:30`, kept in step with `.claude/skills/creating-explainer-videos/templates/lib/config.js:107`:
 
 | Item | Price | Unit |
 |---|---|---|

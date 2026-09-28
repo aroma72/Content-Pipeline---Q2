@@ -30,7 +30,7 @@ single-take voiceover. Typical length ~1.5–2.5 min (~24 beats).
 - Python 3.9+ with **Pillow** and **numpy** (`pip install pillow numpy`) — for `segment-all.py`.
 - ffmpeg via `ffmpeg-static`. Headless Chrome auto-downloaded by puppeteer.
 - API key: `GEMINI_API_KEY` for Imagen + Gemini TTS. **This repo maps `GOOGLE_STUDIO_API_KEY`**
-  automatically (see `templates/lib/config.js`).
+  automatically (see `.claude/skills/creating-explainer-videos/templates/lib/config.js`).
 - Disk: a single video's `frames/` dump is multiple GB; finished MP4 is a few MB.
 
 Models: art `imagen-4.0-ultra-generate-001`; voice `gemini-2.5-flash-preview-tts`.
@@ -44,7 +44,7 @@ Beat modes: `ali` (cutout-puppet character + optional overlay) · `scene` (full 
 caption, preferred for story) · `info` (evolving CSS/SVG infographic). **No title-card beats.**
 
 ## 4. Files
-Per-video (copy `templates/`): `beats.js`, `generate-lesson-art.js`, `segment-all.py`,
+Per-video (copy `.claude/skills/creating-explainer-videos/templates/`): `beats.js`, `generate-lesson-art.js`, `segment-all.py`,
 `tts-lesson.js`, `animation/{lesson.html,info.js,info.css,mckinsey.css}`, `music.js`, `mix-audio.js`,
 `compile-lesson.js`, `stitch-brand.js`, `verify.js`, `lib/config.js`, `package.json`.
 Generated (git-ignored): `art/ layers/ audio/ frames/ out/ preview-lesson/`.
@@ -54,13 +54,13 @@ Shared once per repo: `brand-intro-outro/` (bumpers).
 1. Install the skills (`creating-explainer-videos` + companions) — done in this repo.
 2. Set `GEMINI_API_KEY` (or `GOOGLE_STUDIO_API_KEY`) in a `.env` at a parent of the video folders.
 3. Set up `explainer-videos/brand-intro-outro/` once (brand font, logo, palette, outro line). `npm i`.
-4. Per video: make a folder, copy `templates/`, `npm i`, then Section 6.
+4. Per video: make a folder, copy `.claude/skills/creating-explainer-videos/templates/`, `npm i`, then Section 6.
 
 Layout:
 ```
 explainer-videos/
   brand-intro-outro/            # shared bumpers — set up once
-  <series>/<video-name>/        # one folder per video (copied from templates/)
+  <series>/<video-name>/        # one folder per video (copied from .claude/skills/creating-explainer-videos/templates/)
     beats.js  animation/ ...  art/ layers/ audio/ frames/ out/  (generated, ignored)
 ```
 

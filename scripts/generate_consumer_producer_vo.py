@@ -120,7 +120,7 @@ And that's where the real power is.
 
 Let's go."""
 
-OUT_DIR = Path(__file__).parent.parent / "video_production" / "consumer-to-producer-mindset"
+OUT_DIR = Path(__file__).parent.parent / "media" / "video_production" / "consumer-to-producer-mindset"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 OUT_FILE = OUT_DIR / "consumer_producer_vo.mp3"
 

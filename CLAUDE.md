@@ -15,6 +15,8 @@ owner: aroma
 
 | I want to... | Go to... |
 |--|--|
+| **Find any file / "where does X live?"** | **`docs/FILE_STRUCTURE.md`** (root map, lookup index, what moved) → each folder's `README.md` |
+| **Check everything still works** | **`npm run verify`** (`--live` probes keys, `--paid --yes` one real render) |
 | **Make an explainer/lesson video (DEFAULT pipeline)** | **`creating-explainer-videos` skill → `explainer-videos/EXPLAINER-VIDEO-PIPELINE-SPEC.md`** |
 | Produce a video with reviewer gates (human-approved, step-by-step) | `/pipeline-review` → `.claude/standards/REVIEWER_GATED_PIPELINE.md` |
 | Evaluate video quality (QA rating system) | `docs/QA_QUICK_REFERENCE.md` → `.claude/standards/QA_RATING_SYSTEM.md` |
@@ -40,18 +42,7 @@ owner: aroma
 
 ## Folder Structure
 
-| Folder | Contents |
-|--------|----------|
-| `src/` | Python orchestrators, skills, agents |
-| `skills/` | Synchronous Claude API wrappers |
-| `agents/` | Async workers (ingest, edit, QA, publish) |
-| `docs/` | Reference documentation |
-| `.claude/` | Harness config: hooks, standards, agents, skills |
-| `.beads/` | Work tracking (append-only JSONL) |
-| `explainer-videos/` | DEFAULT pipeline: brand bumpers + per-video folders (beats.js → branded MP4) |
-| `drawing-room-video/drawing-room-remotion/` | Remotion React components (LEGACY) |
-| `video_production/` | Rendered output folders (legacy) |
-| `updated/` | Final published videos (with VO muxed) |
+**Live:** `server/` `orchestrator/` `explainer-videos/` `prompts/` `scripts/`. Everything else is grouped: `media/` (render output + kits), `content/` (authored + pipeline state), `legacy/` (pre-explainer code, incl. `legacy/python/`), `docs/`. Nothing new goes at the root — `orchestrator/test-layout.js` enforces it. Full map: **`docs/FILE_STRUCTURE.md`**.
 
 ---
 
@@ -77,7 +68,7 @@ owner: aroma
 🚫 **Video Rendering (LEGACY Remotion — pre-explainer videos only):**
 - Frame count: `frames = VO_seconds × 30fps` (max +30 buffer)
 - Verify before render: Root.tsx `durationInFrames` matches formula
-- Final videos go in `updated/` folder
+- Final videos go in `media/updated/` folder
 - New videos: use the explainer pipeline instead (1920×1080 / 30fps / yuv420p / AAC)
 
 🚫 **SVG Diagrams:**
@@ -88,7 +79,7 @@ owner: aroma
 - Every pipeline step is followed by a reviewer (as-specified + complete + high quality)
 - Share a SIMPLE report after each step; advance ONLY on Aroma's explicit approval
 - On dissatisfaction: save feedback to `.beads/content_feedback.jsonl`, redo, never re-ask a resolved preference
-- All reviewer comments/interventions logged to `video_production/<project>/REVIEW_LOG.md`
+- All reviewer comments/interventions logged to `media/video_production/<project>/REVIEW_LOG.md`
 
 🚫 **Quality Assurance:**
 - Every video MUST pass QA_RATING_SYSTEM.md before publication

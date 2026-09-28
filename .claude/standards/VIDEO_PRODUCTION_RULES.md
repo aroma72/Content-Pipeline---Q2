@@ -364,17 +364,17 @@ Before running `npx remotion render`, verify:
 ## Render Command
 
 ```bash
-cd drawing-room-video/drawing-room-remotion
+cd media/drawing-room-video/drawing-room-remotion
 
 # Render single composition
-npx remotion render AutonomousSystemsPart1 --output="../../../video_production/autonomous_part1_silent.mp4"
+npx remotion render AutonomousSystemsPart1 --output="../../../media/video_production/autonomous_part1_silent.mp4"
 
 # Check output
-ls -lh ../../../video_production/
+ls -lh ../../../media/video_production/
 ```
 
-**Output location:** `video_production/` (temporary)
-**Final location:** `updated/` (after mux with VO)
+**Output location:** `media/video_production/` (temporary)
+**Final location:** `media/updated/` (after mux with VO)
 
 ---
 

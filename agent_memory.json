@@ -72,7 +72,7 @@
       "severity": "CRITICAL",
       "applies_to": ["DistributionAgent"],
       "violated_by": "Committing main repo before submodule changes are pushed",
-      "how_to_follow": "1. Commit drawing-room-video/ submodule changes. 2. Then commit main repo with updated submodule pointer."
+      "how_to_follow": "1. Commit media/drawing-room-video/ submodule changes. 2. Then commit main repo with updated submodule pointer."
     },
     {
       "rule_id": "NO_FORCE_PUSH",
@@ -92,11 +92,11 @@
     },
     {
       "rule_id": "OUTPUT_LOCATION",
-      "rule": "Final videos go in updated/ folder. Intermediate renders in video_production/{production_id}/",
+      "rule": "Final videos go in media/updated/ folder. Intermediate renders in media/video_production/{production_id}/",
       "severity": "HIGH",
       "applies_to": ["RemotionVideoAgent", "PostProductionAgent"],
       "violated_by": "Saving final videos to incorrect directories",
-      "how_to_follow": "Intermediate: video_production/ → Final: updated/ (with VO muxed)"
+      "how_to_follow": "Intermediate: media/video_production/ → Final: media/updated/ (with VO muxed)"
     }
   ],
   "agent_specific_rules": {

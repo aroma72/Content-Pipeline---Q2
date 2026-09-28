@@ -23,24 +23,22 @@ explainer-videos/**/audio
 explainer-videos/**/out
 explainer-videos/**/layers
 explainer-videos/**/.chrome-profile
-video_production
-updated
-recordings
-published
+# Consolidated 2026-09-28: render output and the kits that produce it live under
+# media/, authored + pipeline-state material under content/. Neither reaches the
+# image (.dockerignore denies all but its allowlist), so neither needs uploading.
+# Leading slash: anchored to the root, so a nested folder that happens to be
+# called media/ or content/ still uploads.
+/media
+/content
+
+# Output dirs that may still be written at the repo root by an ad-hoc run.
 output
-animation-frames
 course-overview-assets
-course-overview-video-output
 course-overview-test-output
-voiceovers
 voiceover-windows
-voiceover-windows-formal
-drawing-room-video
-avatar-video-kit
-fashion-tech-avatar
-fashion-tech-avatar-broll
-fashion-tech-avatar-clean
-fashion-tech-real
-blender
 .env
 .env.*
+
+# Legacy-era scripts and scratch, kept for history only. Never runs in the image
+# (.dockerignore excludes it via the deny-all `*`), so it need not be uploaded.
+/legacy

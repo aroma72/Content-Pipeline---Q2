@@ -27,7 +27,9 @@ const path = require('path');
 
 const REPO = path.resolve(__dirname, '..');
 const PUPPET = [
-  '../drawing-room-video/drawing-room-remotion/node_modules/puppeteer',
+  // The root install (package.json dependency). Was the Remotion submodule's copy,
+  // which is an empty gitlink on this machine and never resolved.
+  '../node_modules/puppeteer',
   '../explainer-videos/testing/render-smoke/node_modules/puppeteer',
   '../explainer-videos/autonomy/node_modules/puppeteer',
 ];

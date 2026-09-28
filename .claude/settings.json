@@ -22,7 +22,7 @@
     "name": "Drawing Room",
     "description": "Agentic L&D content factory",
     "main_artifacts": [
-      "planning/planning.md",
+      "content/planning/planning.md",
       ".claude/memories/MEMORY-INDEX.md",
       ".claude/logs/"
     ]

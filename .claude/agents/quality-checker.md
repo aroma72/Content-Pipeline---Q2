@@ -19,7 +19,7 @@ Pre-render quality gate. Catches mistakes before expensive Remotion renders or d
 ## When to Run
 
 **Automatically:** Before any video render operation  
-**Manually:** `python3 video_quality_orchestrator.py` in project root
+**Manually:** `python3 legacy/python/video_quality_orchestrator.py` in project root
 
 ---
 
@@ -42,7 +42,7 @@ Actual frames in Root.tsx: 4685 frames
 **Implementation:**
 ```python
 # Pseudo code
-vo_duration = get_vo_duration("video_production/voiceovers/part_1_vo.aac")
+vo_duration = get_vo_duration("media/video_production/voiceovers/part_1_vo.aac")
 expected_frames = int(vo_duration * 30)
 actual_frames = get_composition_frames("Root.tsx", "AutonomousSystemsPart1")
 
@@ -53,7 +53,7 @@ if abs(actual_frames - expected_frames) > 30:
 **Files checked:**
 - `drawing-room-remotion/src/Root.tsx` (durationInFrames)
 - All composition files (AutonomousSystemsPart*.tsx)
-- `video_production/voiceovers/*.aac` (actual VO duration)
+- `media/video_production/voiceovers/*.aac` (actual VO duration)
 
 ### Check 2: SVG Diagram Safety
 
@@ -187,14 +187,14 @@ The `render-all-videos` agent calls this first:
 
 ```bash
 # Step 0: Quality Check
-python3 video_quality_orchestrator.py
+python3 legacy/python/video_quality_orchestrator.py
 if [ $? -ne 0 ]; then
   echo "Quality checks failed. Fix issues before rendering."
   exit 1
 fi
 
 # Step 1: Silent Render (only if quality check passed)
-cd drawing-room-video/drawing-room-remotion
+cd media/drawing-room-video/drawing-room-remotion
 npx remotion render AutonomousSystemsPart1 ...
 ```
 
@@ -215,7 +215,7 @@ npx remotion render AutonomousSystemsPart1 ...
 
 - **VIDEO_PRODUCTION_RULES.md** — Frame count formula, SVG safety, typography
 - **render-all-videos agent** — Calls this quality checker before rendering
-- **video_quality_orchestrator.py** — Implementation details
+- **legacy/python/video_quality_orchestrator.py** — Implementation details
 
 ---
 

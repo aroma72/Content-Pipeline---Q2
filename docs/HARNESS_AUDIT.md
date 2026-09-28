@@ -27,7 +27,7 @@ mistaken for one.
 |---|---|---|---|
 | 1 | **Tiered session memory (hot/warm/cold)** | `.claude/memories/` + `.claude/memory-db/` | memory hooks, `/memory-distill` — added 2026-09-21 |
 | 1b | Claude-harness notes | `~/.claude/projects/E--Content-Pipeline---Q2/memory/` | the harness, per session — now a pointer at (1) |
-| 2 | The app's own agent memory | `agent_memory.json` + `memory_manager.py` | `AgentMemoryManager` |
+| 2 | The app's own agent memory | `agent_memory.json` + `legacy/python/memory_manager.py` | `AgentMemoryManager` |
 | 3 | Work and quality logs | `.beads/*.jsonl` (7 files) | `spine.js`, `qa.js`, `gates/lib/feedback.js`, and by hand |
 | 4 | Job / queue / ledger store | Railway volume `/data/cq-jobs`, else `.jobstore/` | `server/lib/job-store.js` |
 | 5 | Per-run resume state | `orchestrator/.runs/<runId>.json` | `orchestrator/lib/state.js` |
@@ -57,7 +57,7 @@ Retention exists, and is flat rather than tiered:
 | What | Default | Set by |
 |---|---|---|
 | Idempotency records | 24 hours | `IDEMPOTENCY_TTL_HOURS` (`job-store.js:298`) |
-| Terminal jobs (published/failed/rejected) | 7 days | `JOB_STORE_TTL_DAYS` (`job-store.js:239`) |
+| Terminal jobs (content/published/failed/rejected) | 7 days | `JOB_STORE_TTL_DAYS` (`job-store.js:239`) |
 | Non-terminal jobs — reported stuck, not deleted | 30 days | `JOB_STORE_STUCK_TTL_DAYS` (`job-store.js:240`) |
 
 The TTL runs from the **last transition**, not from creation (`job-store.js:233`) —
@@ -134,7 +134,7 @@ sentence for the guarantee.
 | Markdown frontmatter is mandatory | CLAUDE.md:105, `METADATA_CONTRACT.md` | `validate-after-write.sh` prints the block then exits 0; `smoke-test.sh` samples only the **first 10** `.md` files and warns |
 | Submodule committed FIRST | CLAUDE.md:65 | nothing checks ordering; smoke-test warns on *dirtiness* only |
 | SVG viewBox ≥ 850px for 7-node radials | CLAUDE.md:75 | the literal `850` appears in **no code** — only a `session-start.sh` echo |
-| `frames = VO_seconds × 30` | CLAUDE.md:69 | `smoke-test.sh:176-207` warns, never fails, and skips entirely when `video_production/voiceovers/` is absent |
+| `frames = VO_seconds × 30` | CLAUDE.md:69 | `smoke-test.sh:176-207` warns, never fails, and skips entirely when `media/video_production/voiceovers/` is absent |
 | Reviewer comments → `REVIEW_LOG.md` | CLAUDE.md:82, `REVIEWER_GATED_PIPELINE.md` | `grep REVIEW_LOG` across all `.js`/`.py` returns **zero** hits |
 
 ### The QA threshold disagreed with itself — fixed 2026-09-21
@@ -158,7 +158,7 @@ What was done:
 - `prompts/quality_rating.txt` now states 4.9 and no other bar, asks for exactly the
   four fields the schema accepts, documents `weakest_factor`, and no longer tells the
   judge to watch a video it cannot open.
-- `skills/quality_rating.py` **deleted** — imported by nothing, defaulted to 6.0, and
+- `legacy/python/skills/quality_rating.py` **deleted** — imported by nothing, defaulted to 6.0, and
   wrote this log in a third incompatible shape that would have crashed its own
   weekly-report function on the existing file.
 - `README.md` also listed **seven entirely different factor names** (Concept Clarity,
@@ -200,7 +200,7 @@ is the orchestrator spine, not the seven beads failures — so the repo has a st
 regression culture in one half and prose in the other.
 
 Coverage is correspondingly lopsided: 164 + 34 + 29 Node checks against 8 real
-pytest tests. All 15 `agents/` modules and 23 of 24 `skills/` modules have none.
+pytest tests. All 15 `legacy/python/agents/` modules and 23 of 24 `legacy/python/skills/` modules have none.
 
 ---
 
@@ -238,7 +238,7 @@ table. `pipeline-review/SKILL.md` has no frontmatter at all.
   `test_*.py` scripts that fire live API calls at import, two with hardcoded
   absolute paths under a previous machine's home directory. CI avoids this only by
   invoking `pytest tests/` explicitly.
-- **24 dead prompt copies** — `skills/` and `agents/` files define
+- **24 dead prompt copies** — `legacy/python/skills/` and `legacy/python/agents/` files define
   `_SYSTEM_PROMPT_TEXT` once and never read it. The leading underscore means
   neither the pre-commit hook nor the CI grep sees them, so each is a second copy
   of a prompt `prompts/*.txt` also holds, free to drift.

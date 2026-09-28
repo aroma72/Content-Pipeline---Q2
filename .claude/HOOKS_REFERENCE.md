@@ -482,7 +482,7 @@ Before each phase, test hooks:
 
 - [Anthropic: Building Effective Agents](https://www.anthropic.com/research/building-effective-agents) — Core patterns
 - [Claude Code Documentation](https://docs.anthropic.com/claude-code) — Hook API reference
-- [Drawing Room Planning](./planning/planning.md) — Gate definitions + SLAs
+- [Drawing Room Planning](../content/planning/planning.md) — Gate definitions + SLAs
 
 ---
 

@@ -22,8 +22,8 @@ Any time a video/session is produced through the pipeline. This skill wraps each
 
 ## Procedure (per step)
 
-1. **Init (first step only):** create the Review Log from `templates/REVIEW_LOG_template.md` at
-   `video_production/<project>/REVIEW_LOG.md`. Ensure `.beads/content_feedback.jsonl` exists.
+1. **Init (first step only):** create the Review Log from `content/templates/REVIEW_LOG_template.md` at
+   `media/video_production/<project>/REVIEW_LOG.md`. Ensure `.beads/content_feedback.jsonl` exists.
 
 2. **Load saved feedback:** read `.beads/content_feedback.jsonl`, keep entries whose `step` matches the
    current step or whose `scope` is `all-future-content`. The output MUST honor these.
@@ -51,7 +51,7 @@ Any time a video/session is produced through the pipeline. This skill wraps each
      step applying the feedback, re-review (step 3), and re-ask. Repeat until "Yes".
 
 8. After the final step's approval, write `PRODUCTION_SUMMARY.md` + `DELIVERY_MANIFEST.md`,
-   log QA to `.beads/qa_ratings.jsonl`, copy the final to `updated/`.
+   log QA to `.beads/qa_ratings.jsonl`, copy the final to `media/updated/`.
 
 ---
 
@@ -69,7 +69,7 @@ Any time a video/session is produced through the pipeline. This skill wraps each
 
 | Artifact | Purpose |
 |---|---|
-| `video_production/<project>/REVIEW_LOG.md` | Full audit trail of reviewer comments, interventions, gate decisions, feedback |
+| `media/video_production/<project>/REVIEW_LOG.md` | Full audit trail of reviewer comments, interventions, gate decisions, feedback |
 | `.beads/content_feedback.jsonl` | Persistent feedback store, loaded every step |
 | Simple per-step report (in chat) | What Aroma reviews before approving |
 

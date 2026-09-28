@@ -22,20 +22,20 @@ Ensure git history is clean, submodule pointers stay in sync, and changes are pr
 
 🚫 **NEVER:**
 ```bash
-git add drawing-room-video/
+git add media/drawing-room-video/
 git commit -m "Update submodule"  # ❌ WRONG - commits stale pointer
 ```
 
 ✅ **ALWAYS:**
 ```bash
 # Step 1: Commit submodule changes FIRST
-cd drawing-room-video/drawing-room-remotion
+cd media/drawing-room-video/drawing-room-remotion
 git add src/Root.tsx src/AutonomousSystemsPart*.tsx
 git commit -m "Update: Autonomous Session Parts 1-3"
 cd ../..
 
 # Step 2: Then commit main repo submodule pointer
-git add drawing-room-video/
+git add media/drawing-room-video/
 git commit -m "Update: Submodule pointer (Part 1-3 changes)"
 ```
 
@@ -47,14 +47,14 @@ git commit -m "Update: Submodule pointer (Part 1-3 changes)"
 
 ### Scenario: Update Autonomous Session Part 1
 
-**In submodule (drawing-room-video/drawing-room-remotion):**
+**In submodule (media/drawing-room-video/drawing-room-remotion):**
 ```bash
 # Make changes to TSX
 # Edit src/Root.tsx (durationInFrames)
 # Edit src/AutonomousSystemsPart1New.tsx (Scene changes)
 
 # Stage changes IN SUBMODULE
-cd drawing-room-video/drawing-room-remotion
+cd media/drawing-room-video/drawing-room-remotion
 git add src/Root.tsx src/AutonomousSystemsPart1New.tsx
 
 # Commit in submodule
@@ -70,14 +70,14 @@ cd ../..  # Back to Content Queen root
 git status | grep drawing-room-video
 
 # Stage the submodule pointer update
-git add drawing-room-video/
+git add media/drawing-room-video/
 
 # Commit the pointer update
 git commit -m "Update: Submodule pointer for Part 1 fixes"
 
 # Verify
 git log --oneline -1
-git show --name-status  # Should show drawing-room-video/ as modified
+git show --name-status  # Should show media/drawing-room-video/ as modified
 ```
 
 ---
@@ -93,19 +93,19 @@ set -e
 echo "📝 Committing full production pipeline..."
 
 # Step 1: If submodule changed (updated Root.tsx for frame counts)
-cd drawing-room-video/drawing-room-remotion
+cd media/drawing-room-video/drawing-room-remotion
 if git status --short | grep -q "^M"; then
   git add src/Root.tsx src/Autonomous*.tsx
   git commit -m "Update: Frame counts and Scene timing for Parts 1-3"
   cd ../..
-  git add drawing-room-video/
+  git add media/drawing-room-video/
   git commit -m "Update: Submodule pointer (frame count updates)"
 fi
 
 cd ../..
 
 # Step 2: Commit final videos and work tracking
-git add updated/autonomous_part*.mp4
+git add media/updated/autonomous_part*.mp4
 git add .beads/status.jsonl
 git commit -m "Complete: Autonomous Session Parts 1-3 production (render→extract→mux→publish)"
 
@@ -168,11 +168,11 @@ git diff --cached | grep -E ".env|secrets|credentials"
 # Should return nothing
 
 # 3. Verify submodule pointer is up-to-date (if submodule changed)
-cd drawing-room-video/drawing-room-remotion
+cd media/drawing-room-video/drawing-room-remotion
 git log -1 --format="%H %s"
 # Then back in main repo:
 cd ../..
-git ls-files -s drawing-room-video/  # Compare commit hash
+git ls-files -s media/drawing-room-video/  # Compare commit hash
 
 # 4. Run smoke tests (if tests exist)
 bash .claude/scripts/smoke-test.sh
@@ -189,14 +189,14 @@ git diff --cached --stat
 
 ```bash
 # Make changes in submodule
-cd drawing-room-video/drawing-room-remotion
+cd media/drawing-room-video/drawing-room-remotion
 # Edit files...
 git add src/Root.tsx src/AutonomousSystemsPart1New.tsx
 git commit -m "Fix: Autonomous Part 1 Scene 2 SVG text cutoff"
 
 # Return to main repo and update pointer
 cd ../..
-git add drawing-room-video/
+git add media/drawing-room-video/
 git commit -m "Update: Submodule pointer (Part 1 text cutoff fix)"
 ```
 
@@ -241,12 +241,12 @@ git commit -m "Harness Phase 4: Add standards documents (VIDEO_PRODUCTION_RULES,
 **Fix:**
 ```bash
 # Update submodule
-cd drawing-room-video/drawing-room-remotion
+cd media/drawing-room-video/drawing-room-remotion
 git pull origin main  # Or sync your changes
 
 # Back in main repo
 cd ../..
-git add drawing-room-video/
+git add media/drawing-room-video/
 git commit -m "Update: Submodule pointer to latest"
 ```
 
@@ -278,16 +278,16 @@ git push --force-with-lease  # Safer than --force
 **Fix:**
 ```bash
 # Check which commit to use
-git diff --ours drawing-room-video/
-git diff --theirs drawing-room-video/
+git diff --ours media/drawing-room-video/
+git diff --theirs media/drawing-room-video/
 
 # Choose one side
-git checkout --ours drawing-room-video/   # Keep current
+git checkout --ours media/drawing-room-video/   # Keep current
 # OR
-git checkout --theirs drawing-room-video/  # Take incoming
+git checkout --theirs media/drawing-room-video/  # Take incoming
 
 # Commit merge resolution
-git add drawing-room-video/
+git add media/drawing-room-video/
 git commit -m "Merge: Resolve submodule conflict"
 ```
 
@@ -297,7 +297,7 @@ git commit -m "Merge: Resolve submodule conflict"
 
 ```bash
 # Add to ~/.gitconfig
-git config --global alias.subcommit '!git add drawing-room-video/ && git commit -m "Update: Submodule pointer"'
+git config --global alias.subcommit '!git add media/drawing-room-video/ && git commit -m "Update: Submodule pointer"'
 
 # Then use: git subcommit (faster for frequent submodule updates)
 ```

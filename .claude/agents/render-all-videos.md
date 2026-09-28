@@ -20,7 +20,7 @@ Automate the full workflow for rendering autonomous session videos from Remotion
 
 - Remotion composition files in `drawing-room-remotion/src/*.tsx`
 - `Root.tsx` with correct `durationInFrames` (validated against VO duration)
-- Voiceovers extracted or available as `.aac` files in `video_production/voiceovers/`
+- Voiceovers extracted or available as `.aac` files in `media/video_production/voiceovers/`
 - ffmpeg and ffprobe installed
 - Git repository initialized with submodule
 
@@ -35,7 +35,7 @@ Before rendering, confirm that `durationInFrames` matches voiceover duration:
 ```bash
 # Get VO duration (seconds)
 ffprobe -v error -show_entries format=duration \
-  -of default=noprint_wrappers=1:nokey=1 video_production/voiceovers/part_1_vo.aac
+  -of default=noprint_wrappers=1:nokey=1 media/video_production/voiceovers/part_1_vo.aac
 
 # Should equal: (duration_seconds * 30fps)
 # Check in Root.tsx:
@@ -51,33 +51,33 @@ If mismatch found: **STOP**. Recalculate before rendering.
 Render each composition as silent MP4:
 
 ```bash
-cd drawing-room-video/drawing-room-remotion
+cd media/drawing-room-video/drawing-room-remotion
 
 npx remotion render AutonomousSystemsPart1 \
-  --output="../../video_production/autonomous_part1_silent.mp4"
+  --output="../../media/video_production/autonomous_part1_silent.mp4"
 
 npx remotion render AutonomousSystemsPart2 \
-  --output="../../video_production/autonomous_part2_silent.mp4"
+  --output="../../media/video_production/autonomous_part2_silent.mp4"
 
 npx remotion render AutonomousSystemsPart3 \
-  --output="../../video_production/autonomous_part3_silent.mp4"
+  --output="../../media/video_production/autonomous_part3_silent.mp4"
 ```
 
-**Output:** `video_production/autonomous_part*_silent.mp4` (temporary files)
+**Output:** `media/video_production/autonomous_part*_silent.mp4` (temporary files)
 
 **Verify:** Check file sizes (expected: 7-10 MB each)
 
 ### Stage 3: Extract Voiceover
 
-If VO doesn't already exist in `video_production/voiceovers/`, extract from final video or copy from source:
+If VO doesn't already exist in `media/video_production/voiceovers/`, extract from final video or copy from source:
 
 ```bash
 # Option A: Extract from existing final video
-ffmpeg -i updated/autonomous_part1_final.mp4 \
-  -vn -acodec aac -y video_production/voiceovers/part_1_vo.aac
+ffmpeg -i media/updated/autonomous_part1_final.mp4 \
+  -vn -acodec aac -y media/video_production/voiceovers/part_1_vo.aac
 
 # Option B: Copy from external source
-cp /path/to/part_1_vo.aac video_production/voiceovers/
+cp /path/to/part_1_vo.aac media/video_production/voiceovers/
 ```
 
 **Flags:**
@@ -85,7 +85,7 @@ cp /path/to/part_1_vo.aac video_production/voiceovers/
 - `-acodec aac` — Output AAC codec
 - `-y` — Overwrite without prompt
 
-**Output:** `video_production/voiceovers/part_*_vo.aac`
+**Output:** `media/video_production/voiceovers/part_*_vo.aac`
 
 **Verify:** VO exists and has correct duration (should match frames ÷ 30)
 
@@ -94,20 +94,20 @@ cp /path/to/part_1_vo.aac video_production/voiceovers/
 Combine silent MP4 with extracted AAC:
 
 ```bash
-ffmpeg -i video_production/autonomous_part1_silent.mp4 \
-  -i video_production/voiceovers/part_1_vo.aac \
+ffmpeg -i media/video_production/autonomous_part1_silent.mp4 \
+  -i media/video_production/voiceovers/part_1_vo.aac \
   -c:v copy -c:a aac -map 0:v:0 -map 1:a:0 -y \
-  updated/autonomous_part1_final.mp4
+  media/updated/autonomous_part1_final.mp4
 
-ffmpeg -i video_production/autonomous_part2_silent.mp4 \
-  -i video_production/voiceovers/part_2_vo.aac \
+ffmpeg -i media/video_production/autonomous_part2_silent.mp4 \
+  -i media/video_production/voiceovers/part_2_vo.aac \
   -c:v copy -c:a aac -map 0:v:0 -map 1:a:0 -y \
-  updated/autonomous_part2_final.mp4
+  media/updated/autonomous_part2_final.mp4
 
-ffmpeg -i video_production/autonomous_part3_silent.mp4 \
-  -i video_production/voiceovers/part_3_vo.aac \
+ffmpeg -i media/video_production/autonomous_part3_silent.mp4 \
+  -i media/video_production/voiceovers/part_3_vo.aac \
   -c:v copy -c:a aac -map 0:v:0 -map 1:a:0 -y \
-  updated/autonomous_part3_final.mp4
+  media/updated/autonomous_part3_final.mp4
 ```
 
 **Flags:**
@@ -117,12 +117,12 @@ ffmpeg -i video_production/autonomous_part3_silent.mp4 \
 - `-map 1:a:0` — Audio stream from input 1
 - `-y` — Overwrite without prompt
 
-**Output:** `updated/autonomous_part*_final.mp4`
+**Output:** `media/updated/autonomous_part*_final.mp4`
 
 **Verify:**
 ```bash
-ls -lh updated/autonomous_part*_final.mp4
-ffprobe -v error -show_entries format=duration updated/autonomous_part1_final.mp4
+ls -lh media/updated/autonomous_part*_final.mp4
+ffprobe -v error -show_entries format=duration media/updated/autonomous_part1_final.mp4
 ```
 
 ### Stage 5: Publish (Copy to Delivery Folder)
@@ -130,13 +130,13 @@ ffprobe -v error -show_entries format=duration updated/autonomous_part1_final.mp
 Copy final videos to publication endpoint:
 
 ```bash
-cp updated/autonomous_part*.mp4 /path/to/taleemabad-lms/content/
+cp media/updated/autonomous_part*.mp4 /path/to/taleemabad-lms/content/
 ```
 
 Or commit to git for distribution:
 
 ```bash
-git add updated/
+git add media/updated/
 git commit -m "Publish: Autonomous Session Part 1, 2, 3 (final muxed videos)"
 ```
 
@@ -146,17 +146,17 @@ git commit -m "Publish: Autonomous Session Part 1, 2, 3 (final muxed videos)"
 
 ```bash
 # Step 1: Commit submodule changes
-cd drawing-room-video/drawing-room-remotion
+cd media/drawing-room-video/drawing-room-remotion
 git add src/Root.tsx src/AutonomousSessionPart*.tsx
 git commit -m "Update: Autonomous Session Parts 1-3 (fixed frame counts, SVG safety)"
 cd ../..
 
 # Step 2: Commit main repo submodule pointer
-git add drawing-room-video/
+git add media/drawing-room-video/
 git commit -m "Update: Submodule pointer for Autonomous Session Parts 1-3"
 
 # Step 3: Commit final videos and work completion
-git add updated/autonomous_part*.mp4 .beads/status.jsonl
+git add media/updated/autonomous_part*.mp4 .beads/status.jsonl
 git commit -m "Complete: Autonomous Session Part 1, 2, 3 production (render, extract, mux, publish)"
 ```
 
@@ -170,7 +170,7 @@ git commit -m "Complete: Autonomous Session Part 1, 2, 3 production (render, ext
 - [ ] Mux completed without errors (ffmpeg no errors)
 - [ ] Final videos play correctly (spot check 2-3 sections)
 - [ ] No blank slides extending beyond audio
-- [ ] Final videos in `updated/` folder (not video_production/)
+- [ ] Final videos in `media/updated/` folder (not media/video_production/)
 - [ ] Submodule committed FIRST, then main repo pointer
 - [ ] `.beads/status.jsonl` updated with completion
 

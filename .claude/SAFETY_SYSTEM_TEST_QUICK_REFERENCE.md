@@ -13,7 +13,7 @@
 ## Test Setup (Already Done)
 
 ```
-video_production/test_broken/
+media/video_production/test_broken/
 ├── script.md         ← Broken script (no ## Scene blocks)
 └── config.json       ← Config pointing to broken script
 ```
@@ -28,7 +28,7 @@ Python 3.8+ installed and in PATH
 ### Command
 ```bash
 cd "c:\Users\Aroma Tahir\Downloads\Content Queen"
-python test_safety_system.py
+python legacy/python/checks/check_safety_system.py
 ```
 
 ### Expected Runtime
@@ -71,7 +71,7 @@ See `.claude/SAFETY_SYSTEM_TEST_GUIDE.md` → "Debugging if Tests Fail" section
 
 ## After Test Passes
 
-Test directory `video_production/test_broken/` is **automatically deleted**
+Test directory `media/video_production/test_broken/` is **automatically deleted**
 
 ---
 
@@ -79,7 +79,7 @@ Test directory `video_production/test_broken/` is **automatically deleted**
 
 - **Implementation Audit**: `.claude/DRY_RUN_IMPLEMENTATION_AUDIT.md`
 - **Test Guide**: `.claude/SAFETY_SYSTEM_TEST_GUIDE.md`
-- **Code Changes**: `video_production_cli.py`, `video_production_orchestrator_remotion.py`
+- **Code Changes**: `legacy/python/video_production_cli.py`, `legacy/python/video_production_orchestrator_remotion.py`
 
 ---
 

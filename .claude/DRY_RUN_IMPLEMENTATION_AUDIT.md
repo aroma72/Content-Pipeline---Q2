@@ -10,7 +10,7 @@
 
 Added comprehensive dry-run support to video production orchestrator with guards at all API call sites.
 
-**Entry Point**: `video_production_cli.py`
+**Entry Point**: `legacy/python/video_production_cli.py`
 - Added `--dry-run` flag to `run` subcommand
 - Passes `dry_run=True` to orchestrator
 
@@ -20,7 +20,7 @@ Added comprehensive dry-run support to video production orchestrator with guards
 
 ### 1. ElevenLabs Voiceover Generation
 
-**File**: `video_production_orchestrator_remotion.py`  
+**File**: `legacy/python/video_production_orchestrator_remotion.py`  
 **Method**: `_stage_voiceover()` (lines ~605-635)  
 **Guard Type**: Conditional block `if self.dry_run:`
 
@@ -36,7 +36,7 @@ Added comprehensive dry-run support to video production orchestrator with guards
 
 ### 2. Claude Code Generation (Remotion Compositions)
 
-**File**: `video_production_orchestrator_remotion.py`  
+**File**: `legacy/python/video_production_orchestrator_remotion.py`  
 **Method**: `_stage_remotion_render()` (lines ~668-692)  
 **Guard Type**: Conditional block `if self.dry_run:`
 
@@ -54,7 +54,7 @@ Added comprehensive dry-run support to video production orchestrator with guards
 
 ### 3. FFmpeg Media Processing
 
-**File**: `video_production_orchestrator_remotion.py`  
+**File**: `legacy/python/video_production_orchestrator_remotion.py`  
 **Method**: `_stage_post_production()` (lines ~722-747)  
 **Guard Type**: Conditional block `if self.dry_run:`
 
@@ -71,7 +71,7 @@ Added comprehensive dry-run support to video production orchestrator with guards
 
 ### 4. Remotion Render Subprocess
 
-**File**: `video_production_orchestrator_remotion.py`  
+**File**: `legacy/python/video_production_orchestrator_remotion.py`  
 **Method**: `_stage_remotion_render()` (lines ~668-692)  
 **Guard Type**: Part of dry-run stub for Claude calls
 
@@ -85,7 +85,7 @@ Added comprehensive dry-run support to video production orchestrator with guards
 
 ### 5. YouTube / Taleemabad / Vizard Uploads
 
-**File**: `video_production_orchestrator_remotion.py`  
+**File**: `legacy/python/video_production_orchestrator_remotion.py`  
 **Method**: `_stage_distribution()` (lines ~784-824)  
 **Guard Type**: Conditional block `if self.dry_run:`
 
@@ -105,7 +105,7 @@ Added comprehensive dry-run support to video production orchestrator with guards
 
 ### 6. Output Contract Validation
 
-**File**: `video_production_orchestrator_remotion.py`  
+**File**: `legacy/python/video_production_orchestrator_remotion.py`  
 **Method**: `_validate_output_contract()` (lines ~116-135)  
 **Guard Type**: Conditional check at method start
 
@@ -120,7 +120,7 @@ Added comprehensive dry-run support to video production orchestrator with guards
 
 ### 7. Pre-Flight Check
 
-**File**: `video_production_orchestrator_remotion.py`  
+**File**: `legacy/python/video_production_orchestrator_remotion.py`  
 **Method**: `pre_flight_check()` (lines ~478-484)  
 **Guard Type**: Records completion
 
@@ -166,7 +166,7 @@ Added comprehensive dry-run support to video production orchestrator with guards
 
 ### DRY_RUN_TRACKER Class
 
-**Location**: `video_production_orchestrator_remotion.py`  
+**Location**: `legacy/python/video_production_orchestrator_remotion.py`  
 **Lines**: ~48-102
 
 **Tracked Items**:
@@ -281,10 +281,10 @@ In dry-run mode, **ONLY state.json is written**:
 ### Pattern 1: ElevenLabs
 
 **Files checked for "elevenlabs"**:
-- `generate_autonomous_session_vo.py` — NOT IN CRITICAL PATH (not called by orchestrator)
-- `test_vo_debug.py` — Test file, not in critical path
+- `legacy/python/generate_autonomous_session_vo.py` — NOT IN CRITICAL PATH (not called by orchestrator)
+- `legacy/python/checks/check_vo_debug.py` — Test file, not in critical path
 - `skills/voiceover_generation_skill.py` — NOT CALLED (orchestrator calls voiceover_agent)
-- `generate_autonomous_systems_vo.py` — NOT IN CRITICAL PATH
+- `legacy/python/generate_autonomous_systems_vo.py` — NOT IN CRITICAL PATH
 - `skills/voiceover_skill.py` — NOT CALLED directly
 - `agents/rate_limiting.py` — Utility, not called by orchestrator
 
@@ -313,7 +313,7 @@ In dry-run mode, **ONLY state.json is written**:
 ### Pattern 4: Remotion Render
 
 **Files with "remotion render" or render subprocess**:
-- `video_production_orchestrator_remotion.py` — ✅ GUARDED (line ~668)
+- `legacy/python/video_production_orchestrator_remotion.py` — ✅ GUARDED (line ~668)
 - `skills/remotion_video_skill.py` — CALLED BY AGENT (which is bypassed)
 
 **Guard Location**: ✅ `_stage_remotion_render()` (line ~668)
@@ -324,9 +324,9 @@ In dry-run mode, **ONLY state.json is written**:
 
 **Files with upload patterns**:
 - `agents/distribution_agent.py` — ✅ BYPASSED (line ~784)
-- `utils/youtube_utils.py` — NOT CALLED
-- `config.py` — Configuration only
-- `fetch_youtube_metadata.py` — NOT IN CRITICAL PATH
+- `legacy/python/utils/youtube_utils.py` — NOT CALLED
+- `legacy/python/config.py` — Configuration only
+- `legacy/python/fetch_youtube_metadata.py` — NOT IN CRITICAL PATH
 
 **Guard Location**: ✅ `_stage_distribution()` skips distribution_agent.run_async() (line ~784)
 
@@ -348,10 +348,10 @@ In dry-run mode, **ONLY state.json is written**:
 
 ```bash
 # Run in dry-run mode
-python video_production_cli.py run --config config.json --dry-run
+python legacy/python/video_production_cli.py run --config config.json --dry-run
 
 # Or with inline args
-python video_production_cli.py run --script-path script.md --production-id test-123 --dry-run
+python legacy/python/video_production_cli.py run --script-path script.md --production-id test-123 --dry-run
 ```
 
 ---

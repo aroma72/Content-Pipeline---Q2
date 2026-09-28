@@ -76,7 +76,7 @@ No jargon dumps. Numbers only where they matter (duration, word count, score).
 
 ## The Review Log artifact (one per video/session)
 
-File: `video_production/<project>/REVIEW_LOG.md` (template in `templates/REVIEW_LOG_template.md`).
+File: `media/video_production/<project>/REVIEW_LOG.md` (template in `content/templates/REVIEW_LOG_template.md`).
 
 It is the single record Aroma can open to see **everything the reviewers did and said**, every gate decision, and every piece of feedback given. The reviewer **appends** to it after each step — it is never overwritten. Sections per step:
 - Reviewer findings (3 dimensions)
@@ -122,7 +122,7 @@ When Aroma is not satisfied, the reviewer MUST persist the feedback so it is nev
 | 3 | **Essential edit** | planning.md | Instructor approval < 4/5; cuts break continuity |
 | 4 | **Micro-clips** | planning.md | Any clip outside 2–4 min; concept incomplete |
 | 5 | **Quality gate** | `QA_RATING_SYSTEM.md` | Score < 4.9; privacy/PII leak |
-| 6 | **Publish** | git-workflow, LMS contract | Submodule pointer committed before submodule; final not in `updated/` |
+| 6 | **Publish** | git-workflow, LMS contract | Submodule pointer committed before submodule; final not in `media/updated/` |
 
 ---
 

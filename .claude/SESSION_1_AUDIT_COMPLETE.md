@@ -11,7 +11,7 @@ metadata:
 
 **Status**: ✅ COMPLETE AND READY FOR PUBLICATION  
 **Date Verified**: May 21, 2026  
-**Location**: `Agentic_AI_Mastery_Session1_Bundle/`
+**Location**: `content/session-bundles/agentic-ai-mastery-session1/`
 
 ---
 
@@ -21,9 +21,9 @@ metadata:
 
 | Video | Duration | Frames | File | Path | Status |
 |-------|----------|--------|------|------|--------|
-| **Video 1: Cohort Introduction** | 105s (1:45) | 3,150 | `Video_1_Cohort_Introduction.mp4` | `Agentic_AI_Mastery_Session1_Bundle/` | ✓ RENDER COMPLETE |
-| **Video 2: What is an Agent?** | 110s (1:50) | 3,300 | `Video_2_What_is_an_Agent.mp4` | `Agentic_AI_Mastery_Session1_Bundle/` | ✓ RENDER COMPLETE |
-| **Video 3: Claude Code Setup** | 95s (1:35) | 2,850 | `Video_3_Setup_Claude_Code.mp4` | `Agentic_AI_Mastery_Session1_Bundle/` | ✓ RENDER COMPLETE |
+| **Video 1: Cohort Introduction** | 105s (1:45) | 3,150 | `Video_1_Cohort_Introduction.mp4` | `content/session-bundles/agentic-ai-mastery-session1/` | ✓ RENDER COMPLETE |
+| **Video 2: What is an Agent?** | 110s (1:50) | 3,300 | `Video_2_What_is_an_Agent.mp4` | `content/session-bundles/agentic-ai-mastery-session1/` | ✓ RENDER COMPLETE |
+| **Video 3: Claude Code Setup** | 95s (1:35) | 2,850 | `Video_3_Setup_Claude_Code.mp4` | `content/session-bundles/agentic-ai-mastery-session1/` | ✓ RENDER COMPLETE |
 
 **Composition**: `src/AgenticAIMasteryVideo1.tsx`  
 **Registration**: `src/Root.tsx` (line 203-210)  
@@ -44,8 +44,8 @@ metadata:
 
 | Assignment | Type | Duration | File | Path | Status |
 |-----------|------|----------|------|------|--------|
-| **Theory Assignment** | MCQ + short-answer | 60-90 min | `Session1_TheoryAssignment.pdf` | `Agentic_AI_Mastery_Session1_Bundle/assignments/` | ✓ COMPLETE |
-| **Practical Assignment** | Hands-on task + screenshot evidence | 90-120 min | `Session1_PracticalAssignment.pdf` | `Agentic_AI_Mastery_Session1_Bundle/assignments/` | ✓ COMPLETE |
+| **Theory Assignment** | MCQ + short-answer | 60-90 min | `Session1_TheoryAssignment.pdf` | `content/session-bundles/agentic-ai-mastery-session1/assignments/` | ✓ COMPLETE |
+| **Practical Assignment** | Hands-on task + screenshot evidence | 90-120 min | `Session1_PracticalAssignment.pdf` | `content/session-bundles/agentic-ai-mastery-session1/assignments/` | ✓ COMPLETE |
 
 #### Assignment Details
 
@@ -69,7 +69,7 @@ metadata:
 
 | Document | Location | Status |
 |----------|----------|--------|
-| **README.txt** | `Agentic_AI_Mastery_Session1_Bundle/` | ✓ COMPLETE |
+| **README.txt** | `content/session-bundles/agentic-ai-mastery-session1/` | ✓ COMPLETE |
 | **Session overview** | Session 1 bundle | Included in README |
 | **Student guide** | Embedded in assignment PDFs | ✓ COMPLETE |
 
@@ -119,12 +119,12 @@ metadata:
 
 ### File Structure
 ```
-Agentic_AI_Mastery_Session1_Bundle/
+content/session-bundles/agentic-ai-mastery-session1/
 ├── README.txt                                      ✓
 ├── Video_1_Cohort_Introduction.mp4               ✓
 ├── Video_2_What_is_an_Agent.mp4                  ✓
 ├── Video_3_Setup_Claude_Code.mp4                 ✓
-└── assignments/
+└── content/assignments/
     ├── Session1_TheoryAssignment.pdf              ✓
     └── Session1_PracticalAssignment.pdf           ✓
 ```

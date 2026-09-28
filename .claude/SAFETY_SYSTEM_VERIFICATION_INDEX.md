@@ -2,7 +2,7 @@
 
 **Task**: Verify end-to-end lock-and-lock safety system with deliberately broken input  
 **Status**: ✅ COMPLETE — Ready to run  
-**Test Script**: `test_safety_system.py`
+**Test Script**: `legacy/python/checks/check_safety_system.py`
 
 ---
 
@@ -10,7 +10,7 @@
 
 ```bash
 cd "c:\Users\Aroma Tahir\Downloads\Content Queen"
-python test_safety_system.py
+python legacy/python/checks/check_safety_system.py
 ```
 
 **Expected result**: 4 PASS verdicts, all tests pass, exit code 0
@@ -32,7 +32,7 @@ python test_safety_system.py
 ## What Was Built
 
 ### 1. Dry-Run Mode (`--dry-run` flag)
-- ✅ Added to `video_production_cli.py` → `run` subcommand
+- ✅ Added to `legacy/python/video_production_cli.py` → `run` subcommand
 - ✅ Prevents all paid API calls (ElevenLabs, Claude, uploads)
 - ✅ Records estimated costs avoided
 - ✅ Returns stub files instead of real ones
@@ -61,9 +61,9 @@ python test_safety_system.py
 ### 4. Test Infrastructure
 
 **Test Files**:
-- `test_safety_system.py` — 4-phase test script (900+ lines)
-- `video_production/test_broken/script.md` — Deliberately broken script
-- `video_production/test_broken/config.json` — Config pointing to broken script
+- `legacy/python/checks/check_safety_system.py` — 4-phase test script (900+ lines)
+- `media/video_production/test_broken/script.md` — Deliberately broken script
+- `media/video_production/test_broken/config.json` — Config pointing to broken script
 
 **Test Phases**:
 1. Dry-run with broken script → verify status "halted"
@@ -174,7 +174,7 @@ Each test validates ONE critical aspect:
 
 ## Key Files Modified
 
-### `video_production_cli.py`
+### `legacy/python/video_production_cli.py`
 ```python
 # ADDED: --dry-run flag
 run_parser.add_argument(
@@ -189,7 +189,7 @@ dry_run = getattr(args, "dry_run", False)
 orchestrator = VideoProductionOrchestratorRemotionEdition(config, dry_run=dry_run)
 ```
 
-### `video_production_orchestrator_remotion.py`
+### `legacy/python/video_production_orchestrator_remotion.py`
 ```python
 # ADDED: DRY_RUN_TRACKER class (60+ lines)
 # ADDED: dry_run parameter to __init__
@@ -220,9 +220,9 @@ orchestrator = VideoProductionOrchestratorRemotionEdition(config, dry_run=dry_ru
 ## Files Created
 
 ### Test Infrastructure
-- `test_safety_system.py` — Main test script
-- `video_production/test_broken/script.md` — Broken test script
-- `video_production/test_broken/config.json` — Test config
+- `legacy/python/checks/check_safety_system.py` — Main test script
+- `media/video_production/test_broken/script.md` — Broken test script
+- `media/video_production/test_broken/config.json` — Test config
 
 ### Documentation (all in `.claude/`)
 - `SAFETY_SYSTEM_TEST_IMPLEMENTATION_SUMMARY.md` — Full details
@@ -260,11 +260,11 @@ orchestrator = VideoProductionOrchestratorRemotionEdition(config, dry_run=dry_ru
 ## Test Isolation & Cleanup
 
 **Test creates**:
-- `video_production/test_broken/` directory
-- `video_production/test_broken/state.json` during execution
+- `media/video_production/test_broken/` directory
+- `media/video_production/test_broken/state.json` during execution
 
 **Cleanup removes**:
-- Entire `video_production/test_broken/` directory
+- Entire `media/video_production/test_broken/` directory
 - All test artifacts
 
 **No test pollution**: After test runs, only thing left is test script and docs
@@ -277,7 +277,7 @@ To add to your CI pipeline:
 ```bash
 #!/bin/bash
 cd /path/to/Content\ Queen
-python test_safety_system.py
+python legacy/python/checks/check_safety_system.py
 if [ $? -ne 0 ]; then
   echo "Safety system test FAILED"
   exit 1
@@ -316,7 +316,7 @@ echo "Safety system test PASSED"
 ## Ready to Test
 
 ```bash
-python test_safety_system.py
+python legacy/python/checks/check_safety_system.py
 ```
 
 **Expected runtime**: ~10 seconds  

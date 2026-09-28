@@ -118,7 +118,7 @@ as `https://i.ytimg.com/vi/<id>/hqdefault.jpg` with no API call; and it is the s
 learner-facing path (2.2) will eventually use.
 
 **Why storage is in scope at all.** Before this decision there was nowhere durable a video lived:
-`*.mp4` and `published/` are gitignored, Railway wipes the container filesystem on redeploy (the
+`*.mp4` and `content/published/` are gitignored, Railway wipes the container filesystem on redeploy (the
 Dockerfile says so, and points at a `docs/DEPLOYMENT_PREREQS.md` that does not exist), and
 `upload` fails closed. A console for seeing your videos had nothing to show.
 
@@ -193,8 +193,8 @@ Three places already claim to integrate with an LMS, all against a **guessed** e
 
 | Location | What it does |
 |---|---|
-| `agents/distribution_agent.py:164-174` | Validates a payload and `POST`s videos to `LMS_BASE_URL` |
-| `agents/learner_pack_publisher_agent.py:9` | Imports the same credentials; writes "metadata JSON for LMS ingestion" |
+| `legacy/python/agents/distribution_agent.py:164-174` | Validates a payload and `POST`s videos to `LMS_BASE_URL` |
+| `legacy/python/agents/learner_pack_publisher_agent.py:9` | Imports the same credentials; writes "metadata JSON for LMS ingestion" |
 | `.env.example` | Advertises both variables as if the contract were known |
 
 They are inert only because the variables are unset — `distribution_agent` guards on

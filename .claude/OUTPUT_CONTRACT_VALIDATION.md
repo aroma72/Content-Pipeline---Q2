@@ -17,7 +17,7 @@
 
 ## Where Validation Runs
 
-**Integration Point**: `video_production_orchestrator_remotion.py` main loop (line ~360)
+**Integration Point**: `legacy/python/video_production_orchestrator_remotion.py` main loop (line ~360)
 
 ```python
 result = stage_func(state)  # Stage completes
@@ -310,12 +310,12 @@ Fix the issues and restart the orchestrator.
 
 | File | Lines | Method | Purpose |
 |------|-------|--------|---------|
-| `video_production_orchestrator_remotion.py` | 58-100 | `_validate_output_contract()` | Router; dispatches to stage validators |
-| `video_production_orchestrator_remotion.py` | 102-142 | `_validate_remotion_render_output()` | Checks MP4 from Remotion |
-| `video_production_orchestrator_remotion.py` | 144-185 | `_validate_post_production_output()` | Checks MP4 + captions from PostProd |
-| `video_production_orchestrator_remotion.py` | 187-267 | `_ffprobe_validate()` | FFmpeg wrapper for stream inspection |
-| `video_production_orchestrator_remotion.py` | ~360 | Main loop integration | Calls validation BEFORE review checkpoint |
-| `schemas.py` | ~218 | `VideoProductionState.output_contract_failures` | State field to track failures |
+| `legacy/python/video_production_orchestrator_remotion.py` | 58-100 | `_validate_output_contract()` | Router; dispatches to stage validators |
+| `legacy/python/video_production_orchestrator_remotion.py` | 102-142 | `_validate_remotion_render_output()` | Checks MP4 from Remotion |
+| `legacy/python/video_production_orchestrator_remotion.py` | 144-185 | `_validate_post_production_output()` | Checks MP4 + captions from PostProd |
+| `legacy/python/video_production_orchestrator_remotion.py` | 187-267 | `_ffprobe_validate()` | FFmpeg wrapper for stream inspection |
+| `legacy/python/video_production_orchestrator_remotion.py` | ~360 | Main loop integration | Calls validation BEFORE review checkpoint |
+| `legacy/python/schemas.py` | ~218 | `VideoProductionState.output_contract_failures` | State field to track failures |
 
 ---
 

@@ -180,8 +180,8 @@ fi
 # ============================================================================
 echo "📹 Test 5: Frame Count Validation..."
 
-if [ -d "video_production/voiceovers" ]; then
-  for vo_file in video_production/voiceovers/*.aac; do
+if [ -d "media/video_production/voiceovers" ]; then
+  for vo_file in media/video_production/voiceovers/*.aac; do
     if [ -f "$vo_file" ]; then
       VO_DURATION=$(ffprobe -v error -show_entries format=duration \
         -of default=noprint_wrappers=1:nokey=1 "$vo_file" 2>/dev/null || echo "0")
@@ -189,9 +189,9 @@ if [ -d "video_production/voiceovers" ]; then
       EXPECTED_FRAMES=$(echo "$VO_DURATION * 30" | bc 2>/dev/null || echo "0")
       PART_NUM=$(basename "$vo_file" | grep -oE '[0-9]+' | head -1)
 
-      if [ -f "drawing-room-video/drawing-room-remotion/src/Root.tsx" ]; then
+      if [ -f "media/drawing-room-video/drawing-room-remotion/src/Root.tsx" ]; then
         ACTUAL_FRAMES=$(grep "AutonomousSystemsPart$PART_NUM" \
-          "drawing-room-video/drawing-room-remotion/src/Root.tsx" | \
+          "media/drawing-room-video/drawing-room-remotion/src/Root.tsx" | \
           grep "durationInFrames" | grep -oE '[0-9]+' | head -1)
 
         if [ ! -z "$ACTUAL_FRAMES" ] && [ ! -z "$EXPECTED_FRAMES" ]; then
@@ -226,7 +226,7 @@ while IFS= read -r md_file; do
     MISSING_FRONTMATTER=$((MISSING_FRONTMATTER+1))
   fi
 done < <(find . -name "*.md" -type f ! -path "./.git/*" ! -path "./node_modules/*" \
-    ! -path "./updated/*" ! -path "./venv/*" ! -name "CLAUDE.md" \
+    ! -path "./media/updated/*" ! -path "./venv/*" ! -name "CLAUDE.md" \
     ! -path "./.claude/memories/*" | head -10)
 
 # The 10-file cap is inherited behaviour. Say so, rather than letting a partial
@@ -259,10 +259,10 @@ fi
 # ============================================================================
 echo "📦 Test 8: Submodule Status..."
 
-if [ -d "drawing-room-video/drawing-room-remotion" ]; then
+if [ -d "media/drawing-room-video/drawing-room-remotion" ]; then
   # Subshell, so a failure cannot leave the script in the wrong directory and
   # make every later relative path resolve somewhere unexpected.
-  if (cd drawing-room-video/drawing-room-remotion && git status -s 2>/dev/null | grep -q "^ M"); then
+  if (cd media/drawing-room-video/drawing-room-remotion && git status -s 2>/dev/null | grep -q "^ M"); then
     echo "  ⚠️  Submodule has unstaged changes (commit submodule FIRST)"
     WARN=$((WARN+1))
   else

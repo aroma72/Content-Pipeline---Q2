@@ -2,7 +2,7 @@
 # Complete video creation workflow - runs after render completes
 
 PROJECT_DIR="/c/Users/Aroma Tahir/Downloads/Content Queen"
-VIDEO_PROD_DIR="$PROJECT_DIR/video_production/session_2_video_1_mindset"
+VIDEO_PROD_DIR="$PROJECT_DIR/media/video_production/session_2_video_1_mindset"
 FFMPEG_PATH="$PROJECT_DIR/node_modules/ffmpeg-static/ffmpeg.exe"
 
 VIDEO_SILENT="$VIDEO_PROD_DIR/consumer_producer_mindset_silent_extended.mp4"

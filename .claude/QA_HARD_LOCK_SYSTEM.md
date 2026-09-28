@@ -188,7 +188,7 @@ call(step_name="final_qa", production_id="prod-123", ...)
 
 ---
 
-### 2. `video_production_orchestrator_remotion.py`
+### 2. `legacy/python/video_production_orchestrator_remotion.py`
 
 #### Modified Method: `_stage_qa()`
 ```python
@@ -285,7 +285,7 @@ result = VideoProductionOrchestratorRemotionEdition.force_unlock(
 
 ---
 
-### 3. `video_production_cli.py` (NEW FILE)
+### 3. `legacy/python/video_production_cli.py` (NEW FILE)
 
 **Purpose:** CLI tool for running video production with --force-unlock support
 
@@ -293,17 +293,17 @@ result = VideoProductionOrchestratorRemotionEdition.force_unlock(
 
 #### 1. Run Pipeline
 ```bash
-python video_production_cli.py run --script-path script.md --series-title "My Series"
-python video_production_cli.py run --config config.json
+python legacy/python/video_production_cli.py run --script-path script.md --series-title "My Series"
+python legacy/python/video_production_cli.py run --config config.json
 ```
 
 #### 2. Force Unlock
 ```bash
 # Option A: Subcommand
-python video_production_cli.py unlock prod-2026-05-21 "Quality check false positive; manual review passed"
+python legacy/python/video_production_cli.py unlock prod-2026-05-21 "Quality check false positive; manual review passed"
 
 # Option B: Flag (shorthand)
-python video_production_cli.py --force-unlock prod-2026-05-21 "Manual override approved by product team"
+python legacy/python/video_production_cli.py --force-unlock prod-2026-05-21 "Manual override approved by product team"
 ```
 
 **Unlock Validation:**
@@ -385,7 +385,7 @@ state.current_stage = "halted"
 ### Force Unlock via CLI
 ```
 User runs:
-  python video_production_cli.py unlock prod-2026-05-21 "Manual review approved"
+  python legacy/python/video_production_cli.py unlock prod-2026-05-21 "Manual review approved"
   ↓
 Call force_unlock("prod-2026-05-21", "Manual review approved")
   ↓
@@ -397,7 +397,7 @@ Log correction to agent_memory.json
   ↓
 Display success message
   ↓
-User can now resume: python video_production_cli.py run --config config.json
+User can now resume: python legacy/python/video_production_cli.py run --config config.json
 ```
 
 ---
@@ -449,7 +449,7 @@ Production prod-2026-05-21 is QA-locked.
 Reason: failed QA minimum: fps, audio_quality
 
 To override:
-  python video_production_cli.py unlock prod-2026-05-21 "<explicit reason>"
+  python legacy/python/video_production_cli.py unlock prod-2026-05-21 "<explicit reason>"
 ```
 
 ### Decision Timeout (No Auto-Approve)
@@ -471,7 +471,7 @@ To override:
 - [ ] Verify state.json contains `qa_lock.locked = true`
 - [ ] Verify _stage_qa() raises GateFailedError
 - [ ] Verify pipeline halts (doesn't reach distribution)
-- [ ] Run: `python video_production_cli.py unlock prod-id "test reason"`
+- [ ] Run: `python legacy/python/video_production_cli.py unlock prod-id "test reason"`
 - [ ] Verify unlock success message
 - [ ] Verify agent_memory.json contains correction entry
 - [ ] Resume pipeline: should proceed past QA

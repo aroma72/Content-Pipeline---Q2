@@ -20,7 +20,7 @@ echo "Running pre-commit checks..."
 #
 # Select the files first, and only look inside them if there are any.
 echo -n "Checking for hardcoded prompts... "
-STAGED_PY=$(git diff --cached --name-only --diff-filter=ACM | grep -E "^(skills|agents)/.*\.py$" || true)
+STAGED_PY=$(git diff --cached --name-only --diff-filter=ACM | grep -E "^legacy/python/(skills|agents)/.*\.py$" || true)
 if [ -n "$STAGED_PY" ]; then
   # -- Read the STAGED content, not the working tree: the point is what is about to
   # be committed, and those differ whenever a file is partially staged.

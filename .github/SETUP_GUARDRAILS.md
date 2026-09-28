@@ -49,7 +49,7 @@ git commit --allow-empty -m "test"
 ```
 
 ### What it blocks:
-- ❌ Hardcoded SYSTEM_PROMPT in skills/ or agents/
+- ❌ Hardcoded SYSTEM_PROMPT in legacy/python/skills/ or legacy/python/agents/
 - ❌ Deletion of prompts/, tests/, .claude/logs/
 - ❌ Removing pytest from requirements.txt
 - ❌ Committing secrets (AWS keys, API keys, etc.)

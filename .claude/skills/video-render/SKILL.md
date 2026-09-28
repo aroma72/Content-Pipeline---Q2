@@ -23,8 +23,8 @@ Output: Silent video (no audio) ready for VO mux.
 
 - Node.js 16+ installed
 - Remotion CLI available (`npx remotion --version` works)
-- Project root is parent of `drawing-room-video/` submodule
-- Composition files exist in `drawing-room-video/drawing-room-remotion/src/`
+- Project root is parent of `media/drawing-room-video/` submodule
+- Composition files exist in `media/drawing-room-video/drawing-room-remotion/src/`
 - All dependencies installed: `npm install` in remotion submodule
 
 ---
@@ -32,7 +32,7 @@ Output: Silent video (no audio) ready for VO mux.
 ## Command Syntax
 
 ```bash
-cd drawing-room-video/drawing-room-remotion
+cd media/drawing-room-video/drawing-room-remotion
 
 npx remotion render <COMPOSITION_ID> [OPTIONS]
 ```
@@ -52,7 +52,7 @@ npx remotion render <COMPOSITION_ID> [OPTIONS]
 
 **Render Part 1:**
 ```bash
-cd drawing-room-video/drawing-room-remotion
+cd media/drawing-room-video/drawing-room-remotion
 
 npx remotion render AutonomousSystemsPart1 \
   --output="../../video_production/autonomous_part1_silent.mp4"
@@ -73,7 +73,7 @@ npx remotion render AutonomousSystemsPart3 \
 ### Batch Render (All Parts)
 
 ```bash
-cd drawing-room-video/drawing-room-remotion
+cd media/drawing-room-video/drawing-room-remotion
 
 for part in 1 2 3; do
   npx remotion render AutonomousSystemsPart$part \
@@ -110,7 +110,7 @@ npx remotion render AutonomousSystemsPart1 \
 - 4629 frames (Part 2) ≈ 7-8 MB
 - 6255 frames (Part 3) ≈ 9-10 MB
 
-**Location:** `video_production/autonomous_part*_silent.mp4`
+**Location:** `media/video_production/autonomous_part*_silent.mp4`
 
 ---
 
@@ -120,15 +120,15 @@ After rendering, verify:
 
 ```bash
 # Check file exists and has reasonable size
-ls -lh video_production/autonomous_part*.mp4
+ls -lh media/video_production/autonomous_part*.mp4
 
 # Get actual duration (should match VO + 0-1 second)
 ffprobe -v error -show_entries format=duration \
   -of default=noprint_wrappers=1:nokey=1 \
-  video_production/autonomous_part1_silent.mp4
+  media/video_production/autonomous_part1_silent.mp4
 
 # Spot check: Play first 10 seconds
-ffplay -t 10 video_production/autonomous_part1_silent.mp4
+ffplay -t 10 media/video_production/autonomous_part1_silent.mp4
 ```
 
 ---
@@ -189,7 +189,7 @@ npx remotion render AutonomousSystemsPart1 ...
 **Fix:**
 ```bash
 # Delete partial output
-rm video_production/autonomous_part*_silent.mp4
+rm media/video_production/autonomous_part*_silent.mp4
 
 # Retry render with verbose output
 npx remotion render AutonomousSystemsPart1 --output="..." --log=verbose

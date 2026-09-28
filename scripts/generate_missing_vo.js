@@ -96,7 +96,7 @@ async function generateVO(text, outputPath) {
 }
 
 async function main() {
-  const outputDir = path.join(__dirname, '..', 'video_production', 'session_2_video_1_mindset');
+  const outputDir = path.join(__dirname, '..', 'media', 'video_production', 'session_2_video_1_mindset');
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
   }

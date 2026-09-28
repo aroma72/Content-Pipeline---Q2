@@ -22,7 +22,7 @@ BASE_URL = "https://api.elevenlabs.io/v1"
 
 VO_TEXT = "Want to go viral? Win the first second. Hook them before they scroll — that's the game."
 
-OUT = Path(__file__).parent.parent / "video_production" / "how_to_go_viral_instagram" / "vo.mp3"
+OUT = Path(__file__).parent.parent / "media" / "video_production" / "how_to_go_viral_instagram" / "vo.mp3"
 OUT.parent.mkdir(parents=True, exist_ok=True)
 
 

@@ -21,7 +21,9 @@ const ffmpeg = require('ffmpeg-static');
 
 // Puppeteer is not a root dependency; it lives inside the per-project installs.
 const PUPPET_CANDIDATES = [
-  '../drawing-room-video/drawing-room-remotion/node_modules/puppeteer',
+  // The root install (package.json dependency). Was the Remotion submodule's copy,
+  // which is an empty gitlink on this machine and never resolved.
+  '../node_modules/puppeteer',
   '../explainer-videos/autonomy/node_modules/puppeteer',
   '../explainer-videos/brand-intro-outro/node_modules/puppeteer',
 ];

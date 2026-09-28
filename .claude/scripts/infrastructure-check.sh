@@ -78,8 +78,19 @@ fi
 
 # 2. Check for hardcoded prompts
 echo -n "2. Hardcoded prompts scan... "
-HARDCODED=$(grep -r "^SYSTEM_PROMPT = " skills/ agents/ --include="*.py" 2>/dev/null | wc -l)
-if [ "$HARDCODED" -eq 0 ]; then
+# The Python layer moved to legacy/python/ on 2026-09-28. A missing directory
+# must FAIL: grep on a path that is gone prints nothing, and zero read as a pass.
+PY_LAYER="legacy/python"
+if [ ! -d "$PY_LAYER/skills" ] || [ ! -d "$PY_LAYER/agents" ]; then
+  echo "✗ FAIL: $PY_LAYER/skills or $PY_LAYER/agents is missing"
+  update_health "hardcoded_prompts" "fail" "$PY_LAYER/skills or $PY_LAYER/agents missing -- nothing was scanned"
+  HARDCODED=-1
+else
+  HARDCODED=$(grep -r "^SYSTEM_PROMPT = " "$PY_LAYER/skills/" "$PY_LAYER/agents/" --include="*.py" 2>/dev/null | wc -l)
+fi
+if [ "$HARDCODED" -eq -1 ]; then
+  :
+elif [ "$HARDCODED" -eq 0 ]; then
   echo "✓ (none found)"
   update_health "hardcoded_prompts" "pass" "No hardcoded prompts detected"
 else
@@ -92,7 +103,7 @@ echo -n "3. Prompt loading... "
 if [ -z "$PY" ]; then
   echo "✗ FAIL: no Python interpreter"
   update_health "prompt_loading" "fail" "No Python interpreter found (tried python3, python, py -3)"
-elif $PY -c "
+elif PYTHONPATH="legacy/python" $PY -c "
 from skills.signal_intake import SignalIntakeSkill
 from skills.content_planner import ContentPlannerSkill
 " 2>/dev/null; then
@@ -154,7 +165,7 @@ echo -n "8. Pipeline validation... "
 if [ -z "$PY" ]; then
   echo "✗ FAIL: no Python interpreter"
   update_health "pipeline_structure" "fail" "No Python interpreter found (tried python3, python, py -3)"
-elif $PY main.py --dry-run 2>/dev/null | grep -q "PERCEIVE"; then
+elif $PY legacy/python/main.py --dry-run 2>/dev/null | grep -q "PERCEIVE"; then
   echo "✓"
   update_health "pipeline_structure" "pass" "6-stage orchestrator validated"
 else

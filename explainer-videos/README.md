@@ -6,7 +6,7 @@ voiceover sentence has its own matching animated visual, wrapped in brand bumper
 ## Start here
 - **Spec / why + LAWS:** [`EXPLAINER-VIDEO-PIPELINE-SPEC.md`](EXPLAINER-VIDEO-PIPELINE-SPEC.md)
 - **How to run it:** the `creating-explainer-videos` skill (`.claude/skills/creating-explainer-videos/`)
-  — its `templates/` are the source of truth you copy per video.
+  — its `.claude/skills/creating-explainer-videos/templates/` are the source of truth you copy per video.
 - **Draft a script:** `writing-explainer-scripts` · **gate it:** `reviewing-explainer-scripts`
   · **motion mechanics:** `animation-motion-design`
 

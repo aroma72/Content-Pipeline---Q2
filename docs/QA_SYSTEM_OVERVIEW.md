@@ -123,7 +123,7 @@ Formal QA Rating (rating_skill)
     ↓
 Log to `.beads/qa_ratings.jsonl`
     ↓
-Move to `updated/` folder
+Move to `media/updated/` folder
     ↓
 Publish to Taleemabad
 ```
@@ -160,7 +160,7 @@ Every rating is appended to `.beads/qa_ratings.jsonl` as
 The threshold lives in exactly one place — `THRESHOLD` in
 `orchestrator/lib/stages/qa.js` — and `orchestrator/test-regressions.js` asserts that
 the judge prompt and the standards docs state that same number. There is no Python
-entry point; `skills/quality_rating.py` was deleted in 2026-09 because it was
+entry point; `legacy/python/skills/quality_rating.py` was deleted in 2026-09 because it was
 imported by nothing, disagreed with the enforced bar, and wrote this log in a third
 incompatible shape.
 
@@ -227,7 +227,7 @@ Create ticket with:
 ### With Content Pipeline
 - QA gate comes **after** video muxing, **before** publishing
 - Failed videos returned to production queue
-- Approved videos moved to `updated/` folder
+- Approved videos moved to `media/updated/` folder
 - All ratings logged for weekly reporting
 
 ---

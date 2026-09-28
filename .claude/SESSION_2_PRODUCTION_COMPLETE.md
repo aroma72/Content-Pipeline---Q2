@@ -141,7 +141,7 @@ Content Queen/
 ├── session2_segment2_final.mp4           ✓ (video + audio muxed)
 ├── generate-voiceovers.js                (Node.js script for TTS)
 ├── mux-audio-video.js                    (Node.js script for muxing)
-└── drawing-room-video/drawing-room-remotion/
+└── media/drawing-room-video/drawing-room-remotion/
     └── src/
         ├── Session2_Introduction_Segment1.tsx    ✓
         ├── Session2_Introduction_Segment2.tsx    ✓

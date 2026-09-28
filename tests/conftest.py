@@ -16,7 +16,9 @@ import pytest
 from unittest.mock import Mock, MagicMock
 
 # Ensure imports work
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# The Python layer moved to legacy/python/ on 2026-09-28; config, schemas and
+# skills.* resolve from there, not from the repo root.
+sys.path.insert(0, str(Path(__file__).parent.parent / 'legacy' / 'python'))
 
 from schemas import ContentSignal, ContentUnit, LearnerPack, InstructorBrief
 

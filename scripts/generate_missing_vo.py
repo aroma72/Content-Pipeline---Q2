@@ -77,7 +77,7 @@ def generate_vo(text: str, output_path: str) -> bool:
 
 
 if __name__ == "__main__":
-    output_dir = Path(__file__).parent.parent / "video_production" / "session_2_video_1_mindset"
+    output_dir = Path(__file__).parent.parent / "media" / "video_production" / "session_2_video_1_mindset"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     output_file = output_dir / "vo_missing_parts.mp3"

@@ -104,7 +104,7 @@ delta.
 ### Why the plugin has its own root
 
 A plugin loads skills only from `<plugin root>/skills/`, and a manifest **cannot** point elsewhere —
-a `"skills"` key is silently ignored. This repo's root `skills/` is the Python API wrappers, so the
+a `"skills"` key is silently ignored. This repo's root `legacy/python/skills/` is the Python API wrappers, so the
 eval plugin lives at `evals/agent-plugin/` and `evals/skills/build-plugin.js` copies `.claude/skills`
 into it. The copy is generated, gitignored, and rebuilt on every run so it cannot drift; the script
 exits 1 if it ever stages zero skills.

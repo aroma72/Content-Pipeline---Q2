@@ -15,7 +15,7 @@ Requirements for all script generation (voiceover, video narration, explainer co
 > examples from different domains. Depth now comes from staying with one person across the
 > whole lifecycle of the concept (the pain → the fix → the structure → the failure mode →
 > the payoff), not from breadth. This **supersedes** the old "3+ diverse examples" rule.
-> See [feedback_scripting_standards](../../memory/feedback_scripting_standards.md).
+> Source: the feedback note `feedback_scripting_standards` (the note itself was never committed to this repo).
 
 
 Every script MUST demonstrate genuine conceptual understanding through:
@@ -156,7 +156,7 @@ there is no hold on screen to do that job any more.
 
 > **Rule:** Every video moves in every beat (Ken Burns / cutout-puppet / evolving infographics), AND
 > **2–4 beats carry real generated motion** because movement genuinely helps the teaching there.
-> Established on the autonomy + evals series ([feedback_use_animations](../../memory/feedback_use_animations.md)).
+> Established on the autonomy + evals series (feedback note `feedback_use_animations`, never committed to this repo).
 
 - **Pick the beats while writing the script, not after.** The script author names them; the gate
   (`reviewing-explainer-scripts`) hard-fails a script that doesn't.
@@ -171,7 +171,7 @@ there is no hold on screen to do that job any more.
   `ART_IDS=04,12,22 node generate-lesson-video-omni.js --yes` → `clips/<id>.mp4`.
   `compile-lesson.js` uses a clip automatically when present and **falls back to Ken Burns** when it
   isn't — so a credit-out never blocks the render, it just quietly costs the motion.
-- **Two modes, always ask first** ([feedback_omni_two_modes](../../memory/feedback_omni_two_modes.md)):
+- **Two modes, always ask first** (feedback note `feedback_omni_two_modes`, never committed to this repo):
   full i2v animation vs camera-pan on stills. Ali must stay consistent in either.
 - **Every clip must pass `node qa-clips.js` BEFORE compiling** (REQUIRED effective 2026-09-02). It is a
   self-healing gate: detect → repair → verify → reject if unrepairable. Three defects, all found in the

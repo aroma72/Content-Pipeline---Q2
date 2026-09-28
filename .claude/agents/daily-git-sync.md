@@ -46,7 +46,7 @@ Before committing, verify:
    ```bash
    git status | grep -E ".mp4|.mov|.png|.psd"
    ```
-   If found: Check if intentional. Video files should go in `updated/` only.
+   If found: Check if intentional. Video files should go in `media/updated/` only.
 
 ### Commit All Changes
 
@@ -84,7 +84,7 @@ echo '{"timestamp":"2026-05-19T12:00:00Z","task":"daily-git-sync","status":"comp
 - `.env` environment variables
 - `credentials.json`, `secrets.txt`
 - `node_modules/` (development only)
-- Video files > 100MB (use `updated/` with Git LFS if needed)
+- Video files > 100MB (use `media/updated/` with Git LFS if needed)
 - `.DS_Store`, `Thumbs.db`
 - IDE artifacts (`.vscode/`, `.idea/`)
 

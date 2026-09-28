@@ -3,8 +3,8 @@
 // Stage the project skills into the eval plugin root.
 //
 // `claude plugin eval` only loads skills from <plugin root>/skills/. This repo's
-// skills live in .claude/skills/, and the repo root's own skills/ directory is
-// already taken by the Python API wrappers - so the eval plugin gets its own
+// skills live in .claude/skills/, and a plain skills/ directory already means the
+// legacy Python API wrappers (legacy/python/skills/) - so the eval plugin gets its own
 // root, and this script copies the skills into it.
 //
 // The copy is GENERATED and gitignored, and it is wiped and rebuilt on every

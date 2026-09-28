@@ -10,9 +10,9 @@ import json
 print("[*] Installing dependencies...")
 os.system('py -m pip install -q pydub -q 2>nul')
 
-video_path = Path("video_production/video_1_part_1/VIDEO_1_PART_1_FINAL.mp4")
-audio_path = Path("drawing-room-video/drawing-room-remotion/public/video_1_part_1/vo.mp3")
-output_path = Path("video_production/video_1_part_1/VIDEO_1_PART_1_WITH_AUDIO.mp4")
+video_path = Path("media/video_production/video_1_part_1/VIDEO_1_PART_1_FINAL.mp4")
+audio_path = Path("media/drawing-room-video/drawing-room-remotion/public/video_1_part_1/vo.mp3")
+output_path = Path("media/video_production/video_1_part_1/VIDEO_1_PART_1_WITH_AUDIO.mp4")
 
 if not video_path.exists():
     print(f"[ERROR] Video not found: {video_path}")

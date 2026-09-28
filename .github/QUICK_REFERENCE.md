@@ -11,10 +11,10 @@
 pytest tests/ -v --tb=short
 
 # 2. Validate pipeline
-python main.py --dry-run
+python legacy/python/main.py --dry-run
 
 # 3. Check for hardcoded prompts
-grep -r "^SYSTEM_PROMPT = " skills/ agents/ && echo "❌ FAIL" || echo "✅ OK"
+grep -r "^SYSTEM_PROMPT = " legacy/python/skills/ legacy/python/agents/ && echo "❌ FAIL" || echo "✅ OK"
 
 # 4. Run smoke test
 bash .claude/scripts/smoke-test.sh
@@ -34,7 +34,7 @@ bash .claude/scripts/smoke-test.sh
 
 ## Monthly
 
-- [ ] Scan for hardcoded prompts: `grep -r "^SYSTEM_PROMPT" skills/`
+- [ ] Scan for hardcoded prompts: `grep -r "^SYSTEM_PROMPT" legacy/python/skills/`
 - [ ] Check memory freshness: `ls -la ~/.claude/projects/*/memory/*.md`
 - [ ] Review test coverage: `pytest tests/ --cov-report=term-missing`
 
@@ -53,7 +53,7 @@ bash .claude/scripts/infrastructure-check.sh
 pytest tests/ -v --tb=no
 
 # Prompt audit
-grep -r "SYSTEM_PROMPT" skills/ agents/ | wc -l
+grep -r "SYSTEM_PROMPT" legacy/python/skills/ legacy/python/agents/ | wc -l
 
 # Logger status
 tail .claude/logs/session.log
@@ -68,7 +68,7 @@ tail .claude/logs/session.log
 | Tests broken | `pytest tests/ -v --tb=short` then `git diff tests/` |
 | Hardcoded prompt found | Extract to `prompts/`, reload skill |
 | Logger not writing | `mkdir -p .claude/logs && chmod 755 .claude/logs` |
-| Pipeline invalid | Run `python main.py --dry-run` and check output |
+| Pipeline invalid | Run `python legacy/python/main.py --dry-run` and check output |
 | CI/CD fails | Check `.github/workflows/test.yml` syntax |
 
 ---

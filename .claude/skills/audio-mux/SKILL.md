@@ -24,7 +24,7 @@ Extract voiceover audio from video and mux audio with silent video. Two-stage wo
 - ffmpeg installed and in PATH (`ffmpeg -version` works)
 - ffprobe installed (comes with ffmpeg)
 - Input files (silent MP4 or final MP4 with audio)
-- Output directory exists (`video_production/voiceovers/`, `updated/`)
+- Output directory exists (`media/video_production/voiceovers/`, `media/updated/`)
 
 ---
 
@@ -47,21 +47,21 @@ ffmpeg -i <INPUT_MP4> -vn -acodec aac -y <OUTPUT_AAC>
 
 **Extract from final video (has audio):**
 ```bash
-ffmpeg -i updated/autonomous_part1_final.mp4 \
-  -vn -acodec aac -y video_production/voiceovers/part_1_vo.aac
+ffmpeg -i media/updated/autonomous_part1_final.mp4 \
+  -vn -acodec aac -y media/video_production/voiceovers/part_1_vo.aac
 ```
 
 **Extract from external source:**
 ```bash
 ffmpeg -i /path/to/session_recording.mp3 \
-  -acodec aac -y video_production/voiceovers/part_1_vo.aac
+  -acodec aac -y media/video_production/voiceovers/part_1_vo.aac
 ```
 
 **Batch extract all parts:**
 ```bash
-ffmpeg -i video_production/autonomous_part1.mp4 -vn -acodec aac -y video_production/voiceovers/part_1_vo.aac
-ffmpeg -i video_production/autonomous_part2.mp4 -vn -acodec aac -y video_production/voiceovers/part_2_vo.aac
-ffmpeg -i video_production/autonomous_part3.mp4 -vn -acodec aac -y video_production/voiceovers/part_3_vo.aac
+ffmpeg -i media/video_production/autonomous_part1.mp4 -vn -acodec aac -y media/video_production/voiceovers/part_1_vo.aac
+ffmpeg -i media/video_production/autonomous_part2.mp4 -vn -acodec aac -y media/video_production/voiceovers/part_2_vo.aac
+ffmpeg -i media/video_production/autonomous_part3.mp4 -vn -acodec aac -y media/video_production/voiceovers/part_3_vo.aac
 ```
 
 ### Validation
@@ -70,7 +70,7 @@ ffmpeg -i video_production/autonomous_part3.mp4 -vn -acodec aac -y video_product
 # Verify AAC file exists and has audio
 ffprobe -v error -show_entries format=duration \
   -of default=noprint_wrappers=1:nokey=1 \
-  video_production/voiceovers/part_1_vo.aac
+  media/video_production/voiceovers/part_1_vo.aac
 
 # Expected: Duration in seconds (e.g., 156.2)
 ```
@@ -104,19 +104,19 @@ ffmpeg -i <SILENT_MP4> -i <AUDIO_AAC> \
 
 **Single mux (Part 1):**
 ```bash
-ffmpeg -i video_production/autonomous_part1_silent.mp4 \
-  -i video_production/voiceovers/part_1_vo.aac \
+ffmpeg -i media/video_production/autonomous_part1_silent.mp4 \
+  -i media/video_production/voiceovers/part_1_vo.aac \
   -c:v copy -c:a aac -map 0:v:0 -map 1:a:0 -y \
-  updated/autonomous_part1_final.mp4
+  media/updated/autonomous_part1_final.mp4
 ```
 
 **Batch mux all parts:**
 ```bash
 for part in 1 2 3; do
-  ffmpeg -i video_production/autonomous_part${part}_silent.mp4 \
-    -i video_production/voiceovers/part_${part}_vo.aac \
+  ffmpeg -i media/video_production/autonomous_part${part}_silent.mp4 \
+    -i media/video_production/voiceovers/part_${part}_vo.aac \
     -c:v copy -c:a aac -map 0:v:0 -map 1:a:0 -y \
-    updated/autonomous_part${part}_final.mp4
+    media/updated/autonomous_part${part}_final.mp4
   echo "✓ Part $part muxed"
 done
 ```
@@ -126,7 +126,7 @@ done
 ```bash
 # Verify final video has both audio and video
 ffprobe -v error -show_entries stream=codec_type,codec_name,duration \
-  updated/autonomous_part1_final.mp4
+  media/updated/autonomous_part1_final.mp4
 
 # Expected output:
 # codec_type=video, codec_name=h264
@@ -134,7 +134,7 @@ ffprobe -v error -show_entries stream=codec_type,codec_name,duration \
 # duration=156.2
 
 # Spot check: Play 10 seconds
-ffplay -t 10 updated/autonomous_part1_final.mp4
+ffplay -t 10 media/updated/autonomous_part1_final.mp4
 ```
 
 ---
@@ -150,9 +150,9 @@ set -e  # Exit on any error
 echo "🎬 Audio Pipeline: Extract → Mux"
 
 # Input/output paths
-SILENT_VIDEO="video_production/autonomous_part1_silent.mp4"
-OUTPUT_VO="video_production/voiceovers/part_1_vo.aac"
-FINAL_VIDEO="updated/autonomous_part1_final.mp4"
+SILENT_VIDEO="media/video_production/autonomous_part1_silent.mp4"
+OUTPUT_VO="media/video_production/voiceovers/part_1_vo.aac"
+FINAL_VIDEO="media/updated/autonomous_part1_final.mp4"
 
 # Stage 1: Extract VO from external source
 echo "📊 Stage 1: Extracting voiceover..."
@@ -259,7 +259,7 @@ ffmpeg -i video.mp4 -i audio.aac \
 **Frame Rate:** 30fps  
 **File Size:** Similar to silent input (audio adds ~1-2 MB)
 
-**Location:** `updated/autonomous_part*_final.mp4`
+**Location:** `media/updated/autonomous_part*_final.mp4`
 
 ---
 

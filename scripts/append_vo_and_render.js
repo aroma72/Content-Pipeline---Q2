@@ -8,8 +8,8 @@ const path = require('path');
 const { execSync } = require('child_process');
 
 const PROJECT_DIR = path.join(__dirname, '..');
-const VIDEO_PROD_DIR = path.join(PROJECT_DIR, 'video_production', 'session_2_video_1_mindset');
-const REMOTION_DIR = path.join(PROJECT_DIR, 'drawing-room-video', 'drawing-room-remotion');
+const VIDEO_PROD_DIR = path.join(PROJECT_DIR, 'media', 'video_production', 'session_2_video_1_mindset');
+const REMOTION_DIR = path.join(PROJECT_DIR, 'media', 'drawing-room-video', 'drawing-room-remotion');
 const FFMPEG_PATH = path.join(PROJECT_DIR, 'node_modules', 'ffmpeg-static', 'ffmpeg.exe');
 
 const VO_PATH = path.join(VIDEO_PROD_DIR, 'vo.mp3');

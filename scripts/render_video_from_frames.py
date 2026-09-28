@@ -13,9 +13,9 @@ import numpy as np
 from PIL import Image
 
 # Paths
-frames_dir = Path("drawing-room-video/drawing-room-remotion/public/video_1_part_1/animated")
-audio_path = Path("drawing-room-video/drawing-room-remotion/public/video_1_part_1/vo.mp3")
-output_path = Path("video_production/video_1_part_1/VIDEO_1_PART_1_FINAL.mp4")
+frames_dir = Path("media/drawing-room-video/drawing-room-remotion/public/video_1_part_1/animated")
+audio_path = Path("media/drawing-room-video/drawing-room-remotion/public/video_1_part_1/vo.mp3")
+output_path = Path("media/video_production/video_1_part_1/VIDEO_1_PART_1_FINAL.mp4")
 
 # Ensure output dir exists
 output_path.parent.mkdir(parents=True, exist_ok=True)

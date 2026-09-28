@@ -36,7 +36,7 @@ A motivational 20-second video explaining why learners should invest time in AI 
 
 ## Technical Details
 
-**File**: `drawing-room-video/drawing-room-remotion/src/WhyShouldYouLearnAI.tsx`
+**File**: `media/drawing-room-video/drawing-room-remotion/src/WhyShouldYouLearnAI.tsx`
 
 **Component**: `WhyShouldYouLearnAIComp`
 
@@ -61,14 +61,14 @@ A motivational 20-second video explaining why learners should invest time in AI 
 
 ### From Remotion Studio (Interactive)
 ```bash
-cd drawing-room-video/drawing-room-remotion
+cd media/drawing-room-video/drawing-room-remotion
 npm start
 ```
 Then select **"WhyShouldYouLearnAI"** from the sidebar and preview.
 
 ### Command Line Render
 ```bash
-cd drawing-room-video/drawing-room-remotion
+cd media/drawing-room-video/drawing-room-remotion
 npx remotion render WhyShouldYouLearnAI ../../why-learn-ai.mp4
 ```
 

@@ -2,7 +2,7 @@
 
 **Purpose**: Verify that the orchestrator's lock-and-lock system fires correctly when given deliberately broken input.
 
-**Test File**: `test_safety_system.py`
+**Test File**: `legacy/python/checks/check_safety_system.py`
 
 ---
 
@@ -11,7 +11,7 @@
 ### Run the Test
 ```bash
 cd "c:\Users\Aroma Tahir\Downloads\Content Queen"
-python test_safety_system.py
+python legacy/python/checks/check_safety_system.py
 ```
 
 **Expected Result**: All 4 tests PASS with final verdict showing "ALL TESTS PASSED"
@@ -39,7 +39,7 @@ Before testing, the script:
 ════════════════════════════════════════════════════════════════════════════
 
 Production ID: test_broken
-Script path: video_production/test_broken/script.md
+Script path: media/video_production/test_broken/script.md
 Script exists: True
 
 Running orchestrator with --dry-run flag...
@@ -51,7 +51,7 @@ DRY-RUN MODE — NO API CALLS, NO CHARGES
 [INFO] VideoProductionOrchestratorRemotionEdition: PRE-FLIGHT CHECK STARTING
 
 [ERROR] VideoProductionOrchestratorRemotionEdition: Script contains no ## Scene blocks
-  Script: video_production/test_broken/script.md
+  Script: media/video_production/test_broken/script.md
   Found: 0 scenes
   Required: at least 1 scene per video (1 videos requested)
 
@@ -68,7 +68,7 @@ ACTION REQUIRED:
   3. Restart the orchestrator
 
 Production: test_broken
-Script: video_production/test_broken/script.md
+Script: media/video_production/test_broken/script.md
 Output Dir: c:\Users\Aroma Tahir\Downloads\Content Queen\video_production\test_broken
 
 [ORCHESTRATOR OUTPUT ABOVE]
@@ -88,7 +88,7 @@ Error: ╔═══════════════════════�
 ### Test 2: Verify state.json Content
 
 **What it does**:
-- Reads `video_production/test_broken/state.json`
+- Reads `media/video_production/test_broken/state.json`
 - Validates structure and failure metadata
 
 **Expected state.json content**:
@@ -213,7 +213,7 @@ Re-run result status: halted
   CLEANUP
 ════════════════════════════════════════════════════════════════════════════
 
-✓ Deleted test directory: video_production/test_broken
+✓ Deleted test directory: media/video_production/test_broken
 ```
 
 ---
@@ -294,7 +294,7 @@ Re-run result status: halted
 
 You can add this to your CI pipeline:
 ```bash
-python test_safety_system.py
+python legacy/python/checks/check_safety_system.py
 if [ $? -ne 0 ]; then
   echo "Safety system test failed!"
   exit 1

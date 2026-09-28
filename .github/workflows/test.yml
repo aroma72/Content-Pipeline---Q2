@@ -22,8 +22,8 @@ jobs:
 
       - name: Lint - Check for hardcoded prompts
         run: |
-          echo "Checking for hardcoded SYSTEM_PROMPT in skills/agents..."
-          if grep -r "^SYSTEM_PROMPT = " skills/ agents/ --include="*.py"; then
+          echo "Checking for hardcoded SYSTEM_PROMPT in legacy/python/skills and legacy/python/agents..."
+          if grep -r "^SYSTEM_PROMPT = " legacy/python/skills/ legacy/python/agents/ --include="*.py"; then
             echo "ERROR: Hardcoded SYSTEM_PROMPT found. Extract to prompts/ directory."
             exit 1
           else
@@ -52,11 +52,11 @@ jobs:
 
       - name: Run all tests with coverage
         run: |
-          pytest tests/ -v --cov=skills --cov=agents --cov-report=term-missing
+          pytest tests/ -v --cov=legacy/python/skills --cov=legacy/python/agents --cov-report=term-missing
 
       - name: Validate pipeline structure
         run: |
-          python main.py --dry-run > /tmp/pipeline.log
+          python legacy/python/main.py --dry-run > /tmp/pipeline.log
           if grep -q "PERCEIVE" /tmp/pipeline.log && grep -q "PLAN" /tmp/pipeline.log; then
             echo "✓ Pipeline structure validated"
             cat /tmp/pipeline.log
@@ -165,7 +165,7 @@ jobs:
 
       - name: Verify file structure
         run: |
-          for dir in skills agents prompts tests; do
+          for dir in legacy/python/skills legacy/python/agents prompts tests; do
             if [ ! -d "$dir" ]; then
               echo "ERROR: Required directory missing: $dir"
               exit 1

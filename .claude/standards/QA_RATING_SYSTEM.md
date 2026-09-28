@@ -212,7 +212,7 @@ Internal QA framework for evaluating all content videos before publication.
   - [ ] Visual safety verified (no text cutoff)
   - [ ] Audio quality spot-checked (2–3 sections)
   - [ ] No blank slides beyond audio
-  - [ ] Video saved to `updated/`
+  - [ ] Video saved to `media/updated/`
   - [ ] Git commits in correct order (submodule FIRST)
 - [ ] **Documentation:** QA log entry created ✓
 
@@ -355,7 +355,7 @@ Human QA Rating (rubric evaluation) → SCORE
     ↓ (if score ≥ minimum)
 Publish Gate Cleared ✓
     ↓
-Move to `updated/` folder
+Move to `media/updated/` folder
     ↓
 Log in qa_ratings.jsonl
     ↓
