@@ -13,9 +13,15 @@ if [[ "$COMMAND" == "git" ]] && [[ "$ARGS" == *"push"* ]] && [[ "$ARGS" == *"--f
   fi
 fi
 
-# Block .env file commits
+# Block .env file commits. Templates (.env.example / .env.sample / .env.template)
+# hold placeholders, not values, and are meant to be tracked -- the old rule
+# blocked them too, so a rewritten template could not be committed at all.
+# They are removed from the string first; any other ".env" still blocks.
 if [[ "$COMMAND" == "git" ]] && [[ "$ARGS" == *"add"* ]]; then
-  if [[ "$ARGS" == *".env"* ]]; then
+  REAL_ENV="${ARGS//.env.example/}"
+  REAL_ENV="${REAL_ENV//.env.sample/}"
+  REAL_ENV="${REAL_ENV//.env.template/}"
+  if [[ "$REAL_ENV" == *".env"* ]]; then
     echo "❌ BLOCKED: Cannot commit .env files. These should be in .gitignore."
     exit 1
   fi
