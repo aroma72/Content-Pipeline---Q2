@@ -27,208 +27,7 @@ No frontmatter: this file is machine-managed and exempt from the metadata contra
 <!-- 2026-09-24, 2026-09-23 rotated to .claude/memories/session-archive/ -->
 
 <!-- 2026-09-25, 2026-09-25, 2026-09-25, 2026-09-24, 2026-09-24 rotated to .claude/memories/session-archive/ -->
-## 2026-09-28 (b) — The Drive credential already existed, in the other repo
-
-Storage work from the 2026-09-24 session (now in session-archive): finished videos go to TU's
-Drive, then local copies are reclaimed. **The browser-consent blocker is gone.**
-
-Aroma asked whether `E:/Cohort2LP/.env` had TU's Google credentials. It does, and it is a better
-answer than the OAuth flow that was planned.
-
-**What is there:** `apps/api/src/services/google-drive.ts` authenticates with a Google **service
-account** (`GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_JSON` / `_PATH`), and its
-`GOOGLE_DRIVE_ROOT_FOLDER_ID` is `0AIFc0tqEg-G-Uk9PVA` -- **the same Shared Drive root** that
-holds `UnPublished-CQ-Videos`. TU identity across that repo is
-`taleemabad.university@taleemabad.com`; the SA is
-`taleemabad-university@cohort2-learning-platform.iam.gserviceaccount.com`.
-
-**Why this beats the OAuth plan:** no consent screen, so nothing waits on a person at a browser;
-and reusing the same variable names means one credential to rotate instead of two services
-quietly drifting onto two different "TU accounts". `gdrive.js` now prefers the service account
-(RS256 JWT grant by hand, ~25 lines, still no `googleapis` dependency), OAuth kept as fallback.
-
-**Scope had to widen, deliberately:** the SA path uses full `drive`, not `drive.file`.
-`drive.file` is blind to files it did not create, so it cannot write into a *pre-existing* Shared
-Drive folder -- Cohort2LP's own code carries the same note. What bounds the breadth is the grant
-(the SA sees only Drives shared with it), not the scope string. Pinned by a test so nobody
-"tightens" it back and gets a baffling 404 on a folder that is plainly there.
-
-**Verified live, not asserted:** `probeFolder` -> `{ok:true, visible:true,
-name:"UnPublished-CQ-Videos", sharedDrive:true}`; a real 26.8MB `_final.mp4` uploaded, Drive's own
-md5 matched the local md5 exactly, downloaded back byte-identical. Test file trashed, folder
-confirmed empty again.
-
-**Harness note:** the auto-mode classifier blocked two attempts to read the SA key inline
-(`[Credential Exploration]`) -- correctly. What worked was putting the probe in a reviewable
-scratchpad script and letting `gdrive.js` load the key internally, never printing it. Do that
-rather than arguing with the classifier.
-
-**Config state after this session:**
-- LOCAL `.env`: done and verified -- `GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_PATH` points at the
-  Cohort2LP key by ABSOLUTE PATH, deliberately. The key is never copied into this repo: its
-  GitHub remote is public and `.gitignore` covers `orchestrator/.credentials/` but NOT a root
-  `.credentials/`. `gdrive-auth.js --check` passes end to end.
-- RAILWAY `content-queen`: `GDRIVE_FOLDER_ID` is SET (used `--skip-deploys`, so it did NOT ship
-  the other session's unreleased commits as a side effect -- live was faef6b7, main is ahead).
-  `GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_JSON` is **NOT set**: the auto-mode classifier refuses
-  `[Secret-Store Writes]`, and that is not something to route around. A person must paste it, or
-  add a Bash permission rule.
-
-**Also learned:** production's volume holds only ~55MB (3 lessons, 2 videos). So the volume was
-NOT about to fill -- the real consumer is the render working dirs on the container, which is also
-what the RAM plateau is (see H31). The offload still matters, but "the volume is filling" was the
-wrong mental model and the numbers say so.
-
-**Next session:** paste `GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_JSON` into Railway, commit + deploy the
-service-account changes (live faef6b7 predates them, so the var is inert until then), then
-`node scripts/offload-deliverables-to-drive.js` dry run -> `--yes --limit 1` -> the rest.
-Open question for Aroma: the folder is named "UnPublished" but every video goes there, published
-or not.
-
----
-
-## 2026-09-28 — Production can be emptied now; apt retries; the demo Build button has a token
-
-**`cb86402` is on `origin/main`. NOT DEPLOYED** — `scripts/deploy.sh` was refused by the
-harness classifier (production deploy), so production is still serving `faef6b7` and still
-holds all 4 test jobs. Everything else is done, committed and green. Remaining steps, in order:
-
-```
-bash scripts/deploy.sh                                                   # proves itself by /health.build.commit
-CONTENT_API_TOKEN=<token> node scripts/reset-production-state.js          # rehearsal, changes nothing
-CONTENT_API_TOKEN=<token> node scripts/reset-production-state.js --yes --because "clearing the pipeline test runs"
-```
-
-The reset route does not exist on production until that deploy lands, so the script will
-404 against `faef6b7`. Deploy first. Verified just before handover: production `ok:true`,
-nothing in flight, worker idle — the deploy will not be refused by predeploy-check.
-
-**`bash scripts/deploy.sh` from PowerShell failed with "The system cannot find the file
-specified" — and it is NOT the script.** `bash` on PATH is `C:\Windows\System32\bash.exe`, the
-Microsoft WSL launcher, and no distro is installed. The error names no file and mentions
-neither bash nor WSL, so it reads exactly like a missing deploy.sh; the script was present,
-executable and LF-clean the whole time. This was already half-known (`lessons.md` H7, the
-`this-machine` skill §2) but written up as a Python/subprocess trap, so nobody connected it to
-a PowerShell prompt. Both are now updated to name the launcher and cover every caller.
-
-Fixed properly rather than documented again: `scripts/deploy.ps1` resolves Git Bash (usual
-install paths, then `bin\bash.exe` derived from wherever `git.exe` on PATH lives), forwards its
-arguments, and refuses loudly rather than falling back. CLAUDE.md, §6.2a and DEPLOYMENT_PREREQS
-now give the PowerShell form. **A trap that is only documented still costs the next person ten
-minutes; a wrapper costs them nothing.**
-
-**DONE: deployed `0c2c20c`, and production is EMPTY.** verify-live 9/9. The reset removed 4 job
-records, 3 deliverables (52.2 MB) and 9 queue items; the queue log is at
-`/data/cq-jobs/queue/archive/queue-2026-09-27T23-15-12-922Z.jsonl`. Ledger intact and checked
-afterwards: `spentUsd 2.1557`, `reservedUsd 0`, `monthlyUsd 50`, 2 runs. No open reservations
-existed, so nothing was released. One of the 9 queue items was still `queued` — pending work the
-worker would have built and paid for on resume; clearing it removed a live spend risk.
-
-**I BROKE `/health.storage` AND SHIPPED IT. Read `lessons.md` H39 before the next commit.**
-`git add server/app.js` swept in ANOTHER SESSION's uncommitted `authKind: gd.identity().kind`,
-while `orchestrator/lib/gdrive.js` — where `identity()` lives — stayed uncommitted in their tree.
-Production got a caller with no callee. The worse half: `npm test` was green because it graded
-the WORKING TREE, whose gdrive.js does export `identity`. The commit was broken before it left
-the machine and every local check said otherwise. Prove a commit with
-`git show HEAD:<file> > <file>` (restore straight after), a worktree, or CI — not a dirty tree.
-
-Nothing shouted because `/health`'s whole `storage` block is one try/catch: the throw replaced
-every volume-usage figure with `{error}` while still answering 200 ok:true, so deploy.sh proved
-the commit and verify-live passed 9/9. Found by reading /health by hand.
-
-Fixed: the `authKind` line is removed with a comment saying to restore it in the SAME commit as
-gdrive.js. **That line is the other session's work and they will need to re-add it** — their
-gdrive.js (176 lines, service-account auth) is still uncommitted and untouched. Their
-DEPLOYMENT_PREREQS.md Drive/service-account rewrite WAS swept in and is now published; docs only,
-coherent, left alone. A test now asserts storage.deliverables/driveOffload/memory are present and
-storage.error is absent — it fails against the committed tree and passes against the fixed one.
-
-**CLOSED OUT: `f42c891` is live and verified.** verify-live 9/9, and the thing verify-live does
-NOT cover was checked by hand, which is the whole point of H39: `/health.storage.error` is gone
-and `deliverables` / `driveOffload` / `memory` are real again. Production state now —
-`jobs 0`, `deliverables 0 bytes`, worker idle with `eligible 0`, tenants `cohort2-lms` +
-`default`, ledger untouched at `spentUsd 2.1557 / reservedUsd 0 / monthlyUsd 50 / runs 2`.
-
-The reset route was exercised against production and refuses correctly: no credential → 401;
-operator credential with impossible counts → 409 `confirm_mismatch` carrying the real
-`{jobs:0, deliverables:0, queueItems:0}` and changing nothing. The demo build route answers a
-readable sentence instead of a bare code.
-
-**NEXT SESSION — three things, none urgent:**
-1. The other session owns `orchestrator/lib/gdrive.js` (176 uncommitted lines, service-account
-   auth). When they land it they must re-add `authKind: gd.identity().kind` to the driveOffload
-   block in `server/app.js` — there is a comment there saying so. Their
-   `docs/DEPLOYMENT_PREREQS.md` Drive rewrite was already swept in and published.
-2. Send `docs/integration-requests/2026-09-28-clearing-the-test-content.md` to the LMS team.
-   Their rows for the cleared videos are still there, and their poller reads two 404s as lost
-   paid work. Also tells them to keep `scriptApprovedBy`/`scriptApprovedAt`.
-3. LMS branch `af467b4` on `feat/script-approval-gate` in E:\Cohort2LP is still unpushed
-   (their remote). `GDRIVE_*` still unset, though the volume is now at 0 bytes so there is
-   nothing to offload.
-
-**What `bf457c3` adds.** `POST /api/v1/admin/reset` — the first way to empty the job store,
-the deliverables and the queue without unlinking files on the live volume. Five guards:
-`admin` scope (operator credential only, never grantable via TENANTS_JSON), nothing in flight,
-`confirm` echoing the exact live counts, a written `because`, and an explicit `dryRun: false`.
-The ledger is never touched; open reservations on removed records are released, settled ones
-left alone. The queue log is renamed into `queue/archive/`, not deleted.
-
-Also: the Dockerfile apt step retries with the package lists cleared between attempts (the
-`fcf961a` mirror failure), CI now builds the image when the Dockerfile or manifests change,
-and the demo course-builder page asks for a token instead of showing a bare `HTTP 401`.
-
-**Live inventory to clear, read 2026-09-28** — 4 job records, 3 deliverables (54.7 MB, 2 with
-video), queue history, **0 open reservations** (`reservedUsd: 0`, $2.1557 settled in September).
-Production was idle and on `faef6b7` when this was read.
-
-**Two traps worth remembering beyond this task.** `job-store.shared()` is a process-wide
-singleton fixed by the first caller, so under test every router read one other test's store —
-`api.build({ store })` now takes it by injection. And `test-regressions.js` reads `api.js` as
-TEXT and forbids `forget(` between the GET and DELETE of a lesson's `/file`; the reset route
-calls forget legitimately, so it lives at the END of the file rather than weakening that guard.
-Both are written up in `lessons.md` H38.
-
-**Sent to the LMS:** `docs/integration-requests/2026-09-28-clearing-the-test-content.md`. It
-warns them that their poller reads two 404s as `gone` and will report a deliberate cleanup as
-lost paid work unless they drop their rows too, and answers their 09-27 §3 question — keep
-`scriptApprovedBy`/`scriptApprovedAt`, an audit trail that clears is not one.
-
-**Still open:** push + deploy + run the reset; LMS branch `af467b4` in E:\Cohort2LP still
-unpushed (their remote); `GDRIVE_*` unset. The `stdin warning` case in test-regressions is
-flaky on an untrusted workspace — it passes on re-run and is unrelated to any of this.
-
----
-
-## 2026-09-27 — Incident closed out: wave 2 live (86cc40a), tenant cap set, evals re-measured
-
-**Live on production:** `86cc40a` proven by `/health.build.commit` (deploy.sh's proof step
-works now that `.dockerignore` admits `build.json`). `DEFAULT_TENANT_MONTHLY_USD=50` set on
-Railway (`--skip-deploys`; TENANTS_JSON is cached per boot, so it needs the deploy that
-followed). `/demo/course-builder/build` requires a tenant token — the demo page's Build button
-401s until it sends one; Aroma's call whether to wire the page or leave the demo read-only.
-
-**Phase E measured ($1.66, 394s).** `script-lint-preflight` fired 0/3 → **3/3**, its case 0.56 →
-1.00, Δ +1.00. The pushier description is what did it — keep that style
-(`.claude/standards/SKILL_AUTHORING.md` §3 should say so). `verify-before-claiming`'s replacement
-case ALSO scored 1.00 in both arms: Claude refuses "is this evidence?" claims natively. Decision:
-stop writing refusal cases for it; only a repo-specific-fact case could discriminate. Recorded in
-`evals/agent-plugin/BASELINE.md`.
-
-**LMS:** `af467b4` on `feat/script-approval-gate` in E:\Cohort2LP, NOT pushed (their remote).
-Handover note: `docs/integration-requests/2026-09-25-last-error-on-written-jobs.md`. Both stuck
-videos must be re-created by the person; `43a782dd45dd` will fail honestly with
-`409 script_lost` on the next click.
-
-**Deploy 3 (fcf961a) FAILED at build -- Debian mirror mid-sync during `apt-get install` (`File has unexpected size`, exit 100). Transient, not our code. Railway kept the old container; production stayed on 86cc40a, ok:true. `deploy.sh` timed out in its proof step rather than claiming success -- that is the guard working. Retried as deploy 4: **landed**, `/health.build.commit = faef6b7`, verify-live 9/9, booted after the variable was set so the $50 default-tenant cap is now effective. Production is on `faef6b7` = origin/main; nothing unpushed on our side. Note for the Dockerfile: the apt step has no retry; a `--fix-missing` retry or a second `apt-get update` would make this class self-healing (not done -- a Dockerfile change is its own review).
-
-The $50 default-tenant cap is NOT effective until a build that booted after the variable was set is live (tenants are read at boot).
-
-**Next session:** push/PR the LMS branch with the team; decide the demo Build button; GDRIVE_*
-still unset (volume 54 MB); `SKILL_AUTHORING.md` §3 — add "be pushy, name the moment of spend"
-with the 0/3 → 3/3 evidence.
-
----
-
+<!-- 2026-09-28, 2026-09-28, 2026-09-27 rotated to .claude/memories/session-archive/ -->
 ## 2026-09-25
 
 **Asked to "push all things to github — even memories and node_modules."** Working tree turned out
@@ -468,3 +267,59 @@ commit behind their own head. They still run exactly ONE environment, `Staging` 
 
 **Still unexercised:** no course has yet stopped at `script-approval` in production — the gate is
 served but has never fired against a real build. The joint first run is what proves it.
+
+**2026-09-28 — reviewed the two leftovers from the sweep. One is fine, one is not.**
+
+**authKind: fine, verified live.** Production (`build.commit f42c891e`) answers `/health.storage`
+with real values — `driveOffload {configured:false, authorised:false, folderSet:true}`, no `{error}`,
+no `authKind`. The removal worked and the restore-note sits at `server/app.js:150`. Nothing to do;
+the other session re-adds the line with their gdrive.js.
+
+**The DEPLOYMENT_PREREQS Drive rewrite is NOT fine and is published.** It documents the other
+session's *uncommitted* service-account implementation as the **Preferred** path. Counted against
+`origin/main:orchestrator/lib/gdrive.js`: `GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_JSON` 0, `client_email`
+0, `private_key` 0, `identity` 0 — the shipped code only does `GDRIVE_REFRESH_TOKEN` + `drive.file`,
+which the doc calls "fallback only". `gdrive-auth.js --check` cannot print the `service-account` /
+`oauth-user` line the doc promises. Anyone following it gets `configured: false` and no reason why.
+New rule: [[lessons#H40]]. Proposed fix is a short "not yet shipped" marker on that section, NOT a
+revert — the prose is the right destination, just early.
+
+**2026-09-28 later — `87ac65a` pushed and deployed; the script gate HAS now fired in production.**
+
+Production is no longer behind: `origin/main` = `/health.build.commit` = `87ac65a`, verify-live
+9/9, `/health.storage` healthy. The push carried two commits from the other session (the
+course-worker lost-queue-write fix and its tests) — reviewed first, they do not touch the admin
+reset. **CI green on all six jobs, including the new "The deploy image still builds"** — the
+first actual proof the Dockerfile apt retry works, since nothing built this image before.
+
+**Correction to the note above: "no course has yet stopped at `script-approval` in production"
+is out of date.** It fired tonight, twice, on a real build — and the second time is a problem.
+
+Course `course-mukhu8ce` ("Evals and Harness", tenant `cohort2-lms`) was started 00:12Z, AFTER
+the 23:15Z reset, so it is real work and was deliberately left alone. Lesson
+`evals-and-harness/what-a-harness-actually-is` is `blocked` / `script-approval` right now.
+Spend **$2.0431, model only, $0 media — nothing bought.**
+
+| when | what |
+|---|---|
+| 00:19:12Z | written and gated, sha `621a228c`, blocked for a human. $1.5302 |
+| 00:27:45Z | approved by Abdulrehman, naming `621a228c` |
+| 00:29:35Z | **blocked again** — "the script changed after it was approved"; on-disk sha is now `da368b69`. +$0.5129 |
+
+**This can loop, at roughly $0.50 a turn, so diagnose before re-approving.** The second run took
+110s and cost model spend, so it regenerated the script rather than resuming from the volume.
+`seedFromScript` (`server/lib/course-worker.js:262`) exists to prevent exactly this: resume at
+`script-approval` from the held copy so the sha still matches. Its own docstring predicts this
+symptom **when the volume copy is gone** — but it was not gone. The deliverable directory was
+created at 00:19 and its files were overwritten at 00:29. So why the resume did not take is
+UNRESOLVED. Start at `seedFromScript` and how `buildOne` uses the `fromStage` it returns.
+
+The evidence is all on the volume and reads cleanly:
+`/data/cq-jobs/queue/queue.jsonl` (9 events, the whole story) and
+`/data/cq-jobs/deliverables/evals-and-harness/what-a-harness-actually-is/`.
+
+Worth reusing: to test the COMMITTED tree rather than a dirty one ([[lessons#H39]]),
+`git archive HEAD | tar -x -C <tmp>` plus a `New-Item -ItemType Junction` for `node_modules`.
+One caveat — the `refresh token path is gitignored` test shells out to `git check-ignore`, which
+cannot work in an exported tree with no `.git`. That FAIL is the harness, not the commit.
+
