@@ -64,5 +64,6 @@ A retried `POST …/produce` on an `awaiting_review` or `interrupted` job still 
   and `lastError.spentUsd === 0`; otherwise surface `produce.warnings`.
 - `videos/[id]/page.tsx`: branch the banner on the table above instead of on `written` + `lastError`.
 
-The `9b12b753…` video exists and is on Drive; its job record will show `awaiting_review` once your
-poller reads it after our deploy.
+The `9b12b753…` video itself exists and is on the Taleemabad University Drive. Its job record was
+written before this change and still reads `written` + `lastError`; stored records are not
+rewritten. Ask us for the Drive link rather than pressing **Make the video** again on that job.
