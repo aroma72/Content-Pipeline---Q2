@@ -157,7 +157,9 @@ Where to look, cheapest first:
 
 - **Course:** plan 200 · build 409 without `confirmLessons` · 400 on a broken plan · 202 ·
   `script-approval` reached **once** · script/sha/`script.md`/beats agree · stale-sha approve 409 ·
-  approve 202 · `review` reached · `/file` returns `saved2drive` with a verified md5 ·
+  approve 202 · `review` reached · course view `deliverableAvailable true, videoLocal false` ·
+  `/file` streams `video/mp4` whose md5 equals the Drive record's, honours `Range` (206), and
+  returns the record on `Accept: application/json` ·
   `/videos` lists it · checkpoints carry `atSeconds` · attempts 501 · reject 202 · DELETE 200 ·
   Drive md5 matches, then trashed.
 - **Single video:** make-video 202 · `written` · `beatsFull` and `script.checkpoint` present ·

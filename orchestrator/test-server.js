@@ -485,7 +485,10 @@ async function lessonFileChecks() {
 
   // The queue memoises its store, and job-store is a singleton, so both have to be
   // dropped from the registry before an app is built against a different dir.
-  const withCourse = async (fn, { withMp4 = false, scriptGate = false, offloaded = false } = {}) => {
+  // `offloaded: 'unflagged'` builds the state the backfill script left on
+  // production: drive.json on the volume, no saved2drive flag on the queue item.
+  // `blockedBy` overrides the fixture's post-render-check block.
+  const withCourse = async (fn, { withMp4 = false, scriptGate = false, offloaded = false, blockedBy = null } = {}) => {
     const env = freshEnv({ JOB_STORE_DURABLE: '1' });
     for (const m of ['../../server/lib/job-store', '../lib/queue', '../lib/deliverables']) {
       try { delete require.cache[require.resolve(path.join(__dirname, m))]; } catch { /* fine */ }
@@ -514,8 +517,8 @@ async function lessonFileChecks() {
         notes: `[${COURSE}] a brief`,
       });
       queue.block(LESSON, 'run-fixture-1',
-        scriptGate ? 'awaiting script approval' : 'the frame gate found problems',
-        scriptGate ? 'script-approval' : 'post-render-check');
+        scriptGate ? 'awaiting script approval' : (blockedBy === 'review' ? 'awaiting human review' : 'the frame gate found problems'),
+        scriptGate ? 'script-approval' : (blockedBy || 'post-render-check'));
 
       // What produce.js copies BEFORE the frame gate: beats and timings, no video.
       // With scriptGate, what stages/script-approval.js copies EARLIER still: the
@@ -567,11 +570,13 @@ async function lessonFileChecks() {
           width: 1920, height: 1080, fps: 30, videoCodec: 'h264',
           pixelFormat: 'yuv420p', audioCodec: 'aac', complete: true,
         }));
-        queue.markSavedToDrive(LESSON, {
-          driveFileId: 'drive-file-1',
-          driveUrl: 'https://drive.google.com/file/d/drive-file-1/view',
-          bytes: 4096, verified: true, savedAt: '2026-09-24T00:00:00.000Z',
-        });
+        if (offloaded !== 'unflagged') {
+          queue.markSavedToDrive(LESSON, {
+            driveFileId: 'drive-file-1',
+            driveUrl: 'https://drive.google.com/file/d/drive-file-1/view',
+            bytes: 4096, verified: true, savedAt: '2026-09-24T00:00:00.000Z',
+          });
+        }
       }
 
       // NOTHING IN THIS SUITE MAY START A BUILD. approve, revise and the script
@@ -613,6 +618,25 @@ async function lessonFileChecks() {
   };
 
   const auth = { authorization: `Bearer ${LMS_TOKEN}` };
+
+  // The Drive media endpoint, stood in for. The routes require gdrive lazily and
+  // withCourse never evicts it from the cache, so this is the object they see.
+  // No test here may reach the network.
+  const gdrive = require(path.join(__dirname, 'lib', 'gdrive'));
+  const realOpenFileStream = gdrive.openFileStream;
+  const DRIVE_BYTES = Buffer.alloc(4096, 7);
+  const driveServes = async ({ range }) => {
+    const { Readable } = require('stream');
+    if (!range) {
+      return { status: 200, headers: { 'content-length': '4096', 'content-type': 'video/mp4', 'accept-ranges': 'bytes' }, body: Readable.from([DRIVE_BYTES]) };
+    }
+    const [, a, b] = /bytes=(\d*)-(\d*)/.exec(range);
+    const s = a ? Number(a) : 0;
+    const e = b ? Number(b) : 4095;
+    if (s > 4095 || s > e) return { status: 416, headers: { 'content-range': 'bytes */4096' }, body: null };
+    return { status: 206, headers: { 'content-length': String(e - s + 1), 'content-range': `bytes ${s}-${e}/4096` }, body: Readable.from([DRIVE_BYTES.subarray(s, e + 1)]) };
+  };
+  const driveFails = (status) => async () => { throw Object.assign(new Error(`Drive media GET failed (HTTP ${status})`), { status }); };
 
   await check('a lesson blocked before its render says so, instead of "not yet"', () =>
     withCourse(async (port) => {
@@ -675,14 +699,28 @@ async function lessonFileChecks() {
       }));
       return await withServer(env, { oneVideo: fakePipeline(), store, jobs: jobsLib }, async (port) => {
         const auth = { authorization: `Bearer ${LMS_TOKEN}` };
-        const r = await req(port, { path: `/demo/make-video/${job.id}/video`, headers: auth });
+        // The record, for a caller that asks for it.
+        gdrive.openFileStream = driveServes;
+        const r = await req(port, { path: `/demo/make-video/${job.id}/video`, headers: { ...auth, accept: 'application/json' } });
         assert(r.status === 200, `expected 200 with the Drive link, got ${r.status} ${r.text}`);
         assert(r.json && r.json.saved2drive === true, `saved2drive not set: ${r.text}`);
         assert(r.json.driveFileId === 'drive-mv-1' && /drive\.google\.com/.test(r.json.driveUrl || ''), `no Drive link: ${r.text}`);
         assert(r.json.verified === true, 'the md5 proof is not reported');
-        return '200 with the Drive link, like the course /file route';
+        // The bytes, by default -- the LMS archives these and plays them.
+        const v = await req(port, { path: `/demo/make-video/${job.id}/video`, headers: auth });
+        assert(v.status === 200 && /^video\/mp4/.test(v.headers['content-type'] || ''), `expected the mp4, got ${v.status} ${v.headers['content-type']}`);
+        assert(v.headers['x-served-from'] === 'drive' && v.text.length === 4096, `served ${v.text.length} bytes from ${v.headers['x-served-from']}`);
+        // And an honest 503 when Drive cannot be reached, never a 404.
+        gdrive.openFileStream = driveFails(500);
+        const d = await req(port, { path: `/demo/make-video/${job.id}/video`, headers: auth });
+        assert(d.status === 503 && d.json.error === 'drive_unavailable' && d.json.driveFileId === 'drive-mv-1', `expected 503 drive_unavailable, got ${d.status} ${d.text}`);
+        // The job record says the video exists, wherever it is.
+        const g = await req(port, { path: `/demo/make-video/${job.id}`, headers: auth });
+        assert(g.json.deliverableAvailable === true && g.json.videoLocal === false, `deliverableAvailable/videoLocal ${g.json.deliverableAvailable}/${g.json.videoLocal}`);
+        return 'JSON on request, bytes by default, 503 when Drive is down';
       });
     } finally {
+      gdrive.openFileStream = realOpenFileStream;
       for (const k of Object.keys(saved)) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; }
     }
   });
@@ -693,21 +731,90 @@ async function lessonFileChecks() {
   // that read as a 404, every offloaded lesson would look to the LMS exactly like
   // a video that was lost -- which is the failure this service has already had
   // once, and the reason they asked for the fetch route in the first place.
-  await check('an offloaded video answers with its Drive link, not a 404', () =>
+  // AND OFFLOADED IS NOT "GO AND GET IT YOURSELF".
+  //
+  // 2026-10-05: a course lesson reached review, was offloaded within minutes, and
+  // this route answered the LMS with the Drive record instead of the bytes. The
+  // LMS archives our bytes to play them before approval; a JSON body read as a
+  // broken mp4, and the course view's `deliverableAvailable: false` read as
+  // "never made". The Drive file is on a private Shared Drive, so the link in the
+  // record was no use to the instructor either. The bytes come back through us.
+  await check('an offloaded video is streamed back from Drive, not described', () =>
+    withCourse(async (port) => {
+      gdrive.openFileStream = driveServes;
+      try {
+        const p = `/api/v1/courses/${COURSE}/lessons/${LESSON}/file`;
+        const r = await req(port, { path: p, headers: auth });
+        assert(r.status === 200, `expected 200, got ${r.status} ${r.text.slice(0, 200)}`);
+        assert(/^video\/mp4/.test(r.headers['content-type'] || ''), `wrong type: ${r.headers['content-type']}`);
+        assert(Number(r.headers['content-length']) === 4096 && r.text.length === 4096, `wrong length: ${r.headers['content-length']} / ${r.text.length}`);
+        assert(r.headers['x-served-from'] === 'drive', `x-served-from ${r.headers['x-served-from']}`);
+        assert(r.headers['accept-ranges'] === 'bytes', 'Range support not advertised');
+
+        const part = await req(port, { path: p, headers: { ...auth, range: 'bytes=0-3' } });
+        assert(part.status === 206, `Range: expected 206, got ${part.status}`);
+        assert(part.headers['content-range'] === 'bytes 0-3/4096' && part.text.length === 4, `content-range ${part.headers['content-range']}, ${part.text.length} bytes`);
+
+        const bad = await req(port, { path: p, headers: { ...auth, range: 'bytes=9000-9001' } });
+        assert(bad.status === 416 && bad.headers['content-range'] === 'bytes */4096', `unsatisfiable range: ${bad.status} ${bad.headers['content-range']}`);
+        return 'bytes, Range 206, 416 passed through';
+      } finally { gdrive.openFileStream = realOpenFileStream; }
+    }, { withMp4: true, offloaded: true }));
+
+  await check('the Drive record is still there for a caller that asks for JSON', () =>
+    withCourse(async (port) => {
+      gdrive.openFileStream = driveFails(500); // must not be called at all
+      try {
+        const p = `/api/v1/courses/${COURSE}/lessons/${LESSON}/file`;
+        for (const variant of [{ path: p, headers: { ...auth, accept: 'application/json' } }, { path: `${p}?format=json`, headers: auth }]) {
+          const r = await req(port, variant);
+          assert(r.status === 200, `expected 200, got ${r.status} ${r.text.slice(0, 200)}`);
+          assert(r.json.saved2drive === true, `saved2drive not set: ${r.text}`);
+          assert(r.json.driveFileId === 'drive-file-1', `wrong file id: ${r.text}`);
+          assert(/^https:\/\/drive\.google\.com\//.test(r.json.driveUrl || ''), `no drive url: ${r.text}`);
+          assert(r.json.verified === true, 'the byte-for-byte check is not reported');
+          // The attributes have to outlive the bytes, or "what was this video?"
+          // becomes unanswerable the moment we reclaim the disk.
+          assert(r.json.video && r.json.video.width === 1920 && r.json.video.durationSeconds === 119.73,
+            `the measured attributes did not survive the offload: ${r.text}`);
+          assert(r.json.blockedBy === 'post-render-check' && !r.json.error, `status fields: ${r.text}`);
+        }
+        return 'Accept: application/json and ?format=json both answer the record';
+      } finally { gdrive.openFileStream = realOpenFileStream; }
+    }, { withMp4: true, offloaded: true }));
+
+  await check('when Drive cannot be reached the answer is 503 with the record, never 404', () =>
+    withCourse(async (port) => {
+      gdrive.openFileStream = driveFails(403);
+      try {
+        const r = await req(port, { path: `/api/v1/courses/${COURSE}/lessons/${LESSON}/file`, headers: auth });
+        assert(r.status === 503, `expected 503, got ${r.status} ${r.text.slice(0, 200)}`);
+        assert(r.json.error === 'drive_unavailable' && r.json.driveStatus === 403, `body: ${r.text.slice(0, 200)}`);
+        assert(r.json.driveFileId === 'drive-file-1' && r.json.saved2drive === true, 'the record must ride along so a person can still find the file');
+        assert(/could not be fetched/.test(r.json.message), `message does not explain: ${r.json.message}`);
+        return '503 drive_unavailable with driveStatus and the record';
+      } finally { gdrive.openFileStream = realOpenFileStream; }
+    }, { withMp4: true, offloaded: true }));
+
+  await check('a HEAD on an offloaded video is answered from the record without touching Drive', () =>
+    withCourse(async (port) => {
+      gdrive.openFileStream = driveFails(500);
+      try {
+        const r = await req(port, { method: 'HEAD', path: `/api/v1/courses/${COURSE}/lessons/${LESSON}/file`, headers: auth });
+        assert(r.status === 200, `expected 200, got ${r.status}`);
+        assert(/^video\/mp4/.test(r.headers['content-type'] || '') && Number(r.headers['content-length']) === 4096, `headers: ${JSON.stringify(r.headers)}`);
+        return 'HEAD 200 from the record';
+      } finally { gdrive.openFileStream = realOpenFileStream; }
+    }, { withMp4: true, offloaded: true }));
+
+  await check('a review-blocked lesson with nothing held is not told it never rendered', () =>
     withCourse(async (port) => {
       const r = await req(port, { path: `/api/v1/courses/${COURSE}/lessons/${LESSON}/file`, headers: auth });
-      assert(r.status === 200, `expected 200, got ${r.status} ${r.text}`);
-      assert(r.json.saved2drive === true, `saved2drive not set: ${r.text}`);
-      assert(r.json.driveFileId === 'drive-file-1', `wrong file id: ${r.text}`);
-      assert(/^https:\/\/drive\.google\.com\//.test(r.json.driveUrl || ''), `no drive url: ${r.text}`);
-      assert(r.json.verified === true, 'the byte-for-byte check is not reported');
-      // The attributes have to outlive the bytes, or "what was this video?" becomes
-      // unanswerable the moment we reclaim the disk.
-      assert(r.json.video && r.json.video.width === 1920 && r.json.video.durationSeconds === 119.73,
-        `the measured attributes did not survive the offload: ${r.text}`);
-      assert(!r.json.error, `an offloaded video reported an error: ${r.text}`);
-      return '200 with the Drive link and the measured attributes';
-    }, { withMp4: true, offloaded: true }));
+      assert(r.status === 404 && r.json.error === 'no_deliverable', `expected 404 no_deliverable, got ${r.status} ${r.text.slice(0, 200)}`);
+      assert(r.json.renderExists === true, 'a lesson parked at review has a finished render by definition');
+      assert(!/never was one|stopped before a video was rendered/i.test(r.json.message), `wrong explanation: ${r.json.message}`);
+      return 'renderExists true, asks us to look rather than blaming the render';
+    }, { blockedBy: 'review' }));
 
   await check('the questions still work after the video is offloaded', () =>
     withCourse(async (port) => {
@@ -729,12 +836,26 @@ async function lessonFileChecks() {
       assert(item, `the fixture lesson is not in the course: ${r.text}`);
       assert(item.saved2drive === true, `saved2drive missing from the course view: ${JSON.stringify(item)}`);
       assert(item.driveUrl && item.driveFileId === 'drive-file-1', 'the Drive link is not on the course view');
-      // Both facts together. `deliverableAvailable: false` alone would read as
-      // "the video is gone"; beside saved2drive it reads as "not from here".
-      assert(item.deliverableAvailable === false,
-        'deliverableAvailable should be false once we no longer hold the bytes');
-      return 'saved2drive + driveUrl beside deliverableAvailable';
+      // The contract says deliverableAvailable means "GET /file will serve bytes
+      // right now". Since the route streams the Drive copy, that is TRUE after an
+      // offload. It used to be false, and the LMS read false as "never made".
+      assert(item.deliverableAvailable === true,
+        'deliverableAvailable must be true: /file serves the bytes from Drive');
+      assert(item.videoLocal === false, 'videoLocal must say the bytes are not on the volume');
+      return 'deliverableAvailable true, videoLocal false, Drive link beside them';
     }, { withMp4: true, offloaded: true }));
+
+  await check('the course view reads the Drive record off the volume when the queue flag is missing', () =>
+    withCourse(async (port) => {
+      // Production 2026-10-05: lessons offloaded by the backfill script, or already
+      // on Drive when their run ended, had drive.json but no saved2drive on the item.
+      const r = await req(port, { path: `/api/v1/courses/${COURSE}`, headers: auth });
+      const item = (r.json.items || []).find((i) => i.id === LESSON);
+      assert(item && item.saved2drive === true && item.driveFileId === 'drive-file-1' && /drive\.google\.com/.test(item.driveUrl || ''),
+        `Drive facts missing without the flag: ${JSON.stringify(item)}`);
+      assert(item.deliverableAvailable === true && item.videoLocal === false, 'availability wrong without the flag');
+      return 'drive.json alone is enough';
+    }, { withMp4: true, offloaded: 'unflagged' }));
 
   await check('the capacity view separates metadata from video bytes', () =>
     withCourse(async (port) => {
@@ -758,6 +879,7 @@ async function lessonFileChecks() {
       assert(item.blockedBy === 'post-render-check', `wrong blockedBy: ${item.blockedBy}`);
       assert(item.deliverableAvailable === false,
         'deliverableAvailable should be false when only beats are on the volume');
+      assert(item.videoLocal === false, 'videoLocal should be false when only beats are on the volume');
       return 'false for a beats-only lesson whose blockedBy says post-render-check';
     }));
 
@@ -767,6 +889,9 @@ async function lessonFileChecks() {
       const item = (r.json.items || []).find((i) => i.id === LESSON);
       assert(item && item.deliverableAvailable === true,
         'the mp4 is on the volume but the course view says it is not fetchable');
+      assert(item.videoLocal === true, 'videoLocal should be true with the mp4 on the volume');
+      const f = await req(port, { path: `/api/v1/courses/${COURSE}/lessons/${LESSON}/file`, headers: auth });
+      assert(f.headers['x-served-from'] === 'volume', `local bytes must say so: ${f.headers['x-served-from']}`);
       return 'true for the same blockedBy, once the bytes exist';
     }, { withMp4: true }));
 

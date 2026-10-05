@@ -35,6 +35,27 @@ made and nothing was bought.
 | `script.scriptSha`, `script.unresolvedChecks[]` | same, from `written` | `"scriptSha": "968c5daac28395bf"` — the five free script checks now run before `written`, and produce approves this sha | this release | allowlist only |
 | `status: interrupted` after a post-render failure | same | was `written`; `/produce` already accepts `interrupted` and re-runs at $0 | this release | status mapping |
 
+**Same day, second fix — a finished lesson is fetchable wherever we hold it.** Reply:
+`docs/integration-requests/2026-10-05-produce-outcome-fields.md` Part 2. A course lesson that reached
+`review` was offloaded to TU's Drive within minutes; `deliverableAvailable` then read `false` and
+`GET .../file` answered a JSON record instead of bytes, so the LMS said the lesson "stopped before it
+was made". The contract wording ("`deliverableAvailable` means `GET .../file` will serve bytes right
+now") was right; the service had stopped honouring it. Restored:
+
+| Change | Where | Example | Commit | LMS file |
+|---|---|---|---|---|
+| **`GET .../lessons/:lessonId/file` streams the mp4 from Drive** when our copy is gone | course `/file`; also `GET /demo/make-video/:jobId/video`, `GET /demo/videos/:slug/file` | `200`/`206` `video/mp4`, full `Range`, `X-Served-From: drive` or `volume`. Same bytes, same md5 | this release | none — this is what `openLessonFile` already expects |
+| The Drive record is now **opt-in** | same routes | `Accept: application/json` or `?format=json` → `{saved2drive, driveFileId, driveUrl, md5, verified, video{}, status, blockedBy}` (the previous default body) | this release | none unless you special-cased a 200 JSON from `/file` — remove that |
+| `503 drive_unavailable` | same routes | `{"error":"drive_unavailable","driveStatus":403, …record…}` — the video exists on Drive but could not be fetched now. Retry; not a `404` | this release | archive worker: retry, not terminal |
+| `items[].deliverableAvailable` is **local OR Drive** | `GET /courses/:courseId` | `true` for an offloaded lesson, because `/file` serves it | this release | none (`content-course-poll.ts` already archives on `true`) |
+| `items[].videoLocal` | same | `false` once offloaded; the old meaning of the field above | this release | allowlist only |
+| `saved2drive`, `driveFileId`, `driveUrl`, `driveSavedAt` also read from the volume record | same | present for lessons the backfill offloaded, which the queue flag had missed | this release | allowlist only |
+| `videoLocal` | `GET /demo/make-video/:jobId` | same meaning as the course field | this release | allowlist only |
+| `404 no_deliverable.renderExists` is `true` for `blockedBy: review` | course `/file` | the message no longer says a review-blocked lesson "never rendered" | this release | none |
+
+Unchanged: `deliverableOnServer` on `GET /api/v1/videos` still means "on this container's render
+directory" and is documented as not meaning the video was never made.
+
 ---
 
 ## 1.2 — 2026-09-24

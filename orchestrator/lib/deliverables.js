@@ -313,9 +313,10 @@ function driveCopy(series, slug) {
         audioCodec: meta.audioCodec,
       },
     } : {}),
-    message: 'This video is stored on the Taleemabad University Google Drive and is no '
-      + 'longer served from here. Fetch it at driveUrl. Its questions and timings are '
-      + 'unaffected -- they are still served from this API.',
+    message: 'This video\'s bytes are stored on the Taleemabad University Google Drive. '
+      + 'GET this same route without `Accept: application/json` to stream them through this '
+      + 'API (Range supported); driveUrl opens the file in Drive for people on that Shared Drive. '
+      + 'Its questions and timings are unaffected -- they are still served from this API.',
   };
 }
 

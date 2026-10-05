@@ -302,8 +302,10 @@ function toPublic(job, opts = {}) {
   // status. The LMS drew "nothing was bought, try again" from `written` +
   // `lastError` alone, about a video that was on the volume. This is the field
   // that lets the page tell the two apart.
-  if (job.script) {
-    out.deliverableAvailable = Boolean(resolveFinalPath(job, opts) || resolveDriveCopy(job));
+  if (job.script || job.review) {
+    const local = resolveFinalPath(job, opts);
+    out.deliverableAvailable = Boolean(local || resolveDriveCopy(job));
+    out.videoLocal = Boolean(local);
   }
 
   /**

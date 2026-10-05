@@ -60,14 +60,16 @@ function record(flow, what, ok, detail = '') {
 }
 const expect = (flow, what, cond, detail) => { record(flow, what, Boolean(cond), detail); return Boolean(cond); };
 
-async function http(method, p, { body, headers = {}, auth = true, raw = false } = {}) {
+async function http(method, p, { body, headers = {}, auth = true, raw = false, buffer = false } = {}) {
   const h = { ...headers };
   if (auth) h.authorization = `Bearer ${TOKEN}`;
   if (body !== undefined) h['content-type'] = 'application/json';
   const res = await fetch(BASE + p, { method, headers: h, body: body === undefined ? undefined : JSON.stringify(body) });
   const type = res.headers.get('content-type') || '';
   let data = null;
-  if (raw || !/json/.test(type)) { data = raw ? null : await res.text(); if (raw) await res.body?.cancel?.(); }
+  // `buffer` keeps a binary body intact (an mp4 read as text is lossy).
+  if (buffer) data = Buffer.from(await res.arrayBuffer());
+  else if (raw || !/json/.test(type)) { data = raw ? null : await res.text(); if (raw) await res.body?.cancel?.(); }
   else data = await res.json().catch(() => null);
   return { status: res.status, type, data, headers: res.headers };
 }
@@ -129,6 +131,26 @@ function checkDriveJson(flow, what, r) {
     if (d.driveFileId) driveFiles.push({ flow, fileId: d.driveFileId, md5: d.md5, bytes: d.bytes });
   }
   return d;
+}
+
+/**
+ * What the LMS actually does with a finished, offloaded video: fetches the bytes
+ * to archive and play them. Since 2026-10-05 the file routes stream the Drive
+ * copy back through us; the record is an opt-in (`Accept: application/json`).
+ */
+async function checkDriveServed(flow, what, p) {
+  const rec = checkDriveJson(flow, `${what} (Accept: application/json)`, await http('GET', p, { headers: { accept: 'application/json' } }));
+  const bytes = await http('GET', p, { buffer: true });
+  expect(flow, `${what} streams video/mp4 by default`, bytes.status === 200 && /^video\/mp4/.test(bytes.type) && Buffer.isBuffer(bytes.data),
+    `HTTP ${bytes.status} ${bytes.type} ${bytes.data ? bytes.data.length : 0} bytes from ${bytes.headers.get('x-served-from')}`);
+  if (Buffer.isBuffer(bytes.data) && rec.md5) {
+    const md5 = crypto.createHash('md5').update(bytes.data).digest('hex');
+    expect(flow, `${what} bytes match the Drive md5 and size`, md5 === rec.md5 && bytes.data.length === rec.bytes, `${md5} vs ${rec.md5}, ${bytes.data.length} vs ${rec.bytes}`);
+  }
+  const part = await http('GET', p, { buffer: true, headers: { range: 'bytes=0-1023' } });
+  expect(flow, `${what} honours Range`, part.status === 206 && part.headers.get('content-range') === `bytes 0-1023/${rec.bytes}` && part.data && part.data.length === 1024,
+    `HTTP ${part.status} ${part.headers.get('content-range')} ${part.data ? part.data.length : 0} bytes`);
+  return rec;
 }
 
 async function health(flow) {
@@ -218,8 +240,12 @@ async function courseFlow() {
   expect(F, 'spend is reported and within the cap', Number.isFinite(spent) && spent <= CAP,
     `media $${it.spendMediaUsdTotal} total $${it.spendUsdTotal} (quoted $${q.totalUsd})`);
   expect(F, 'course view says saved to Drive', it.saved2drive === true && it.driveUrl, `${it.driveUrl || ''}`);
+  // The contract: deliverableAvailable means GET /file will serve bytes right now.
+  // After the offload that is still true (streamed from Drive), and videoLocal says where.
+  expect(F, 'course view: deliverableAvailable true, videoLocal false after the offload',
+    it.deliverableAvailable === true && it.videoLocal === false, `deliverableAvailable ${it.deliverableAvailable}, videoLocal ${it.videoLocal}`);
 
-  checkDriveJson(F, 'GET .../file', await http('GET', `${lp}/file`));
+  await checkDriveServed(F, 'GET .../file', `${lp}/file`);
   const dl = await http('GET', '/api/v1/deliverables');
   expect(F, 'GET /deliverables', dl.status === 200, `HTTP ${dl.status}`);
 
@@ -306,7 +332,7 @@ async function singleFlow() {
   expect(F, 'produce.warnings is a list (possibly empty), never a post-render block', Array.isArray(j.produce && j.produce.warnings),
     `${(j.produce && j.produce.warnings || []).length} warning(s)${j.produce && j.produce.blocked ? `; blocked at ${j.produce.blocked.code}` : ''}`);
   if (j.lastError) record(F, 'lastError on an awaiting_review job', 'skip', `${j.lastError.kind} ${j.lastError.code || ''} spent $${j.lastError.spentUsd}`);
-  checkDriveJson(F, 'GET .../video', await http('GET', `${jp}/video`));
+  await checkDriveServed(F, 'GET .../video', `${jp}/video`);
   if (j.catalogue && j.catalogue.checkpointsUrl) {
     const u = new URL(j.catalogue.checkpointsUrl, BASE);
     const cps = await http('GET', u.pathname);

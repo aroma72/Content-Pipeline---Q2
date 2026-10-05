@@ -1660,3 +1660,32 @@ fingerprints) rather than re-asking. Every caller that can throw out of a spine 
 `st.spend.usd`. A job status shown to a person is decided by what exists on disk, never by the run's
 word for itself. A new entry path (route, CLI, Slack) must stop at or after `script-approval`, never
 at `gate`.
+
+## H52. A reviewer must be able to watch what they are asked to approve; an offload must not redefine a published field
+
+**Added:** 2026-10-05 | **Applies to:** any change to where a deliverable's bytes live; any field the LMS polls
+**Invalidate if:** the LMS stops archiving our bytes and plays from a link we hand it
+
+Course flow on production: a lesson reached `review`, `spine.execute` offloaded the mp4 to TU's private
+Shared Drive within minutes and deleted the volume copy. `items[].deliverableAvailable` was computed from
+the local mp4 alone, so it flipped to `false`; `GET .../file` answered a 200 JSON record instead of bytes.
+Our own contract says the field means "GET /file will serve bytes right now" and that `review` = video
+exists. The LMS archives our bytes into its own Drive and plays from there only when the field is true,
+treats any 2xx from `/file` as an mp4, and shows "There is no video to preview -- this lesson stopped
+before it was made" when the field is false. The instructor saw three contradictory sentences on one card
+and could not watch a $3 video. The Drive link we sent was useless to them: four named accounts only.
+
+Fix: `server/lib/drive-stream.js serveDriveCopy()` streams the Drive copy through all three file routes
+(`gdrive.openFileStream`, Range forwarded, `pipeline` not buffering, abort on client close, HEAD from the
+record, JSON only on `Accept: application/json`/`?format=json`, 503 `drive_unavailable` not 404);
+`deliverableAvailable` = local OR Drive, `videoLocal` added; Drive fields on items also read from
+`drive.json`; `drive-offload.flagQueue` writes the queue flag on both paths (the backfill script and the
+already-offloaded path had never set it); `rendered` in the 404 branch treats `blockedBy: review` as a
+render. Deliberately NOT done: keeping a local copy during review (optimisation; add later without
+touching the route). The 2026-09-28 offload had changed the field's meaning with no changelog row.
+
+**Do:** when bytes move, the routes that served them must keep serving them, and `CONTRACT-CHANGELOG.md`
+gets a row the same day. A `true/false` the LMS branches UI copy on must be computed from what the route
+will actually do, and tested from the route (test-server), not from the module. Read the LMS page code
+(`E:\Cohort2LP\apps\web\src\app\courses\build\[id]\page.tsx`, `apps/api/src/lib/content-queen-courses.ts`)
+before changing any field it reads.

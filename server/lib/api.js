@@ -256,13 +256,15 @@ function build(opts = {}) {
         // then left the routes they most needed out of it, so the day the answer
         // changed they had no way to notice except by asking.
         { method: 'GET', path: '/api/v1/courses/:courseId/lessons/:lessonId/file', auth: true,
-          description: 'The finished mp4, off the durable volume, before anyone publishes it. '
-            + 'Supports Range. 404 `no_deliverable` carries `renderExists` and `partsAvailable` '
-            + 'so you can tell "not yet" from "there is no video and never will be" -- see '
-            + '`deliverableAvailable` on the course view, which answers it without a fetch. '
-            + 'IMPORTANT: a video we have offloaded returns 200 with `saved2drive: true` and a '
-            + '`driveUrl` INSTEAD of the bytes -- fetch it from Drive. That is a success, not a '
-            + 'failure: treat `saved2drive` as authoritative and do not read it as a 404.' },
+          description: 'The finished mp4, before anyone publishes it -- from our volume, or '
+            + 'streamed through us from the Taleemabad University Drive once we have offloaded '
+            + 'it (same bytes, same md5; `X-Served-From` says which). Supports Range (200/206/416). '
+            + '`deliverableAvailable` on the course view is true whenever this will serve bytes. '
+            + 'Send `Accept: application/json` (or `?format=json`) to get the Drive record '
+            + '(`saved2drive`, `driveFileId`, `driveUrl`, `md5`, `video{}`) instead of the bytes. '
+            + '503 `drive_unavailable` means the video exists on Drive but could not be fetched '
+            + 'right now -- retry. 404 `no_deliverable` carries `renderExists` and `partsAvailable` '
+            + 'so you can tell "not yet" from "there is no video and never will be".' },
         { method: 'DELETE', path: '/api/v1/courses/:courseId/lessons/:lessonId/file', auth: true,
           description: 'Drop our copy once yours is stored. Never inferred from a GET.' },
         { method: 'GET', path: '/api/v1/courses/:courseId/lessons/:lessonId/beats', auth: true,
@@ -672,31 +674,38 @@ function build(opts = {}) {
         // blockedBy to "fetchable" is wrong for some value of blockedBy, so we
         // answer the question directly instead of publishing a rule to infer it
         // from. Costs one readdir per blocked lesson, and only for blocked ones.
-        ...(i.status === 'blocked' || i.status === 'done' ? {
-          deliverableAvailable: (() => {
-            try {
-              return Boolean(require('../../orchestrator/lib/deliverables').find(i.series, i.slug));
-            } catch { return false; }
-          })(),
-        } : {}),
-        // Where the video actually lives once we no longer hold the bytes.
         //
-        // `deliverableAvailable` above answers "can this service stream it to you
-        // right now", and after an offload the honest answer to that is `false` --
-        // but `false` on its own would read as "the video is gone", which is the
-        // opposite of the truth. These three fields are the rest of the sentence:
-        // it exists, it is on TU's Drive, and this is its id and link.
-        //
-        // Read off the queue item, not the volume, because the queue is what this
-        // route already folds and the flag is written there by the offload
-        // (queue.markSavedToDrive). One readdir less per lesson, and it still
-        // works for a lesson whose whole deliverable directory has been swept.
-        ...(i.saved2drive ? {
-          saved2drive: true,
-          driveFileId: i.driveFileId || null,
-          driveUrl: i.driveUrl || null,
-          driveSavedAt: i.driveSavedAt || null,
-        } : {}),
+        // "Serve bytes" includes streaming them through from TU's Drive after we
+        // have reclaimed our copy. Until 2026-10-05 this was the local mp4 alone,
+        // so it flipped to false the moment a finished lesson was offloaded --
+        // minutes after it reached review -- and the LMS, reading our contract
+        // ("deliverableAvailable means GET /file will serve bytes right now"),
+        // told the instructor the lesson had stopped before it was made.
+        // `videoLocal` keeps the old fact available for whoever needs it.
+        ...(i.status === 'blocked' || i.status === 'done' ? (() => {
+          let local = null;
+          let copy = null;
+          try {
+            const d = require('../../orchestrator/lib/deliverables');
+            local = d.find(i.series, i.slug);
+            copy = d.driveCopy(i.series, i.slug);
+          } catch { /* answered as absent below */ }
+          return {
+            deliverableAvailable: Boolean(local || copy),
+            videoLocal: Boolean(local),
+            // Where the video lives once we no longer hold the bytes: it exists,
+            // it is on TU's Drive, and this is its id and link. From the queue
+            // flag (queue.markSavedToDrive) OR the volume record -- the flag was
+            // missing on production for lessons the backfill script offloaded,
+            // and for a lesson already on Drive when its run ended.
+            ...((i.saved2drive || copy) ? {
+              saved2drive: true,
+              driveFileId: i.driveFileId || (copy && copy.driveFileId) || null,
+              driveUrl: i.driveUrl || (copy && copy.driveUrl) || null,
+              driveSavedAt: i.driveSavedAt || (copy && copy.savedAt) || null,
+            } : {}),
+          };
+        })() : {}),
         // The same question one gate earlier: is there a script to read. Answered
         // as a fact for exactly the same reason -- a lesson blocked at
         // `script-approval` has no video and never will until somebody reads this,
@@ -1044,7 +1053,18 @@ function build(opts = {}) {
    * next deploy -- serving from there would hand them a URL that works right up
    * until the moment it matters.
    */
-  router.get('/courses/:courseId/lessons/:lessonId(*)/file', requireToken, (req, res) => {
+  router.get('/courses/:courseId/lessons/:lessonId(*)/file', requireToken, async (req, res) => {
+    try {
+      await serveLessonFile(req, res);
+    } catch (e) {
+      // Express 4 does not catch a rejected handler. Answer only if nothing has
+      // been sent; after headers the stream helper has already cut the connection.
+      console.error(`[api] /file ${req.params.lessonId}: ${e.message}`);
+      if (!res.headersSent) res.status(500).json({ error: 'internal', message: e.message });
+    }
+  });
+
+  async function serveLessonFile(req, res) {
     const queue = require('../../orchestrator/lib/queue');
     const item = queue.get(req.params.lessonId);
     if (!item) return res.status(404).json({ error: 'no_such_lesson' });
@@ -1064,17 +1084,23 @@ function build(opts = {}) {
     // false. Answering 404 would have sent somebody hunting for a video that is
     // exactly where it is supposed to be.
     //
-    // So: 200, with everything needed to go and get it, plus the measured
-    // attributes captured before the local copy was removed. Checked BEFORE the
-    // `!found` branches because after an offload `found` is null by design.
+    // And offloaded is not "go and get it yourself" either. This answered 200 with
+    // the Drive record instead of the bytes, and the LMS -- which archives our
+    // bytes into its own store so an instructor can watch before approving --
+    // read a JSON body as a broken mp4 and the course view as "never made". The
+    // Drive file is on a private Shared Drive; nobody outside it can open the
+    // link. So the bytes are streamed back through us (serveDriveCopy), with
+    // Range, and the record is still there for a caller that asks for JSON.
+    // Checked BEFORE the `!found` branches because after an offload `found` is
+    // null by design.
     const copy = deliverables.driveCopy(item.series, item.slug);
     if (!found && copy) {
       const { message, ...fields } = copy;
-      return res.status(200).json({
-        ...fields,
-        status: item.status,
-        ...(item.blockedBy ? { blockedBy: item.blockedBy } : {}),
-        message,
+      return require('./drive-stream').serveDriveCopy(req, res, {
+        copy: { ...fields, message },
+        extra: { status: item.status, ...(item.blockedBy ? { blockedBy: item.blockedBy } : {}) },
+        filename: `${item.slug}_final.mp4`,
+        log: (m) => console.log(`[api] /file ${item.id}: ${m}`),
       });
     }
 
@@ -1092,8 +1118,15 @@ function build(opts = {}) {
       // reason to distinguish them.
       const dir = deliverables.dirFor(item.series, item.slug);
       const partial = dir && fs.existsSync(dir);
+      // A lesson parked at `review` (or past it) has a finished render by
+      // definition -- those stages run after the video exists. `item.details`
+      // was consulted here before, but queue.block() never writes it, so a
+      // review-blocked lesson with nothing on the volume was told it had
+      // "never rendered". `copy` is a record of a render, too.
+      const RENDERED_BLOCKERS = new Set(['review', 'upload', 'qa-no-evidence', 'nazim']);
       const rendered = item.status === 'done'
-        || Boolean(item.details && item.details.finalRendered);
+        || RENDERED_BLOCKERS.has(item.blockedBy)
+        || Boolean(copy);
 
       let message;
       if (partial && !rendered) {
@@ -1127,6 +1160,7 @@ function build(opts = {}) {
     const range = req.headers.range;
     res.setHeader('Content-Type', 'video/mp4');
     res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('X-Served-From', 'volume');
     if (range) {
       const m = /bytes=(\d*)-(\d*)/.exec(range);
       const start = m && m[1] ? parseInt(m[1], 10) : 0;
@@ -1142,7 +1176,7 @@ function build(opts = {}) {
     }
     res.setHeader('Content-Length', stat.size);
     return fs.createReadStream(found.file).pipe(res);
-  });
+  }
 
   /**
    * What is actually on the volume.

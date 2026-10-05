@@ -4877,6 +4877,78 @@ async function driveOffloadChecks() {
     return 'sweep runs after, and independent of, the offload';
   });
 
+  // The course view read the Drive facts off the queue item alone, and two of the
+  // three ways a lesson gets offloaded never wrote them: the backfill script, and
+  // a run that ended on a lesson already on Drive. Production 2026-10-05 had
+  // lessons with drive.json and no saved2drive on the item.
+  await checkAsync('a verified offload flags the queue item, whoever the caller is', async () => {
+    const queue = require(path.join(__dirname, 'lib', 'queue'));
+    const { dest } = freshLesson();
+    queue.resetPathCache();
+    queue.enqueue({ topic: 'flagged', series: 'fixtures', slug: 'a-lesson', source: 'test' });
+    gdrive.uploadFile = async ({ filePath }) => {
+      const buf = fs.readFileSync(filePath);
+      const md5 = require('crypto').createHash('md5').update(buf).digest('hex');
+      return { fileId: 'f-flag', name: 'x', bytes: buf.length, md5, webViewLink: 'https://drive.example/f-flag' };
+    };
+    const res = await driveOffload.offload({ series: 'fixtures', slug: 'a-lesson' });
+    assert(res.ok && !res.alreadyOffloaded, `offload did not succeed: ${JSON.stringify(res)}`);
+    const item = queue.get('fixtures/a-lesson');
+    assert(item && item.saved2drive === true && item.driveFileId === 'f-flag',
+      `the queue item was not flagged by the offload itself: ${JSON.stringify(item)}`);
+    assert(fs.existsSync(path.join(dest, 'drive.json')), 'drive.json missing');
+    return 'flag written by drive-offload, not by the caller';
+  });
+
+  await checkAsync('a lesson already on Drive gets the flag it was missing', async () => {
+    const queue = require(path.join(__dirname, 'lib', 'queue'));
+    const { dest } = freshLesson();
+    queue.resetPathCache();
+    queue.enqueue({ topic: 'unflagged', series: 'fixtures', slug: 'a-lesson', source: 'test' });
+    fs.writeFileSync(path.join(dest, 'drive.json'),
+      JSON.stringify({ saved2drive: true, driveFileId: 'f-old', driveUrl: 'https://drive.example/f-old', bytes: 17, md5: 'x', verified: true, savedAt: '2026-09-30T00:00:00.000Z' }));
+    gdrive.uploadFile = async () => { throw new Error('must not upload again'); };
+    const res = await driveOffload.offload({ series: 'fixtures', slug: 'a-lesson' });
+    assert(res.ok && res.alreadyOffloaded === true, `expected alreadyOffloaded, got ${JSON.stringify(res)}`);
+    const item = queue.get('fixtures/a-lesson');
+    assert(item && item.saved2drive === true && item.driveFileId === 'f-old',
+      `an already-offloaded lesson still has no flag: ${JSON.stringify(item)}`);
+    // Idempotent: a second pass writes nothing new.
+    const before = JSON.stringify(queue.get('fixtures/a-lesson'));
+    await driveOffload.offload({ series: 'fixtures', slug: 'a-lesson' });
+    assert(JSON.stringify(queue.get('fixtures/a-lesson')) === before, 'a second pass rewrote the item');
+    return 'flagged on the alreadyOffloaded path, idempotent';
+  });
+
+  await checkAsync('an offload of a lesson that is not in the queue still succeeds', async () => {
+    const queue = require(path.join(__dirname, 'lib', 'queue'));
+    freshLesson();
+    queue.resetPathCache();   // fresh store, nothing enqueued
+    gdrive.uploadFile = async ({ filePath }) => {
+      const buf = fs.readFileSync(filePath);
+      return { fileId: 'f-nq', name: 'x', bytes: buf.length, md5: require('crypto').createHash('md5').update(buf).digest('hex'), webViewLink: 'https://drive.example/f-nq' };
+    };
+    const res = await driveOffload.offload({ series: 'fixtures', slug: 'a-lesson' });
+    assert(res.ok, `offload failed because there was no queue item: ${JSON.stringify(res)}`);
+    assert(driveOffload.flagQueue('fixtures', 'nobody', { driveFileId: 'x' }) === false, 'flagQueue must be a quiet no-op without an item');
+    return 'ok without a queue item';
+  });
+
+  check('the /file route no longer answers an offloaded lesson with JSON by default', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'server', 'lib', 'api.js'), 'utf8');
+    const from = src.indexOf('const copy = deliverables.driveCopy(item.series, item.slug);');
+    const to = src.indexOf('if (!found) {', from);
+    assert(from > 0 && to > from, 'the offloaded branch of /file moved -- update this check');
+    const branch = src.slice(from, to);
+    assert(!/res\.status\(200\)\.json\(/.test(branch), 'the offloaded branch returns the Drive record instead of the bytes -- the LMS reads that as a broken mp4');
+    assert(/serveDriveCopy\(/.test(branch), 'the offloaded branch does not stream through drive-stream.serveDriveCopy');
+    for (const f of ['server/app.js']) {
+      const s = fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
+      assert((s.match(/serveDriveCopy\(/g) || []).length >= 2, `${f}: both single-video file routes must stream the Drive copy`);
+    }
+    return 'course and single-video routes stream';
+  });
+
   check('a DELETE on an offloaded lesson keeps its Drive link; an unoffloaded one is removed', () => {
     const a = freshLesson();
     fs.writeFileSync(path.join(a.dest, 'drive.json'),

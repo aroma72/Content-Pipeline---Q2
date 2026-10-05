@@ -620,6 +620,45 @@ async function downloadFile({ fileId, toPath, log = () => {} }) {
 }
 
 /**
+ * Open a Drive file as a byte stream, honouring an HTTP Range.
+ *
+ * For the API routes that serve a finished video after its local copy has been
+ * reclaimed. `downloadFile` above writes to disk for the YouTube upload; this
+ * hands the body straight through so a 27MB lesson is never buffered on the
+ * container. Drive answers 200, 206 (partial) or 416 (range not satisfiable)
+ * exactly as a file server would, and those are passed back unchanged. Any
+ * other non-2xx is thrown with `status`, so the caller can say "Drive could not
+ * be reached" rather than pretending the video is gone.
+ *
+ * @returns {{status:number, headers:object, body: import('stream').Readable|null}}
+ */
+async function openFileStream({ fileId, range = null, signal } = {}) {
+  if (!fileId) throw Object.assign(new Error('openFileStream: no fileId'), { status: null });
+  const token = await accessToken();
+  const headers = { authorization: `Bearer ${token}` };
+  if (range) headers.range = range;
+  const res = await fetch(url(`${API}/files/${encodeURIComponent(fileId)}`, { alt: 'media' }), { headers, signal });
+  if (!res.ok && res.status !== 206 && res.status !== 416) {
+    const text = await res.text().catch(() => '');
+    throw Object.assign(
+      new Error(`Drive media GET ${fileId} failed (HTTP ${res.status}): ${text.slice(0, 300)}`),
+      { status: res.status }
+    );
+  }
+  const h = (k) => res.headers.get(k);
+  return {
+    status: res.status,
+    headers: {
+      'content-length': h('content-length'),
+      'content-range': h('content-range'),
+      'content-type': h('content-type'),
+      'accept-ranges': h('accept-ranges') || 'bytes',
+    },
+    body: res.body && res.status !== 416 ? require('stream').Readable.fromWeb(res.body) : null,
+  };
+}
+
+/**
  * Move one of OUR files to the Drive trash. Never a hard delete, and never a file
  * outside the configured folder: this exists so a test can clean up after itself,
  * and the parent check is what stops a wrong id from binning somebody else's work.
@@ -652,6 +691,7 @@ module.exports = {
   trashFile,
   uploadFile,
   downloadFile,
+  openFileStream,
   getFile,
   probeFolder,
   accessToken,

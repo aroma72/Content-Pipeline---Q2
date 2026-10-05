@@ -896,16 +896,28 @@ function createApp(opts = {}) {
    * still a valid-looking string after a redeploy and points at nothing, so this
    * would serve a confident 500 where an honest 404 is the truth.
    */
-  app.get('/demo/make-video/:jobId/video', (req, res) => {
+  app.get('/demo/make-video/:jobId/video', async (req, res) => {
     const job = ownedJob(req, res);
     if (!job) return undefined;
     const file = jobsLib.resolveFinalPath(job, { oneVideo });
     if (!file || !fs.existsSync(file)) {
-      // Offloaded: the video is on Drive and nowhere here. Answer like the course
-      // /file route does -- 200 with the link and the md5 proof -- not a 404 for a
-      // video that exists.
+      // Offloaded: the video is on Drive and nowhere here. Stream it back through
+      // us like the course /file route does -- the bytes, with Range -- or the
+      // record for a caller that asks for JSON. Never a 404 for a video that exists.
       const copy = jobsLib.resolveDriveCopy ? jobsLib.resolveDriveCopy(job) : null;
-      if (copy) return res.status(200).json({ ...copy, status: job.status });
+      if (copy) {
+        try {
+          return await require('./lib/drive-stream').serveDriveCopy(req, res, {
+            copy, extra: { status: job.status },
+            filename: `${(job.script && job.script.slug) || job.id}_final.mp4`,
+            log: (m) => console.log(`[video ${job.id}] ${m}`),
+          });
+        } catch (e) {
+          console.error(`[video ${job.id}] ${e.message}`);
+          if (!res.headersSent) res.status(500).json({ error: 'internal', message: e.message });
+          return undefined;
+        }
+      }
       return res.status(404).type('text')
         .send('No finished video for this job on this container. If it was published, the YouTube link is the durable copy.');
     }
@@ -953,6 +965,7 @@ function createApp(opts = {}) {
     const range = req.headers.range;
     res.set('Content-Type', 'video/mp4');
     res.set('Accept-Ranges', 'bytes');
+    res.set('X-Served-From', 'volume');
     if (!range) {
       res.set('Content-Length', size);
       return fs.createReadStream(file).pipe(res);
@@ -1111,11 +1124,22 @@ function createApp(opts = {}) {
     });
   });
 
-  app.get('/demo/videos/:slug/file', owner.requireTenant(), (req, res) => {
+  app.get('/demo/videos/:slug/file', owner.requireTenant(), async (req, res) => {
     const file = oneVideo.fileForSlug(req.params.slug);
     if (!file) {
       const copy = oneVideo.driveCopyForSlug ? oneVideo.driveCopyForSlug(req.params.slug) : null;
-      if (copy) return res.status(200).json(copy);
+      if (copy) {
+        try {
+          return await require('./lib/drive-stream').serveDriveCopy(req, res, {
+            copy, filename: `${req.params.slug}_final.mp4`,
+            log: (m) => console.log(`[videos/${req.params.slug}] ${m}`),
+          });
+        } catch (e) {
+          console.error(`[videos/${req.params.slug}] ${e.message}`);
+          if (!res.headersSent) res.status(500).json({ error: 'internal', message: e.message });
+          return undefined;
+        }
+      }
       return res.status(404).type('text').send('No finished video by that name.');
     }
     return streamFile(req, res, file);

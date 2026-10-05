@@ -66,4 +66,82 @@ A retried `POST …/produce` on an `awaiting_review` or `interrupted` job still 
 
 The `9b12b753…` video itself exists and is on the Taleemabad University Drive. Its job record was
 written before this change and still reads `written` + `lastError`; stored records are not
-rewritten. Ask us for the Drive link rather than pressing **Make the video** again on that job.
+rewritten. Since Part 2 below, `GET /demo/make-video/9b12b753…/video` streams it; do not press
+**Make the video** again on that job.
+
+---
+
+# Part 2 — watching a finished lesson: "There is no video to preview" was also wrong
+
+## What happened
+
+Course *project management for dummies* (your course `a3f61f43…`, 1 lesson, $3.09 spent) reached
+review. Your build page showed, on one card, "Ready for you", "The video is finished and waiting for
+someone to watch it", **and** "There is no video to preview — this lesson stopped before it was
+made. Approving it will not publish anything; it has to be rebuilt." The instructor could not watch
+a video that exists and was paid for.
+
+Cause, on our side:
+
+1. Within minutes of a lesson reaching `review`, we move the mp4 to the Taleemabad University Drive
+   and delete our copy. That is by design, for durability and disk.
+2. After that move, `items[].deliverableAvailable` on `GET /courses/:id` went `false`, and
+   `GET .../lessons/:id/file` answered **200 with a JSON record** (`saved2drive`, `driveUrl`) instead
+   of the mp4. Neither matched the contract we gave you, which says `deliverableAvailable` means
+   "`GET .../file` will serve bytes right now" and that `review` means the video exists.
+3. Your page follows that contract: it archives our bytes into your own store only when
+   `deliverableAvailable === true` (`content-course-poll.ts`), plays only from your archive
+   (`LessonPreview`, `driveFileId`), treats any 2xx from `/file` as an mp4 (`openLessonFile`), and
+   shows "stopped before it was made" when the field is `false` and you hold no copy
+   (`courses/build/[id]/page.tsx`). The `driveUrl` we sent would not have helped: the file sits on a
+   private Shared Drive that only four named accounts can open.
+
+## What changed on our side (no client change needed to get the bytes)
+
+| Field or route | Now |
+|---|---|
+| `GET .../lessons/:lessonId/file` | Streams the mp4 **from Drive through us** when our copy is gone: `200`/`206` `video/mp4`, full `Range`, `X-Served-From: drive` or `volume`. Same bytes, same md5. |
+| `GET /demo/make-video/:jobId/video`, `GET /demo/videos/:slug/file` | Same behaviour for single videos. |
+| The Drive record | Opt-in: `Accept: application/json` or `?format=json` → `{saved2drive, driveFileId, driveUrl, md5, verified, video{}, status, blockedBy}`. |
+| `503 drive_unavailable` | New. The video exists but Drive could not be reached (`driveStatus` carries Drive's HTTP code, the record rides along). **Retry later; this is not a 404 and not a missing video.** |
+| `items[].deliverableAvailable` | `true` whenever `/file` will serve bytes — including after our offload. |
+| `items[].videoLocal` | New. `false` once offloaded. Informational. |
+| `items[].saved2drive`, `driveFileId`, `driveUrl`, `driveSavedAt` | Now present for every offloaded lesson (a flag was missing for some). |
+| `404 no_deliverable.renderExists` | `true` for `blockedBy: review`; the message no longer says a review-blocked lesson "never rendered". |
+
+Full rows: `docs/CONTRACT-CHANGELOG.md` ("1.2, additive — 2026-10-05", second table).
+
+## What we ask you to change
+
+1. **Nothing, to get the video.** With `CONTENT_QUEEN_LESSON_FILE_ENABLED=true`, your poller will see
+   `deliverableAvailable: true` for *project management for dummies* after our deploy, queue the
+   archive, fetch bytes from `/file`, verify the mp4 header, and the page will play it. If you ever
+   special-cased a `200` JSON body from `/file`, remove that; ask with `Accept: application/json`
+   when you want the record.
+2. **Set the flag on the API service too.** We read your Render production environment (read-only,
+   2026-10-05): `CONTENT_QUEEN_LESSON_FILE_ENABLED=true` is set on `capacitylab-worker` but **not on
+   `capacitylab-api`**. The worker's poller will therefore queue the archive, but the API's
+   `previewEnabled` (`routes/content-courses.ts`, from `lessonFileEnabled()`) reads `false`, so once
+   the field flips the page's third branch says "Watching before approval is switched off here" until
+   the archive lands, and any API-side gate on the stream routes stays closed. Both services were last
+   deployed 2026-09-29 (`e075b22`). Your worker's `content-course-poll` ran successfully every one to
+   two minutes through the morning of 2026-10-05, so the poller itself is fine; it saw `false` from us.
+3. **Treat `503 drive_unavailable` as a retry in `content-video-archive.ts`**, not as a terminal
+   `archiveError`. Everything else you already do (header check, `not_a_video`) stays right.
+4. **The build page's three sentences should not contradict each other.** Suggested rule, in
+   `courses/build/[id]/page.tsx` and `blocked-by.ts`:
+   - "The video is finished and waiting for someone to watch it" only when
+     `deliverableAvailable === true` (or your `driveFileId` is set).
+   - "There is no video to preview — this lesson stopped before it was made" only when
+     `deliverableAvailable === false` **and** `blockedBy !== 'review'`.
+   - For `blockedBy === 'review'` with `deliverableAvailable === false` (should not happen now),
+     show "The video exists but could not be fetched yet — retrying" rather than "stopped".
+5. **Your staging talks to our production and spends real money.** `CONTENT_QUEEN_API_URL` is unset
+   on your Railway Staging, so its produce and approve buttons buy art and speech on our
+   `cohort2-lms` tenant. Point it at nothing, or at a test tenant we can give you, before the launch.
+
+## The lesson from that day
+
+`project-management-for-dummies/task-and-how-to-break-it-down-into-smallest-units` is on Drive,
+verified md5. After our deploy its `/file` route streams it and `deliverableAvailable` reads `true`.
+No rebuild is needed; **do not** press Approve until the preview has played, and do not Reject it.

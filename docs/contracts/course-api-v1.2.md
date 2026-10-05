@@ -55,6 +55,8 @@ Per item, alongside the v1.1 fields:
 | field | when | meaning |
 |---|---|---|
 | `scriptAvailable` | once a script exists | `true` when `GET .../script` will return one. A fact, read off the volume, not inferred from `blockedBy` — the same reasoning as `deliverableAvailable` in v1.1. |
+| `deliverableAvailable` (clarified 2026-10-05) | blocked or done | `true` when `GET .../file` will serve the mp4 **right now — from our volume or streamed through us from the Taleemabad University Drive**. It stays `true` after we offload our copy. |
+| `videoLocal` (added 2026-10-05) | blocked or done | `true` only while the bytes are on our volume. `deliverableAvailable: true, videoLocal: false` = served from Drive through the same route. |
 | `scriptSha` | with `scriptAvailable` | 16 hex characters naming this exact draft. **This is the value an approval must quote.** |
 | `scriptApprovedBy`, `scriptApprovedAt` | after approval | who released the script for building, and when |
 | `scriptRevisions` | after at least one revision | how many times a person has sent this script back. The cap is 5. |
@@ -206,7 +208,8 @@ rather than to this document.
 | `blockedBy: "script-approval"`, `scriptAvailable: true` | **the new one.** A script is written and nothing has been bought | `GET .../script`, show it, then `script/approve` with the `sha` ($, starts the build) or `script/revise` with notes (cents) |
 | `cannot_approve_script`, message names a different sha | the script changed since you read it | re-read `GET .../script` and approve the new `sha` |
 | `cannot_revise_script`, "already been revised 5 times" | the revision budget is spent | approve, reject, or requeue |
-| `blockedBy: "review"` | a lesson is built and paid for and needs watching | as v1.1: `/approve` ($0) or `/reject` |
+| `blockedBy: "review"` | a lesson is built and paid for and needs watching | as v1.1: `GET .../file` to watch it (bytes, with `Range`, whether `videoLocal` is true or false), then `/approve` ($0) or `/reject` |
+| `deliverableAvailable: true, videoLocal: false` | the video is on TU's Drive and `GET .../file` streams it through us | fetch as usual; `Accept: application/json` returns the Drive record instead; `503 drive_unavailable` means retry |
 | `worker.held !== null` on your course | a lesson of yours needs a person — **now usually the script** | read `held.by`, check its `blockedBy` |
 | `deliverableAvailable: false` while `blockedBy: "script-approval"` | normal, not a fault | there is no video yet; look at `scriptAvailable` |
 | `worker.needsResume === true` | nothing is building and something could | `/courses/worker/resume` once |

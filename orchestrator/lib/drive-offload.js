@@ -181,6 +181,10 @@ async function offload({
   if (isOffloaded(series, slug)) {
     const existing = driveRecord(series, slug);
     log(`already on Drive (${existing.driveFileId}) -- not uploading again`);
+    // The queue item may still lack the flag: this branch used to skip it, and
+    // the backfill script never set it, so the LMS course view said nothing
+    // about Drive for lessons that were plainly there. Idempotent.
+    flagQueue(series, slug, existing, log);
     let freed = 0;
     if (!keepWorkingDirs && !dryRun) {
       freed = reclaimWorkingDirs(resolvedVideoDir, log).freedBytes;
@@ -291,6 +295,9 @@ async function offload({
   }
 
   log(`saved to Drive: ${record.driveUrl}`);
+  // The queue is the record the LMS polls, so the flag has to reach it -- from
+  // here, the one place that knows the upload verified, whoever the caller is.
+  flagQueue(series, slug, record, log);
 
   // --- 5. reclaim -------------------------------------------------------------
   let freed = 0;
@@ -340,11 +347,36 @@ function sweepScratch(videoDir, log = () => {}) {
   }
 }
 
+/**
+ * Put the Drive facts on the queue item, if there is one.
+ *
+ * Never throws and never fails the offload: the bytes are safe whether or not
+ * the flag lands, and a lesson built outside the queue (a fixture, a hand-made
+ * video) simply has no item to flag. Skips the write when the item already names
+ * this file, so re-running is free.
+ */
+function flagQueue(series, slug, record, log = () => {}) {
+  if (!record || !record.driveFileId) return false;
+  try {
+    const queue = require('./queue');
+    const id = `${series}/${slug}`;
+    const item = queue.get(id);
+    if (!item) return false;
+    if (item.saved2drive && item.driveFileId === record.driveFileId) return false;
+    queue.markSavedToDrive(id, record);
+    return true;
+  } catch (e) {
+    log(`saved, but could not flag the queue item: ${e.message}`);
+    return false;
+  }
+}
+
 module.exports = {
   offload,
   isOffloaded,
   driveRecord,
   reclaimWorkingDirs,
+  flagQueue,
   sweepScratch,
   SCRATCH,
   dirBytes,

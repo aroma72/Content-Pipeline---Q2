@@ -44,7 +44,7 @@ Every route below needs a token.
 | `POST .../reject` `{why, by}` | Stops the course; its queued lessons become failed | $0 |
 | `POST .../skip` | Drops a failed lesson | $0 |
 | `POST .../requeue` | Renders the lesson again | **spends** |
-| `GET .../file` | Streams the mp4 (Range supported), or returns 200 JSON `{saved2drive, driveUrl, driveFileId, md5, verified, …}` once offloaded, or 404 `no_deliverable` | $0 |
+| `GET .../file` | Streams the mp4 (Range supported) from the volume **or from Drive through us** (`X-Served-From`). `Accept: application/json` returns the record `{saved2drive, driveUrl, driveFileId, md5, verified, …}`. 503 `drive_unavailable` if Drive is down; 404 `no_deliverable` if nothing was rendered | $0 |
 | `DELETE .../file` | Drops our copy. On an offloaded lesson it keeps `drive.json`, `beats.js` and `durations.json` | $0 |
 | `GET /deliverables` | What the volume holds, with sizes | $0 |
 

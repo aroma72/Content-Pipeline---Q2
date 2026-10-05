@@ -553,14 +553,9 @@ async function execute(item, opts = {}) {
     // Recorded on the run state so a later reader can tell "never offloaded" from
     // "offloaded, and here is where it went" without going to look at the volume.
     st.driveOffload = res;
-    if (res && res.ok && !res.alreadyOffloaded && res.drive) {
-      // The queue is the record the LMS polls, so the flag has to reach it.
-      try {
-        queue.markSavedToDrive(item.id, res.drive);
-      } catch (e) {
-        console.log(`  [drive] saved, but could not flag the queue item: ${e.message}`);
-      }
-    }
+    // The queue flag (saved2drive, driveFileId, driveUrl) is written by
+    // drive-offload.flagQueue on both of its paths -- a fresh upload and a lesson
+    // already on Drive -- so the backfill script and this caller agree.
   } catch (e) {
     console.log(`  [drive] offload skipped: ${e.message}`);
   }

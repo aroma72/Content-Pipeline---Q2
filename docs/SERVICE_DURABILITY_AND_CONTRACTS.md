@@ -430,16 +430,50 @@ recorded byte count, and cleaned up in a `finally` so a blocked upload cannot le
 a 30 MB orphan). Without this, offloading would have silently broken publishing for
 every course lesson.
 
-### 4a.6 What the LMS sees
+### 4a.6 What the LMS sees (rewritten 2026-10-05)
 
-- `GET /courses/:id` — an offloaded lesson carries `saved2drive`, `driveFileId`,
-  `driveUrl`, `driveSavedAt` beside `deliverableAvailable`. `deliverableAvailable:
-  false` alone would read as "the video is gone"; the pair reads as "not from here".
-- `GET .../lessons/:id/file` — **200**, not 404, with `saved2drive: true`, the link,
-  the checksums, `verified`, and the measured `video` attributes. The three 404
-  branches still apply to lessons that genuinely never rendered.
+- `GET /courses/:id` — `deliverableAvailable` is **true** for an offloaded lesson,
+  because `/file` serves it (§4a.9). `videoLocal` says whether the bytes are on the
+  volume. `saved2drive`, `driveFileId`, `driveUrl`, `driveSavedAt` come from the queue
+  flag **or** `drive.json` — the flag was missing in production for lessons the backfill
+  script offloaded and for runs that ended on an already-offloaded lesson; both paths
+  now write it through `drive-offload.flagQueue`.
+- `GET .../lessons/:id/file` — **bytes**, `200`/`206` with `Range`, `X-Served-From:
+  volume|drive`. `Accept: application/json` or `?format=json` returns the record
+  (`saved2drive`, link, checksums, `verified`, `video{}`). `503 drive_unavailable`
+  when Drive cannot be reached. The 404 branches still apply to lessons that never
+  rendered; `renderExists` is `true` for `blockedBy: review`.
 - `GET /deliverables` — `videoBytes`, `offloadedCount`, `localVideoCount`. The bare
   `bytes` total stopped being a capacity signal once metadata outlived videos.
+
+Between 2026-09-28 and 2026-10-05 this route answered the record *instead of* the bytes
+and the course view said `deliverableAvailable: false`. The LMS archives our bytes into
+its own store to play them before approval; it read the JSON as a broken mp4 and `false`
+as "never made", and told an instructor a finished $3 lesson had "stopped before it was
+made". The offload had silently redefined a published field; this section and the
+changelog now record what the field means.
+
+### 4a.9 Serving a video from Drive (2026-10-05)
+
+`server/lib/drive-stream.js serveDriveCopy()` is the one path all three file routes use
+when only the Drive copy exists. It calls `gdrive.openFileStream({fileId, range,
+signal})`, which issues `GET files/{id}?alt=media&supportsAllDrives=true` with the
+service-account token and forwards a single `bytes=a-b` range verbatim; Drive answers
+200/206/416 like a file server. The body is **piped with `stream.pipeline`**, never
+buffered, so RSS stays flat for a 27 MB lesson. The client's `close` aborts the Drive
+fetch. A `HEAD` is answered from the record (`bytes`) without touching Drive. Our headers
+are `Content-Type: video/mp4`, `Accept-Ranges`, `Content-Length`, `Content-Range`,
+`Content-Disposition: inline`, `Cache-Control: private, max-age=0`, `X-Served-From:
+drive`; Drive's ETag and `x-goog-*` are not forwarded. An error before headers is a
+`503 drive_unavailable` with `driveStatus`; an error mid-body destroys the socket so the
+client sees a short body, never a complete-looking wrong one. Egress is one download from
+Google and one upload to the client per fetch — fine at course volumes; watch for a client
+that re-fetches on every page view (`X-Served-From: drive` in the access log).
+
+Not done, on purpose: keeping the local mp4 while a lesson waits at review. It would be a
+latency optimisation at 27 MB per waiting lesson on the volume this module exists to
+drain, and a fourth place that deletes a paid artefact. The route prefers the local copy
+when it exists, so it can be added later without touching the route.
 
 ### 4a.7 Which Google account, and why no consent screen
 

@@ -222,16 +222,22 @@ review again once the video really exists. Label that button differently.
 ### 2.5 `GET` / `DELETE /api/v1/courses/:courseId/lessons/:lessonId/file`
 
 This is the pre-publication preview you asked for, and it is served **from the durable volume, never
-from the render directory** — so it does not race a deploy you cannot see.
+from the render directory** — so it does not race a deploy you cannot see. Since 2026-10-05, once we
+have moved our copy to the Taleemabad University Drive, the same route **streams the bytes back
+through us** (`X-Served-From: drive`), so your client needs no Drive access and no change.
 
 - `200` / `206` `video/mp4`, full `Range` support (`Accept-Ranges`, `Content-Range`, `416`).
+- `Accept: application/json` or `?format=json` → `200` with the Drive record instead of the bytes
+  (`saved2drive`, `driveFileId`, `driveUrl`, `md5`, `verified`, `video{}`, `status`, `blockedBy`).
+- `503 drive_unavailable` — the video exists on Drive but could not be fetched right now
+  (`driveStatus` carries Drive's HTTP status; the record rides along). Retry; this is not a 404.
 - `404 no_such_lesson` — unknown, or not in this course.
 - `404 no_deliverable` — carries `renderExists`, `status`, `blockedBy` and `partsAvailable`, so you
   never have to read the prose to know which case you are in.
 
-**There is no status gate.** It serves whenever the bytes are on the volume, including while the
-lesson is `blocked`. A lesson blocked at `review` is exactly the case this was built for — the video
-is finished, paid for, and not yet published. Fetch it then.
+**There is no status gate.** It serves whenever the bytes exist — on our volume or on Drive —
+including while the lesson is `blocked`. A lesson blocked at `review` is exactly the case this was
+built for — the video is finished, paid for, and not yet published. Fetch it then.
 
 **Check `deliverableAvailable` on the course view first.** It tells you whether a fetch will
 succeed without making one, and it is correct for every `blockedBy` value (see §5).
@@ -349,8 +355,10 @@ that a fault costs minutes instead of an hour), and `eval-text` runs after it. S
 answers.
 
 So the course view carries **`deliverableAvailable`** on every blocked and done lesson — a boolean
-meaning "`GET .../file` will serve bytes right now". Poll that. It is a fact rather than a rule, and
-it cannot drift the way a mapping would.
+meaning "`GET .../file` will serve bytes right now", from our volume **or streamed through us from
+Drive** (since 2026-10-05; between 2026-09-28 and then it wrongly went `false` after an offload).
+Poll that. It is a fact rather than a rule, and it cannot drift the way a mapping would. Beside it,
+**`videoLocal`** says whether the bytes are on our volume; you do not need it to fetch.
 
 `blockedBy` defaults to `review` when a block predates the field, so treat `reason` as corroborating
 prose only.
