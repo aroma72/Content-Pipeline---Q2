@@ -279,7 +279,8 @@ function materializeScript(job, { log = () => {} } = {}) {
  * The shape the API returns. Identical to what the routes built inline before,
  * plus the catalogue key -- see below.
  */
-function toPublic(job, { includeScript = true, baseUrl = '' } = {}) {
+function toPublic(job, opts = {}) {
+  const { includeScript = true, baseUrl = '' } = opts;
   if (!job) return null;
   const out = {
     jobId: job.id,
@@ -297,6 +298,13 @@ function toPublic(job, { includeScript = true, baseUrl = '' } = {}) {
   if (job.lastError) out.lastError = job.lastError;
   if (includeScript && job.script) out.script = job.script;
   if (job.produce) out.produce = job.produce;
+  // Whether a finished video exists for this job, from the disk and not from the
+  // status. The LMS drew "nothing was bought, try again" from `written` +
+  // `lastError` alone, about a video that was on the volume. This is the field
+  // that lets the page tell the two apart.
+  if (job.script) {
+    out.deliverableAvailable = Boolean(resolveFinalPath(job, opts) || resolveDriveCopy(job));
+  }
 
   /**
    * The catalogue key, so the two APIs stop being islands.

@@ -600,17 +600,32 @@ expires first. Deploy through git instead.
 Changing a service *setting* (attaching a volume) triggers a rebuild of the current
 source, which can make new code appear live and confuse the picture.
 
-### 6.1a What a one-video job reports when produce fails to start
+### 6.1a What a one-video job reports when produce stops
 
-`GET /demo/make-video/:jobId` keeps `status: written` (the script is still good) and
-`error: null` (the job is not over), and adds:
+Three outcomes, decided by what exists on disk (or Drive) and why the run stopped — not by
+the run's own word for itself (since 2026-10-05; before that every stop went back to `written`
+and settled the ledger at $0, and the LMS told an instructor "nothing was bought, try again" about a
+finished $1.60 video):
+
+| The run… | `status` | ledger `settle.outcome` | What the LMS should say |
+|---|---|---|---|
+| made the video, then a post-render sensor wants a person to look | `awaiting_review` | `awaiting_review` | "finished with a warning, waiting for your review" — `produce.warnings[]` has the finding |
+| made the video, then died (compile, verify, copy) | `interrupted` (`resumable: true`) | `interrupted` | "the video was made; press again to resume at $0" |
+| made nothing | `written` | `failed` | "did not start / nothing was bought" **only if** `lastError.spentUsd === 0` |
+
+Every stop adds, top-level and non-terminal (`error` stays `null`):
 
 ```json
-"lastError": { "at": "2026-09-25T10:27:32Z", "stage": "produce", "message": "…", "runId": null }
+"lastError": { "at": "…", "stage": "produce", "kind": "blocked|failed", "code": "post-render-check|spend-approval|…|null",
+               "message": "…", "runId": "…", "spentUsd": 1.6, "deliverableAvailable": true }
 ```
 
-An LMS that draws the "Make the video" button from `status === 'written'` alone shows the
-same page after a failed click — that is exactly what happened. Read `lastError` and say so.
+and `deliverableAvailable` on the job itself, read off the disk and Drive like the course route's
+field of the same name. The ledger is always settled at the run's real media spend.
+
+The post-render grammar check (`eval-text.js` after the render) no longer re-judges text the
+pre-spend run already judged: identical bytes get the first verdict, and the only sensors that
+block after the spend are the ones that detect a broken render (`qa-clips`, `qa-frames`).
 
 ### 6.2 The volume
 

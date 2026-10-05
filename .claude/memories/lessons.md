@@ -1630,3 +1630,33 @@ Caught only because the staged summary said `1531 D` where renames were expected
 ignored destinations with `git add -f --pathspec-from-file=`, and a gitlink with
 `git update-index --add --cacheinfo 160000,<sha>,<path>`. Prefer staging the `git mv` result
 directly over reset-and-restage.
+
+## H51. A judge that already ruled must not rule again after the spend, and every entry path must run the same free checks
+
+**Added:** 2026-10-05 | **Applies to:** any sensor that runs both before and after a paid stage; any new route that writes a script
+**Invalidate if:** the post-render sensors stop reading beats.js, or the single-video flow stops going through script-approval
+
+Production, single-video flow (`made/product-thinking-for-beginners-w6lr`): `one-video.write()` stopped at
+the gate, so the five free script checks (H50) never ran before the LMS showed "passed review". Produce
+then redrafted twice (no `scriptApprovedSha`, so `humanApproved` was false), the spine's lenient pass
+accepted qa-cutouts and eval-text "with a warning", $1.60 of art and speech was bought, the video was
+rendered and persisted -- and the post-render `eval-text.js` re-judged the identical text, hit
+`.judge-cache.json`, replayed the same ERROR and BLOCKED the run. `one-video.produce()` treated every
+block except `review` as failure and threw without `spendUsd`; `app.js` settled the ledger at $0 and set
+the job back to `written`; the LMS said "Nothing was bought. You can try again." A retry would have
+bought it again. The "error" was an LLM false positive about a verb.
+
+Fixes (all mutation-tested): `state.finishStage` keeps `error.code`; `one-video.produce()` returns
+`awaitingReview` with a synthesised produce artefact when a post-render block has a deliverable, and
+attaches `spendUsd`/`kind`/`code` to every throw; `app.js` maps stops to `awaiting_review` /
+`interrupted` / `written` by what exists on disk; `toPublic` exposes `deliverableAvailable`; the
+post-render eval-text runs only when `beats.js` bytes changed since the pre-spend sensors
+(`finalTextCheckNeeded`); `write()` runs through `script-approval` and `produce()` approves by sha;
+`templates/lib/gemini-judge.js` gives both Gemini sensors a timeout and retries; `text-fixes.js`
+applies eval-text's own suggestion as a string edit before any model redraft.
+
+**Do:** a sensor that runs after the spend must be able to say "nothing new here" (compare input
+fingerprints) rather than re-asking. Every caller that can throw out of a spine run must carry
+`st.spend.usd`. A job status shown to a person is decided by what exists on disk, never by the run's
+word for itself. A new entry path (route, CLI, Slack) must stop at or after `script-approval`, never
+at `gate`.

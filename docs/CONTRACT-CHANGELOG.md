@@ -17,6 +17,26 @@ Frozen copies: `docs/contracts/course-api-<version>.md`.
 
 ---
 
+## 1.2, additive — 2026-10-05
+
+Reply: `docs/integration-requests/2026-10-05-produce-outcome-fields.md`. Why: `SERVICE_DURABILITY_AND_CONTRACTS.md` §6.1a.
+
+**Behaviour change on the single-video route, all additive fields.** A produce run that stops
+*after* making the video is no longer put back to `written`: it becomes `awaiting_review` (a
+check wants a person) or `interrupted` (the run died; resumable at $0). The ledger is settled at
+the run's real spend. `written` + `lastError` now means what the LMS always read it as: nothing was
+made and nothing was bought.
+
+| Change | Where | Example | Commit | LMS file |
+|---|---|---|---|---|
+| `deliverableAvailable` | `GET /demo/make-video/:jobId` | `"deliverableAvailable": true` — a video exists on disk or Drive, read like the course field | this release | `content-queen-jobs.ts`, `content-video-poll.ts` (decides "nothing was bought") |
+| `lastError.kind`, `.code`, `.spentUsd`, `.deliverableAvailable` | same, on any stopped produce | `{"kind":"blocked","code":"post-render-check","spentUsd":1.6,"deliverableAvailable":true}` | this release | `content-queen-jobs.ts` type; page banner |
+| `produce.warnings[]`, `produce.blocked` | same, `status === awaiting_review` | `[{"sensor":"eval-text.js","what":"grammar and clarity","findings":"…"}]` — findings carried to review instead of blocking after the spend | this release | review panel |
+| `script.scriptSha`, `script.unresolvedChecks[]` | same, from `written` | `"scriptSha": "968c5daac28395bf"` — the five free script checks now run before `written`, and produce approves this sha | this release | allowlist only |
+| `status: interrupted` after a post-render failure | same | was `written`; `/produce` already accepts `interrupted` and re-runs at $0 | this release | status mapping |
+
+---
+
 ## 1.2 — 2026-09-24
 
 Reply: `docs/integration-requests/2026-09-24-script-approval-reply.md`. Frozen: `docs/contracts/course-api-v1.2.md`.

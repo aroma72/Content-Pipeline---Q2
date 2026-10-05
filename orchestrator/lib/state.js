@@ -114,6 +114,10 @@ function finishStage(state, name, { status, output, error }) {
     // sensor -- has to parse English out of a string, or silently does without.
     if (error.blocker) s.blocker = error.blocker;
     if (error.details) s.details = error.details;
+    // The blockedBy code too. Without it a caller that holds only the run state
+    // (server/lib/one-video) could not tell "finished video, a sensor wants a
+    // second opinion" from "spend not approved" -- both read as `blocked`.
+    if (error.code) s.code = error.code;
   }
   state.stages[name] = s;
   if (output !== undefined) state.artifacts[name] = output;

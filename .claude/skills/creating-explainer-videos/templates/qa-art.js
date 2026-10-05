@@ -17,6 +17,7 @@
 const fs = require('fs');
 const path = require('path');
 const { geminiKey } = require('./lib/config');
+const { judgeJson } = require('./lib/gemini-judge');
 
 const MODEL = process.env.ART_JUDGE_MODEL || 'gemini-2.5-flash';
 const key = geminiKey();
@@ -61,31 +62,17 @@ async function judge(b) {
   const file = path.join(artDir, b.id + '.png');
   const b64 = fs.readFileSync(file).toString('base64');
   const intent = String(b.vo || '') + ' — ' + String(b.art || '').replace(/flat 2D vector[\s\S]*$/i, '').slice(0, 240);
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
-  const body = {
-    contents: [{ parts: [
-      { inline_data: { mime_type: 'image/png', data: b64 } },
-      { text: PROMPT.replace('INTENT', intent.replace(/"/g, "'")) },
-    ] }],
-    generationConfig: { temperature: 0, responseMimeType: 'application/json' },
-  };
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-        body: JSON.stringify(body),
-      });
-      const txt = await res.text();
-      if (!res.ok) throw new Error(res.status + ' ' + txt.slice(0, 120));
-      const j = JSON.parse(txt);
-      const out = j?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-      const parsed = JSON.parse(out);
-      return { verdict: String(parsed.verdict || 'PASS').toUpperCase(), issues: parsed.issues || [] };
-    } catch (e) {
-      if (attempt === 3) return { verdict: 'ERROR', issues: ['judge failed: ' + String(e.message).slice(0, 90)] };
-      await new Promise((r) => setTimeout(r, 1500 * attempt));
-    }
+  const parts = [
+    { inline_data: { mime_type: 'image/png', data: b64 } },
+    { text: PROMPT.replace('INTENT', intent.replace(/"/g, "'")) },
+  ];
+  // Three tries with a timeout each, via the shared judge client. ERROR here
+  // means the judge itself never answered -- handled below as exit 3, not FAIL.
+  try {
+    const parsed = await judgeJson({ key, model: MODEL, parts, log: (m) => console.error('[qa-art]', m) });
+    return { verdict: String((parsed && parsed.verdict) || 'PASS').toUpperCase(), issues: (parsed && parsed.issues) || [] };
+  } catch (e) {
+    return { verdict: 'ERROR', issues: ['judge failed: ' + String(e.message).slice(0, 90)] };
   }
 }
 

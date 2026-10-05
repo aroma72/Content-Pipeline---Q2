@@ -273,6 +273,11 @@ async function singleFlow() {
   const beats = sc.beatsFull || sc.beats || [];
   expect(F, 'job carries its script and a checkpoint', beats.length && sc.checkpoint && sc.checkpoint.stem
     && beats.some((b) => b.mode === 'checkpoint'), `${beats.length} beats, checkpoint after ${sc.checkpointAfterBeat}`);
+  // Since 2026-10-05 write() runs the five free script checks and fingerprints
+  // the checked bytes before the job is `written`; produce approves that sha.
+  expect(F, 'written script carries the checked sha and its unresolved checks', /^[0-9a-f]{16}$/.test(String(sc.scriptSha || ''))
+    && Array.isArray(sc.unresolvedChecks), `sha ${sc.scriptSha}, ${(sc.unresolvedChecks || []).length} unresolved`);
+  expect(F, 'nothing is held for a job that has only been written', w.job.deliverableAvailable === false, `deliverableAvailable ${w.job.deliverableAvailable}`);
   const md = await http('GET', `${jp}/script.md`);
   expect(F, 'GET .../script.md', md.status === 200 && String(md.data || '').length > 200, `${String(md.data || '').length} chars`);
   const early = await http('GET', `${jp}/video`, { raw: true });
@@ -295,6 +300,12 @@ async function singleFlow() {
   expect(F, 'job reaches awaiting_review (video made)', j.status === 'awaiting_review', w.timedOut ? 'timed out' : `${j.status} ${j.error || (j.lastError && j.lastError.message) || ''}`);
   const spent = Number(j.produce && j.produce.spendUsd);
   expect(F, 'spend is reported and within the cap', Number.isFinite(spent) && spent <= CAP, `$${j.produce && j.produce.spendUsd} (quoted $${q.totalUsd})`);
+  // The record must say a video exists, and say what the run accepted with a
+  // warning instead of blocking on it after the spend (2026-10-05).
+  expect(F, 'deliverableAvailable is true once the video is made', j.deliverableAvailable === true, `deliverableAvailable ${j.deliverableAvailable}`);
+  expect(F, 'produce.warnings is a list (possibly empty), never a post-render block', Array.isArray(j.produce && j.produce.warnings),
+    `${(j.produce && j.produce.warnings || []).length} warning(s)${j.produce && j.produce.blocked ? `; blocked at ${j.produce.blocked.code}` : ''}`);
+  if (j.lastError) record(F, 'lastError on an awaiting_review job', 'skip', `${j.lastError.kind} ${j.lastError.code || ''} spent $${j.lastError.spentUsd}`);
   checkDriveJson(F, 'GET .../video', await http('GET', `${jp}/video`));
   if (j.catalogue && j.catalogue.checkpointsUrl) {
     const u = new URL(j.catalogue.checkpointsUrl, BASE);

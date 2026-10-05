@@ -439,6 +439,9 @@ function createApp(opts = {}) {
             scenario: r.brief && r.brief.ali_scenario,
             gate: r.gate && r.gate.verdict,
             redrafts: r.redrafts,
+            // The checked bytes, and what the free checks could not settle.
+            scriptSha: r.scriptSha || null,
+            unresolvedChecks: r.unresolvedChecks || [],
             // Enough to REVIEW a beat, not just read it aloud.
             //
             // This carried {id, mode, vo} only, so nothing anywhere served a
@@ -476,7 +479,8 @@ function createApp(opts = {}) {
         },
       }, jobOpts);
       console.log(`[make-video ${id}] READY: ${r.title} (${r.beats.length} beats, `
-        + `${r.redrafts} redraft(s))`);
+        + `${r.redrafts} redraft(s), sha ${r.scriptSha || '?'}`
+        + `${(r.unresolvedChecks || []).length ? `, ${r.unresolvedChecks.length} unresolved check(s)` : ''})`);
       // Onto the volume the moment it is written. The render directory is
       // container-local and .dockerignore'd; a redeploy between `written` and
       // "Make the video" used to take the only copy with it. Never fatal.
@@ -735,7 +739,7 @@ function createApp(opts = {}) {
 
     oneVideo.produce(
       {
-        itemId: job.script.itemId, budgetUsd, brief: job.script.brief,
+        itemId: job.script.itemId, budgetUsd, brief: job.script.brief, scriptSha: job.script.scriptSha,
         // Only when the request says so. Default is still to stop and wait.
         publishAs: (req.body && req.body.publish) ? approverOf(req) : null,
       },
@@ -760,7 +764,13 @@ function createApp(opts = {}) {
             spendRef: null,
             // The absolute path is NOT stored -- see server/lib/jobs.js.
             review: { itemId: r.itemId, series: r.series || 'made', slug: r.slug, artifacts: r.artifacts, qa: r.qa },
-            produce: { status: 'awaiting_review', stage: 'review', spendUsd: r.spendUsd, qa: r.qa, elapsedSeconds: elapsed },
+            produce: {
+              status: 'awaiting_review', stage: 'review', spendUsd: r.spendUsd, qa: r.qa, elapsedSeconds: elapsed,
+              // Findings a gate accepted rather than acted on, so the reviewer
+              // sees what the run saw. Empty when every gate was satisfied.
+              warnings: r.warnings || [],
+              ...(r.blocked ? { blocked: r.blocked } : {}),
+            },
           },
         }, jobOpts);
         console.log(`[produce ${job.id}] finished, waiting for a human to approve it`);
@@ -779,25 +789,60 @@ function createApp(opts = {}) {
           { status: 202, body: { jobId: job.id, status: 'producing', budgetUsd } });
       }
     }).catch((e) => {
+      const spentUsd = Number(e.spendUsd) || 0;
+      const kind = e.kind === 'blocked' ? 'blocked' : 'failed';
+      // Does a finished video exist, whatever the run said about itself? The
+      // wrapper reports what it found; the job record is the fallback for a
+      // run that died before it could say.
+      const cur = jobsLib.get(job.id, jobOpts) || job;
+      const had = Boolean(e.deliverable
+        || jobsLib.resolveFinalPath(cur, { oneVideo })
+        || jobsLib.resolveDriveCopy(cur));
+
+      // Three honest outcomes, where there used to be one:
+      //   - a video exists and a gate wants a person to look  -> awaiting_review
+      //   - a video exists but the run died after making it    -> interrupted (resumable, $0 re-run)
+      //   - nothing was made                                   -> written (the script is still good)
+      // The old code put every case back to `written` and the LMS read that as
+      // "nothing happened, press again" -- about a paid, finished video.
+      const status = had ? (kind === 'blocked' ? 'awaiting_review' : 'interrupted') : 'written';
+
       // A run that failed after buying art HAS spent money. Settling at whatever
       // the spine recorded -- rather than releasing the reservation -- is what
       // stops a tenant burning budget for free by failing runs deliberately.
       ledger.settle(jobStore, {
         tenantId: tenant.id, ref: reservation.ref, jobId: job.id,
-        runId: e.runId, usd: Number(e.spendUsd) || 0, outcome: 'failed',
+        runId: e.runId, usd: spentUsd, outcome: status === 'written' ? 'failed' : status,
       });
-      jobsLib.transition(job.id, {
-        status: 'written',   // the script is still good; only the render failed
-        patch: {
-          spendRef: null,
-          produce: { status: 'failed', error: e.message },
-          // Top-level and non-terminal, so the LMS can show it under `written`.
-          // `produce.error` alone was invisible: the page read `error`, which
-          // stayed null, and drew the button as if nothing had happened.
-          lastError: { at: new Date().toISOString(), stage: 'produce', message: e.message, runId: e.runId || null },
-        },
-      }, jobOpts);
-      console.error(`[produce ${job.id}] failed for ${tenant.id}: ${e.message}`);
+
+      const lastError = {
+        at: new Date().toISOString(), stage: 'produce', kind, code: e.code || null,
+        message: e.message, runId: e.runId || null, spentUsd, deliverableAvailable: had,
+      };
+      const patch = { spendRef: null, lastError };
+      if (status === 'awaiting_review') {
+        patch.review = { itemId: cur.script.itemId, series: cur.script.series || 'made', slug: cur.script.slug, artifacts: null, qa: null };
+        patch.produce = {
+          status: 'awaiting_review', stage: 'review', spendUsd: spentUsd, qa: null,
+          warnings: [{ sensor: (e.details && e.details.sensor) || null, what: (e.details && e.details.what) || null, findings: (e.details && e.details.findings) || e.message }],
+          blocked: { stage: e.stage || 'produce', code: e.code || null, message: e.message },
+        };
+      } else if (status === 'interrupted') {
+        patch.resumable = true;
+        patch.produce = { status: 'failed', error: e.message, spendUsd: spentUsd };
+      } else {
+        patch.produce = { status: 'failed', error: e.message, spendUsd: spentUsd };
+      }
+      // A produce-time redraft changed the script after it was approved by sha.
+      // Nothing was bought; the person approves the new text by pressing again.
+      if (e.code === 'script-approval' && e.details && e.details.sha && cur.script) {
+        patch.script = { ...cur.script, scriptSha: e.details.sha };
+      }
+      // Top-level and non-terminal, so the LMS can show it under `written`.
+      // `produce.error` alone was invisible: the page read `error`, which
+      // stayed null, and drew the button as if nothing had happened.
+      jobsLib.transition(job.id, { status, patch }, jobOpts);
+      console.error(`[produce ${job.id}] ${kind} for ${tenant.id} (spent $${spentUsd.toFixed(2)}, video ${had ? 'exists' : 'absent'} -> ${status}): ${e.message}`);
       if (e.stack) console.error(e.stack.split('\n').slice(0, 8).join('\n'));
       unclaim();
     });

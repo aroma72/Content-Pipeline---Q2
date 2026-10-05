@@ -1520,6 +1520,127 @@ async function resilienceChecks() {
       });
     });
 
+  /**
+   * The 2026-10-05 production case. The run bought art and speech, rendered and
+   * saved the video, and was then BLOCKED by a post-render sensor. The route put
+   * the job back to `written`, settled the ledger at $0, and the LMS told the
+   * instructor "nothing was bought, try again" -- about a finished $1.60 video.
+   */
+  async function producedThenStopped({ slug, error, withVideo }) {
+    const vids = vidsEnv();
+    const env = freshEnv({ EXPLAINER_VIDEOS_DIR: vids });
+    const store = freshStore(env);
+    let calls = 0;
+    // The real file lookup: the stub's `() => null` would hide the very video
+    // this test writes, and the route must find it the way production does.
+    const { finishedFile } = require(path.join(__dirname, '..', 'server', 'lib', 'one-video'));
+    const pipeline = fakePipeline({
+      write: writerReturning(slug),
+      finishedFile,
+      produce: async () => {
+        calls++;
+        if (withVideo) {
+          const out = path.join(videoDir('made', slug), 'out');
+          fs.mkdirSync(out, { recursive: true });
+          fs.writeFileSync(path.join(out, `${slug}_final.mp4`), 'not really an mp4');
+        }
+        throw Object.assign(new Error(error.message), error);
+      },
+    });
+    const ledger = require(path.join(__dirname, '..', 'server', 'lib', 'ledger'));
+    return withServer(env, { oneVideo: pipeline, store }, async (port) => {
+      const { jobId, cookie } = await makeJob(port);
+      await settle();
+      const auth = { authorization: `Bearer ${LMS_TOKEN}` };
+      await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/claim`, headers: auth, cookie });
+      const h = { ...auth, 'idempotency-key': `k-${slug}` };
+      const first = await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/produce`, headers: h, body: {} });
+      assert(first.status === 202, `produce: ${first.status} ${first.text}`);
+      await settle();
+      const job = (await req(port, { path: `/demo/make-video/${jobId}`, headers: auth, cookie })).json;
+      const rows = store.readLedger('taleemabad-u', ledger.monthKey());
+      const settled = rows.find((r) => r.type === 'settle' && r.jobId === jobId);
+      const again = await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/produce`, headers: h, body: {} });
+      await settle();
+      return { job, settled, again, calls: () => calls };
+    });
+  }
+
+  await check('a post-render block with a finished video is awaiting_review, not "did not start"',
+    async () => {
+      const { job, settled, again, calls } = await producedThenStopped({
+        slug: 't-blocked', withVideo: true,
+        error: {
+          message: 'produce blocked: grammar and clarity needs a human decision (eval-text.js, exit 1)',
+          runId: 'run-x', spendUsd: 1.6, kind: 'blocked', code: 'post-render-check',
+          details: { sensor: 'eval-text.js', what: 'grammar and clarity', findings: 'ERROR "decided the problem"' },
+        },
+      });
+      assert(job.status === 'awaiting_review', `status ${job.status}: the LMS will say nothing was bought`);
+      assert(job.deliverableAvailable === true, 'deliverableAvailable must say the video exists');
+      assert(job.produce && job.produce.spendUsd === 1.6, `produce.spendUsd ${JSON.stringify(job.produce)}`);
+      assert(job.produce.warnings && job.produce.warnings[0].sensor === 'eval-text.js',
+        `the finding did not reach the reviewer: ${JSON.stringify(job.produce.warnings)}`);
+      assert(job.lastError && job.lastError.kind === 'blocked' && job.lastError.spentUsd === 1.6,
+        `lastError must carry kind and spend: ${JSON.stringify(job.lastError)}`);
+      assert(settled && settled.usd === 1.6, `ledger settled at ${settled && settled.usd}, not 1.6`);
+      assert(settled.outcome === 'awaiting_review', `ledger outcome ${settled.outcome}`);
+      assert(again.status === 202 && again.json.idempotent === true, `a second press must not spend: ${again.status} ${again.text}`);
+      assert(calls() === 1, `produce ran ${calls()} times`);
+      return 'awaiting_review, $1.60 settled, warning carried, second press is a no-op';
+    });
+
+  await check('a run that died after making the video is interrupted (resumable), not written',
+    async () => {
+      const { job, settled } = await producedThenStopped({
+        slug: 't-died', withVideo: true,
+        error: { message: 'produce failed: verify.js exit 1', runId: 'run-y', spendUsd: 1.2, kind: 'failed' },
+      });
+      assert(job.status === 'interrupted', `status ${job.status}`);
+      assert(job.deliverableAvailable === true, 'the video exists and the record must say so');
+      assert(job.lastError.spentUsd === 1.2 && job.lastError.kind === 'failed', JSON.stringify(job.lastError));
+      assert(settled && settled.usd === 1.2 && settled.outcome === 'interrupted', JSON.stringify(settled));
+      return 'interrupted, spend settled';
+    });
+
+  await check('a run that made nothing goes back to written, with the spend it did make',
+    async () => {
+      const { job, settled, again, calls } = await producedThenStopped({
+        slug: 't-nothing', withVideo: false,
+        error: { message: 'produce failed: art generation exit 1', runId: 'run-z', spendUsd: 0.08, kind: 'failed' },
+      });
+      assert(job.status === 'written', `status ${job.status}`);
+      assert(job.deliverableAvailable === false, 'no video: deliverableAvailable must be false');
+      assert(job.lastError.spentUsd === 0.08, `partial spend lost: ${JSON.stringify(job.lastError)}`);
+      assert(settled && settled.usd === 0.08 && settled.outcome === 'failed', JSON.stringify(settled));
+      assert(again.status === 202 && calls() === 2, 'with nothing made, pressing again must run again');
+      return 'written, $0.08 settled, retry allowed';
+    });
+
+  await check('the checked script sha travels from write() to the job record and into produce()',
+    () => {
+      const env = freshEnv();
+      let produced = null;
+      const pipeline = fakePipeline({
+        write: writerReturning('t-sha', { scriptSha: 'ffff0000ffff0000', unresolvedChecks: [{ sensor: 'qa-cutouts.js', what: 'props' }] }),
+        produce: async (r) => { produced = r; return fakePipeline().produce(); },
+      });
+      return withServer(env, { oneVideo: pipeline, store: freshStore(env) }, async (port) => {
+        const { jobId, cookie } = await makeJob(port);
+        await settle();
+        const auth = { authorization: `Bearer ${LMS_TOKEN}` };
+        await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/claim`, headers: auth, cookie });
+        const g = await req(port, { path: `/demo/make-video/${jobId}`, headers: auth, cookie });
+        assert(g.json.script && g.json.script.scriptSha === 'ffff0000ffff0000', `script.scriptSha missing: ${JSON.stringify(g.json).slice(0, 400)}`);
+        assert(Array.isArray(g.json.script.unresolvedChecks) && g.json.script.unresolvedChecks.length === 1,
+          'unresolvedChecks not on the job record');
+        await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/produce`, headers: auth, body: {} });
+        await settle();
+        assert(produced && produced.scriptSha === 'ffff0000ffff0000', `produce() received ${JSON.stringify(produced && produced.scriptSha)}`);
+        return 'sha on the record, sha into produce';
+      });
+    });
+
   await check('a written script survives the render directory vanishing: rebuilt from the job record',
     () => {
       const vids = fs.mkdtempSync(path.join(os.tmpdir(), 'cq-vids-'));

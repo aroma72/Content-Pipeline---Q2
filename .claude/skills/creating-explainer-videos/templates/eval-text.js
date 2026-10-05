@@ -11,10 +11,10 @@
 const fs = require('fs');
 const { geminiKey } = require('./lib/config');
 const cache = require('./lib/judge-cache');
+const { judgeJson } = require('./lib/gemini-judge');
 const { demoteInaudible } = require('./lib/spoken-text');
 const beats = require('./beats.js');
 const JUDGE = process.env.JUDGE_MODEL || 'gemini-2.5-flash';
-const key = geminiKey();
 
 // Bump whenever PROMPT or the severity rules below change, or a cached verdict
 // from the old rubric will be served as if the new one agreed with it.
@@ -89,17 +89,21 @@ const PROMPT =
   const cached = issues !== undefined;
 
   if (!cached) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${JUDGE}:generateContent`;
-    const res = await fetch(url, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-      body: JSON.stringify({ contents: [{ parts: [{ text: PROMPT }] }], generationConfig: { temperature: 0, responseMimeType: 'application/json' } }),
-    });
+    // The key is needed only to ASK. A cache hit must answer without one, so a
+    // replayed verdict never turns into "exit 3, no credential" on a machine that
+    // merely reads what the judge already said.
+    const key = geminiKey();
     // 3 = infrastructure. The judge never rendered a verdict, so there is no
     // finding here -- only an outage. Exiting 1 made a 503 look like bad grammar.
-    if (!res.ok) { console.error('[eval-text] judge HTTP', res.status, (await res.text()).slice(0, 160)); process.exitCode=3;return; }
-    const j = await res.json();
-    const txt = (j?.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');
-    try { issues = (JSON.parse(txt).issues) || []; } catch { console.error('[eval-text] unparseable judge output:', txt.slice(0, 200)); process.exitCode=3;return; }
+    // judgeJson retries a timeout, a 429 and a 5xx before giving up.
+    let parsed;
+    try {
+      parsed = await judgeJson({ key, model: JUDGE, parts: [{ text: PROMPT }], log: (m) => console.error('[eval-text]', m) });
+    } catch (e) {
+      console.error('[eval-text]', e.name === 'JudgeUnparseableError' ? 'unparseable judge output:' : 'judge unavailable:', e.message);
+      process.exitCode = 3; return;
+    }
+    issues = (parsed && parsed.issues) || [];
     // Cached BEFORE the demotion below, so the record is what the judge actually
     // said. The filtering is ours and is re-applied on every read.
     cache.put(process.cwd(), cacheKey, issues, { sensor: 'eval-text', judge: JUDGE, snippets: items.length });
@@ -121,6 +125,9 @@ const PROMPT =
   if (issues.length) { md.push('| severity | text | problem | suggestion |', '|--|--|--|--|', ...issues.map(row)); }
   else md.push('**No issues — all text reads cleanly.**');
   fs.writeFileSync('eval-text-results.md', md.join('\n'));
+  // Machine-readable too, so the orchestrator can apply a suggestion without
+  // parsing the table above.
+  fs.writeFileSync('eval-text-results.json', JSON.stringify({ judge: JUDGE, cached, snippets: items.length, issues }, null, 2));
   for (const it of errors) console.log(`  ❌ ERROR "${it.text}"\n     ${it.problem}\n     → ${it.suggestion}`);
   for (const it of nits) console.log(`  · nit  "${it.text}" — ${it.suggestion}`);
   if (errors.length) { console.log(`\n[eval-text] ${errors.length} grammar ERROR(s) — FAIL, fix before shipping (${nits.length} nits advisory).`); process.exitCode = 1; return; }

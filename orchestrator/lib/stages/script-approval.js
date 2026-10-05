@@ -88,9 +88,18 @@ module.exports = {
       const { _internals } = require('./produce');
       const r = await _internals.preApprovalChecks({
         dir, beats: script.beats, log, lenient: Boolean(opts.lenient),
+        title: script.title || item.topic, st,
       });
       checkFindings = r.findings;
+      // The checks may have applied eval-text's own suggestions to beats.js.
+      // The artifact must say what the file says, or the sha below names bytes
+      // the run will never render.
+      if (r.autoFixed && r.autoFixed.length && r.beats) {
+        script.beats = r.beats;
+        if (artifacts.script) artifacts.script.beats = r.beats;
+      }
       log(`free script checks passed before approval (${r.checked.join(', ')})`
+        + (r.autoFixed && r.autoFixed.length ? ` -- ${r.autoFixed.length} text fix(es) applied without a redraft` : '')
         + (checkFindings.length ? ` -- ${checkFindings.length} unresolved, shown to the reader` : ''));
     }
 

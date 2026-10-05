@@ -117,37 +117,98 @@ const SCRIPT_SENSORS = [
  * Throws RedraftError (fromStage 'script') on a finding. With `lenient` set (the
  * spine's last pass) it returns the findings instead, for the reader to see.
  */
-async function preApprovalChecks({ dir, beats, log = () => {}, lenient = false }) {
+async function preApprovalChecks({ dir, beats, log = () => {}, lenient = false, title = null, st = null }) {
   copyTemplates(PATHS.videoTemplates, dir, log);
-  const findings = [];
-  const { errors } = validateBeats(beats, dir);
-  if (errors.length) {
-    // Deterministic: never softened by the lenient pass (spine skips it for INVALID_BEATS).
-    throw new RedraftError(
-      `beats.js will not render correctly:\n  - ${errors.join('\n  - ')}`,
-      { fromStage: 'script', verdict: 'INVALID_BEATS', feedback: errors }
-    );
-  }
-  for (const [script, what] of SCRIPT_SENSORS) {
-    if (!fs.existsSync(path.join(dir, script))) {
-      throw new Error(`${script} is missing from ${dir} -- the quality gate for ${what} cannot run.`);
+  let current = beats;
+  const autoFixed = [];
+
+  // Two passes at most: the second only after eval-text's own suggestions were
+  // applied to the text (see tryTextAutoFix). A deterministic string edit is a
+  // fraction of the cost of a model redraft, and it is what the finding asked for.
+  for (let pass = 0; pass < 2; pass++) {
+    const findings = [];
+    const { errors } = validateBeats(current, dir);
+    if (errors.length) {
+      // Deterministic: never softened by the lenient pass (spine skips it for INVALID_BEATS).
+      throw new RedraftError(
+        `beats.js will not render correctly:\n  - ${errors.join('\n  - ')}`,
+        { fromStage: 'script', verdict: 'INVALID_BEATS', feedback: errors }
+      );
     }
-    try {
-      await shell.run('node', [script], { cwd: dir, timeoutMs: 20 * 60 * 1000 });
-    } catch (e) {
-      if (!(e instanceof shell.CommandError) || e.code === null) throw e;
-      if (e.code === 3 || isEnvironmentFailure(e)) {
-        log(`${script} could not run (${what}) -- continuing without its verdict`);
-        continue;
+    let rerun = false;
+    for (const [script, what] of SCRIPT_SENSORS) {
+      if (!fs.existsSync(path.join(dir, script))) {
+        throw new Error(`${script} is missing from ${dir} -- the quality gate for ${what} cannot run.`);
       }
-      const found = `${e.stdout || ''}\n${e.stderr || ''}`.split(/\r?\n/).map((l) => l.trim())
-        .filter((l) => l && !/^\[.*\] (Reviewed|Judge)/.test(l)).slice(-25).join('\n');
-      if (lenient) { findings.push({ sensor: script, what, findings: found.slice(0, 800) }); continue; }
-      throw new RedraftError(`${what} FAILED (${script}):\n${found}`,
-        { fromStage: 'script', verdict: 'SENSOR_FAIL', feedback: found });
+      try {
+        await shell.run('node', [script], { cwd: dir, timeoutMs: 20 * 60 * 1000 });
+      } catch (e) {
+        if (!(e instanceof shell.CommandError) || e.code === null) throw e;
+        if (e.code === 3 || isEnvironmentFailure(e)) {
+          log(`${script} could not run (${what}) -- continuing without its verdict`);
+          continue;
+        }
+        const found = `${e.stdout || ''}\n${e.stderr || ''}`.split(/\r?\n/).map((l) => l.trim())
+          .filter((l) => l && !/^\[.*\] (Reviewed|Judge)/.test(l)).slice(-25).join('\n');
+
+        if (script === 'eval-text.js' && pass === 0) {
+          const fix = tryTextAutoFix({ dir, beats: current, title, log, st });
+          if (fix) {
+            current = fix.beats;
+            autoFixed.push(...fix.applied);
+            rerun = true;
+            break;
+          }
+        }
+
+        if (lenient) { findings.push({ sensor: script, what, findings: found.slice(0, 800) }); continue; }
+        throw new RedraftError(`${what} FAILED (${script}):\n${found}`,
+          { fromStage: 'script', verdict: 'SENSOR_FAIL', feedback: found });
+      }
+    }
+    if (!rerun) {
+      return { checked: SCRIPT_SENSORS.map(([sc]) => sc), findings, beats: current, autoFixed };
     }
   }
-  return { checked: SCRIPT_SENSORS.map(([sc]) => sc), findings };
+  /* istanbul ignore next -- the loop returns or throws on the second pass */
+  throw new Error('preApprovalChecks: unreachable');
+}
+
+/**
+ * Apply eval-text's own suggestions to beats.js, when they are small, exact
+ * and unambiguous. Returns { beats, applied } or null when nothing was safe to
+ * apply (then the caller falls back to a redraft, as before). Never throws: an
+ * older video folder has an eval-text.js that writes no JSON, and that is a
+ * null here, not a failure.
+ */
+function tryTextAutoFix({ dir, beats, title, log = () => {}, st = null }) {
+  let issues;
+  try {
+    issues = JSON.parse(fs.readFileSync(path.join(dir, 'eval-text-results.json'), 'utf8')).issues || [];
+  } catch { return null; }
+  const { applySuggestions } = require('../text-fixes');
+  const r = applySuggestions(beats, issues);
+  if (!r.applied.length) return null;
+
+  const { errors } = validateBeats(r.beats, dir);
+  if (errors.length) {
+    log(`eval-text suggestions would break the script (${errors[0]}) -- leaving it to a redraft`);
+    return null;
+  }
+  const { renderBeatsFile } = require('../beats-file');
+  fs.writeFileSync(path.join(dir, 'beats.js'), renderBeatsFile({ title: title || 'Untitled', beats: r.beats }), 'utf8');
+  for (const a of r.applied) log.always
+    ? log.always(`eval-text: applied its own suggestion on beat ${a.id}.${a.field}: "${a.from.slice(0, 80)}" -> "${a.to.slice(0, 80)}"`)
+    : log(`eval-text: applied its own suggestion on beat ${a.id}.${a.field}`);
+  if (st) {
+    state.recordIntervention(st, {
+      stage: 'script-approval',
+      kind: 'auto_fixed_text',
+      detail: `${r.applied.length} grammar suggestion(s) from eval-text applied as string edits, no redraft: `
+        + r.applied.map((a) => `${a.id}.${a.field}`).join(', '),
+    });
+  }
+  return { beats: r.beats, applied: r.applied, skipped: r.skipped };
 }
 
 function estimateSpend(beats, dir) {
@@ -414,8 +475,19 @@ function copyTemplates(src, dest, log) {
   return copied;
 }
 
+/**
+ * Does the post-render text check have anything new to look at?
+ *
+ * Only when the script bytes differ from what the pre-spend sensors judged. An
+ * unreadable fingerprint on either side is answered "yes": the check is cheap
+ * next to a wrong skip, and a missing beats.js is its own loud failure.
+ */
+function finalTextCheckNeeded({ before, after }) {
+  return !(before && after && before === after);
+}
+
 // Exported for the regression tests; not part of the stage contract.
-module.exports._internals = { estimateSpend, isFresherThanInputs, copyTemplates,
+module.exports._internals = { estimateSpend, isFresherThanInputs, copyTemplates, finalTextCheckNeeded,
   i2vSeconds, COST, missingPerBeat, staleVo, pruneOrphans, isEnvironmentFailure, repairAffordable,
   SCRIPT_SENSORS, preApprovalChecks };
 
@@ -733,6 +805,9 @@ module.exports = Object.assign(module.exports, {
     // These five are SCRIPT_SENSORS, which script-approval runs BEFORE it asks a
     // person to read the script -- test-regressions keeps the two lists equal. On a
     // script a person has approved by sha they record, they do not redraft (sensor()).
+    // The bytes the five sensors are about to judge. The post-render eval-text
+    // (step 8) compares against this and runs only when the text has changed.
+    const shaAtScriptChecks = require('../deliverables').fingerprint(path.join(dir, 'beats.js'));
     await sensor('qa-visuals.js', 'the Evals-Grade Visual Standard', { redraftable: true });
     await sensor('qa-cutouts.js', 'half-cut props on cutout beats', { redraftable: true });
     await sensor('qa-checkpoint.js', 'the in-video checkpoint question', { redraftable: true });
@@ -1119,18 +1194,32 @@ module.exports = Object.assign(module.exports, {
       });
     }
 
-    // 8. grammar/clarity, again, over the script as it actually went out. The
-    // first run (before the spend) is where a finding can still be redrafted; this
-    // one catches an edit made between then and here, and is deliberately NOT
-    // redraftable -- rewinding after the render would throw a finished video away
-    // over a comma. Anything it reports goes to a human, and `blockOnFail` is what
-    // makes that true: without it this threw RejectedError, which the spine settles
-    // as `failed` -- the finished video thrown away exactly as the line above says
-    // it must not be.
+    // 8. grammar/clarity, again, over the script as it actually went out -- but
+    // ONLY if the text changed since the pre-spend run judged it. That first run
+    // is where a finding can still be redrafted, and whatever it decided
+    // (passed, redrafted, or accepted with a warning after the redraft budget)
+    // already stands. Re-asking about identical text cannot add information: the
+    // judge cache replays the same verdict, so on 2026-10-05 a finding the run had
+    // deliberately accepted and carried to review came back as a BLOCK after the
+    // $1.60 render, and the LMS told the instructor nothing had been bought.
+    //
+    // When it does run it is deliberately NOT redraftable -- rewinding after the
+    // render would throw a finished video away over a comma. Anything it reports
+    // goes to a human, and `blockOnFail` is what makes that true: without it this
+    // threw RejectedError, which the spine settles as `failed`.
     //
     // The one sensor here that runs after a render exists, hence finalRendered.
-    await sensor('eval-text.js', 'grammar and clarity of the spoken and on-screen text',
-      { blockOnFail: true, finalRendered: true });
+    const shaNow = require('../deliverables').fingerprint(path.join(dir, 'beats.js'));
+    if (finalTextCheckNeeded({ before: shaAtScriptChecks, after: shaNow })) {
+      await sensor('eval-text.js', 'grammar and clarity of the spoken and on-screen text',
+        { blockOnFail: true, finalRendered: true });
+    } else {
+      log.always(`eval-text.js: not re-run after the render -- beats.js unchanged (${shaNow}) since the pre-spend verdict`);
+      sensorResults.push({
+        ok: true, sensor: 'eval-text.js', what: 'grammar and clarity of the spoken and on-screen text',
+        detail: `not re-run after the render: beats.js unchanged (${shaNow}) since the pre-spend verdict, which stands`,
+      });
+    }
 
     return { dir, finalPath, title, bare: path.join(dir, bare), verifyChecks, sensorResults, persisted };
   },

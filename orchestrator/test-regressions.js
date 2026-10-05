@@ -487,7 +487,11 @@ async function beatChecks() {
     assert(/e\.code === 3/.test(produceSrc), 'produce does not recognise an infrastructure exit');
     const tpl = path.join(__dirname, '..', '.claude', 'skills', 'creating-explainer-videos', 'templates');
     const evalSrc = fs.readFileSync(path.join(tpl, 'eval-text.js'), 'utf8');
-    assert(/judge HTTP[\s\S]{0,120}exitCode=3/.test(evalSrc), 'a judge outage still exits as a grammar failure');
+    // The HTTP call now lives in lib/gemini-judge.js; what eval-text owns is the
+    // mapping "the judge did not answer" -> exit 3.
+    assert(/judge unavailable[\s\S]{0,200}exitCode = 3/.test(evalSrc), 'a judge outage still exits as a grammar failure');
+    assert(/require\('\.\/lib\/gemini-judge'\)/.test(evalSrc) && !/\bfetch\(/.test(evalSrc),
+      'eval-text.js still calls fetch directly instead of the shared judge client (no timeout, no retry)');
     const artSrc = fs.readFileSync(path.join(tpl, 'qa-art.js'), 'utf8');
     assert(/verdict === 'FAIL'\)\.map/.test(artSrc), 'qa-art still counts an unjudged image as failed');
     assert(/process\.exit\(3\)/.test(artSrc), 'qa-art has no infrastructure exit');
@@ -1604,6 +1608,67 @@ async function beatChecks() {
     assert(preSpend, 'the pre-spend eval-text.js call lost `redraftable: true`');
 
     return 'blocks after the render, still rejects before the spend';
+  });
+
+  check('the post-render text check runs only when the text changed since the pre-spend verdict', () => {
+    // 2026-10-05: the pre-spend eval-text finding was accepted with a warning
+    // (redraft budget spent), art and speech were bought, the video rendered --
+    // and the post-render eval-text replayed the SAME cached verdict and blocked
+    // the run. Same bytes cannot carry new information; the first verdict stands.
+    const { finalTextCheckNeeded } = produceInternals;
+    assert(finalTextCheckNeeded({ before: 'abcd', after: 'abcd' }) === false, 'identical text was re-judged');
+    assert(finalTextCheckNeeded({ before: 'abcd', after: 'ef01' }) === true, 'changed text was not re-judged');
+    assert(finalTextCheckNeeded({ before: null, after: 'ef01' }) === true, 'an unreadable "before" must fall back to checking');
+    assert(finalTextCheckNeeded({ before: 'abcd', after: null }) === true, 'an unreadable "after" must fall back to checking');
+
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'produce.js'), 'utf8');
+    const evalIdx = src.lastIndexOf("sensor('eval-text.js'");
+    const guardIdx = src.lastIndexOf('finalTextCheckNeeded(', evalIdx);
+    assert(guardIdx > 0 && evalIdx - guardIdx < 400,
+      'the post-render eval-text call is not guarded by finalTextCheckNeeded -- identical text will be re-judged after the spend');
+    const fpIdx = src.indexOf('shaAtScriptChecks = ');
+    const firstSensor = src.indexOf("await sensor('qa-visuals.js'");
+    assert(fpIdx > 0 && fpIdx < firstSensor, 'the pre-spend fingerprint must be taken before the first script sensor runs');
+    return 'skipped on identical bytes, run on changed or unreadable ones';
+  });
+
+  check('eval-text.js replays a cached verdict without a key and without the network', () => {
+    // The production mechanism, offline: the judge cache answers for identical
+    // text, and the answer must not need a credential to be read. Generated
+    // here rather than committed, because the cache key embeds the prompt
+    // version and model -- a committed fixture would go stale silently and this
+    // test would pass vacuously on exit 3.
+    const { execFileSync } = require('child_process');
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cq-evaltext-'));
+    try {
+      const { PATHS } = require('./lib/paths');
+      produceInternals.copyTemplates(PATHS.videoTemplates, tmp, null);
+      const vo = 'Two months later he decided the sales clerk problem from his own chair.';
+      fs.writeFileSync(path.join(tmp, 'beats.js'),
+        `module.exports = [{ id: '01', mode: 'scene', vo: ${JSON.stringify(vo)}, art: 'x' }];\n`);
+      const evalSrc = fs.readFileSync(path.join(tmp, 'eval-text.js'), 'utf8');
+      const pv = Number((evalSrc.match(/PROMPT_VERSION = (\d+)/) || [])[1]);
+      assert(pv > 0, 'could not read PROMPT_VERSION from eval-text.js');
+      const cache = require(path.join(tmp, 'lib', 'judge-cache.js'));
+      const k = cache.key({ sensor: 'eval-text', judge: 'gemini-2.5-flash', promptVersion: pv, payload: [{ kind: 'spoken', text: vo }] });
+      cache.put(tmp, k, [{ text: vo, severity: 'error', problem: 'wrong verb', suggestion: vo.replace('decided', 'addressed') }]);
+
+      const env = { ...process.env };
+      delete env.GEMINI_API_KEY; delete env.GOOGLE_STUDIO_API_KEY; delete env.JUDGE_MODEL; delete env.JUDGE_CACHE_OFF;
+      let code = 0, out = '';
+      try {
+        out = execFileSync(process.execPath, ['eval-text.js'], { cwd: tmp, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+      } catch (e) { code = e.status; out = `${e.stdout || ''}${e.stderr || ''}`; }
+      assert(code === 1, `expected exit 1 (a replayed ERROR verdict), got ${code}: ${out.slice(0, 300)}`);
+      assert(/verdict already taken/.test(out), `the cache was not hit: ${out.slice(0, 300)}`);
+      assert(/ERROR/.test(out), 'the replayed error was not printed');
+      const json = JSON.parse(fs.readFileSync(path.join(tmp, 'eval-text-results.json'), 'utf8'));
+      assert(json.cached === true && json.issues.length === 1 && json.issues[0].suggestion,
+        `eval-text-results.json is not usable for an auto-fix: ${JSON.stringify(json).slice(0, 200)}`);
+      return 'exit 1 from the cache, no key, no network, JSON results written';
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
   });
 
   check('a change request never counts as approval', () => {
@@ -3430,6 +3495,366 @@ function contractChecks() {
   });
 }
 
+// ── The single-video wrapper tells the truth about a stopped run ──────────────
+//
+// 2026-10-05 on production: a run bought art and speech, rendered the video,
+// saved it, and was then blocked by a post-render sensor. The wrapper reported
+// that as a plain failure with no spend, and the LMS told the instructor
+// "nothing was bought, try again" about a $1.60 video sitting on the volume.
+async function oneVideoChecks() {
+  console.log('\n[one-video] a stopped run carries its spend and its finished video');
+  const state = require('./lib/state');
+  const { BlockedError } = require('./lib/spine-errors');
+  const queue = require('./lib/queue');
+  const spine = require('./lib/spine');
+  const jobStore = require(path.join(__dirname, '..', 'server', 'lib', 'job-store'));
+  const oneVideo = require(path.join(__dirname, '..', 'server', 'lib', 'one-video'));
+  const { videoDir } = require('./lib/paths');
+
+  check('finishStage keeps the blockedBy code, not just the message', () => {
+    const { runStatePath } = require('./lib/paths');
+    const st = { runId: 'test-finishstage-code', stages: {}, artifacts: {}, interventions: [], status: 'running' };
+    st.stages.produce = { startedAt: new Date().toISOString() };
+    const err = new BlockedError('needs a human decision', { blocker: 'x', code: 'post-render-check', details: { sensor: 'eval-text.js' } });
+    try {
+      state.finishStage(st, 'produce', { status: state.STATUS.BLOCKED, error: err });
+      assert(st.stages.produce.code === 'post-render-check', `code lost: ${JSON.stringify(st.stages.produce)}`);
+      assert(st.stages.produce.details.sensor === 'eval-text.js', 'details lost');
+      return 'code kept';
+    } finally {
+      try { fs.rmSync(runStatePath(st.runId)); } catch { /* best effort */ }
+    }
+  });
+
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cq-onevideo-'));
+  const saved = {
+    v: process.env.EXPLAINER_VIDEOS_DIR, j: process.env.JOB_STORE_DIR,
+    vol: process.env.RAILWAY_VOLUME_MOUNT_PATH, exec: spine.execute,
+  };
+  process.env.EXPLAINER_VIDEOS_DIR = path.join(tmp, 'videos');
+  process.env.JOB_STORE_DIR = path.join(tmp, 'store');
+  delete process.env.RAILWAY_VOLUME_MOUNT_PATH;
+  jobStore.reset();
+  queue.resetPathCache();
+
+  const slug = 'stopped-run';
+  const item = queue.enqueue({ topic: 'A stopped run', series: 'made', slug, source: 'make-a-video' });
+  const dir = videoDir('made', slug);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'beats.js'), 'module.exports = [{ id: "01", mode: "scene", vo: "Hi.", art: "x" }];\n');
+
+  const blockedRun = (code, extra = {}) => async () => ({
+    runId: 'run-stopped', status: 'blocked', spend: { usd: 1.6 }, artifacts: {},
+    stages: {
+      produce: {
+        status: 'blocked', code, error: 'grammar needs a human decision (eval-text.js, exit 1)',
+        details: { sensor: 'eval-text.js', what: 'grammar', findings: 'ERROR "decided the problem"', finalRendered: true },
+      },
+    },
+    ...extra,
+  });
+
+  try {
+    await checkAsync('a post-render block WITHOUT a video is thrown with the spend on it', async () => {
+      spine.execute = blockedRun('post-render-check');
+      let err = null;
+      try { await oneVideo.produce({ itemId: item.id, budgetUsd: 3 }); } catch (e) { err = e; }
+      assert(err, 'did not throw');
+      assert(err.spendUsd === 1.6, `spendUsd ${err.spendUsd}: the ledger will settle at zero`);
+      assert(err.kind === 'blocked' && err.code === 'post-render-check', `kind/code ${err.kind}/${err.code}`);
+      assert(err.deliverable === null, 'no video, so deliverable must be null');
+      return 'thrown with spendUsd 1.6, kind blocked';
+    });
+
+    await checkAsync('a post-render block WITH a finished video is awaitingReview, resumable by approve()', async () => {
+      fs.mkdirSync(path.join(dir, 'out'), { recursive: true });
+      fs.writeFileSync(path.join(dir, 'out', `${slug}_final.mp4`), 'bytes');
+      spine.execute = blockedRun('post-render-check');
+      const r = await oneVideo.produce({ itemId: item.id, budgetUsd: 3 });
+      assert(r.awaitingReview === true, 'must be reported as waiting for a person, not failed');
+      assert(r.spendUsd === 1.6, `spendUsd ${r.spendUsd}`);
+      assert(r.warnings && r.warnings[0].sensor === 'eval-text.js', `warning missing: ${JSON.stringify(r.warnings)}`);
+      assert(r.artifacts && r.artifacts.produce && /_final\.mp4$/.test(r.artifacts.produce.finalPath),
+        `approve() cannot resume without produce.finalPath: ${JSON.stringify(r.artifacts)}`);
+      assert(r.finalPath && fs.existsSync(r.finalPath), 'finalPath must point at the video');
+      return 'awaitingReview with a synthesised produce artefact';
+    });
+
+    await checkAsync('a spend-approval block with a video on disk is still a failure to the caller', async () => {
+      // The video on disk is from an EARLIER run; this run was refused before
+      // buying anything. Only a post-render finding counts as "finished, look".
+      spine.execute = blockedRun('spend-approval', { spend: { usd: 0 } });
+      let err = null;
+      try { await oneVideo.produce({ itemId: item.id, budgetUsd: 3 }); } catch (e) { err = e; }
+      assert(err && err.kind === 'blocked' && err.code === 'spend-approval', `got ${err && err.message}`);
+      assert(err.spendUsd === 0, `spendUsd ${err.spendUsd}`);
+      return 'thrown, code spend-approval';
+    });
+
+    // Step 3: write() runs the free checks (through script-approval) and produce()
+    // approves the checked bytes by sha, so produce's own checks never redraft them.
+    await checkAsync('write() runs through script-approval and returns the checked sha', async () => {
+      let seen = null;
+      spine.execute = async (it, opts) => {
+        seen = opts;
+        return {
+          runId: 'run-w', status: 'blocked', spend: { usd: 0 }, artifacts: { script: { title: 'T' }, gate: { verdict: 'READY' } },
+          stages: { 'script-approval': { status: 'blocked', code: 'script-approval', details: { sha: 'abcd1234abcd1234', unresolvedChecks: [{ sensor: 'qa-cutouts.js' }] } } },
+        };
+      };
+      const r = await oneVideo.write({ topic: 'A stopped run' });
+      assert(seen.stopAfter === 'script-approval', `write() stops after '${seen.stopAfter}' -- the free checks never run before "written"`);
+      assert(r.scriptSha === 'abcd1234abcd1234', `scriptSha ${r.scriptSha}`);
+      assert(r.unresolvedChecks.length === 1, 'unresolved findings must reach the job record');
+      return 'stopAfter script-approval, sha and unresolved checks returned';
+    });
+
+    await checkAsync('write() still fails when the run stopped anywhere else', async () => {
+      spine.execute = async () => ({
+        runId: 'run-g', status: 'failed', spend: { usd: 0 }, artifacts: {},
+        stages: { gate: { status: 'failed', error: 'NOT READY' } },
+      });
+      let err = null;
+      try { await oneVideo.write({ topic: 'A stopped run' }); } catch (e) { err = e; }
+      assert(err && /gate failed/.test(err.message), `expected a gate failure, got ${err && err.message}`);
+      return 'gate failure still thrown';
+    });
+
+    await checkAsync('produce() approves the script on disk by sha', async () => {
+      const { fingerprint } = require('./lib/deliverables');
+      let seen = null;
+      spine.execute = async (it, opts) => {
+        seen = opts;
+        return { runId: 'run-p', status: 'blocked', spend: { usd: 1 }, artifacts: { produce: { finalPath: 'x_final.mp4', sensorResults: [] } }, stages: { review: { status: 'blocked', code: 'review' } } };
+      };
+      const r = await oneVideo.produce({ itemId: item.id, budgetUsd: 3 });
+      assert(seen.scriptApproved === 'produce-request', 'produce-request approval lost');
+      assert(seen.scriptApprovedSha === fingerprint(path.join(dir, 'beats.js')),
+        `scriptApprovedSha ${seen.scriptApprovedSha}: without the sha produce redrafts a script the checks already passed`);
+      assert(r.awaitingReview === true && r.spendUsd === 1, 'review block must still read as waiting');
+      return 'sha-bound approval passed to the spine';
+    });
+
+    await checkAsync('the real spine runs the free checks before a single video is "written"', async () => {
+      spine.execute = saved.exec;
+      const produce = require('./lib/stages/produce');
+      const realChecks = produce._internals.preApprovalChecks;
+      const stub = (name, run) => ({ name, maxAttempts: 1, run });
+      let checks = 0;
+      produce._internals.preApprovalChecks = async () => { checks++; return { checked: ['x'], findings: [], beats: null, autoFixed: [] }; };
+      try {
+        const beats = [{ id: '01', mode: 'scene', vo: 'Hi.', art: 'x', cap: 'Hi' }];
+        // write() has no stage-override hook, so prove the mechanism on the spine
+        // itself with the same stopAfter write() now uses.
+        const it = queue.enqueue({ topic: 'real spine checks', series: 'made', slug: 'real-spine-checks', source: 'make-a-video' });
+        const d = videoDir('made', 'real-spine-checks');
+        fs.mkdirSync(d, { recursive: true });
+        const st = await spine.execute(it, {
+          quiet: true, stopAfter: 'script-approval', budgetUsd: null,
+          stageOverrides: {
+            research: stub('research', async () => ({ slo: 's' })),
+            script: stub('script', async () => {
+              fs.writeFileSync(path.join(d, 'beats.js'), `module.exports = ${JSON.stringify(beats)};\n`);
+              return { title: 't', beats };
+            }),
+            gate: stub('gate', async () => ({ verdict: 'READY' })),
+          },
+        });
+        assert(checks === 1, `the free checks ran ${checks} time(s) before the script-approval pause`);
+        assert(st.stages['script-approval'] && st.stages['script-approval'].status === 'blocked'
+          && st.stages['script-approval'].code === 'script-approval', `run ended ${st.status}: ${JSON.stringify(st.stages['script-approval'])}`);
+        assert(/^[0-9a-f]{16}$/.test(st.stages['script-approval'].details.sha), 'the pause carries no sha');
+        return 'checks once, parked at script-approval with a sha';
+      } finally {
+        produce._internals.preApprovalChecks = realChecks;
+      }
+    });
+  } finally {
+    spine.execute = saved.exec;
+    if (saved.v === undefined) delete process.env.EXPLAINER_VIDEOS_DIR; else process.env.EXPLAINER_VIDEOS_DIR = saved.v;
+    if (saved.j === undefined) delete process.env.JOB_STORE_DIR; else process.env.JOB_STORE_DIR = saved.j;
+    if (saved.vol !== undefined) process.env.RAILWAY_VOLUME_MOUNT_PATH = saved.vol;
+    jobStore.reset();
+    queue.resetPathCache();
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+// ── The shared Gemini judge client: timeout, retry, honest exhaustion ─────────
+async function judgeClientChecks() {
+  console.log('\n[gemini-judge] one way to ask the judge');
+  const tpl = path.join(__dirname, '..', '.claude', 'skills', 'creating-explainer-videos', 'templates');
+  const { judgeJson, JudgeUnavailableError, JudgeUnparseableError } = require(path.join(tpl, 'lib', 'gemini-judge'));
+  const reply = (status, text) => ({ ok: status >= 200 && status < 300, status, text: async () => text, json: async () => JSON.parse(text) });
+  const verdict = (obj) => JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(obj) }] } }] });
+
+  await checkAsync('a 429 and a 503 are retried, then the answer is parsed', async () => {
+    const statuses = [429, 503, 200];
+    let calls = 0;
+    const fetchImpl = async () => { const s = statuses[calls++]; return reply(s, s === 200 ? verdict({ issues: [] }) : 'busy'); };
+    const out = await judgeJson({ key: 'k', model: 'm', parts: [{ text: 'x' }], fetchImpl, backoffMs: [1, 1, 1] });
+    assert(calls === 3, `${calls} call(s)`);
+    assert(Array.isArray(out.issues) && out.issues.length === 0, `parsed ${JSON.stringify(out)}`);
+    return '429, 503, then 200 in 3 calls';
+  });
+
+  await checkAsync('a judge that never answers is JudgeUnavailableError after exactly N attempts', async () => {
+    let calls = 0;
+    const fetchImpl = async () => { calls++; return reply(500, 'down'); };
+    let err = null;
+    try { await judgeJson({ key: 'k', model: 'm', parts: [], fetchImpl, attempts: 3, backoffMs: [1, 1] }); } catch (e) { err = e; }
+    assert(err instanceof JudgeUnavailableError, `got ${err && err.name}`);
+    assert(calls === 3, `${calls} call(s), expected 3`);
+    assert(err.status === 500 && err.attempts === 3, JSON.stringify({ status: err.status, attempts: err.attempts }));
+    return '3 attempts, then unavailable';
+  });
+
+  await checkAsync('a bad key (403) is not retried', async () => {
+    let calls = 0;
+    const fetchImpl = async () => { calls++; return reply(403, 'forbidden'); };
+    let err = null;
+    try { await judgeJson({ key: 'k', model: 'm', parts: [], fetchImpl, backoffMs: [1, 1] }); } catch (e) { err = e; }
+    assert(err instanceof JudgeUnavailableError && calls === 1, `${calls} call(s); retrying a 403 cannot help`);
+    return 'one call';
+  });
+
+  await checkAsync('a hung judge times out instead of hanging the stage', async () => {
+    const fetchImpl = (url, { signal }) => new Promise((_, rej) => {
+      signal.addEventListener('abort', () => rej(Object.assign(new Error('aborted'), { name: 'TimeoutError' })));
+    });
+    const t0 = Date.now();
+    // AbortSignal.timeout's timer does not keep the event loop alive; a real
+    // fetch would. Hold the loop open so this test cannot end the whole process
+    // early with exit 0 and no summary -- which is exactly what it did once.
+    const hold = setTimeout(() => {}, 10000);
+    let err = null;
+    try { await judgeJson({ key: 'k', model: 'm', parts: [], fetchImpl, attempts: 2, timeoutMs: 20, backoffMs: [1] }); } catch (e) { err = e; }
+    finally { clearTimeout(hold); }
+    const ms = Date.now() - t0;
+    assert(err instanceof JudgeUnavailableError && /timed out/.test(err.message), `got ${err && err.message}`);
+    assert(ms < 2000, `took ${ms}ms -- the timeout is not being applied`);
+    return `timed out twice in ${ms}ms`;
+  });
+
+  await checkAsync('an unparseable verdict is its own error, not a finding', async () => {
+    const fetchImpl = async () => reply(200, JSON.stringify({ candidates: [{ content: { parts: [{ text: 'not json {' }] } }] }));
+    let err = null;
+    try { await judgeJson({ key: 'k', model: 'm', parts: [], fetchImpl }); } catch (e) { err = e; }
+    assert(err instanceof JudgeUnparseableError, `got ${err && err.name}`);
+    return 'JudgeUnparseableError';
+  });
+
+  check('both Gemini sensors go through the shared client', () => {
+    for (const f of ['eval-text.js', 'qa-art.js']) {
+      const src = fs.readFileSync(path.join(tpl, f), 'utf8');
+      assert(/require\('\.\/lib\/gemini-judge'\)/.test(src), `${f} does not use lib/gemini-judge`);
+      assert(!/\bfetch\(/.test(src), `${f} still has a bare fetch( -- no timeout, its own retry`);
+    }
+    return 'eval-text.js and qa-art.js';
+  });
+}
+
+// ── A grammar suggestion is a string edit, not a redraft ─────────────────────
+async function textFixChecks() {
+  console.log('\n[text-fixes] eval-text suggestions applied without a model call');
+  const { applySuggestions, isSmallEdit } = require('./lib/text-fixes');
+  const vo = "Two months later he decided the sales clerk's problem from his own chair, and built an alert that fired forty times a day.";
+  const beats = [
+    { id: '01', mode: 'scene', vo: 'Ali opens the shop.', art: 'a', cap: 'The shop' },
+    { id: '02', mode: 'scene', vo, art: 'b', cap: 'An alert' },
+    { id: '03', mode: 'checkpoint', quiz: { stem: 'What did Ali build?', options: ['An alert', 'A shop'], answer: 0, explain: 'He built an alert, not a shop: the shop was already there, and the alert is what fired forty times a day.' } },
+    { id: '04', mode: 'scene', vo: 'So he turned it off.', art: 'c', cap: 'Off' },
+  ];
+
+  check('the production finding is applied as a one-word edit on the right beat', () => {
+    const r = applySuggestions(beats, [{
+      text: vo, severity: 'error', problem: "'decided' is the wrong verb",
+      suggestion: vo.replace('decided the', 'addressed the'),
+    }]);
+    assert(r.applied.length === 1 && r.applied[0].id === '02' && r.applied[0].field === 'vo', JSON.stringify(r.applied));
+    assert(/addressed the sales clerk/.test(r.beats[1].vo) && !/decided/.test(r.beats[1].vo), r.beats[1].vo);
+    assert(r.beats[0].vo === beats[0].vo && r.beats[2].quiz && r.beats[3].vo === beats[3].vo, 'other beats must be untouched');
+    assert(beats[1].vo === vo, 'the input must not be mutated');
+    return 'beat 02 vo corrected';
+  });
+
+  check('a nit, a rewrite, an ambiguous snippet and an unknown snippet are all refused', () => {
+    const r = applySuggestions(beats, [
+      { text: vo, severity: 'nit', suggestion: vo.replace('decided', 'addressed') },
+      { text: vo, severity: 'error', suggestion: 'Ali fixed everything and everyone was happy at last.' },
+      { text: 'the', severity: 'error', suggestion: 'a' },
+      { text: 'Nowhere in the script.', severity: 'error', suggestion: 'Nowhere in the script!' },
+    ]);
+    assert(r.applied.length === 0, `applied ${JSON.stringify(r.applied)}`);
+    assert(r.skipped.length === 4, `skipped ${r.skipped.length}`);
+    assert(r.skipped.map((s) => s.why).join('|') === 'not an error|suggestion rewrites rather than corrects|snippet appears in more than one place|snippet not found',
+      r.skipped.map((s) => s.why).join('|'));
+    return 'four refusals, four reasons';
+  });
+
+  check('isSmallEdit accepts a few changed words and refuses a new sentence', () => {
+    assert(isSmallEdit('he decided the problem', 'he addressed the problem'), 'one-word swap refused');
+    assert(isSmallEdit('proof one change helped', 'proof that one change helped'), 'dropped-word fix refused');
+    assert(!isSmallEdit('he decided the problem', 'the team shipped a dashboard on Friday'), 'a rewrite accepted');
+    assert(!isSmallEdit('short', 'this is a much much longer replacement sentence here'), 'a 10x expansion accepted');
+    return 'small edits in, rewrites out';
+  });
+
+  await checkAsync('preApprovalChecks applies the suggestion and re-runs the sensors instead of redrafting', async () => {
+    const shell = require('./lib/shell');
+    const produce = require('./lib/stages/produce');
+    const { RedraftError } = require('./lib/spine-errors');
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cq-autofix-'));
+    const realRun = shell.run;
+    const calls = [];
+    try {
+      fs.writeFileSync(path.join(tmp, 'beats.js'), `module.exports = ${JSON.stringify(beats)};\n`);
+      let evalRuns = 0;
+      shell.run = async (cmd, args, o) => {
+        calls.push(args[0]);
+        if (args[0] !== 'eval-text.js') return { code: 0, stdout: '', stderr: '' };
+        evalRuns++;
+        if (evalRuns === 1) {
+          fs.writeFileSync(path.join(o.cwd, 'eval-text-results.json'), JSON.stringify({ issues: [
+            { text: vo, severity: 'error', problem: 'wrong verb', suggestion: vo.replace('decided the', 'addressed the') },
+          ] }));
+          throw new shell.CommandError('exit 1', { code: 1, stdout: '[eval-text] 1 grammar ERROR(s)', stderr: '', cmd: 'node' });
+        }
+        return { code: 0, stdout: 'PASS', stderr: '' };
+      };
+      const st = { runId: 'r', interventions: [], stages: {}, artifacts: {} };
+      const r = await produce._internals.preApprovalChecks({ dir: tmp, beats, title: 'T', st });
+      assert(r.autoFixed.length === 1 && r.autoFixed[0].id === '02', `autoFixed ${JSON.stringify(r.autoFixed)}`);
+      assert(/addressed the sales clerk/.test(fs.readFileSync(path.join(tmp, 'beats.js'), 'utf8')), 'beats.js was not rewritten');
+      assert(/addressed the sales clerk/.test(r.beats[1].vo), 'the returned beats are not the fixed ones');
+      assert(evalRuns === 2, `eval-text ran ${evalRuns} time(s): the fix was not re-checked`);
+      assert(calls.length === produce._internals.SCRIPT_SENSORS.length * 2 - 0 || calls.length >= produce._internals.SCRIPT_SENSORS.length + 1,
+        `sensors ran ${calls.length} times`);
+      assert(st.interventions.some((i) => i.kind === 'auto_fixed_text'), 'the fix was not recorded as an intervention');
+      assert(r.findings.length === 0, 'nothing should be left unresolved');
+
+      // Still failing after the fix -> the redraft path, as before.
+      evalRuns = 0; calls.length = 0;
+      shell.run = async (cmd, args, o) => {
+        if (args[0] !== 'eval-text.js') return { code: 0, stdout: '', stderr: '' };
+        evalRuns++;
+        fs.writeFileSync(path.join(o.cwd, 'eval-text-results.json'), JSON.stringify({ issues: [
+          { text: 'Ali opens the shop.', severity: 'error', problem: 'p', suggestion: 'Ali opens the shop!' },
+        ] }));
+        throw new shell.CommandError('exit 1', { code: 1, stdout: 'ERROR', stderr: '', cmd: 'node' });
+      };
+      let err = null;
+      try { await produce._internals.preApprovalChecks({ dir: tmp, beats, title: 'T' }); } catch (e) { err = e; }
+      assert(err instanceof RedraftError && err.verdict === 'SENSOR_FAIL', `expected a redraft after a failed fix, got ${err && err.message}`);
+      assert(evalRuns === 2, `one fix attempt then a redraft, not ${evalRuns} runs`);
+      return 'fixed, re-checked, recorded; a persistent failure still redrafts';
+    } finally {
+      shell.run = realRun;
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+}
+
 async function courseChecks() {
   console.log('');
   console.log('11. courses survive a restart, and cost at most the lesson in flight');
@@ -4614,6 +5039,9 @@ async function driveOffloadChecks() {
   contractChecks();
   browserChecks();
   await referenceChecks();
+  await oneVideoChecks();
+  await judgeClientChecks();
+  await textFixChecks();
   await courseChecks();
   await driveOffloadChecks();
 
