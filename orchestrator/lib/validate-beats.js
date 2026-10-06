@@ -16,12 +16,20 @@ const fs = require('fs');
 const path = require('path');
 const { ALI, mentionsAli, missingAliMarkers } = require('./characters');
 
-/** Template names are read from animation/info.js so this can't drift from it. */
+/**
+ * Template names are read from the template libraries themselves so this can't drift from them:
+ * animation/info.js plus any per-series library beside it (info-charts.js, info-lf.js, ...), which
+ * register onto the same window.InfoTemplates. Reading info.js alone reported every beat of a
+ * series that brings its own library as "unknown template".
+ */
 function knownTemplates(videoDir) {
-  const file = path.join(videoDir, 'animation', 'info.js');
-  if (!fs.existsSync(file)) return null;
-  const src = fs.readFileSync(file, 'utf8');
-  const names = [...src.matchAll(/\bT\.([A-Za-z0-9_]+)\s*=/g)].map((m) => m[1]);
+  const dir = path.join(videoDir, 'animation');
+  if (!fs.existsSync(path.join(dir, 'info.js'))) return null;
+  const names = [];
+  for (const f of fs.readdirSync(dir).filter((n) => /^info(-[\w-]+)?\.js$/.test(n))) {
+    const src = fs.readFileSync(path.join(dir, f), 'utf8');
+    names.push(...[...src.matchAll(/\bT\.([A-Za-z0-9_]+)\s*=/g)].map((m) => m[1]));
+  }
   return names.length ? names : null;
 }
 
