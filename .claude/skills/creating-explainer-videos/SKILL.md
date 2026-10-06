@@ -66,9 +66,14 @@ Pipeline: `beats.js` → `generate-lesson-art.js` (Imagen) → `segment-all.py` 
 | 10 | *(production)* `node scripts/lms-e2e.js` from the repo root | the same pipeline driven through the LMS API on Railway: quote only without `--yes`. See `testing-the-pipeline-end-to-end` |
 
 `--yes` (or `CONFIRM_SPEND=1`) is required on steps 3, 5 and 5b — the cost guard blocks paid calls otherwise.
-Two non-negotiables the gate enforces before you reach step 3: a **QUESTION card** carrying a `quiz`
-block plus its **REVEAL** card — the LMS popup mirrors the card's own window and never pauses the video
-(§3b) — and **`animateIds`** naming the 2–4 story beats to animate with omni (§3c).
+Two non-negotiables the gate enforces before you reach step 3: ONE **checkpoint beat**
+(`{ mode:'checkpoint', quiz:{stem, options, answer, correctNote, explain} }`, ~⅔ in, between two spoken
+beats) and **`animateIds`** naming the 2–4 story beats to animate with omni (§3c).
+**GUARDRAIL — the quiz is never in the video** (Aroma, 2026-10-06): no QUESTION card, no REVEAL card, no
+spoken "your turn" beat. The question travels to the repo for the LMS developer — the server reads the
+checkpoint beat (`server/lib/checkpoints.js`) and `node export-checkpoint.js` writes the handoff file
+`checkpoint.json` next to `beats.js`. The LMS pauses, asks, requires an answer, gives the feedback, then
+resumes. `qa-checkpoint.js` fails the build on any drawn quiz.
 
 ## Quality bar — measure EVERY video against this (see memory: explainer-video-quality-standard)
 Established on the Change Management video. A miss is a FAIL to fix, not ship:
@@ -78,7 +83,7 @@ Established on the Change Management video. A miss is a FAIL to fix, not ship:
 4. **Consistent flat-illustration visuals** — never mix photoreal with illustration; same Ali throughout.
 5. **No baked-in text in images** (prompts forbid text/letters/numbers; blank props); teaching text is crisp HTML.
 6. **Cutouts never cut an object halfway** — whole object or none; 2-person/complex beats use `scene`, not `ali`.
-7. **Movement in every beat** — push-in / parallax / Ken Burns + evolving infographics; no dead-still holds. **AND add real i2v motion on the 2–4 story-critical beats** where movement carries the story (emotional turns, a metaphor coming alive, the closing invite) — `generate-lesson-video-omni.js` (paid, kie-gated, confirm spend); compile auto-uses `clips/<id>.mp4`, falls back to Ken Burns if absent. See animation-motion-design + memory `feedback_use_animations`. Also add the **QUESTION card** (`holdAfter:6` + `quiz:{stem, options, answer, explain}`) and its **REVEAL** card (`revealsQuiz:true`); the card plays on screen and the LMS popup mirrors its exact window without pausing (SCRIPTING_STANDARDS §3b).
+7. **Movement in every beat** — push-in / parallax / Ken Burns + evolving infographics; no dead-still holds. **AND add real i2v motion on the 2–4 story-critical beats** where movement carries the story (emotional turns, a metaphor coming alive, the closing invite) — `generate-lesson-video-omni.js` (paid, kie-gated, confirm spend); compile auto-uses `clips/<id>.mp4`, falls back to Ken Burns if absent. See animation-motion-design + memory `feedback_use_animations`. Also add the **checkpoint beat** — never drawn, never spoken, and never mirrored by an on-screen QUESTION/REVEAL card (guardrail above); the LMS pauses the video and asks.
 8. **Taleemabad bumpers** intro+outro (logo+wordmark, intro title, no outro sign-off unless asked).
 9. **Subtle calm music** (School-of-Life vibe) starts at the logo, ducks under VO; prefer `brand/music.mp3`.
 

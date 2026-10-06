@@ -29,10 +29,16 @@ const AUD = path.join(process.cwd(), 'audio');
 fs.mkdirSync(AUD, { recursive: true });
 
 // (1) one voice  (2) one style directive — identical on EVERY call.
-const VOICE = process.env.TTS_VOICE || 'Aoede'; // warm, natural, human
-const STYLE = 'Say the following like a warm, friendly human mentor talking to a ' +
-  'colleague — natural conversational intonation, gentle rhythm, light emphasis on the ' +
-  'key words, unhurried but never flat or robotic. Speak it naturally: ';
+// P&C series (2026-10-06): Aroma asked for a calmer, collected woman's voice that still carries
+// energy and shows emotional range. Sulafat is Gemini's "warm" female voice.
+const VOICE = process.env.TTS_VOICE || 'Sulafat';
+const STYLE = 'You are a calm, composed woman who coaches people-care professionals. Your voice ' +
+  'is warm, grounded and steady, with quiet energy that never drops — engaged and present, never ' +
+  'sleepy, never salesy. Let real feeling show where the line calls for it, with natural ' +
+  'intonation, light emphasis on the key words and an unhurried pace. ';
+// The base directive stays identical on every call (one voice, one take); a beat may add a short
+// emotional cue in `tone` so the read follows the meaning of the line.
+const directive = (b) => STYLE + (b.tone ? `Read this line ${b.tone}. ` : '') + 'Say: ';
 const TEMPERATURE = 0.85; // (3) a touch more variation = more human
 
 // ---- WAV helpers ------------------------------------------------------------
@@ -63,10 +69,10 @@ function wavSeconds(file) {
 function ff(args) { execFileSync(ffmpeg, args, { stdio: ['ignore', 'ignore', 'inherit'] }); }
 
 // ---- Gemini TTS -------------------------------------------------------------
-async function synth(text, key) {
+async function synth(text, key, prefix) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODELS.tts}:generateContent`;
   const body = {
-    contents: [{ parts: [{ text: STYLE + text }] }],
+    contents: [{ parts: [{ text: prefix + text }] }],
     generationConfig: {
       temperature: TEMPERATURE,
       responseModalities: ['AUDIO'],
@@ -130,12 +136,12 @@ function silenceWav(seconds) {
     // The cache key must cover HOW the line is read, not just the words: keyed on text alone, a
     // voice or style change silently reused every old clip (found 2026-10-06).
     const sigPath = path.join(AUD, `raw_${b.id}.sig`);
-    const sig = `${VOICE}|${TEMPERATURE}|${STYLE}`;
+    const sig = `${VOICE}|${TEMPERATURE}|${directive(b)}`;
     const unchanged = fs.existsSync(rawPath) && fs.existsSync(sidecar) && fs.readFileSync(sidecar, 'utf8') === b.vo
       && fs.existsSync(sigPath) && fs.readFileSync(sigPath, 'utf8') === sig;
     if (!unchanged) {
       process.stdout.write(`[tts] ${b.id} synth … `);
-      try { fs.writeFileSync(rawPath, pcmToWav(await synth(b.vo, key))); fs.writeFileSync(sigPath, sig); console.log('ok'); }
+      try { fs.writeFileSync(rawPath, pcmToWav(await synth(b.vo, key, directive(b)))); fs.writeFileSync(sigPath, sig); console.log('ok'); }
       catch (e) {
         const est = Math.max(1.2, b.vo.split(/\s+/).length * 0.42);
         fs.writeFileSync(rawPath, silenceWav(est));

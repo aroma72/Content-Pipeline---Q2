@@ -1,0 +1,58 @@
+{
+  "videoId": "c1w1-your-role",
+  "series": "pc-people-skills",
+  "deliverable": "c1w1-your-role_final.mp4",
+  "timing": {
+    "trusted": true,
+    "relativeTo": "c1w1-your-role_final.mp4",
+    "introOffsetSeconds": 2.6,
+    "introOffsetSource": "probed",
+    "lessonSeconds": 121.479,
+    "note": "atSeconds is measured from the start of the delivered file, which begins with the brand intro. lessonAtSeconds excludes it."
+  },
+  "deliverableOnServer": true,
+  "youtube": null,
+  "youtubeVideoId": null,
+  "durability": "ephemeral",
+  "catalogueUpdatedAt": "2026-10-06T09:19:16.938Z",
+  "checkpoints": [
+    {
+      "id": "q1",
+      "beatId": "17",
+      "revealBeatId": null,
+      "atSeconds": 98.157,
+      "lessonAtSeconds": 95.557,
+      "pausesVideo": true,
+      "resumeAfterFeedback": true,
+      "requiresAnswer": true,
+      "blocking": true,
+      "allowSkip": false,
+      "resumeAtSeconds": 98.157,
+      "rendersInVideo": false,
+      "pause": {
+        "atBeatBoundary": true,
+        "afterBeatId": "16",
+        "beforeBeatId": "18",
+        "boundaryLessonSeconds": 95.807,
+        "leadSeconds": 0.25,
+        "safe": true
+      },
+      "preamble": "Let's answer a quick question, to check the concept landed.",
+      "stem": "A new joiner tells you they feel lost in their team. Which response supports them rather than rescues them?",
+      "options": [
+        "Ask to move them to a different team straight away",
+        "Ask what feels hardest, then help them plan one first step",
+        "Tell them everyone feels this way and it will pass",
+        "Promise them their manager will sort it out by Friday"
+      ],
+      "correctIndex": 1,
+      "feedback": {
+        "correct": "Exactly right. Asking what feels hardest keeps the problem theirs and shows you are listening, and planning one first step together helps them act. Next time they will have done it once already.",
+        "incorrect": "The supporting response is to ask what feels hardest and help them plan one first step. Moving them to a new team is rescuing: you solve the problem for them, and they learn nothing about settling in. Saying everyone feels this way dismisses what they told you, so they stop telling you things. Promising the manager will fix it by Friday is a promise you cannot keep, and it moves the problem onto someone who is not in the room."
+      },
+      "explanation": "The supporting response is to ask what feels hardest and help them plan one first step. Moving them to a new team is rescuing: you solve the problem for them, and they learn nothing about settling in. Saying everyone feels this way dismisses what they told you, so they stop telling you things. Promising the manager will fix it by Friday is a promise you cannot keep, and it moves the problem onto someone who is not in the room.",
+      "explanationSource": "authored",
+      "revealAtSeconds": null
+    }
+  ]
+}
