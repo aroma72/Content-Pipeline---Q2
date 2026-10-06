@@ -18,7 +18,7 @@
  *     decay faster the higher they are, two slightly detuned strings per note and a soft hammer
  *     click; the strings are band-limited saw voices with delayed vibrato and slow bowing swells;
  *     a small Schroeder reverb gives it a room;
- *   · is QUIET: normalised to about -33 dBFS RMS, roughly 15 dB under the narration before
+ *   · sits about 15 dB under the narration once stitch-brand ducks it: normalised to -26 dBFS RMS ((-33 was inaudible after ducking, -21 too loud — Aroma, 2026-10-06); before
  *     stitch-brand's ducking takes it further down while someone is speaking.
  */
 const fs = require('fs');
@@ -171,7 +171,7 @@ for (const buf of [L, R]) {
 // ── level: quiet by design (~ -33 dBFS RMS), fades, peak-safe ──────────────
 let sum = 0; for (let i = 0; i < N; i++) sum += L[i] * L[i] + R[i] * R[i];
 const rms = Math.sqrt(sum / (2 * N)) || 1e-9;
-const TARGET_RMS_DB = parseFloat(arg('rms', '-33'));
+const TARGET_RMS_DB = parseFloat(arg('rms', '-26'));
 let g = Math.pow(10, TARGET_RMS_DB / 20) / rms;
 let peak = 0; for (let i = 0; i < N; i++) peak = Math.max(peak, Math.abs(L[i]), Math.abs(R[i]));
 g = Math.min(g, 0.5 / (peak || 1));
