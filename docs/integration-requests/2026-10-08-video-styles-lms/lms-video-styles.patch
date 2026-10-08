@@ -1,6 +1,6 @@
-From a38ea9fdcc4e915efdaffe7ebdc4f0dc71b6e8b3 Mon Sep 17 00:00:00 2001
+From ccbbb1539f5bbe97ba81b29aef1a480412b0fe4c Mon Sep 17 00:00:00 2001
 From: Content Queen <content-queen@users.noreply.github.com>
-Date: Thu, 8 Oct 2026 13:09:16 +0500
+Date: Thu, 8 Oct 2026 13:46:40 +0500
 Subject: [PATCH] feat(content): pick a video style when creating a course or
  video
 
@@ -9,27 +9,29 @@ Subject: [PATCH] feat(content): pick a video style when creating a course or
  apps/api/migrations/meta/_journal.json        |   7 +
  apps/api/src/db/migrate.ts                    |  16 +
  apps/api/src/db/schema.ts                     |  14 +
- apps/api/src/lib/content-queen-courses.ts     | 155 ++++++++
+ apps/api/src/lib/content-queen-courses.ts     | 336 +++++++++++++++++
  apps/api/src/lib/content-queen-jobs.ts        |  25 +-
  apps/api/src/lib/content-queen-styles.ts      | 295 +++++++++++++++
- apps/api/src/routes/content-courses.ts        |  91 ++++-
+ apps/api/src/routes/content-courses.ts        | 150 +++++++-
  apps/api/src/routes/content-videos.ts         |  63 +++-
+ .../content-course-draft-teaching.test.ts     | 256 +++++++++++++
  .../tests/unit/content-queen-courses.test.ts  |   4 +-
  .../tests/unit/content-queen-styles.test.ts   | 255 +++++++++++++
  .../unit/partner-clients-detect-drift.test.ts |  13 +
- apps/web/src/app/build/CourseBuilderForm.tsx  | 142 +++++++-
+ apps/web/src/app/build/CourseBuilderForm.tsx  | 332 ++++++++++++++++-
  apps/web/src/app/build/MakeVideoForm.tsx      |  40 +-
  apps/web/src/app/courses/build/[id]/page.tsx  |  23 +-
  apps/web/src/app/videos/[id]/page.tsx         |   8 +-
  apps/web/src/components/VideoStyle.tsx        | 342 ++++++++++++++++++
- apps/web/src/lib/content-courses-client.ts    |  17 +-
+ apps/web/src/lib/content-courses-client.ts    |  47 ++-
  apps/web/src/lib/course-resume.test.ts        |  28 ++
  apps/web/src/lib/course-resume.ts             |  29 +-
- apps/web/src/lib/video-styles.test.ts         |  98 +++++
- apps/web/src/lib/video-styles.ts              | 158 ++++++++
- 22 files changed, 1821 insertions(+), 29 deletions(-)
+ apps/web/src/lib/video-styles.test.ts         | 184 ++++++++++
+ apps/web/src/lib/video-styles.ts              | 277 ++++++++++++++
+ 23 files changed, 2740 insertions(+), 31 deletions(-)
  create mode 100644 apps/api/migrations/0067_content_video_style.sql
  create mode 100644 apps/api/src/lib/content-queen-styles.ts
+ create mode 100644 apps/api/tests/unit/content-course-draft-teaching.test.ts
  create mode 100644 apps/api/tests/unit/content-queen-styles.test.ts
  create mode 100644 apps/web/src/components/VideoStyle.tsx
  create mode 100644 apps/web/src/lib/video-styles.test.ts
@@ -146,10 +148,18 @@ index 0fcbf85..66cba0e 100644
  
  /**
 diff --git a/apps/api/src/lib/content-queen-courses.ts b/apps/api/src/lib/content-queen-courses.ts
-index 555870e..9673081 100644
+index 555870e..0875d74 100644
 --- a/apps/api/src/lib/content-queen-courses.ts
 +++ b/apps/api/src/lib/content-queen-courses.ts
-@@ -44,6 +44,7 @@ import { jobsEnabled, produceEnabled } from './content-queen-jobs.js';
+@@ -2,6 +2,7 @@
+  * bd-096 — Content Automation's course API.
+  *
+  *   POST {CONTENT_QUEEN_API_URL}/api/v1/courses/plan                          -> a course plan
++ *   POST {CONTENT_QUEEN_API_URL}/api/v1/courses/draft-teaching                -> motion-graphics models + walk-throughs
+  *   POST {CONTENT_QUEEN_API_URL}/api/v1/courses/build                         -> queues every lesson
+  *   GET  {CONTENT_QUEEN_API_URL}/api/v1/courses/:courseId                     -> build progress
+  *   POST {CONTENT_QUEEN_API_URL}/api/v1/courses/:courseId/lessons/:id/approve -> publish + release next
+@@ -44,6 +45,7 @@ import { jobsEnabled, produceEnabled } from './content-queen-jobs.js';
  // (`import type { CourseFetchReason }`), which erase at compile time, so there is no runtime cycle.
  import { spendLimitsFromEnv } from './content-video-spend.js';
  import type { ContentLessonReference } from '../db/schema.js';
@@ -157,7 +167,7 @@ index 555870e..9673081 100644
  
  /**
   * The course-API contract this file was written against. Frozen copy in THEIR repository:
-@@ -143,12 +144,36 @@ export interface PlannedQuestion {
+@@ -143,12 +145,36 @@ export interface PlannedQuestion {
    explanation: string;
  }
  
@@ -194,7 +204,7 @@ index 555870e..9673081 100644
  }
  
  export interface PlannedModule {
-@@ -162,6 +187,13 @@ export interface CoursePlan {
+@@ -162,6 +188,13 @@ export interface CoursePlan {
    summary?: string;
    audience?: string;
    protagonist_scenario?: string;
@@ -208,7 +218,7 @@ index 555870e..9673081 100644
    modules: PlannedModule[];
    /**
     * Why the course is the size it is — e.g. "no total duration was given, so it was sized at 10
-@@ -244,6 +276,47 @@ export function partnerSlug(title: string): string {
+@@ -244,6 +277,69 @@ export function partnerSlug(title: string): string {
  export interface AuthoredVideo {
    title: string;
    slo: string;
@@ -216,6 +226,12 @@ index 555870e..9673081 100644
 +  models?: PlannedModel[];
 +  /** motion-graphics only — required there (at least two with a situation), ignored otherwise. */
 +  walkthroughs?: PlannedWalkthrough[];
++  /**
++   * motion-graphics only: the course SLO ids this video serves, as drafted by their
++   * `draft-teaching`. Kept only when they name an id in the course's `slos`; otherwise the
++   * video gets its own numbered SLO, as before drafting existed.
++   */
++  sloIds?: string[];
 +}
 +
 +/** Caps on what an authored motion lesson may carry. Their notes field is free text, not a store. */
@@ -224,6 +240,22 @@ index 555870e..9673081 100644
 +
 +function cleanText(v: unknown, max: number): string {
 +  return typeof v === 'string' ? v.trim().slice(0, max) : '';
++}
++
++/** Course SLOs from a request: non-empty id and text, ids unique, at most 60. */
++function cleanSlos(raw: unknown): PlannedSlo[] {
++  if (!Array.isArray(raw)) return [];
++  const seen = new Set<string>();
++  const out: PlannedSlo[] = [];
++  for (const s of raw.slice(0, 60)) {
++    const o = (s ?? {}) as Record<string, unknown>;
++    const id = cleanText(o.id, 20);
++    const text = cleanText(o.text, 500);
++    if (!id || !text || seen.has(id)) continue;
++    seen.add(id);
++    out.push({ id, text });
++  }
++  return out;
 +}
 +
 +/** Keep only models that have a name; drop empty optional fields rather than send "". */
@@ -256,16 +288,22 @@ index 555870e..9673081 100644
  }
  
  /** A week of the course. Becomes ONE module on their side, and one LMS module for us. */
-@@ -261,6 +334,8 @@ export interface AuthoredCourseInput {
+@@ -261,6 +357,14 @@ export interface AuthoredCourseInput {
    weeks?: AuthoredWeek[];
    /** A flat list, treated as a single week. Kept so a one-week course needs no nesting. */
    videos?: AuthoredVideo[];
 +  /** Already validated by the caller (parseStyleInput). Absent is the default style. */
 +  style?: VideoStyle;
++  /**
++   * motion-graphics only: the course's numbered SLOs as drafted (and possibly edited). When
++   * present and usable they ARE the course SLOs; when absent each video's SLO is numbered
++   * `week.video` instead.
++   */
++  slos?: PlannedSlo[];
  }
  
  export type AuthoredPlanResult =
-@@ -294,6 +369,13 @@ export function buildAuthoredPlan(input: AuthoredCourseInput): AuthoredPlanResul
+@@ -294,6 +398,17 @@ export function buildAuthoredPlan(input: AuthoredCourseInput): AuthoredPlanResul
    const topic = input.topic.trim();
    const description = (input.description ?? '').trim();
    const audience = (input.audience ?? '').trim();
@@ -275,11 +313,15 @@ index 555870e..9673081 100644
 +  // and the course's SLOs are numbered so each lesson can point at its own — the shape their
 +  // motion planner returns, so a plan we author and a plan they write look the same downstream.
 +  const motion = style === 'motion-graphics';
-+  const slos: PlannedSlo[] = [];
++  // Drafted SLOs, if the instructor kept them. Ids are short and unique; text is bounded. Anything
++  // malformed is dropped rather than refused — the per-video fallback below still numbers it.
++  const draftedSlos = motion ? cleanSlos(input.slos) : [];
++  const draftedIds = new Set(draftedSlos.map((s) => s.id));
++  const slos: PlannedSlo[] = [...draftedSlos];
  
    if (topic.length === 0) return { ok: false, detail: 'A topic is required.' };
  
-@@ -353,7 +435,32 @@ export function buildAuthoredPlan(input: AuthoredCourseInput): AuthoredPlanResul
+@@ -353,7 +468,45 @@ export function buildAuthoredPlan(input: AuthoredCourseInput): AuthoredPlanResul
        }
        slugSeen.set(slug, title);
  
@@ -302,9 +344,22 @@ index 555870e..9673081 100644
 +        if (extra.some(containsCourseTag)) {
 +          return { ok: false, detail: `${where} contains a course tag in its text.` };
 +        }
-+        const sloId = `${w + 1}.${i + 1}`;
-+        slos.push({ id: sloId, text: slo });
-+        motionFields = { sloIds: [sloId], models, walkthroughs };
++        const kept = Array.isArray(week.videos[i]?.sloIds)
++          ? week.videos[i]!.sloIds!.filter((id): id is string => typeof id === 'string' && draftedIds.has(id))
++          : [];
++        let sloIds = [...new Set(kept)];
++        if (sloIds.length === 0) {
++          // Not drafted (or its ids were edited away): number this video's own SLO, avoiding any
++          // id the draft already used.
++          let sloId = `${w + 1}.${i + 1}`;
++          while (slos.some((s) => s.id === sloId)) sloId = `${sloId}'`;
++          slos.push({ id: sloId, text: slo });
++          sloIds = [sloId];
++        }
++        if ([...slos].some((s) => containsCourseTag(s.text))) {
++          return { ok: false, detail: 'A course outcome contains a course tag in its text.' };
++        }
++        motionFields = { sloIds, models, walkthroughs };
 +      }
 +
        lessons.push({
@@ -312,7 +367,7 @@ index 555870e..9673081 100644
          title,
          slo,
          // Always populated — their build interpolates this with no guard, so an absent brief sends
-@@ -377,6 +484,10 @@ export function buildAuthoredPlan(input: AuthoredCourseInput): AuthoredPlanResul
+@@ -377,6 +530,10 @@ export function buildAuthoredPlan(input: AuthoredCourseInput): AuthoredPlanResul
        title: topic,
        summary: description || undefined,
        audience: audience || undefined,
@@ -323,7 +378,7 @@ index 555870e..9673081 100644
        modules,
      } as CoursePlan,
    };
-@@ -589,6 +700,8 @@ export interface CourseState {
+@@ -589,6 +746,8 @@ export interface CourseState {
    worker: CourseWorkerState;
    /** Their §2 envelope figure: what this course has cost so far. Absent on a 1.0 answer. */
    spentUsd?: number;
@@ -332,7 +387,7 @@ index 555870e..9673081 100644
    items: CourseLessonState[];
  }
  
-@@ -664,6 +777,10 @@ const KNOWN_COURSE_ITEM_FIELDS = [
+@@ -664,6 +823,10 @@ const KNOWN_COURSE_ITEM_FIELDS = [
    // names a file on a private Shared Drive we cannot open, and must never land in OUR
    // `drive_file_id`, which means "our own archived copy" and is what LessonPreview plays from.
    'videoLocal', 'saved2drive', 'driveFileId', 'driveUrl', 'driveSavedAt',
@@ -343,7 +398,7 @@ index 555870e..9673081 100644
  ] as const;
  
  /** The course envelope around those items. */
-@@ -677,6 +794,8 @@ const KNOWN_COURSE_FIELDS = [
+@@ -677,6 +840,8 @@ const KNOWN_COURSE_FIELDS = [
    'awaitingApproval', 'worker', 'items', 'durability', 'durableSince', 'note', 'status',
    // Contract 1.1.
    'spentUsd',
@@ -352,7 +407,7 @@ index 555870e..9673081 100644
  ] as const;
  
  /** Their §2 `worker` object. Checked so a new field on it is heard, like one on the envelope. */
-@@ -727,6 +846,13 @@ export async function planCourse(req: {
+@@ -727,6 +892,13 @@ export async function planCourse(req: {
    audience?: string;
    duration?: string;
    description?: string;
@@ -366,7 +421,7 @@ index 555870e..9673081 100644
  }): Promise<CourseResult<CoursePlan>> {
    if (!jobsEnabled()) return { ok: false, reason: 'disabled' };
    const key = token();
-@@ -747,6 +873,7 @@ export async function planCourse(req: {
+@@ -747,6 +919,7 @@ export async function planCourse(req: {
          ...(req.audience ? { audience: req.audience } : {}),
          ...(req.duration ? { duration: req.duration } : {}),
          ...(req.description ? { description: req.description } : {}),
@@ -374,7 +429,7 @@ index 555870e..9673081 100644
        }),
        signal: AbortSignal.timeout(PLAN_TIMEOUT_MS),
      });
-@@ -755,6 +882,11 @@ export async function planCourse(req: {
+@@ -755,6 +928,11 @@ export async function planCourse(req: {
        const { detail } = await readPartnerError(res);
        return { ok: false, reason: 'rate_limited', detail };
      }
@@ -386,7 +441,149 @@ index 555870e..9673081 100644
      if (!res.ok) {
        console.warn(`[content-queen-courses] plan returned ${res.status}`);
        const { code, detail } = await readPartnerError(res);
-@@ -806,6 +938,12 @@ export async function buildCourse(req: {
+@@ -781,6 +959,141 @@ export async function planCourse(req: {
+   }
+ }
+ 
++// ─── Draft teaching (motion-graphics) ────────────────────────────────────────────────────────────
++
++/** Their per-request cap. More is a 400 on their side; refused here first, for free. */
++export const DRAFT_MAX_LESSONS = 30;
++
++/**
++ * A model call of 20-40 s. Same reasoning as PLAN_TIMEOUT_MS, scaled: hanging up early throws away
++ * a paid answer their side finishes anyway, so the bound is generous (~3x the slow end).
++ */
++const DRAFT_TIMEOUT_MS = 120_000;
++
++export interface DraftTeachingRequest {
++  topic?: string;
++  audience?: string;
++  /** In course order. Their answer comes back in the same order, one for one. */
++  lessons: { title: string; slo: string }[];
++}
++
++export interface DraftedLesson {
++  /** 0-based, the position in the request. */
++  index: number;
++  title: string;
++  sloIds: string[];
++  models: PlannedModel[];
++  walkthroughs: PlannedWalkthrough[];
++}
++
++export interface TeachingDraft {
++  slos: PlannedSlo[];
++  lessons: DraftedLesson[];
++  draftedAt: string | null;
++}
++
++/**
++ * Validate a request body for draft-teaching. Pure, so the route and its test share it.
++ * Every lesson needs both a title and an SLO — their 400 for the same rule, said in our words.
++ */
++export function parseDraftTeachingBody(
++  body: unknown,
++): { ok: true; req: DraftTeachingRequest } | { ok: false; detail: string } {
++  const b = (body ?? {}) as Record<string, unknown>;
++  const raw = Array.isArray(b.lessons) ? b.lessons : null;
++  if (!raw || raw.length === 0) return { ok: false, detail: 'Add at least one video, with its title and SLO, before drafting.' };
++  if (raw.length > DRAFT_MAX_LESSONS) {
++    return { ok: false, detail: `Drafting works on up to ${DRAFT_MAX_LESSONS} videos at a time; this course has ${raw.length}.` };
++  }
++  const lessons: { title: string; slo: string }[] = [];
++  for (const [i, l] of raw.entries()) {
++    const o = (l ?? {}) as Record<string, unknown>;
++    const title = cleanText(o.title, 300);
++    const slo = cleanText(o.slo, 1000);
++    if (!title || !slo) return { ok: false, detail: `Video ${i + 1} needs a title and an SLO before it can be drafted.` };
++    if (containsCourseTag(title) || containsCourseTag(slo)) {
++      return { ok: false, detail: `Video ${i + 1} contains a course tag in its text.` };
++    }
++    lessons.push({ title, slo });
++  }
++  const topic = cleanText(b.topic, 300);
++  const audience = cleanText(b.audience, 300);
++  return { ok: true, req: { ...(topic ? { topic } : {}), ...(audience ? { audience } : {}), lessons } };
++}
++
++/**
++ * Normalise their draft. Field by field like every other payload, and checked to be ONE FOR ONE
++ * with what we sent — their contract says lessons are never merged or dropped, and a draft that
++ * lands on the wrong lesson is worse than no draft, so a count or index mismatch is refused.
++ * Exported for its test.
++ */
++export function normaliseTeachingDraft(raw: unknown, sent: number): TeachingDraft | null {
++  if (!raw || typeof raw !== 'object') return null;
++  const body = raw as Record<string, unknown>;
++  if (!Array.isArray(body.lessons) || body.lessons.length !== sent) return null;
++  const lessons: DraftedLesson[] = [];
++  for (const [pos, l] of body.lessons.entries()) {
++    const o = (l ?? {}) as Record<string, unknown>;
++    const index = typeof o.index === 'number' ? o.index : pos;
++    if (index !== pos) return null;
++    lessons.push({
++      index,
++      title: cleanText(o.title, 300),
++      sloIds: Array.isArray(o.sloIds) ? o.sloIds.filter((s): s is string => typeof s === 'string' && s.length > 0).slice(0, 10) : [],
++      models: cleanModels(o.models),
++      walkthroughs: cleanWalkthroughs(o.walkthroughs),
++    });
++  }
++  return { slos: cleanSlos(body.slos), lessons, draftedAt: str(body.draftedAt) ?? null };
++}
++
++/**
++ * Draft the models and walk-throughs a motion-graphics course is built from. ONE MODEL CALL, and
++ * nothing else — nothing is queued, stored or built. The instructor edits the result before any
++ * of it is sent to `build`.
++ *
++ * Gated by the free switch only, like `planCourse`. A 400 (`bad_request`) is `invalid` with
++ * their sentence; a 5xx (`draft_failed`) is `unavailable` — free to try again.
++ */
++export async function draftTeaching(req: DraftTeachingRequest): Promise<CourseResult<TeachingDraft>> {
++  if (!jobsEnabled()) return { ok: false, reason: 'disabled' };
++  const key = token();
++  if (!key) return { ok: false, reason: 'unconfigured' };
++  const parsed = parseDraftTeachingBody(req);
++  if (!parsed.ok) return { ok: false, reason: 'invalid', detail: parsed.detail };
++
++  try {
++    const res = await fetch(`${baseUrl()}/api/v1/courses/draft-teaching`, {
++      method: 'POST',
++      headers: { ...authHeaders(key), 'Content-Type': 'application/json' },
++      body: JSON.stringify(parsed.req),
++      signal: AbortSignal.timeout(DRAFT_TIMEOUT_MS),
++    });
++    if (res.status === 400) {
++      const { code, detail } = await readPartnerError(res);
++      return { ok: false, reason: 'invalid', partnerCode: code, detail };
++    }
++    if (res.status === 429) {
++      const { detail } = await readPartnerError(res);
++      return { ok: false, reason: 'rate_limited', detail };
++    }
++    if (!res.ok) {
++      console.warn(`[content-queen-courses] draft-teaching returned ${res.status}`);
++      const { code, detail } = await readPartnerError(res);
++      return { ok: false, reason: 'unavailable', partnerCode: code, detail };
++    }
++    const draft = normaliseTeachingDraft(await res.json().catch(() => null), parsed.req.lessons.length);
++    if (!draft) {
++      console.warn('[content-queen-courses] draft-teaching answer did not match the lessons sent');
++      return { ok: false, reason: 'unavailable', detail: 'the draft did not match the videos that were sent' };
++    }
++    return { ok: true, data: draft };
++  } catch (err) {
++    console.warn('[content-queen-courses] draft-teaching failed:', err instanceof Error ? err.message : err);
++    return { ok: false, reason: 'unavailable' };
++  }
++}
++
+ /**
+  * Build a course. SPENDS REAL MONEY — about $1.50 per lesson, every lesson in the plan.
+  *
+@@ -806,6 +1119,12 @@ export async function buildCourse(req: {
     * Fail-soft on their side and capped at three: a reference list can never fail or delay a build.
     */
    references?: boolean;
@@ -399,7 +596,7 @@ index 555870e..9673081 100644
  }): Promise<CourseResult<BuildAck>> {
    if (!jobsEnabled() || !produceEnabled()) return { ok: false, reason: 'disabled' };
    const key = token();
-@@ -845,6 +983,7 @@ export async function buildCourse(req: {
+@@ -845,6 +1164,7 @@ export async function buildCourse(req: {
          confirmLessons: req.confirmLessons,
          series,
          references: req.references === true,
@@ -407,7 +604,7 @@ index 555870e..9673081 100644
        }),
        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
      });
-@@ -855,6 +994,21 @@ export async function buildCourse(req: {
+@@ -855,6 +1175,21 @@ export async function buildCourse(req: {
    }
  
    if (res.status === 503) return { ok: false, reason: 'no_durable_store' };
@@ -429,7 +626,7 @@ index 555870e..9673081 100644
    if (res.status === 409) {
      const { code, detail } = await readPartnerError(res);
      return { ok: false, reason: 'not_confirmed', partnerCode: code, detail };
-@@ -955,6 +1109,7 @@ export async function getCourse(partnerCourseId: string): Promise<CourseResult<C
+@@ -955,6 +1290,7 @@ export async function getCourse(partnerCourseId: string): Promise<CourseResult<C
            held,
          },
          ...(num(parsed.spentUsd) !== undefined ? { spentUsd: num(parsed.spentUsd)! } : {}),
@@ -817,10 +1014,19 @@ index 0000000..3e753fb
 +  return out;
 +}
 diff --git a/apps/api/src/routes/content-courses.ts b/apps/api/src/routes/content-courses.ts
-index 8570d5a..ae99109 100644
+index 8570d5a..07a4087 100644
 --- a/apps/api/src/routes/content-courses.ts
 +++ b/apps/api/src/routes/content-courses.ts
-@@ -72,6 +72,7 @@ import { stampPayloadVersion } from '../lib/payload-version.js';
+@@ -55,6 +55,8 @@ import {
+   isValidSeries,
+   isUsablePlan,
+   buildAuthoredPlan,
++  draftTeaching,
++  parseDraftTeachingBody,
+   type CoursePlan,
+   checkSpendReadiness,
+   lessonFileEnabled,
+@@ -72,6 +74,7 @@ import { stampPayloadVersion } from '../lib/payload-version.js';
  import { invalidateCohortCache } from '../lib/owned-filter.js';
  import { logger } from '../lib/logger.js';
  import { signContentLessonToken, verifyContentLessonToken } from '../lib/video-token.js';
@@ -828,7 +1034,7 @@ index 8570d5a..ae99109 100644
  
  const router = Router();
  
-@@ -152,6 +153,8 @@ const COURSE_PUBLIC = {
+@@ -152,6 +155,8 @@ const COURSE_PUBLIC = {
    id: contentCourses.id,
    topic: contentCourses.topic,
    series: contentCourses.series,
@@ -837,7 +1043,7 @@ index 8570d5a..ae99109 100644
    status: contentCourses.status,
    confirmLessons: contentCourses.confirmLessons,
    authorizedUsd: contentCourses.authorizedUsd,
-@@ -227,6 +230,42 @@ async function loadCourse(req: Request, res: Response) {
+@@ -227,6 +232,97 @@ async function loadCourse(req: Request, res: Response) {
    return row;
  }
  
@@ -877,10 +1083,65 @@ index 8570d5a..ae99109 100644
 +  },
 +);
 +
++/**
++ * POST /api/content-courses/draft-teaching — draft a motion-graphics course's models and
++ * walk-throughs. FREE: one model call on their side (~20-40 s), nothing stored, queued or charged.
++ *
++ * The instructor writes each video's title and SLO; this asks Content Automation to propose the
++ * named model and the walk-throughs each one is built from, plus the course's numbered SLOs. The
++ * browser shows them as editable fields and sends the edited result with the plan — so nothing
++ * here is trusted later: `POST /` validates whatever comes back exactly as if it were typed.
++ *
++ * Same permission as planning (`content_courses:create`): it is part of writing a plan.
++ */
++router.post(
++  '/draft-teaching',
++  requireAuth,
++  requirePermission('content_courses', 'create'),
++  async (req: Request, res: Response) => {
++    try {
++      if (!jobsEnabled()) {
++        res.status(503).json({
++          error: 'Drafting is switched off',
++          detail: 'CONTENT_QUEEN_JOBS_ENABLED is not set on this environment.',
++        });
++        return;
++      }
++      // Validated here as well as in the client, so a bad body is a 400 that never leaves us.
++      const parsed = parseDraftTeachingBody(req.body);
++      if (!parsed.ok) {
++        res.status(400).json({ error: 'Could not draft this course', detail: parsed.detail });
++        return;
++      }
++
++      const drafted = await draftTeaching(parsed.req);
++      if (!drafted.ok) {
++        const status = drafted.reason === 'invalid' ? 400
++          : drafted.reason === 'rate_limited' ? 429
++            : drafted.reason === 'disabled' ? 503
++              : 502;
++        res.status(status).json({
++          error: 'Could not draft this course',
++          reason: drafted.reason,
++          // Their sentence when they gave one; ours otherwise. Nothing was spent beyond one call.
++          detail: drafted.reason === 'invalid'
++            ? drafted.detail ?? 'Content Automation could not draft from these videos. Check every video has a title and an SLO.'
++            : 'Content Automation could not draft the models and walk-throughs just now. Nothing was charged — try again, or write them yourself.',
++        });
++        return;
++      }
++      res.json({ style: 'motion-graphics', ...drafted.data });
++    } catch (e) {
++      logger.error('content_course_draft_failed', { error: e instanceof Error ? e.message : String(e) });
++      res.status(500).json({ error: INTERNAL_ERROR });
++    }
++  },
++);
++
  /**
   * POST /api/content-courses — plan a course. FREE.
   *
-@@ -257,6 +296,16 @@ router.post(
+@@ -257,6 +353,16 @@ router.post(
          return;
        }
  
@@ -897,15 +1158,17 @@ index 8570d5a..ae99109 100644
        // AUTHORED MODE — the instructor said what the videos are, so we do not ask their model.
        //
        // Their /courses/build validates only that `plan.modules` is an array and that
-@@ -275,6 +324,7 @@ router.post(
+@@ -275,6 +381,9 @@ router.post(
            description: typeof req.body?.description === 'string' ? req.body.description : '',
            audience: typeof req.body?.audience === 'string' ? req.body.audience : undefined,
            ...(weeks ? { weeks } : { videos: flat! }),
 +          style,
++          // Drafted (and possibly edited) course SLOs. Only read in motion-graphics.
++          ...(Array.isArray(req.body?.slos) ? { slos: req.body.slos } : {}),
          });
          if (!built.ok) {
            res.status(400).json({ error: 'This course cannot be built', detail: built.detail });
-@@ -287,14 +337,25 @@ router.post(
+@@ -287,14 +396,25 @@ router.post(
            audience: typeof req.body?.audience === 'string' ? req.body.audience : undefined,
            duration: typeof req.body?.duration === 'string' ? req.body.duration : undefined,
            description: typeof req.body?.description === 'string' ? req.body.description : undefined,
@@ -932,7 +1195,7 @@ index 8570d5a..ae99109 100644
        }
  
        const est = estimate(plan);
-@@ -303,6 +364,7 @@ router.post(
+@@ -303,6 +423,7 @@ router.post(
          .insert(contentCourses)
          .values({
            topic,
@@ -940,7 +1203,7 @@ index 8570d5a..ae99109 100644
            status: 'planned',
            plan,
            confirmLessons: est.lessons,
-@@ -314,6 +376,7 @@ router.post(
+@@ -314,6 +435,7 @@ router.post(
        res.status(201).json({
          id: row!.id,
          status: 'planned',
@@ -948,7 +1211,7 @@ index 8570d5a..ae99109 100644
          plan,
          estimate: est,
          // Their own sizing rationale. Shown to whoever is about to pay: it is the cheapest way for
-@@ -606,6 +669,7 @@ router.post(
+@@ -606,6 +728,7 @@ router.post(
              id: contentCourses.id,
              status: contentCourses.status,
              plan: contentCourses.plan,
@@ -956,7 +1219,7 @@ index 8570d5a..ae99109 100644
              createdBy: contentCourses.createdBy,
              partnerCourseId: contentCourses.partnerCourseId,
            })
-@@ -620,6 +684,13 @@ router.post(
+@@ -620,6 +743,13 @@ router.post(
          if (course.partnerCourseId) return { kind: 'already_built' as const };
  
          const plan = course.plan as CoursePlan | null;
@@ -970,7 +1233,7 @@ index 8570d5a..ae99109 100644
          const flat = plan ? lessonsOf(plan) : [];
          const counts = await readSpendCounts(tx as unknown as typeof db, req.user!.id);
          const decision = decideCourseSpendAuthorization({
-@@ -708,6 +779,17 @@ router.post(
+@@ -708,6 +838,17 @@ router.post(
          res.status(404).json({ error: 'Course not found' });
          return;
        }
@@ -988,7 +1251,7 @@ index 8570d5a..ae99109 100644
        if (outcome.kind === 'already_built') {
          res.status(409).json({
            error: 'This course has already been built',
-@@ -796,6 +878,9 @@ router.post(
+@@ -796,6 +937,9 @@ router.post(
          // that they will send a sample lesson before we should rely on the shape — so this stays
          // an instructor's choice rather than something we switch on for everybody at once.
          references: req.body?.references === true,
@@ -998,7 +1261,7 @@ index 8570d5a..ae99109 100644
        });
  
        if (!built.ok) {
-@@ -866,7 +951,9 @@ router.post(
+@@ -866,7 +1010,9 @@ router.post(
          // A refusal the instructor can act on is a 409, not a 502. Mapping their free
          // `confirmation_required` to 502 told a person the server had broken when in fact their
          // own number was wrong and nothing had happened.
@@ -1144,6 +1407,268 @@ index cc71d8c..48d9b69 100644
  // `/:id`. Express matches in declaration order, so `/spend` after `/:id` is caught by the
  // parameterised route, the literal reaches a uuid column, and Postgres answers 22P02 — which
  // surfaces as a 500 on a route that looks correct in isolation. That is exactly what happened
+diff --git a/apps/api/tests/unit/content-course-draft-teaching.test.ts b/apps/api/tests/unit/content-course-draft-teaching.test.ts
+new file mode 100644
+index 0000000..0a1981b
+--- /dev/null
++++ b/apps/api/tests/unit/content-course-draft-teaching.test.ts
+@@ -0,0 +1,256 @@
++/**
++ * Unit — drafting a motion-graphics course's models and walk-throughs (Content Automation
++ * `POST /api/v1/courses/draft-teaching`, contract 1.2 additive) and our route in front of it.
++ *
++ * What is pinned, and why:
++ *   - a bad body never leaves us: no fetch for an empty list, a lesson missing its SLO, or > 30;
++ *   - their 400 reaches the instructor as THEIR sentence, their 5xx as "try again, nothing charged";
++ *   - a draft that is not one-for-one with what we sent is refused — a model landing on the wrong
++ *     lesson is worse than no draft;
++ *   - drafted SLO ids survive into the authored plan, and a video with none still gets its own.
++ *
++ * `fetch` is mocked, not the client, so the real validation and parsing run — as in
++ * content-queen-courses.test.ts. The route is driven over HTTP with its DB and middleware mocked;
++ * it touches neither on this path.
++ */
++import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
++import express from 'express';
++import request from 'supertest';
++
++const state = vi.hoisted(() => ({ perms: new Set<string>(['content_courses:create']) }));
++
++// ─── Module mocks for the route. The draft path reads none of these; they only have to load. ───
++vi.mock('../../src/db/index.js', () => ({ db: {} }));
++vi.mock('../../src/db/schema.js', () => {
++  const table = () => new Proxy({}, { get: (_t, k) => (k === 'then' ? undefined : String(k)) });
++  return {
++    contentCourses: table(), contentCourseLessons: table(), contentVideoSpendEvents: table(),
++    cohorts: table(), cohortMemberships: table(), modules: table(), moduleContentBlocks: table(),
++  };
++});
++vi.mock('drizzle-orm', () => {
++  const sql = Object.assign(() => ({ as: () => ({}) }), { raw: () => ({}) });
++  const op = () => ({});
++  return { sql, and: op, desc: op, eq: op, gte: op, inArray: op };
++});
++vi.mock('../../src/middleware/auth.js', () => ({
++  requireAuth: (req: any, _res: any, next: any) => { req.user = { id: 'u1', email: 'i@test', role: 'instructor' }; next(); },
++}));
++vi.mock('../../src/middleware/rbac.js', () => ({
++  requirePermission: (resource: string, action: string) => (_req: any, res: any, next: any) =>
++    (state.perms.has(`${resource}:${action}`) ? next() : res.status(403).json({ error: 'Forbidden' })),
++  hasPermission: async () => true,
++}));
++vi.mock('../../src/lib/queue.js', () => ({ getQueue: async () => ({ send: async () => null }) }));
++vi.mock('../../src/lib/payload-version.js', () => ({ stampPayloadVersion: (_q: string, p: unknown) => p }));
++vi.mock('../../src/lib/owned-filter.js', () => ({ invalidateCohortCache: () => undefined }));
++
++import {
++  draftTeaching,
++  normaliseTeachingDraft,
++  parseDraftTeachingBody,
++  buildAuthoredPlan,
++  lessonsOf,
++} from '../../src/lib/content-queen-courses.js';
++
++function jsonResponse(body: unknown, status = 200) {
++  return { ok: status >= 200 && status < 300, status, json: async () => body } as unknown as Response;
++}
++
++const LESSONS = [
++  { title: 'Your role as a buddy', slo: 'Explain the buddy role' },
++  { title: 'Listening first', slo: 'Reflect a concern back' },
++];
++
++const DRAFT = {
++  style: 'motion-graphics',
++  slos: [{ id: '1.1', text: 'Explain the buddy role' }, { id: '1.2', text: 'Reflect a concern back' }],
++  lessons: [
++    {
++      index: 0, title: 'Your role as a buddy', sloIds: ['1.1'],
++      models: [{ name: 'Empowerment Dynamic', author: 'David Emerald', summary: 'Coach, not Rescuer' }],
++      walkthroughs: [{ title: 'Rescuer vs Coach', situation: 's1' }, { title: 'The 3 Es', situation: 's2' }],
++    },
++    {
++      index: 1, title: 'Listening first', sloIds: ['1.2'],
++      models: [{ name: 'RASA', author: 'Julian Treasure' }],
++      walkthroughs: [{ situation: 's3' }, { situation: 's4' }],
++    },
++  ],
++  draftedAt: '2026-10-08T10:00:00Z',
++};
++
++let fetchMock: ReturnType<typeof vi.fn>;
++
++beforeEach(() => {
++  process.env.CONTENT_QUEEN_API_TOKEN = 'test-token-not-a-real-credential';
++  process.env.CONTENT_QUEEN_JOBS_ENABLED = 'true';
++  fetchMock = vi.fn();
++  vi.stubGlobal('fetch', fetchMock);
++  state.perms = new Set(['content_courses:create']);
++});
++
++afterEach(() => {
++  vi.unstubAllGlobals();
++  delete process.env.CONTENT_QUEEN_JOBS_ENABLED;
++  delete process.env.CONTENT_QUEEN_API_TOKEN;
++});
++
++describe('parseDraftTeachingBody', () => {
++  it('trims and keeps topic, audience and the lessons in order', () => {
++    const r = parseDraftTeachingBody({ topic: ' P&C ', audience: '', lessons: [{ title: ' a ', slo: ' b ' }] });
++    expect(r).toEqual({ ok: true, req: { topic: 'P&C', lessons: [{ title: 'a', slo: 'b' }] } });
++  });
++
++  it('names the video that is missing its SLO', () => {
++    const r = parseDraftTeachingBody({ lessons: [LESSONS[0], { title: 'x', slo: ' ' }] });
++    expect(r.ok).toBe(false);
++    if (!r.ok) expect(r.detail).toMatch(/Video 2 needs a title and an SLO/);
++  });
++
++  it('refuses none, and more than 30', () => {
++    expect(parseDraftTeachingBody({ lessons: [] }).ok).toBe(false);
++    expect(parseDraftTeachingBody({}).ok).toBe(false);
++    const many = Array.from({ length: 31 }, (_, i) => ({ title: `t${i}`, slo: 's' }));
++    const r = parseDraftTeachingBody({ lessons: many });
++    expect(r.ok).toBe(false);
++    if (!r.ok) expect(r.detail).toMatch(/up to 30/);
++  });
++});
++
++describe('draftTeaching — the client', () => {
++  it('posts the lessons with the token and returns the normalised draft', async () => {
++    fetchMock.mockResolvedValue(jsonResponse(DRAFT));
++    const res = await draftTeaching({ topic: 'P&C', lessons: LESSONS });
++    expect(res.ok).toBe(true);
++    const [url, init] = fetchMock.mock.calls[0]!;
++    expect(String(url)).toMatch(/\/api\/v1\/courses\/draft-teaching$/);
++    expect((init as RequestInit).headers).toMatchObject({ Authorization: 'Bearer test-token-not-a-real-credential' });
++    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ topic: 'P&C', lessons: LESSONS });
++    if (res.ok) {
++      expect(res.data.slos).toHaveLength(2);
++      expect(res.data.lessons[1]!.models).toEqual([{ name: 'RASA', author: 'Julian Treasure' }]);
++      expect(res.data.lessons[1]!.walkthroughs).toEqual([{ situation: 's3' }, { situation: 's4' }]);
++    }
++  });
++
++  it('never calls them for a body we would refuse', async () => {
++    const res = await draftTeaching({ lessons: [{ title: 'a', slo: '' }] });
++    expect(res.ok).toBe(false);
++    if (!res.ok) expect(res.reason).toBe('invalid');
++    expect(fetchMock).not.toHaveBeenCalled();
++  });
++
++  it('maps their 400 to `invalid` with their sentence', async () => {
++    fetchMock.mockResolvedValue(jsonResponse({ error: 'bad_request', message: 'Lesson 2 has no slo.' }, 400));
++    const res = await draftTeaching({ lessons: LESSONS });
++    expect(res).toMatchObject({ ok: false, reason: 'invalid', partnerCode: 'bad_request', detail: 'Lesson 2 has no slo.' });
++  });
++
++  it('maps their 5xx draft_failed to `unavailable`', async () => {
++    fetchMock.mockResolvedValue(jsonResponse({ error: 'draft_failed', message: 'model timed out' }, 502));
++    const res = await draftTeaching({ lessons: LESSONS });
++    expect(res).toMatchObject({ ok: false, reason: 'unavailable', partnerCode: 'draft_failed' });
++  });
++
++  it('refuses a draft that is not one-for-one with what was sent', async () => {
++    fetchMock.mockResolvedValue(jsonResponse({ ...DRAFT, lessons: [DRAFT.lessons[0]] }));
++    const res = await draftTeaching({ lessons: LESSONS });
++    expect(res).toMatchObject({ ok: false, reason: 'unavailable' });
++  });
++
++  it('is off with the kill switch, before any request', async () => {
++    delete process.env.CONTENT_QUEEN_JOBS_ENABLED;
++    expect(await draftTeaching({ lessons: LESSONS })).toEqual({ ok: false, reason: 'disabled' });
++    expect(fetchMock).not.toHaveBeenCalled();
++  });
++});
++
++describe('normaliseTeachingDraft', () => {
++  it('refuses lessons out of order', () => {
++    const swapped = { ...DRAFT, lessons: [DRAFT.lessons[1], DRAFT.lessons[0]] };
++    expect(normaliseTeachingDraft(swapped, 2)).toBeNull();
++  });
++});
++
++describe('buildAuthoredPlan — drafted SLOs', () => {
++  it('keeps drafted course SLOs and each video\'s drafted ids', () => {
++    const r = buildAuthoredPlan({
++      topic: 'P&C', description: '', style: 'motion-graphics',
++      slos: DRAFT.slos,
++      videos: DRAFT.lessons.map((l, i) => ({ ...LESSONS[i]!, sloIds: l.sloIds, models: l.models, walkthroughs: l.walkthroughs })),
++    });
++    expect(r.ok).toBe(true);
++    if (!r.ok) return;
++    expect(r.plan.slos).toEqual(DRAFT.slos);
++    expect(lessonsOf(r.plan).map((l) => l.sloIds)).toEqual([['1.1'], ['1.2']]);
++  });
++
++  it('numbers its own SLO for a video whose drafted id is not in the course list', () => {
++    const r = buildAuthoredPlan({
++      topic: 'P&C', description: '', style: 'motion-graphics',
++      slos: [{ id: '1.1', text: 'Explain the buddy role' }],
++      videos: [
++        { ...LESSONS[0]!, sloIds: ['1.1'], models: DRAFT.lessons[0]!.models, walkthroughs: DRAFT.lessons[0]!.walkthroughs },
++        { ...LESSONS[1]!, sloIds: ['9.9'], models: DRAFT.lessons[1]!.models, walkthroughs: DRAFT.lessons[1]!.walkthroughs },
++      ],
++    });
++    expect(r.ok).toBe(true);
++    if (!r.ok) return;
++    expect(r.plan.slos!.map((s) => s.id)).toEqual(['1.1', '1.2']);
++    expect(lessonsOf(r.plan)[1]!.sloIds).toEqual(['1.2']);
++  });
++});
++
++describe('POST /api/content-courses/draft-teaching — the route', () => {
++  async function app() {
++    const { default: router } = await import('../../src/routes/content-courses.js');
++    const a = express();
++    a.use(express.json());
++    a.use('/api/content-courses', router);
++    return a;
++  }
++
++  it('forwards and answers with the draft', async () => {
++    fetchMock.mockResolvedValue(jsonResponse(DRAFT));
++    const res = await request(await app()).post('/api/content-courses/draft-teaching').send({ topic: 'P&C', lessons: LESSONS });
++    expect(res.status).toBe(200);
++    expect(res.body.style).toBe('motion-graphics');
++    expect(res.body.lessons).toHaveLength(2);
++    expect(res.body.slos[0]).toEqual({ id: '1.1', text: 'Explain the buddy role' });
++  });
++
++  it('answers 400 with a sentence for a bad body, without calling them', async () => {
++    const res = await request(await app()).post('/api/content-courses/draft-teaching').send({ lessons: [{ title: 'a' }] });
++    expect(res.status).toBe(400);
++    expect(res.body.detail).toMatch(/Video 1 needs a title and an SLO/);
++    expect(fetchMock).not.toHaveBeenCalled();
++  });
++
++  it('passes their 400 sentence through as a 400', async () => {
++    fetchMock.mockResolvedValue(jsonResponse({ error: 'bad_request', message: 'Too many lessons for one draft.' }, 400));
++    const res = await request(await app()).post('/api/content-courses/draft-teaching').send({ lessons: LESSONS });
++    expect(res.status).toBe(400);
++    expect(res.body.detail).toBe('Too many lessons for one draft.');
++  });
++
++  it('says "nothing was charged" on their 5xx, as a 502', async () => {
++    fetchMock.mockResolvedValue(jsonResponse({ error: 'draft_failed', message: 'x' }, 500));
++    const res = await request(await app()).post('/api/content-courses/draft-teaching').send({ lessons: LESSONS });
++    expect(res.status).toBe(502);
++    expect(res.body.detail).toMatch(/Nothing was charged/);
++  });
++
++  it('is 503 with the kill switch off', async () => {
++    delete process.env.CONTENT_QUEEN_JOBS_ENABLED;
++    const res = await request(await app()).post('/api/content-courses/draft-teaching').send({ lessons: LESSONS });
++    expect(res.status).toBe(503);
++  });
++
++  it('needs content_courses:create', async () => {
++    state.perms = new Set();
++    const res = await request(await app()).post('/api/content-courses/draft-teaching').send({ lessons: LESSONS });
++    expect(res.status).toBe(403);
++    expect(fetchMock).not.toHaveBeenCalled();
++  });
++});
 diff --git a/apps/api/tests/unit/content-queen-courses.test.ts b/apps/api/tests/unit/content-queen-courses.test.ts
 index 0f68ecf..a115bbd 100644
 --- a/apps/api/tests/unit/content-queen-courses.test.ts
@@ -1445,10 +1970,10 @@ index 98111e9..aae045b 100644
  
  describe('a partner client notices a field it does not read', () => {
 diff --git a/apps/web/src/app/build/CourseBuilderForm.tsx b/apps/web/src/app/build/CourseBuilderForm.tsx
-index 294264c..d690073 100644
+index 294264c..2a60b30 100644
 --- a/apps/web/src/app/build/CourseBuilderForm.tsx
 +++ b/apps/web/src/app/build/CourseBuilderForm.tsx
-@@ -38,6 +38,13 @@
+@@ -38,22 +38,77 @@
   *
   * 4. NO PROGRESS CAROUSEL. Invented status lines narrate confidently through the minutes when
   *    something has actually died.
@@ -1459,15 +1984,23 @@ index 294264c..d690073 100644
 + * at least two walk-throughs, and their build refuses one without them. So the picker sits above
 + * the videos, and choosing motion graphics adds those fields to every video before anything can be
 + * saved. The style is fixed once the plan is saved, like everything else on it.
++ *
++ * THE MODELS AND WALK-THROUGHS ARE DRAFTED, THEN EDITED. Once every video has a title and an SLO,
++ * Content Automation drafts them (draft-teaching: one model call, ~30 s, nothing spent beyond it),
++ * automatically the first time the instructor moves on from those fields and by button after that.
++ * They land as ordinary editable fields. A redraft NEVER replaces a video the instructor has
++ * edited unless they say so in the page, and never lands on a video whose title or SLO changed
++ * while the draft was out — both rules are in lib/video-styles.ts with their tests.
   */
  import { useState, useEffect, useCallback, useRef } from 'react';
  import { useRouter } from 'next/navigation';
-@@ -46,14 +53,32 @@ import { apiRequest, errorText } from '@/lib/api';
- import { planCourse } from '@/lib/content-courses-client';
+-import { Loader2, AlertTriangle, CheckCircle2, Sparkles } from 'lucide-react';
++import { Loader2, AlertTriangle, CheckCircle2, Sparkles, Wand2 } from 'lucide-react';
+ import { apiRequest, errorText } from '@/lib/api';
+-import { planCourse } from '@/lib/content-courses-client';
++import { planCourse, draftTeaching } from '@/lib/content-courses-client';
  import { formStateFromCourse, resumeTarget, type CourseDetail } from '@/lib/course-resume';
  import { rememberPlannedCourse, lastPlannedCourse, forgetPlannedCourse } from '@/lib/course-resume-storage';
--
--interface VideoRow { title: string; slo: string }
 +import {
 +  DEFAULT_STYLE,
 +  emptyMotionFields,
@@ -1477,15 +2010,39 @@ index 294264c..d690073 100644
 +  motionGaps,
 +  motionPayload,
 +  styleLabel,
++  applyDraft,
++  applyDraftSlos,
++  canDraft,
++  draftRequestLessons,
++  editedVideoCount,
++  shouldAutoDraft,
++  DRAFT_MAX_VIDEOS,
++  type DraftableVideo,
 +  type MotionFields,
++  type TeachingDraftResponse,
 +  type VideoStyleInfo,
 +} from '@/lib/video-styles';
 +import { CourseSlos, MotionFieldsEditor, StyleBadge, VideoStylePicker } from '@/components/VideoStyle';
-+
-+/** `motion` is kept for every video whatever the style, so switching style back and forth loses nothing. */
-+interface VideoRow { title: string; slo: string; motion?: MotionFields }
+ 
+-interface VideoRow { title: string; slo: string }
++/**
++ * `motion` is kept for every video whatever the style, so switching style back and forth loses
++ * nothing. `sloIds`, `drafted` and `motionEdited` are the draft's bookkeeping (lib/video-styles.ts).
++ */
++type VideoRow = DraftableVideo;
  interface WeekRow { title: string; videos: VideoRow[] }
  
++/** Every video in course order — the order draft-teaching is asked in and answers in. */
++function flatVideos(weeks: WeekRow[]): VideoRow[] {
++  return weeks.flatMap((w) => w.videos);
++}
++
++/** Put a flat list of videos back into the same weeks, position for position. */
++function withFlatVideos(weeks: WeekRow[], next: VideoRow[]): WeekRow[] {
++  let k = 0;
++  return weeks.map((w) => ({ ...w, videos: w.videos.map((v) => next[k++] ?? v) }));
++}
++
  interface PlanResponse {
    id: string;
    estimate: { lessons: number; estimatedCostUsd: number; estimatedBuildMinutes: number };
@@ -1497,7 +2054,7 @@ index 294264c..d690073 100644
  }
  interface MaterialiseResponse { cohortId: string; created: boolean }
  interface SpendResponse {
-@@ -101,7 +126,16 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
+@@ -101,7 +156,27 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
    const [topic, setTopic] = useState('');
    const [audience, setAudience] = useState('');
    const [outcomes, setOutcomes] = useState('');
@@ -1512,10 +2069,21 @@ index 294264c..d690073 100644
 +  const styleChosen = useRef(false);
 +  const setStyle = (id: string) => { styleChosen.current = true; setStyleState(id); };
 +  const motion = isMotion(style);
++
++  // ── Drafting (motion-graphics) ──
++  /** The course's numbered SLOs from the draft. `edited` once the instructor changes any. */
++  const [courseSlos, setCourseSlos] = useState<{ slos: { id: string; text: string }[]; edited: boolean }>({ slos: [], edited: false });
++  const [drafting, setDrafting] = useState(false);
++  const [draftError, setDraftError] = useState<string | null>(null);
++  const [draftNote, setDraftNote] = useState<string | null>(null);
++  /** The in-page confirm before a redraft that could replace hand edits. Never window.confirm. */
++  const [confirmRedraft, setConfirmRedraft] = useState(false);
++  /** The automatic first draft happens once per form, whether or not it worked. */
++  const autoDraftTried = useRef(false);
  
    const [price, setPrice] = useState<SpendResponse | null>(null);
    const [planned, setPlanned] = useState<PlanResponse | null>(null);
-@@ -128,6 +162,24 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
+@@ -128,6 +203,24 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
      })();
    }, []);
  
@@ -1540,16 +2108,17 @@ index 294264c..d690073 100644
    // Rehydrate a planned course from ?focus=<id> (BUG-1) — a tab switch, reload, or the Library's
    // link should not orphan a plan that only ever lived in this component's state. The tab buttons
    // drop `focus` (the Library uses it for video ids too), so with no URL id we fall back to the plan
-@@ -159,6 +211,8 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
+@@ -159,6 +252,9 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
            redirecting = true; router.replace(s.redirectTo); return;
          }
          setTopic(s.topic); setAudience(s.audience); setOutcomes(s.outcomes); setWeeks(s.weeks);
 +        // A saved course's style wins over the list's default, however late the list answers.
 +        styleChosen.current = true; setStyleState(s.style);
++        setCourseSlos({ slos: s.planned.slos, edited: false });
          setPlanned(s.planned); setCohortId(s.cohortId);
          rememberPlannedCourse(s.planned.id);
        } catch (e) {
-@@ -175,8 +229,11 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
+@@ -175,8 +271,11 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
  
    const allVideos = weeks.flatMap((w) => w.videos);
    const filled = allVideos.filter((v) => v.title.trim() && v.slo.trim());
@@ -1562,7 +2131,7 @@ index 294264c..d690073 100644
  
    // ACROSS EVERY WEEK, not within one. Their queue key is `${series}/${slug}` with no module in
    // it, so two videos in different weeks collide exactly as readily as two in the same week.
-@@ -205,12 +262,18 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
+@@ -205,12 +304,71 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
  
    const updateWeek = (wi: number, title: string) =>
      setWeeks((prev) => prev.map((w, i) => (i === wi ? { ...w, title } : w)));
@@ -1571,10 +2140,63 @@ index 294264c..d690073 100644
      setWeeks((prev) => prev.map((w, i) => (i !== wi ? w : {
        ...w, videos: w.videos.map((v, j) => (j === vi ? { ...v, [field]: value } : v)),
      })));
++  // Any change by hand marks the video edited, which is what protects it from a redraft.
 +  const updateMotion = (wi: number, vi: number, next: MotionFields) =>
 +    setWeeks((prev) => prev.map((w, i) => (i !== wi ? w : {
-+      ...w, videos: w.videos.map((v, j) => (j === vi ? { ...v, motion: next } : v)),
++      ...w, videos: w.videos.map((v, j) => (j === vi ? { ...v, motion: next, motionEdited: true } : v)),
 +    })));
++
++  // The latest rows, for laying a draft over when it returns ~30 s after it was asked for.
++  const weeksRef = useRef(weeks);
++  weeksRef.current = weeks;
++
++  async function runDraft(replaceEdited: boolean) {
++    const sent = draftRequestLessons(flatVideos(weeksRef.current));
++    setConfirmRedraft(false);
++    setDrafting(true);
++    setDraftError(null);
++    setDraftNote(null);
++    try {
++      const res = await draftTeaching<TeachingDraftResponse>({
++        topic: topic.trim() || undefined,
++        audience: audience.trim() || undefined,
++        lessons: sent,
++      });
++      const latest = weeksRef.current;
++      const applied = applyDraft(flatVideos(latest), res, sent, { replaceEdited });
++      setWeeks(withFlatVideos(latest, applied.videos));
++      setCourseSlos((cur) => applyDraftSlos(cur, res, { replaceEdited }));
++      const filledIn = sent.length - applied.keptEdited - applied.skippedChanged;
++      setDraftNote(
++        `Drafted ${filledIn} ${plural(filledIn, 'video', 'videos')}. Everything below is yours to edit.`
++        + (applied.keptEdited > 0 ? ` Your edits on ${applied.keptEdited} ${plural(applied.keptEdited, 'video were', 'videos were')} kept.` : '')
++        + (applied.skippedChanged > 0
++          ? ` ${applied.skippedChanged} ${plural(applied.skippedChanged, 'video was', 'videos were')} changed while drafting and left alone — redraft to fill ${plural(applied.skippedChanged, 'it', 'them')}.`
++          : ''),
++      );
++    } catch (e) {
++      setDraftError(errorText(e, 'Could not draft the models and walk-throughs. You can try again, or write them yourself.'));
++    } finally {
++      setDrafting(false);
++    }
++  }
++
++  /** The button. Asks in the page first when a redraft could replace something written by hand. */
++  function requestDraft() {
++    if (editedVideoCount(flatVideos(weeks)) > 0 || courseSlos.edited) setConfirmRedraft(true);
++    else void runDraft(false);
++  }
++
++  /**
++   * The automatic first draft, when the instructor moves on from the titles and SLOs (a field
++   * loses focus) or switches to motion graphics with them already written. Once only.
++   */
++  function maybeAutoDraft(motionNow: boolean = motion) {
++    if (!planned && shouldAutoDraft({ motion: motionNow, videos: flatVideos(weeks), autoDraftTried: autoDraftTried.current, drafting })) {
++      autoDraftTried.current = true;
++      void runDraft(false);
++    }
++  }
    const addVideo = (wi: number) =>
 -    setWeeks((prev) => prev.map((w, i) => (i === wi ? { ...w, videos: [...w.videos, { title: '', slo: '' }] } : w)));
 +    setWeeks((prev) => prev.map((w, i) => (i === wi ? {
@@ -1583,11 +2205,16 @@ index 294264c..d690073 100644
    const removeVideo = (wi: number, vi: number) =>
      setWeeks((prev) => prev.map((w, i) => (i === wi ? { ...w, videos: w.videos.filter((_, j) => j !== vi) } : w)));
  
-@@ -226,13 +289,21 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
+@@ -226,13 +384,27 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
          topic: topic.trim(),
          description: outcomes.trim(),
          audience: audience.trim() || undefined,
 +        style,
++        // The drafted course SLOs, as edited. Blank ones dropped; absent, the server numbers each
++        // video's own SLO instead.
++        ...(motion && courseSlos.slos.some((s) => s.text.trim())
++          ? { slos: courseSlos.slos.filter((s) => s.text.trim()).map((s) => ({ id: s.id, text: s.text.trim() })) }
++          : {}),
          weeks: weeks.map((w) => ({
            title: w.title.trim() || undefined,
 -          videos: w.videos.map((v) => ({ title: v.title.trim(), slo: v.slo.trim() })),
@@ -1597,6 +2224,7 @@ index 294264c..d690073 100644
 +            // Only in motion graphics. Sent otherwise, the server would ignore them anyway — but a
 +            // character-arc plan should not carry fields that look like they decide something.
 +            ...(motion ? motionPayload(v.motion ?? emptyMotionFields()) : {}),
++            ...(motion && v.sloIds?.length ? { sloIds: v.sloIds } : {}),
 +          })),
          })),
        });
@@ -1608,16 +2236,16 @@ index 294264c..d690073 100644
        rememberPlannedCourse(res.id);
        // Put the plan id in the URL as soon as it exists, so reload, back-navigation and a tab
        // round-trip land on the plan instead of losing it (BUG-1).
-@@ -242,7 +313,7 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
+@@ -242,7 +414,7 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
      } finally {
        setSaving(false);
      }
 -  }, [topic, outcomes, audience, weeks, router]);
-+  }, [topic, outcomes, audience, weeks, style, motion, router]);
++  }, [topic, outcomes, audience, weeks, style, motion, courseSlos, router]);
  
    async function createCourse() {
      if (!planned) return;
-@@ -354,6 +425,32 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
+@@ -354,6 +526,33 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
              />
            </div>
  
@@ -1635,14 +2263,15 @@ index 294264c..d690073 100644
 +              <VideoStylePicker
 +                styles={styles}
 +                value={style}
-+                onChange={setStyle}
++                onChange={(id) => { setStyle(id); if (isMotion(id)) maybeAutoDraft(true); }}
 +                error={stylesError}
 +              />
 +            )}
 +            {motion && !planned ? (
 +              <p className="mt-2 text-[12px] text-[#4b5563]">
 +                In {styleLabel(style, styles)}, each video teaches through a named model and walks
-+                through at least two real situations — you will add those to each video below.
++                through at least two real situations. Once every video has a title and an SLO,
++                they are drafted for you below, and you can edit every word.
 +              </p>
 +            ) : null}
 +          </div>
@@ -1650,16 +2279,118 @@ index 294264c..d690073 100644
            <div>
              <label className={LABEL}>How many weeks?</label>
              <div className="mt-2 flex items-center gap-3">
-@@ -455,6 +552,21 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
+@@ -410,6 +609,79 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
+           to cover more ground is more videos, not longer ones.
+         </p>
+ 
++        {motion && !planned ? (
++          <div className="mt-4 rounded-lg border border-[#c7d2fe] bg-[#f5f7ff] p-3" data-testid="draft-panel">
++            <div className="flex flex-wrap items-center justify-between gap-2">
++              <p className="text-[13px] font-medium text-[#0f1222]">Models &amp; walk-throughs</p>
++              {drafting ? (
++                <span className="inline-flex items-center gap-1.5 text-[12px] text-[#3c65f5]">
++                  <Loader2 size={13} className="animate-spin" /> Drafting… this takes about half a minute.
++                </span>
++              ) : (
++                <button
++                  type="button" onClick={requestDraft} disabled={!canDraft(allVideos) || confirmRedraft}
++                  data-testid="draft-button"
++                  className="inline-flex items-center gap-1.5 rounded-md border border-[#3c65f5]/40 bg-white px-3 py-1.5 text-[12px] font-medium text-[#3c65f5] hover:bg-[#f0f4ff] disabled:opacity-40"
++                >
++                  <Wand2 size={13} />
++                  {allVideos.some((v) => v.drafted) ? 'Redraft' : 'Draft models & walk-throughs with AI'}
++                </button>
++              )}
++            </div>
++            {!drafting && !canDraft(allVideos) ? (
++              <p className="mt-1 text-[12px] text-[#6b7280]">
++                {allVideos.length > DRAFT_MAX_VIDEOS
++                  ? `Drafting works on up to ${DRAFT_MAX_VIDEOS} videos at a time.`
++                  : 'Give every video a title and an SLO, and they will be drafted for you.'}
++              </p>
++            ) : null}
++            {confirmRedraft ? (
++              <div className="mt-2 rounded-md border border-[#f59e0b]/30 bg-[#fffbeb] p-2 text-[12px] text-[#92400e]" role="alertdialog" aria-label="Redraft">
++                <p>
++                  You have changed {editedVideoCount(allVideos) > 0
++                    ? `${editedVideoCount(allVideos)} ${plural(editedVideoCount(allVideos), 'video', 'videos')} by hand`
++                    : 'nothing in the videos'}
++                  {courseSlos.edited ? ' and the course outcomes' : ''}. A redraft can keep those and fill the rest, or replace everything.
++                </p>
++                <div className="mt-2 flex flex-wrap gap-2">
++                  <button type="button" onClick={() => void runDraft(false)} className="rounded-md bg-[#0f1222] px-2.5 py-1 font-medium text-white">
++                    Keep my edits, redraft the rest
++                  </button>
++                  <button type="button" onClick={() => void runDraft(true)} className="rounded-md border border-[#dc2626]/40 bg-white px-2.5 py-1 font-medium text-[#dc2626]">
++                    Replace everything
++                  </button>
++                  <button type="button" onClick={() => setConfirmRedraft(false)} className="rounded-md border border-gray-300 bg-white px-2.5 py-1">
++                    Cancel
++                  </button>
++                </div>
++              </div>
++            ) : null}
++            {draftError ? <p className="mt-2 text-[12px] text-[#dc2626]">{draftError}</p> : null}
++            {draftNote ? <p className="mt-2 text-[12px] text-[#166534]">{draftNote}</p> : null}
++
++            {courseSlos.slos.length > 0 ? (
++              <div className="mt-3">
++                <p className="text-[12px] font-medium text-[#0f1222]">Course outcomes (SLOs)</p>
++                <div className="mt-1.5 space-y-1.5">
++                  {courseSlos.slos.map((s, si) => (
++                    <div key={s.id} className="flex items-center gap-2">
++                      <span className="shrink-0 rounded bg-[#f0f4ff] px-1.5 font-mono text-[11px] text-[#3c65f5]">{s.id}</span>
++                      <input
++                        value={s.text} disabled={drafting}
++                        onChange={(e) => setCourseSlos((cur) => ({
++                          edited: true,
++                          slos: cur.slos.map((x, j) => (j === si ? { ...x, text: e.target.value } : x)),
++                        }))}
++                        maxLength={500} className={`${INPUT} py-1.5 text-[13px]`} aria-label={`Course outcome ${s.id}`}
++                      />
++                    </div>
++                  ))}
++                </div>
++              </div>
++            ) : null}
++          </div>
++        ) : null}
++
+         <div className="mt-5 space-y-5">
+           {weeks.map((w, wi) => (
+             <div key={wi} className="rounded-lg border border-[#ebebf0] p-4">
+@@ -440,6 +712,7 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
+                     </div>
+                     <input
+                       value={v.title} onChange={(e) => updateVideo(wi, vi, 'title', e.target.value)}
++                      onBlur={() => maybeAutoDraft()}
+                       disabled={!!planned} placeholder="Title — e.g. Say the caller's concern back"
+                       className={`mt-2 ${INPUT}`} aria-label={`Week ${wi + 1} video ${vi + 1} title`}
+                     />
+@@ -451,10 +724,35 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
+                     ) : null}
+                     <input
+                       value={v.slo} onChange={(e) => updateVideo(wi, vi, 'slo', e.target.value)}
++                      onBlur={() => maybeAutoDraft()}
+                       disabled={!!planned}
                        placeholder="After this video, a learner can…"
                        className={`mt-2 ${INPUT}`} aria-label={`Week ${wi + 1} video ${vi + 1} outcome`}
                      />
 +                    {motion ? (
 +                      <>
++                        {v.sloIds?.length ? (
++                          <div className="mt-2 flex flex-wrap items-center gap-1">
++                            {v.sloIds.map((id) => (
++                              <span key={id} className="rounded bg-[#f0f4ff] px-1.5 font-mono text-[11px] text-[#3c65f5]">SLO {id}</span>
++                            ))}
++                            {v.drafted && !v.motionEdited ? <span className="text-[11px] text-[#9ca3af]">· drafted — edit freely</span> : null}
++                            {v.motionEdited ? <span className="text-[11px] text-[#9ca3af]">· edited by you</span> : null}
++                          </div>
++                        ) : null}
 +                        <MotionFieldsEditor
 +                          value={v.motion ?? emptyMotionFields()}
 +                          onChange={(next) => updateMotion(wi, vi, next)}
-+                          disabled={!!planned}
++                          disabled={!!planned || drafting}
 +                          label={`Week ${wi + 1} video ${vi + 1}`}
 +                        />
 +                        {!planned && motionGaps(v.motion).length > 0 && (v.title.trim() || v.slo.trim()) ? (
@@ -1672,7 +2403,7 @@ index 294264c..d690073 100644
                    </div>
                  ))}
                </div>
-@@ -483,6 +595,15 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
+@@ -483,6 +781,15 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
            </div>
          ) : null}
  
@@ -1688,7 +2419,16 @@ index 294264c..d690073 100644
          {!planned ? (
            <div className="mt-5 flex items-center justify-between">
              <button onClick={() => { forgetPlannedCourse(); router.push('/courses'); }} className="text-sm text-[#9ca3af] hover:text-[#5f6880] transition-colors">
-@@ -619,6 +740,7 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
+@@ -490,7 +797,7 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
+             </button>
+             <button
+               data-testid="ai-builder-primary" onClick={save}
+-              disabled={saving || !complete || clashes.size > 0} className={PRIMARY}
++              disabled={saving || drafting || !complete || clashes.size > 0} className={PRIMARY}
+             >
+               {saving ? <Loader2 size={14} className="animate-spin" /> : null}
+               {saving ? 'Saving…' : 'Generate Course'}
+@@ -619,6 +926,7 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
                <li>· This reserves <span className="font-semibold text-[#0f1222]">${planned.ourCostUsd.toFixed(2)}</span> of real money and cannot be undone. The final cost is Content Automation&apos;s real cost for each video and can be higher; the Library shows it once the video is made.</li>
                <li>· Videos are made <span className="font-semibold text-[#0f1222]">one at a time</span>. Each stops for you to approve before the next begins, so a wrong format costs one video rather than all of them.</li>
                <li>· They will be filed under <span className="font-mono text-[#0f1222]">{series}</span>.</li>
@@ -2217,10 +2957,10 @@ index 0000000..26787b1
 +  );
 +}
 diff --git a/apps/web/src/lib/content-courses-client.ts b/apps/web/src/lib/content-courses-client.ts
-index 3a2b5f1..d4460f1 100644
+index 3a2b5f1..acd69c3 100644
 --- a/apps/web/src/lib/content-courses-client.ts
 +++ b/apps/web/src/lib/content-courses-client.ts
-@@ -49,7 +49,22 @@ export interface PlanRequest {
+@@ -49,7 +49,52 @@ export interface PlanRequest {
     * Content Automation's §2.2 is explicit that an authored plan is a first-class input — we do not
     * have to call their planner first. This is the shape /courses/ai-builder collects.
     */
@@ -2234,13 +2974,43 @@ index 3a2b5f1..d4460f1 100644
 +      models?: { name: string; author?: string; summary?: string }[];
 +      /** motion-graphics only: at least two, each with a situation. */
 +      walkthroughs?: { title?: string; situation: string }[];
++      /** motion-graphics only: the drafted course SLO ids this video serves. */
++      sloIds?: string[];
 +    }[];
 +  }[];
++  /** motion-graphics only: the course's numbered SLOs, as drafted and edited. */
++  slos?: { id: string; text: string }[];
 +  /**
 +   * The video style every lesson is made in — an id from GET /api/content-courses/styles. Fixed
 +   * for the course once planned. Absent is `character-arc`.
 +   */
 +  style?: string;
++}
++
++/**
++ * Drafting is one model call on Content Automation's side, measured at 20-40 s — past apiRequest's
++ * 25 s default, so it carries its own bound for the same reason as the plan: hanging up early
++ * throws away an answer their side finishes anyway. 150 s sits above the API's own 120 s.
++ */
++export const DRAFT_CLIENT_TIMEOUT_MS = 150_000;
++
++export interface DraftTeachingRequest {
++  topic?: string;
++  audience?: string;
++  /** Every video's title and SLO, in course order. */
++  lessons: { title: string; slo: string }[];
++}
++
++/**
++ * POST /api/content-courses/draft-teaching — free. Drafts each motion-graphics video's model and
++ * walk-throughs, and the course SLOs, for the instructor to edit. Nothing is stored.
++ */
++export async function draftTeaching<T>(body: DraftTeachingRequest): Promise<T> {
++  return apiRequest<T>('/api/content-courses/draft-teaching', {
++    method: 'POST',
++    body: JSON.stringify(body),
++    signal: AbortSignal.timeout(DRAFT_CLIENT_TIMEOUT_MS),
++  });
  }
  
  /**
@@ -2284,7 +3054,7 @@ index bf64631..1eed85a 100644
      const s = formStateFromCourse({ ...BASE, cohortId: 'cohort-9' });
      expect('cohortId' in s && s.cohortId).toBe('cohort-9');
 diff --git a/apps/web/src/lib/course-resume.ts b/apps/web/src/lib/course-resume.ts
-index 657fd13..1254a12 100644
+index 657fd13..2a078e9 100644
 --- a/apps/web/src/lib/course-resume.ts
 +++ b/apps/web/src/lib/course-resume.ts
 @@ -2,39 +2,60 @@
@@ -2318,7 +3088,7 @@ index 657fd13..1254a12 100644
 -  weeks: { title: string; videos: { title: string; slo: string }[] }[];
 -  planned: { id: string; estimate: CourseDetail['estimate']; ourCostUsd: number };
 +  style: string;
-+  weeks: { title: string; videos: { title: string; slo: string; motion?: MotionFields }[] }[];
++  weeks: { title: string; videos: { title: string; slo: string; motion?: MotionFields; sloIds?: string[]; drafted?: boolean }[] }[];
 +  planned: {
 +    id: string; estimate: CourseDetail['estimate']; ourCostUsd: number;
 +    style: string; slos: { id: string; text: string }[];
@@ -2341,7 +3111,7 @@ index 657fd13..1254a12 100644
 +      videos: m.lessons.map((l) => ({
 +        title: l.title,
 +        slo: l.slo,
-+        ...(motion ? { motion: motionFieldsFromPlan(l) } : {}),
++        ...(motion ? { motion: motionFieldsFromPlan(l), ...(l.sloIds?.length ? { sloIds: l.sloIds } : {}) } : {}),
 +      })),
      })),
      planned: {
@@ -2354,10 +3124,10 @@ index 657fd13..1254a12 100644
        ourCostUsd: Number((course.retryUsd * course.estimate.lessons).toFixed(2)),
 diff --git a/apps/web/src/lib/video-styles.test.ts b/apps/web/src/lib/video-styles.test.ts
 new file mode 100644
-index 0000000..e4f0a17
+index 0000000..316b43f
 --- /dev/null
 +++ b/apps/web/src/lib/video-styles.test.ts
-@@ -0,0 +1,98 @@
+@@ -0,0 +1,184 @@
 +/**
 + * Guards on the video-style helpers. The rule that matters is the motion one: a Flat Motion
 + * Graphics video sent without a model and two walk-throughs is refused by Content Automation's
@@ -2372,6 +3142,13 @@ index 0000000..e4f0a17
 +  emptyMotionFields,
 +  motionFieldsFromPlan,
 +  costPerVideoText,
++  applyDraft,
++  applyDraftSlos,
++  canDraft,
++  draftRequestLessons,
++  editedVideoCount,
++  shouldAutoDraft,
++  type DraftableVideo,
 +  type StylesResponse,
 +} from './video-styles';
 +
@@ -2456,12 +3233,91 @@ index 0000000..e4f0a17
 +    expect(costPerVideoText(null)).toBeNull();
 +  });
 +});
++
++describe('drafting — never overwrite what the instructor edited', () => {
++  const draft = {
++    slos: [{ id: '1.1', text: 'Explain the role' }, { id: '1.2', text: 'Reflect back' }],
++    lessons: [
++      { index: 0, title: 'A', sloIds: ['1.1'], models: [{ name: 'GROW', author: 'John Whitmore' }], walkthroughs: [{ situation: 'a1' }, { situation: 'a2' }] },
++      { index: 1, title: 'B', sloIds: ['1.2'], models: [{ name: 'RASA' }], walkthroughs: [{ situation: 'b1' }, { situation: 'b2' }] },
++    ],
++  };
++  const sent = [{ title: 'A', slo: 'sa' }, { title: 'B', slo: 'sb' }];
++  const edited = {
++    models: [{ name: 'MINE', author: 'Me', summary: '' }],
++    walkthroughs: [{ title: '', situation: 'mine 1' }, { title: '', situation: 'mine 2' }],
++  };
++
++  it('fills untouched videos and marks them drafted, not edited', () => {
++    const r = applyDraft<DraftableVideo>([{ title: 'A', slo: 'sa' }, { title: 'B', slo: 'sb' }], draft, sent, { replaceEdited: false });
++    expect(r.videos[0]!.motion!.models[0]!.name).toBe('GROW');
++    expect(r.videos[1]!.sloIds).toEqual(['1.2']);
++    expect(r.videos.every((v) => v.drafted && !v.motionEdited)).toBe(true);
++    expect(motionGaps(r.videos[0]!.motion)).toEqual([]);
++  });
++
++  it('keeps an edited video unless the instructor chose to replace it', () => {
++    const videos = [{ title: 'A', slo: 'sa', motion: edited, motionEdited: true, drafted: true }, { title: 'B', slo: 'sb' }];
++    const kept = applyDraft<DraftableVideo>(videos, draft, sent, { replaceEdited: false });
++    expect(kept.keptEdited).toBe(1);
++    expect(kept.videos[0]).toBe(videos[0]);
++    expect(kept.videos[1]!.motion!.models[0]!.name).toBe('RASA');
++
++    const replaced = applyDraft<DraftableVideo>(videos, draft, sent, { replaceEdited: true });
++    expect(replaced.keptEdited).toBe(0);
++    expect(replaced.videos[0]!.motion!.models[0]!.name).toBe('GROW');
++    expect(replaced.videos[0]!.motionEdited).toBe(false);
++  });
++
++  it('skips a video whose title or SLO changed while the draft was out, even when replacing', () => {
++    const videos = [{ title: 'A, renamed', slo: 'sa' }, { title: 'B', slo: 'sb' }];
++    const r = applyDraft<DraftableVideo>(videos, draft, sent, { replaceEdited: true });
++    expect(r.skippedChanged).toBe(1);
++    expect(r.videos[0]).toBe(videos[0]);
++    expect(r.videos[1]!.drafted).toBe(true);
++  });
++
++  it('keeps hand-edited course SLOs unless replacing', () => {
++    const mine = { slos: [{ id: '1.1', text: 'my words' }], edited: true };
++    expect(applyDraftSlos(mine, draft, { replaceEdited: false })).toBe(mine);
++    expect(applyDraftSlos(mine, draft, { replaceEdited: true })).toEqual({ slos: draft.slos, edited: false });
++    expect(applyDraftSlos({ slos: [], edited: false }, draft, { replaceEdited: false }).slos).toHaveLength(2);
++  });
++
++  it('counts edited videos for the in-page confirm', () => {
++    expect(editedVideoCount([{ title: 'a', slo: 'b', motionEdited: true }, { title: 'c', slo: 'd' }])).toBe(1);
++  });
++});
++
++describe('when to draft automatically', () => {
++  const written = [{ title: 'A', slo: 'sa' }, { title: 'B', slo: 'sb' }];
++
++  it('once every video has a title and an SLO, in motion graphics, and nothing is drafted or edited', () => {
++    expect(shouldAutoDraft({ motion: true, videos: written, autoDraftTried: false, drafting: false })).toBe(true);
++  });
++
++  it('not in character-arc, not twice, not while drafting, not with a blank SLO', () => {
++    expect(shouldAutoDraft({ motion: false, videos: written, autoDraftTried: false, drafting: false })).toBe(false);
++    expect(shouldAutoDraft({ motion: true, videos: written, autoDraftTried: true, drafting: false })).toBe(false);
++    expect(shouldAutoDraft({ motion: true, videos: written, autoDraftTried: false, drafting: true })).toBe(false);
++    expect(shouldAutoDraft({ motion: true, videos: [...written, { title: 'C', slo: ' ' }], autoDraftTried: false, drafting: false })).toBe(false);
++  });
++
++  it('not once the instructor has written a model or walk-through by hand', () => {
++    expect(shouldAutoDraft({ motion: true, videos: [{ ...written[0]!, motionEdited: true }], autoDraftTried: false, drafting: false })).toBe(false);
++  });
++
++  it('sends titles and SLOs trimmed, in order, and refuses more than 30', () => {
++    expect(draftRequestLessons([{ title: ' A ', slo: ' sa ' }])).toEqual([{ title: 'A', slo: 'sa' }]);
++    expect(canDraft(Array.from({ length: 31 }, () => ({ title: 't', slo: 's' })))).toBe(false);
++  });
++});
 diff --git a/apps/web/src/lib/video-styles.ts b/apps/web/src/lib/video-styles.ts
 new file mode 100644
-index 0000000..cf78190
+index 0000000..062c37d
 --- /dev/null
 +++ b/apps/web/src/lib/video-styles.ts
-@@ -0,0 +1,158 @@
+@@ -0,0 +1,277 @@
 +/**
 + * Video styles (Content Automation, 2026-10-08) — the pure half, so a test can reach it.
 + *
@@ -2619,6 +3475,125 @@ index 0000000..cf78190
 +export function costPerVideoText(usd: number | null | undefined): string | null {
 +  if (typeof usd !== 'number' || !Number.isFinite(usd)) return null;
 +  return `about $${usd.toFixed(2)} per video`;
++}
++
++// ─── Drafting (motion-graphics) ─────────────────────────────────────────────────────────────────
++//
++// Content Automation drafts each video's model and walk-throughs, and the course's numbered SLOs,
++// from the titles and SLOs the instructor wrote (POST /api/content-courses/draft-teaching). The
++// draft lands as EDITABLE fields. Two rules make that safe, and both live here so a test can hold
++// them:
++//   1. A draft never overwrites what the instructor has edited unless they said so, in the page.
++//   2. A draft only lands on the video it was drafted for — if a title or SLO changed while the
++//      call was out (about half a minute), that video is left alone.
++
++export const DRAFT_MAX_VIDEOS = 30;
++
++/** One video row as the builder holds it. `motionEdited` is set by any keystroke in its editor. */
++export interface DraftableVideo {
++  title: string;
++  slo: string;
++  motion?: MotionFields;
++  /** The course SLO ids this video serves, from the draft. Read-only in the page. */
++  sloIds?: string[];
++  /** Filled by a draft at least once. */
++  drafted?: boolean;
++  /** The instructor has changed this video's model or walk-throughs by hand. */
++  motionEdited?: boolean;
++}
++
++export interface TeachingDraftResponse {
++  slos: { id: string; text: string }[];
++  lessons: {
++    index: number;
++    title: string;
++    sloIds: string[];
++    models: { name: string; author?: string; summary?: string }[];
++    walkthroughs: { title?: string; situation: string }[];
++  }[];
++  draftedAt?: string | null;
++}
++
++/** What is sent: every video's title and SLO, in course order. */
++export function draftRequestLessons(videos: DraftableVideo[]): { title: string; slo: string }[] {
++  return videos.map((v) => ({ title: v.title.trim(), slo: v.slo.trim() }));
++}
++
++/** Drafting needs every video to have a title and an SLO, and at most 30 of them. */
++export function canDraft(videos: DraftableVideo[]): boolean {
++  return videos.length > 0
++    && videos.length <= DRAFT_MAX_VIDEOS
++    && videos.every((v) => v.title.trim().length > 0 && v.slo.trim().length > 0);
++}
++
++/**
++ * The automatic first draft: motion-graphics, every video written, nothing drafted or edited yet,
++ * and it has not already been tried once (a failed attempt leaves the button, not a loop).
++ */
++export function shouldAutoDraft(s: {
++  motion: boolean;
++  videos: DraftableVideo[];
++  autoDraftTried: boolean;
++  drafting: boolean;
++}): boolean {
++  return s.motion
++    && !s.autoDraftTried
++    && !s.drafting
++    && canDraft(s.videos)
++    && s.videos.every((v) => !v.drafted && !v.motionEdited);
++}
++
++/** How many videos carry hand edits a redraft could replace. */
++export function editedVideoCount(videos: DraftableVideo[]): number {
++  return videos.filter((v) => v.motionEdited).length;
++}
++
++/**
++ * Lay a draft over the videos. Returns the new rows and what was left alone.
++ *
++ * `sent` is what the draft was asked for. A video whose title or SLO no longer matches it is
++ * SKIPPED (it changed while the call was out), and so is a video with hand edits unless
++ * `replaceEdited` — the instructor's answer to the in-page confirm.
++ */
++export function applyDraft<T extends DraftableVideo>(
++  videos: T[],
++  draft: TeachingDraftResponse,
++  sent: { title: string; slo: string }[],
++  opts: { replaceEdited: boolean },
++): { videos: T[]; keptEdited: number; skippedChanged: number } {
++  let keptEdited = 0;
++  let skippedChanged = 0;
++  const next = videos.map((v, i) => {
++    const d = draft.lessons.find((l) => l.index === i);
++    const asked = sent[i];
++    if (!d || !asked) return v;
++    if (v.title.trim() !== asked.title || v.slo.trim() !== asked.slo) {
++      skippedChanged += 1;
++      return v;
++    }
++    if (v.motionEdited && !opts.replaceEdited) {
++      keptEdited += 1;
++      return v;
++    }
++    return {
++      ...v,
++      motion: motionFieldsFromPlan(d),
++      sloIds: d.sloIds,
++      drafted: true,
++      motionEdited: false,
++    };
++  });
++  return { videos: next, keptEdited, skippedChanged };
++}
++
++/** The course SLOs after a draft: kept when hand-edited unless the instructor chose to replace. */
++export function applyDraftSlos(
++  current: { slos: { id: string; text: string }[]; edited: boolean },
++  draft: TeachingDraftResponse,
++  opts: { replaceEdited: boolean },
++): { slos: { id: string; text: string }[]; edited: boolean } {
++  if (current.edited && !opts.replaceEdited) return current;
++  return { slos: draft.slos.map((s) => ({ id: s.id, text: s.text })), edited: false };
 +}
 -- 
 2.52.0.windows.1
