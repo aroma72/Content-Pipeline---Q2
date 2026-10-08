@@ -5153,8 +5153,6 @@ function styleChecks() {
     assert(p.info.properties.tpl.enum === LF_TEMPLATES || p.info.properties.tpl.enum.join() === LF_TEMPLATES.join(), 'templates');
     assert(p.tone && !p.art && !p.motion, 'tone missing, or art/motion still offered');
     assert(MOTION_EDIT_SCHEMA.properties.edits.items.properties.tone, 'a redraft cannot carry tone');
-    // and the house schema is untouched
-    const house = require('./lib/stages/script');
     return 'info|checkpoint, lf* only, tone';
   });
 
