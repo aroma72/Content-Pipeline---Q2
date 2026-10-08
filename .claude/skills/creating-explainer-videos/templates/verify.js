@@ -109,5 +109,36 @@ if (fs.existsSync('out/lesson.mp4')) {
   if (bfps !== null && Math.round(bfps) !== 30) fail(`bare lesson is ${bfps}fps (must be 30) — A/V will DESYNC against 30fps bumpers`);
   else if (bfps !== null) pass(`bare lesson 30fps (A/V sync safe)`);
 }
+
+// 6. THE QUESTION GUARDRAIL (Aroma, 2026-10-08). The question is never in the video: it reaches the
+//    LMS as checkpoint.json in git, and Aroma gets QUESTION.md to read and edit. Both must exist and
+//    must say what the checkpoint beat says now -- a stale handoff pops the wrong question.
+// In the server pipeline (CHECKPOINT_HANDOFF=api, set by orchestrator/lib/stages/produce.js) the
+// LMS reads the question live from the API, which derives it from beats.js -- there is no file to go
+// stale, so only the checkpoint beat itself is required there.
+{
+  const all = require('./beats.js');
+  const cp = all.find((b) => b && b.mode === 'checkpoint');
+  if (!cp) fail('no checkpoint beat — every video asks one question (qa-checkpoint.js)');
+  else if (process.env.CHECKPOINT_HANDOFF === 'api') {
+    pass('question handed off by the API (GET /api/v1/videos/:id/checkpoints, read from beats.js)');
+  } else if (!fs.existsSync('checkpoint.json') || !fs.existsSync('QUESTION.md')) {
+    fail('checkpoint.json and/or QUESTION.md missing — run: node export-checkpoint.js (after stitch-brand)');
+  } else {
+    let j = null;
+    try { j = JSON.parse(fs.readFileSync('checkpoint.json', 'utf8')); } catch { /* reported below */ }
+    const live = j && j.checkpoints && j.checkpoints[0];
+    const doc = fs.readFileSync('QUESTION.md', 'utf8');
+    if (!live || live.stem !== cp.quiz.stem || live.correctIndex !== cp.quiz.answer
+      || JSON.stringify(live.options) !== JSON.stringify(cp.quiz.options) || !doc.includes(cp.quiz.stem)) {
+      fail('checkpoint.json / QUESTION.md are STALE — the question in beats.js changed. Re-run: node export-checkpoint.js');
+    } else if (live.rendersInVideo) {
+      fail('checkpoint.json says the question renders in the video — it must be a pop-up only');
+    } else {
+      pass(`question handed off: checkpoint.json (LMS pop-up at ${live.atSeconds}s) + QUESTION.md (review copy)`);
+    }
+  }
+}
+
 console.log(ok ? '\nVERIFY: PASS' : '\nVERIFY: FAIL');
 process.exit(ok ? 0 : 1);

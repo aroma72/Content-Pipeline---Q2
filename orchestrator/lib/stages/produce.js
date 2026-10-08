@@ -573,7 +573,10 @@ module.exports = Object.assign(module.exports, {
     if (Object.keys(styleEnv).length) log(`style: ${require('../styles').styleOf(item).id}`);
     const run = (cmd, args, extra = {}) => shell.run(cmd, args, {
       cwd: dir,
-      env: { ...process.env, ...styleEnv },
+      // CHECKPOINT_HANDOFF=api: here the LMS reads the question from the API (live, from
+      // beats.js), so verify.js does not demand the checkpoint.json/QUESTION.md files a video
+      // made by hand ships for review.
+      env: { ...process.env, ...styleEnv, CHECKPOINT_HANDOFF: 'api' },
       dryRun: opts.dryRun,
       onLine: (line) => log(line.slice(0, 160)),
       ...extra,

@@ -72,6 +72,9 @@ beats) and **`animateIds`** naming the 2–4 story beats to animate with omni (�
 **GUARDRAIL — the quiz is never in the video** (Aroma, 2026-10-06): no QUESTION card, no REVEAL card, no
 spoken "your turn" beat. The question travels to the repo for the LMS developer — the server reads the
 checkpoint beat (`server/lib/checkpoints.js`) and `node export-checkpoint.js` writes the handoff file
+`checkpoint.json` AND `QUESTION.md` — the readable copy Aroma reviews and edits, delivered with EVERY video
+(her edits go into the checkpoint beat, then re-export; `verify.js` check 6 fails when either is missing or
+stale). Run it after stitch-brand, before verify. The original handoff note:
 `checkpoint.json` next to `beats.js`. The LMS pauses, asks, requires an answer, gives the feedback, then
 resumes. `qa-checkpoint.js` fails the build on any drawn quiz.
 
