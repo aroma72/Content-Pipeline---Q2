@@ -210,6 +210,37 @@ ul.assume li{margin:4px 0}
   .grid{grid-template-columns:1fr}
   .content,.top{padding-left:20px;padding-right:20px}
 }
+/* ── video style picker (GET /api/v1/styles) ─────────────────────────────── */
+.st-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:14px;margin-top:6px;align-items:start}
+.st-card{border:2px solid var(--line);border-radius:12px;overflow:hidden;background:var(--card);cursor:pointer;display:flex;flex-direction:column;min-width:0}
+.st-card[aria-checked="true"]{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-soft)}
+.st-card:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.st-card video{width:100%;max-width:100%;aspect-ratio:16/9;display:block;background:#000}
+.st-b{padding:12px 14px 14px;display:grid;gap:8px}
+.st-h{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.st-h b{font-size:15px}
+.st-s{margin:0;font-size:13.5px;color:var(--muted)}
+.st-m{display:flex;flex-wrap:wrap;gap:6px}
+.st-tag{font-size:12px;font-weight:600;padding:3px 9px;border-radius:999px;background:var(--line-soft);color:var(--muted)}
+.st-tag.cost{background:#DCFCE7;color:#15803D}
+.st-tag.def{background:var(--blue-soft);color:var(--blue-ink)}
+.st-ws{border-top:1px solid var(--line-soft);padding-top:8px;display:grid;gap:6px;font-size:13.5px}
+.st-ws .k{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.st-ws summary{cursor:pointer;font-weight:600;color:var(--blue-ink);width:max-content;max-width:100%}
+.st-ws ul{margin:6px 0 0;padding-left:18px;display:grid;gap:3px}
+.st-script{margin-top:8px;padding:8px 10px;border-left:3px solid var(--line);background:var(--page);border-radius:0 8px 8px 0;display:grid;gap:6px}
+.st-script p{margin:0}
+.st-script i{display:block;font-size:12px;color:var(--muted)}
+.slo-list{margin:10px 0 0;padding:0;list-style:none;display:grid;gap:4px;font-size:14px}
+.slo-list b{color:var(--blue-ink);font-variant-numeric:tabular-nums;margin-right:8px}
+.mw{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px;font-size:13.5px}
+@media (max-width:640px){.mw{grid-template-columns:1fr}}
+.mw>div{min-width:0}
+.mw .k{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:2px}
+.mw ul{margin:0;padding-left:18px;display:grid;gap:3px}
+.mw .au{color:var(--muted)}
+.ids{display:inline-flex;gap:4px;margin-left:6px;vertical-align:middle}
+.ids span{font-size:11px;font-weight:700;padding:2px 7px;border-radius:999px;background:var(--blue-soft);color:var(--blue-ink)}
 </style>
 </head>
 <body>
@@ -252,6 +283,11 @@ ul.assume li{margin:4px 0}
           you like — anything left blank is chosen for you, and you will be told what was assumed.</p>
         <div class="grid">
           <div class="full">
+            <label id="style-label">Video style</label>
+            <p class="hint" style="margin:2px 0 0">Every video in the course is made in this style. Watch the samples, then pick one.</p>
+            <div class="st-grid" id="styles" role="radiogroup" aria-labelledby="style-label"><span class="hint">Loading styles…</span></div>
+          </div>
+          <div class="full">
             <label for="topic">Course topic</label>
             <input id="topic" placeholder="Using WhatsApp Business to take orders without losing any">
           </div>
@@ -279,7 +315,8 @@ ul.assume li{margin:4px 0}
         <div class="card">
           <div class="course-title" id="c-title"></div>
           <p class="course-sum" id="c-summary"></p>
-          <div class="scenario"><b>Running scenario ·</b> <span id="c-scenario"></span></div>
+          <div class="scenario" id="c-scenario-wrap"><b>Running scenario ·</b> <span id="c-scenario"></span></div>
+          <div id="c-slos-wrap" style="display:none"><b>Course SLOs</b><ul class="slo-list" id="c-slos"></ul></div>
         </div>
 
         <div class="stats" id="c-stats"></div>
@@ -355,7 +392,19 @@ ul.assume li{margin:4px 0}
       '<div style="min-width:0">' +
         '<div class="t">' + esc(l.title) +
           '<span class="pill ' + esc(lvl) + '">' + esc(l.difficulty) + '</span></div>' +
-        '<div class="slo">' + esc(l.slo) + '</div>' +
+        '<div class="slo">' + esc(l.slo) +
+          (l.sloIds && l.sloIds.length ? '<span class="ids">' + l.sloIds.map(function (x) { return '<span>SLO ' + esc(x) + '</span>'; }).join('') + '</span>' : '') +
+        '</div>' +
+        ((l.models && l.models.length) || (l.walkthroughs && l.walkthroughs.length)
+          ? '<div class="mw">' +
+              '<div><div class="k">Models</div><ul>' + (l.models || []).map(function (m) {
+                return '<li><b>' + esc(m.name) + '</b>' + (m.author ? ' <span class="au">(' + esc(m.author) + ')</span>' : '') + ': ' + esc(m.summary) + '</li>';
+              }).join('') + '</ul></div>' +
+              '<div><div class="k">Walk-throughs</div><ul>' + (l.walkthroughs || []).map(function (w) {
+                return '<li><b>' + esc(w.title) + ':</b> ' + esc(w.situation) + '</li>';
+              }).join('') + '</ul></div>' +
+            '</div>'
+          : '') +
         '<details><summary>Lesson brief and check question</summary>' +
           '<div class="q">' + esc(l.brief) + '</div>' +
           '<div class="pv" data-m="' + mi + '" data-l="' + li + '">' +
@@ -373,7 +422,12 @@ ul.assume li{margin:4px 0}
   function render(p) {
     $('c-title').textContent = p.title;
     $('c-summary').textContent = p.summary;
-    $('c-scenario').textContent = p.protagonist_scenario;
+    $('c-scenario').textContent = p.protagonist_scenario || '';
+    // The motion-graphics style has no protagonist; it has numbered course SLOs instead.
+    $('c-scenario-wrap').style.display = p.protagonist_scenario ? '' : 'none';
+    var slos = p.slos || [];
+    $('c-slos-wrap').style.display = slos.length ? 'block' : 'none';
+    $('c-slos').innerHTML = slos.map(function (s) { return '<li><b>' + esc(s.id) + '</b>' + esc(s.text) + '</li>'; }).join('');
 
     var e = p.estimate || {};
     $('c-stats').innerHTML =
@@ -453,6 +507,47 @@ ul.assume li{margin:4px 0}
     $('topic').focus();
   });
 
+  // ── video style (GET /api/v1/styles) ─────────────────────────────────────
+  // Served, not hard-coded: a new style appears here the day the service adds it.
+  var chosenStyle = null;
+  function styleCard(s) {
+    var w = s.writingStyle || {};
+    return '<div class="st-card" role="radio" tabindex="0" data-id="' + esc(s.id) + '" aria-checked="' + (s.id === chosenStyle) + '">' +
+      '<video src="' + esc(s.previewUrl) + '" muted loop playsinline autoplay preload="metadata" aria-label="' + esc(s.label) + ' sample"></video>' +
+      '<div class="st-b">' +
+        '<div class="st-h"><b>' + esc(s.label) + '</b>' + (s.default ? '<span class="st-tag def">Default</span>' : '') + '</div>' +
+        '<p class="st-s">' + esc(s.summary) + '</p>' +
+        '<div class="st-m"><span class="st-tag">Best for: ' + esc(s.bestFor) + '</span>' +
+          '<span class="st-tag cost">≈ $' + Number(s.estimatedCostPerLessonUsd).toFixed(2) + ' per video</span></div>' +
+        (w.narrator ? '<div class="st-ws"><span class="k">How the script sounds</span>' +
+          '<div>' + esc(w.narrator) + ' <span class="hint">' + esc(w.voice || '') + '</span></div>' +
+          '<details><summary>Read a sample script</summary>' +
+            '<ul>' + (w.rules || []).map(function (r) { return '<li>' + esc(r) + '</li>'; }).join('') + '</ul>' +
+            '<div class="st-script">' + (w.sample || []).map(function (x) {
+              return '<p>“' + esc(x.line) + '”' + (x.read ? '<i>read ' + esc(x.read) + '</i>' : '') + '</p>';
+            }).join('') + '</div>' +
+          '</details></div>' : '') +
+      '</div></div>';
+  }
+  function drawStyles(list) {
+    $('styles').innerHTML = list.map(styleCard).join('');
+    $('styles').querySelectorAll('.st-card').forEach(function (c) {
+      var pick = function () {
+        if (chosenStyle === c.dataset.id) return;
+        chosenStyle = c.dataset.id;
+        $('styles').querySelectorAll('.st-card').forEach(function (o) { o.setAttribute('aria-checked', String(o === c)); });
+      };
+      c.addEventListener('click', function (e) { if (!e.target.closest('details')) pick(); });
+      c.addEventListener('keydown', function (e) { if (e.target === c && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); pick(); } });
+    });
+  }
+  fetch('/api/v1/styles').then(function (r) { return r.json(); }).then(function (d) {
+    chosenStyle = d.default;
+    drawStyles(d.styles || []);
+  }).catch(function () {
+    $('styles').innerHTML = '<span class="hint">Styles could not be loaded; the course will use the default style.</span>';
+  });
+
   $('go').addEventListener('click', async function () {
     var topic = $('topic').value.trim();
     if (!topic) { setStatus('Enter a course topic to begin.', true); $('topic').focus(); return; }
@@ -466,6 +561,7 @@ ul.assume li{margin:4px 0}
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           topic: topic,
+          style: chosenStyle || undefined,
           duration: $('duration').value.trim() || undefined,
           audience: $('audience').value.trim() || undefined,
           description: $('description').value.trim() || undefined,
@@ -608,7 +704,7 @@ ul.assume li{margin:4px 0}
         return fetch('/demo/course-builder/build', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + t },
-          body: JSON.stringify({ plan: plan, series: series,
+          body: JSON.stringify({ plan: plan, series: series, style: plan.style,
             confirmLessons: plan.estimate.lessons }),
         });
       };

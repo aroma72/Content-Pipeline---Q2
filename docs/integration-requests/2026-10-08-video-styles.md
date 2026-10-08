@@ -23,6 +23,25 @@ visuals and the music — follows the choice.
 
 Each style has a **12-second preview video** you can play in the picker.
 
+## Everything you need, in this folder
+
+- **A ready-to-apply patch for the LMS:** `2026-10-08-video-styles-lms/lms-video-styles.patch`
+  (base `main` @ `ed2abff`; `git am` it). It adds the style picker on the same step as the topic
+  in the course builder and in Make a Video, the API client calls, a styles proxy, the style badge,
+  the motion-graphics plan details, migration `0067_content_video_style.sql`, and tests. Read
+  `2026-10-08-video-styles-lms/README.md` first — it lists every file and a manual test script.
+- **The journey, clickable:** https://aroma72.github.io/course-styles-prototype/ (also in this repo as
+  `prototypes/course-styles-journey.html`).
+- **A working reference against the live API:** our own course-builder demo,
+  `GET /demo/course-builder` on the service, now has the picker on the topic card, loads it from
+  `GET /api/v1/styles`, sends `style`, and renders the motion-graphics SLOs, models and walk-throughs.
+
+**One product decision to confirm with Aroma.** The LMS course builder does not call our planner —
+instructors write each video's title and SLO themselves. The patch therefore asks the instructor to
+write, per video, at least one model and two walk-throughs when they choose Flat Motion Graphics
+("Generate Course" stays disabled until they do). If that is too much typing, the alternative is to
+let the LMS call `POST /api/v1/courses/plan` with `style: "motion-graphics"` to draft them.
+
 ## What to build
 
 **1. A style picker as the first screen of "Create a course".**

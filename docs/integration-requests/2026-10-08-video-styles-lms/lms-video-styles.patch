@@ -1,0 +1,2625 @@
+From a38ea9fdcc4e915efdaffe7ebdc4f0dc71b6e8b3 Mon Sep 17 00:00:00 2001
+From: Content Queen <content-queen@users.noreply.github.com>
+Date: Thu, 8 Oct 2026 13:09:16 +0500
+Subject: [PATCH] feat(content): pick a video style when creating a course or
+ video
+
+---
+ .../migrations/0067_content_video_style.sql   |  27 ++
+ apps/api/migrations/meta/_journal.json        |   7 +
+ apps/api/src/db/migrate.ts                    |  16 +
+ apps/api/src/db/schema.ts                     |  14 +
+ apps/api/src/lib/content-queen-courses.ts     | 155 ++++++++
+ apps/api/src/lib/content-queen-jobs.ts        |  25 +-
+ apps/api/src/lib/content-queen-styles.ts      | 295 +++++++++++++++
+ apps/api/src/routes/content-courses.ts        |  91 ++++-
+ apps/api/src/routes/content-videos.ts         |  63 +++-
+ .../tests/unit/content-queen-courses.test.ts  |   4 +-
+ .../tests/unit/content-queen-styles.test.ts   | 255 +++++++++++++
+ .../unit/partner-clients-detect-drift.test.ts |  13 +
+ apps/web/src/app/build/CourseBuilderForm.tsx  | 142 +++++++-
+ apps/web/src/app/build/MakeVideoForm.tsx      |  40 +-
+ apps/web/src/app/courses/build/[id]/page.tsx  |  23 +-
+ apps/web/src/app/videos/[id]/page.tsx         |   8 +-
+ apps/web/src/components/VideoStyle.tsx        | 342 ++++++++++++++++++
+ apps/web/src/lib/content-courses-client.ts    |  17 +-
+ apps/web/src/lib/course-resume.test.ts        |  28 ++
+ apps/web/src/lib/course-resume.ts             |  29 +-
+ apps/web/src/lib/video-styles.test.ts         |  98 +++++
+ apps/web/src/lib/video-styles.ts              | 158 ++++++++
+ 22 files changed, 1821 insertions(+), 29 deletions(-)
+ create mode 100644 apps/api/migrations/0067_content_video_style.sql
+ create mode 100644 apps/api/src/lib/content-queen-styles.ts
+ create mode 100644 apps/api/tests/unit/content-queen-styles.test.ts
+ create mode 100644 apps/web/src/components/VideoStyle.tsx
+ create mode 100644 apps/web/src/lib/video-styles.test.ts
+ create mode 100644 apps/web/src/lib/video-styles.ts
+
+diff --git a/apps/api/migrations/0067_content_video_style.sql b/apps/api/migrations/0067_content_video_style.sql
+new file mode 100644
+index 0000000..faa9e6b
+--- /dev/null
++++ b/apps/api/migrations/0067_content_video_style.sql
+@@ -0,0 +1,27 @@
++-- Content Automation video styles (contract 1.2, additive; their integration request of 2026-10-08).
++--
++-- A course or a single video is now made in ONE of their styles — `character-arc` (the original
++-- illustrated Ali story, the default) or `motion-graphics` (flat motion graphics spoken to "you",
++-- built from named models and walk-throughs). The instructor picks it where they type the topic,
++-- and it is sent as `style` on plan, build and make-video.
++--
++-- WHY A COLUMN AND NOT ONLY `plan.style`. The plan is their shape and a single video has no plan
++-- at all; topic and series already live in columns because they are what WE asked for. The style
++-- is the same kind of fact, it is shown on the Library and status pages, and build reads it back
++-- before it charges anything.
++--
++-- NOT NULL DEFAULT 'character-arc': every row from before styles existed WAS made in that style,
++-- and their API reports exactly that for old items. A constant default is a metadata-only change
++-- on Postgres 11+, so this does not rewrite either table.
++--
++-- No CHECK constraint, on purpose — the same reasoning as `content_courses.status`: the set of
++-- styles is theirs and grows; the route validates against our list before a row is written.
++--
++-- FRESH-DATABASE SAFETY (Rule B). ALTER only, on tables the NUMBERED 0052 and 0054 create.
++-- Mirrored in migrate.ts.
++
++ALTER TABLE "content_video_jobs"
++  ADD COLUMN IF NOT EXISTS "style" text NOT NULL DEFAULT 'character-arc';
++
++ALTER TABLE "content_courses"
++  ADD COLUMN IF NOT EXISTS "style" text NOT NULL DEFAULT 'character-arc';
+diff --git a/apps/api/migrations/meta/_journal.json b/apps/api/migrations/meta/_journal.json
+index 17d11fc..5da897f 100644
+--- a/apps/api/migrations/meta/_journal.json
++++ b/apps/api/migrations/meta/_journal.json
+@@ -470,6 +470,13 @@
+       "when": 1790672580000,
+       "tag": "0066_module_report_sync_state",
+       "breakpoints": true
++    },
++    {
++      "idx": 67,
++      "version": "7",
++      "when": 1790672640000,
++      "tag": "0067_content_video_style",
++      "breakpoints": true
+     }
+   ]
+ }
+diff --git a/apps/api/src/db/migrate.ts b/apps/api/src/db/migrate.ts
+index a59eb10..b92efd7 100644
+--- a/apps/api/src/db/migrate.ts
++++ b/apps/api/src/db/migrate.ts
+@@ -3388,6 +3388,22 @@ async function runMigrations() {
+       console.error('Fallback migration 0066_module_report_sync_state failed:', e instanceof Error ? e.message : e);
+     }
+ 
++    // ─── 0067: the video style on a single video and on a course (contract 1.2, additive) ─────
++    //
++    // Mirrored from migrations/0067_content_video_style.sql (Rule B: ship both). See that file for
++    // why the default is 'character-arc' and why there is no CHECK.
++    try {
++      await pool.query(`
++        ALTER TABLE content_video_jobs
++          ADD COLUMN IF NOT EXISTS style text NOT NULL DEFAULT 'character-arc';
++        ALTER TABLE content_courses
++          ADD COLUMN IF NOT EXISTS style text NOT NULL DEFAULT 'character-arc';
++      `);
++      console.log('Fallback migration 0067_content_video_style complete.');
++    } catch (e) {
++      console.error('Fallback migration 0067_content_video_style failed:', e instanceof Error ? e.message : e);
++    }
++
+     }); // end idempotent-fallbacks guard
+ 
+   } catch (e) {
+diff --git a/apps/api/src/db/schema.ts b/apps/api/src/db/schema.ts
+index 0fcbf85..66cba0e 100644
+--- a/apps/api/src/db/schema.ts
++++ b/apps/api/src/db/schema.ts
+@@ -1302,6 +1302,12 @@ export const contentVideoJobs = pgTable('content_video_jobs', {
+   partnerLastError: jsonb('partner_last_error').$type<ContentVideoLastError>(),
+   produceWarnings: jsonb('produce_warnings').$type<Array<{ sensor: string; what: string; findings?: string }>>(),
+   produceBlocked: jsonb('produce_blocked').$type<{ stage?: string; code?: string; message: string }>(),
++  /**
++   * The video style the instructor picked (0067). Ours, written when the row is created and sent
++   * to their create call — never read back from them. Every row from before styles existed is
++   * `character-arc`, which is what they report for those jobs too.
++   */
++  style: text('style').notNull().default('character-arc'),
+ }, (t) => ({
+   statusCreatedIdx: index('content_video_jobs_status_created_idx').on(t.status, t.createdAt),
+   creatorCreatedIdx: index('content_video_jobs_creator_created_idx').on(t.createdBy, t.createdAt),
+@@ -1455,6 +1461,14 @@ export const contentCourses = pgTable('content_courses', {
+    * "on yours" vs "on someone else's"; a partner course id, so exposed only as that comparison.
+    */
+   partnerBuildingCourseId: text('partner_building_course_id'),
++
++  // ── Video styles (migration 0067, 2026-10-08) ─────────────────────────────────────────────
++  /**
++   * How every lesson is made: `character-arc` | `motion-graphics`. Chosen with the topic, fixed
++   * at plan time (a course is one style throughout), and the value build sends. Also echoed as
++   * `plan.style`, but this column is the record — the plan is their shape, this is ours.
++   */
++  style: text('style').notNull().default('character-arc'),
+ });
+ 
+ /**
+diff --git a/apps/api/src/lib/content-queen-courses.ts b/apps/api/src/lib/content-queen-courses.ts
+index 555870e..9673081 100644
+--- a/apps/api/src/lib/content-queen-courses.ts
++++ b/apps/api/src/lib/content-queen-courses.ts
+@@ -44,6 +44,7 @@ import { jobsEnabled, produceEnabled } from './content-queen-jobs.js';
+ // (`import type { CourseFetchReason }`), which erase at compile time, so there is no runtime cycle.
+ import { spendLimitsFromEnv } from './content-video-spend.js';
+ import type { ContentLessonReference } from '../db/schema.js';
++import { DEFAULT_VIDEO_STYLE, type VideoStyle } from './content-queen-styles.js';
+ 
+ /**
+  * The course-API contract this file was written against. Frozen copy in THEIR repository:
+@@ -143,12 +144,36 @@ export interface PlannedQuestion {
+   explanation: string;
+ }
+ 
++/** A named model a motion-graphics lesson teaches through (e.g. SCARF, by David Rock). */
++export interface PlannedModel {
++  name: string;
++  author?: string;
++  summary?: string;
++}
++
++/** A situation a motion-graphics lesson walks through step by step. */
++export interface PlannedWalkthrough {
++  title?: string;
++  situation: string;
++}
++
++/** A course-level SLO, numbered (`"1.1"`). Lessons point at these by id. */
++export interface PlannedSlo {
++  id: string;
++  text: string;
++}
++
+ export interface PlannedLesson {
+   title: string;
+   slo: string;
+   difficulty: string;
+   brief: string;
+   question?: PlannedQuestion;
++  // ── motion-graphics only (2026-10-08). What the video is BUILT from; their build refuses a
++  //    motion lesson with no model or fewer than two walk-throughs. See content-queen-styles.ts. ──
++  sloIds?: string[];
++  models?: PlannedModel[];
++  walkthroughs?: PlannedWalkthrough[];
+ }
+ 
+ export interface PlannedModule {
+@@ -162,6 +187,13 @@ export interface CoursePlan {
+   summary?: string;
+   audience?: string;
+   protagonist_scenario?: string;
++  /**
++   * The video style the plan was made for. Their build falls back to it when `style` is not sent;
++   * we always send it, and keep the authoritative copy in `content_courses.style`.
++   */
++  style?: VideoStyle;
++  /** motion-graphics: the course's numbered SLOs. */
++  slos?: PlannedSlo[];
+   modules: PlannedModule[];
+   /**
+    * Why the course is the size it is — e.g. "no total duration was given, so it was sized at 10
+@@ -244,6 +276,47 @@ export function partnerSlug(title: string): string {
+ export interface AuthoredVideo {
+   title: string;
+   slo: string;
++  /** motion-graphics only — required there (at least one with a name), ignored otherwise. */
++  models?: PlannedModel[];
++  /** motion-graphics only — required there (at least two with a situation), ignored otherwise. */
++  walkthroughs?: PlannedWalkthrough[];
++}
++
++/** Caps on what an authored motion lesson may carry. Their notes field is free text, not a store. */
++const MAX_MODELS = 3;
++const MAX_WALKTHROUGHS = 5;
++
++function cleanText(v: unknown, max: number): string {
++  return typeof v === 'string' ? v.trim().slice(0, max) : '';
++}
++
++/** Keep only models that have a name; drop empty optional fields rather than send "". */
++function cleanModels(raw: unknown): PlannedModel[] {
++  if (!Array.isArray(raw)) return [];
++  return raw
++    .map((m) => {
++      const o = (m ?? {}) as Record<string, unknown>;
++      const name = cleanText(o.name, 120);
++      const author = cleanText(o.author, 120);
++      const summary = cleanText(o.summary, 400);
++      return name ? { name, ...(author ? { author } : {}), ...(summary ? { summary } : {}) } : null;
++    })
++    .filter((m): m is PlannedModel => m !== null)
++    .slice(0, MAX_MODELS);
++}
++
++/** Keep only walk-throughs that have a situation — the field their validator counts. */
++function cleanWalkthroughs(raw: unknown): PlannedWalkthrough[] {
++  if (!Array.isArray(raw)) return [];
++  return raw
++    .map((w) => {
++      const o = (w ?? {}) as Record<string, unknown>;
++      const title = cleanText(o.title, 120);
++      const situation = cleanText(o.situation, 1000);
++      return situation ? { ...(title ? { title } : {}), situation } : null;
++    })
++    .filter((w): w is PlannedWalkthrough => w !== null)
++    .slice(0, MAX_WALKTHROUGHS);
+ }
+ 
+ /** A week of the course. Becomes ONE module on their side, and one LMS module for us. */
+@@ -261,6 +334,8 @@ export interface AuthoredCourseInput {
+   weeks?: AuthoredWeek[];
+   /** A flat list, treated as a single week. Kept so a one-week course needs no nesting. */
+   videos?: AuthoredVideo[];
++  /** Already validated by the caller (parseStyleInput). Absent is the default style. */
++  style?: VideoStyle;
+ }
+ 
+ export type AuthoredPlanResult =
+@@ -294,6 +369,13 @@ export function buildAuthoredPlan(input: AuthoredCourseInput): AuthoredPlanResul
+   const topic = input.topic.trim();
+   const description = (input.description ?? '').trim();
+   const audience = (input.audience ?? '').trim();
++  const style: VideoStyle = input.style ?? DEFAULT_VIDEO_STYLE;
++  // MOTION-GRAPHICS LESSONS ARE BUILT FROM THEIR MODELS AND WALK-THROUGHS. Their build refuses a
++  // lesson without them (400 invalid_plan), so an authored motion course carries them per video,
++  // and the course's SLOs are numbered so each lesson can point at its own — the shape their
++  // motion planner returns, so a plan we author and a plan they write look the same downstream.
++  const motion = style === 'motion-graphics';
++  const slos: PlannedSlo[] = [];
+ 
+   if (topic.length === 0) return { ok: false, detail: 'A topic is required.' };
+ 
+@@ -353,7 +435,32 @@ export function buildAuthoredPlan(input: AuthoredCourseInput): AuthoredPlanResul
+       }
+       slugSeen.set(slug, title);
+ 
++      let motionFields: Pick<PlannedLesson, 'sloIds' | 'models' | 'walkthroughs'> = {};
++      if (motion) {
++        const models = cleanModels(week.videos[i]?.models);
++        const walkthroughs = cleanWalkthroughs(week.videos[i]?.walkthroughs);
++        if (models.length === 0) {
++          return { ok: false, detail: `${where} needs a model to teach through — at least its name.` };
++        }
++        if (walkthroughs.length < 2) {
++          return { ok: false, detail: `${where} needs at least two walk-throughs, each with a situation.` };
++        }
++        // Their build writes these into the lesson notes, which is where course membership is
++        // matched — so the same course-tag rule as the title and SLO applies to every word.
++        const extra = [
++          ...models.flatMap((m) => [m.name, m.author ?? '', m.summary ?? '']),
++          ...walkthroughs.flatMap((w) => [w.title ?? '', w.situation]),
++        ];
++        if (extra.some(containsCourseTag)) {
++          return { ok: false, detail: `${where} contains a course tag in its text.` };
++        }
++        const sloId = `${w + 1}.${i + 1}`;
++        slos.push({ id: sloId, text: slo });
++        motionFields = { sloIds: [sloId], models, walkthroughs };
++      }
++
+       lessons.push({
++        ...motionFields,
+         title,
+         slo,
+         // Always populated — their build interpolates this with no guard, so an absent brief sends
+@@ -377,6 +484,10 @@ export function buildAuthoredPlan(input: AuthoredCourseInput): AuthoredPlanResul
+       title: topic,
+       summary: description || undefined,
+       audience: audience || undefined,
++      // Echoed on every plan, so their build's fallback (`plan.style`) agrees with the `style`
++      // we send beside it even if one of the two were ever dropped.
++      style,
++      ...(motion ? { slos } : {}),
+       modules,
+     } as CoursePlan,
+   };
+@@ -589,6 +700,8 @@ export interface CourseState {
+   worker: CourseWorkerState;
+   /** Their §2 envelope figure: what this course has cost so far. Absent on a 1.0 answer. */
+   spentUsd?: number;
++  /** The style THEY say the course is made in (2026-10-08). Absent on an older answer. */
++  style?: string;
+   items: CourseLessonState[];
+ }
+ 
+@@ -664,6 +777,10 @@ const KNOWN_COURSE_ITEM_FIELDS = [
+   // names a file on a private Shared Drive we cannot open, and must never land in OUR
+   // `drive_file_id`, which means "our own archived copy" and is what LessonPreview plays from.
+   'videoLocal', 'saved2drive', 'driveFileId', 'driveUrl', 'driveSavedAt',
++  // 1.2 additive, 2026-10-08: the video style the lesson is made in. Seen and deliberately NOT
++  // stored per lesson — a course is one style throughout and content_courses.style is our record
++  // of what we asked for. Lessons built before styles existed report `character-arc`.
++  'style',
+ ] as const;
+ 
+ /** The course envelope around those items. */
+@@ -677,6 +794,8 @@ const KNOWN_COURSE_FIELDS = [
+   'awaitingApproval', 'worker', 'items', 'durability', 'durableSince', 'note', 'status',
+   // Contract 1.1.
+   'spentUsd',
++  // 1.2 additive, 2026-10-08. Mapped onto CourseState.style.
++  'style',
+ ] as const;
+ 
+ /** Their §2 `worker` object. Checked so a new field on it is heard, like one on the envelope. */
+@@ -727,6 +846,13 @@ export async function planCourse(req: {
+   audience?: string;
+   duration?: string;
+   description?: string;
++  /**
++   * Validated by the caller. Sent explicitly, never omitted, for the reason `references` is on
++   * build: their default is ours today, and a field we did not write must not decide how a course
++   * is made the day theirs changes. In motion-graphics the plan comes back with `slos` and, per
++   * lesson, `sloIds`, `models` and `walkthroughs`.
++   */
++  style?: VideoStyle;
+ }): Promise<CourseResult<CoursePlan>> {
+   if (!jobsEnabled()) return { ok: false, reason: 'disabled' };
+   const key = token();
+@@ -747,6 +873,7 @@ export async function planCourse(req: {
+         ...(req.audience ? { audience: req.audience } : {}),
+         ...(req.duration ? { duration: req.duration } : {}),
+         ...(req.description ? { description: req.description } : {}),
++        style: req.style ?? DEFAULT_VIDEO_STYLE,
+       }),
+       signal: AbortSignal.timeout(PLAN_TIMEOUT_MS),
+     });
+@@ -755,6 +882,11 @@ export async function planCourse(req: {
+       const { detail } = await readPartnerError(res);
+       return { ok: false, reason: 'rate_limited', detail };
+     }
++    if (res.status === 400) {
++      // `invalid_style` — our list and theirs disagree. Free, and nothing to retry.
++      const { code, detail } = await readPartnerError(res);
++      return { ok: false, reason: 'invalid', partnerCode: code, detail };
++    }
+     if (!res.ok) {
+       console.warn(`[content-queen-courses] plan returned ${res.status}`);
+       const { code, detail } = await readPartnerError(res);
+@@ -806,6 +938,12 @@ export async function buildCourse(req: {
+    * Fail-soft on their side and capped at three: a reference list can never fail or delay a build.
+    */
+   references?: boolean;
++  /**
++   * How every lesson is made. ALWAYS SENT, for the same reason as `references`: their fallback is
++   * `plan.style` and then `character-arc`, and a course must not change style because a field was
++   * left to a default on either side.
++   */
++  style?: VideoStyle;
+ }): Promise<CourseResult<BuildAck>> {
+   if (!jobsEnabled() || !produceEnabled()) return { ok: false, reason: 'disabled' };
+   const key = token();
+@@ -845,6 +983,7 @@ export async function buildCourse(req: {
+         confirmLessons: req.confirmLessons,
+         series,
+         references: req.references === true,
++        style: req.style ?? req.plan.style ?? DEFAULT_VIDEO_STYLE,
+       }),
+       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+     });
+@@ -855,6 +994,21 @@ export async function buildCourse(req: {
+   }
+ 
+   if (res.status === 503) return { ok: false, reason: 'no_durable_store' };
++  if (res.status === 400) {
++    // `invalid_style` or `invalid_plan` (2026-10-08): refused "before anything is reserved or
++    // queued", so `invalid` — which reverses our authorisation. `invalid_plan` carries
++    // `errors: [{path, message}]`; their summary sentence alone does not say WHICH lesson, so the
++    // messages are appended for the instructor.
++    const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
++    const problems = Array.isArray(body.errors)
++      ? (body.errors as { path?: unknown; message?: unknown }[])
++          .map((e) => str(e?.message) ?? str(e?.path))
++          .filter((m): m is string => !!m)
++          .slice(0, 5)
++      : [];
++    const detail = [str(body.message), ...problems].filter(Boolean).join(' ');
++    return { ok: false, reason: 'invalid', partnerCode: str(body.error), detail: detail || undefined };
++  }
+   if (res.status === 409) {
+     const { code, detail } = await readPartnerError(res);
+     return { ok: false, reason: 'not_confirmed', partnerCode: code, detail };
+@@ -955,6 +1109,7 @@ export async function getCourse(partnerCourseId: string): Promise<CourseResult<C
+           held,
+         },
+         ...(num(parsed.spentUsd) !== undefined ? { spentUsd: num(parsed.spentUsd)! } : {}),
++        ...(str(parsed.style) ? { style: str(parsed.style)! } : {}),
+         items: rawItems.map((i) => {
+           const o = i as Record<string, unknown>;
+           reportUnknownCourseFields('a lesson', o, KNOWN_COURSE_ITEM_FIELDS);
+diff --git a/apps/api/src/lib/content-queen-jobs.ts b/apps/api/src/lib/content-queen-jobs.ts
+index eda8c99..166cd64 100644
+--- a/apps/api/src/lib/content-queen-jobs.ts
++++ b/apps/api/src/lib/content-queen-jobs.ts
+@@ -46,6 +46,8 @@
+  * That three-way split is what proves the check is real; a 404 for all three would not have.
+  */
+ 
++import { DEFAULT_VIDEO_STYLE, type VideoStyle } from './content-queen-styles.js';
++
+ /** Their base. Same default as content-queen-client.ts, read at call time for the same reason. */
+ function baseUrl(): string {
+   return (
+@@ -137,6 +139,8 @@ export interface PartnerJob {
+   deliverableAvailable?: boolean;
+   /** Present on `interrupted`: pressing produce again resumes at $0. */
+   resumable?: boolean;
++  /** The style THEY say the job is made in (2026-10-08). Jobs from before styles report `character-arc`. */
++  style?: string;
+   script?: Record<string, unknown>;
+   /** script.slug lifted out — a join key to their /api/v1/videos catalogue. */
+   scriptSlug?: string;
+@@ -213,6 +217,9 @@ const KNOWN_JOB_FIELDS = [
+   'catalogue',
+   // Outcome fields, added 2026-10-05 (contract 1.2, additive).
+   'deliverableAvailable', 'resumable',
++  // The video style, added 2026-10-08 (contract 1.2, additive). Mirrored onto PartnerJob.style;
++  // our own record of what we asked for is content_video_jobs.style.
++  'style',
+ ] as const;
+ 
+ function reportUnknownJobFields(raw: Record<string, unknown>): void {
+@@ -343,6 +350,7 @@ function normaliseJob(raw: unknown): PartnerJob | null {
+     lastError: normaliseLastError(j.lastError),
+     deliverableAvailable: optionalBoolean(j.deliverableAvailable),
+     resumable: optionalBoolean(j.resumable),
++    style: optionalString(j.style),
+     script,
+     scriptSlug: script ? optionalString(script.slug) : undefined,
+     catalogueVideoId: j.catalogue && typeof j.catalogue === 'object'
+@@ -378,7 +386,14 @@ const REQUEST_TIMEOUT_MS = 15_000;
+  * calling this; a 429 here means our gate and theirs disagree, which is worth seeing distinctly
+  * rather than as a generic failure.
+  */
+-export async function createJob(topic: string): Promise<JobResult<CreatedJob>> {
++export async function createJob(
++  topic: string,
++  /**
++   * Validated by the caller (parseStyleInput). Always sent, never left to their default — see
++   * `buildCourse` in content-queen-courses.ts for why a defaulted field is not good enough.
++   */
++  style: VideoStyle = DEFAULT_VIDEO_STYLE,
++): Promise<JobResult<CreatedJob>> {
+   if (!jobsEnabled()) {
+     console.error('[content-queen-jobs] CONTENT_QUEEN_JOBS_ENABLED is not "true" — refusing to create');
+     return { ok: false, reason: 'disabled' };
+@@ -395,7 +410,7 @@ export async function createJob(topic: string): Promise<JobResult<CreatedJob>> {
+   const trimmed = (topic ?? '').trim();
+   if (trimmed.length === 0) return { ok: false, reason: 'invalid' };
+   // They truncate at 300 anyway; doing it here keeps our stored topic and theirs identical.
+-  const body = JSON.stringify({ topic: trimmed.slice(0, 300) });
++  const body = JSON.stringify({ topic: trimmed.slice(0, 300), style });
+ 
+   try {
+     const res = await fetch(`${baseUrl()}/demo/make-video`, {
+@@ -410,6 +425,12 @@ export async function createJob(topic: string): Promise<JobResult<CreatedJob>> {
+       return { ok: false, reason: 'rate_limited' };
+     }
+ 
++    if (res.status === 400) {
++      // `invalid_style` (2026-10-08): our list and theirs disagree. Free; retrying will not help.
++      console.warn('[content-queen-jobs] create refused with 400 (invalid_style?)');
++      return { ok: false, reason: 'invalid' };
++    }
++
+     if (!res.ok) {
+       console.warn(`[content-queen-jobs] create returned ${res.status}`);
+       return { ok: false, reason: 'unavailable' };
+diff --git a/apps/api/src/lib/content-queen-styles.ts b/apps/api/src/lib/content-queen-styles.ts
+new file mode 100644
+index 0000000..3e753fb
+--- /dev/null
++++ b/apps/api/src/lib/content-queen-styles.ts
+@@ -0,0 +1,295 @@
++/**
++ * Content Automation's video styles (contract 1.2, additive, 2026-10-08).
++ *
++ *   GET {CONTENT_QUEEN_API_URL}/api/v1/styles                       -> the styles, public, no token
++ *   GET {CONTENT_QUEEN_API_URL}/api/v1/styles/:id/preview.mp4       -> a 12-second sample, public, Range
++ *
++ * A course or a single video is made in ONE style throughout, chosen by the instructor where they
++ * type the topic. The id travels as `style` on `/courses/plan`, `/courses/build` and
++ * `/demo/make-video`; an id they do not list is `400 invalid_style` on each, before anything is
++ * reserved or queued. Their request: docs/integration-requests/2026-10-08-video-styles.md.
++ *
++ * WHY THE IDS ARE ALSO WRITTEN DOWN HERE. The list is fetched, never hard-coded into a page — the
++ * labels, prices and sample lines are theirs to change. But the IDS are validated on OUR side
++ * before a row is written, the same way `series` is: an unknown style that reaches their build
++ * after our ledger row exists is a reversal we did not need to make. Two ids today; a third one
++ * they add shows up in the picker (it is fetched) and is refused by `parseStyleInput` until it is
++ * added to `VIDEO_STYLES` — deliberately, because a new style can carry new plan requirements, as
++ * `motion-graphics` did.
++ *
++ * WHAT EACH STYLE MEANS FOR US.
++ *   character-arc   — the original illustrated story about Ali. Unchanged. The default.
++ *   motion-graphics — flat motion graphics spoken to "you". Every lesson is BUILT from at least one
++ *                     named model and at least two walk-throughs; their build refuses a lesson
++ *                     without them (`400 invalid_plan`). `motionPlanErrors` checks the same rule
++ *                     here, before anything is charged.
++ */
++
++const DEFAULT_BASE = 'https://content-queen-production.up.railway.app';
++
++function baseUrl(): string {
++  return (process.env.CONTENT_QUEEN_API_URL || DEFAULT_BASE).replace(/\/+$/, '');
++}
++
++/** The ids we accept and forward. See the header for why this is a list and not a fetch. */
++export const VIDEO_STYLES = ['character-arc', 'motion-graphics'] as const;
++export type VideoStyle = (typeof VIDEO_STYLES)[number];
++
++/** What a request without a `style` is made in — theirs too. Rows made before styles report this. */
++export const DEFAULT_VIDEO_STYLE: VideoStyle = 'character-arc';
++
++export function isVideoStyle(v: unknown): v is VideoStyle {
++  return typeof v === 'string' && (VIDEO_STYLES as readonly string[]).includes(v);
++}
++
++/**
++ * A `style` from a request body. Absent, null or empty is the default, exactly as their own
++ * `parseStyle` treats it; anything else must be one of ours.
++ */
++export function parseStyleInput(
++  raw: unknown,
++): { ok: true; style: VideoStyle } | { ok: false; detail: string } {
++  if (raw === undefined || raw === null || raw === '') return { ok: true, style: DEFAULT_VIDEO_STYLE };
++  if (isVideoStyle(raw)) return { ok: true, style: raw };
++  return {
++    ok: false,
++    detail: `Unknown video style ${JSON.stringify(String(raw).slice(0, 60))}. Choose one of: ${VIDEO_STYLES.join(', ')}.`,
++  };
++}
++
++// ─── The list, as a browser may see it ─────────────────────────────────────────────────────────
++
++export interface WritingStyleSample {
++  line: string;
++  /** motion-graphics only: how the line is read ("with a warm, welcoming smile"). */
++  read?: string;
++}
++
++export interface WritingStyle {
++  narrator: string;
++  voice: string;
++  rules: string[];
++  sample: WritingStyleSample[];
++}
++
++export interface VideoStyleInfo {
++  id: string;
++  label: string;
++  default: boolean;
++  summary: string;
++  bestFor: string;
++  /** Absolute and public. Rebuilt from OUR configured base — see normaliseStyle. Null when they gave none. */
++  previewUrl: string | null;
++  previewSeconds: number | null;
++  /** THEIR estimate. Shown beside the style; never the figure our ledger charges. */
++  estimatedCostPerLessonUsd: number | null;
++  writingStyle: WritingStyle | null;
++}
++
++export interface VideoStyleList {
++  defaultStyle: string;
++  styles: VideoStyleInfo[];
++}
++
++export type StylesResult = { ok: true; data: VideoStyleList } | { ok: false; reason: 'unavailable' };
++
++// ─── Unknown-field reporting ────────────────────────────────────────────────────────────────────
++// The same discipline as the course, job and catalogue clients (tests/unit/partner-clients-detect-
++// drift.test.ts): a field they add to this payload is dropped by the normaliser below, so it must
++// at least be HEARD. Deduplicated by shape — every Build tab load asks for this list.
++
++const seenUnknownStyleFields = new Set<string>();
++
++/** Test seam: the dedupe is module state. Also clears the cache, so the next call really parses. */
++export function resetStyleUnknownFieldLog(): void {
++  seenUnknownStyleFields.clear();
++  cached = null;
++}
++
++const KNOWN_STYLE_LIST_FIELDS = ['default', 'styles', 'howToUse'] as const;
++const KNOWN_STYLE_FIELDS = [
++  'id', 'label', 'default', 'summary', 'bestFor', 'previewUrl', 'previewSeconds',
++  'estimatedCostPerLessonUsd', 'writingStyle',
++] as const;
++const KNOWN_WRITING_STYLE_FIELDS = ['narrator', 'voice', 'rules', 'sample'] as const;
++const KNOWN_SAMPLE_FIELDS = ['line', 'read'] as const;
++
++function reportUnknownStyleFields(context: string, raw: unknown, known: readonly string[]): void {
++  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return;
++  const unknown = Object.keys(raw).filter((k) => !known.includes(k));
++  if (unknown.length === 0) return;
++  const signature = `${context}:${unknown.sort().join(',')}`;
++  if (seenUnknownStyleFields.has(signature)) return;
++  seenUnknownStyleFields.add(signature);
++  console.warn(
++    `[content-queen-styles] upstream sent field(s) we do not read on ${context}: ${unknown.join(', ')}. `
++    + 'If one of these matters, add it to VideoStyleInfo and normaliseStyle — nothing else will notice it.',
++  );
++}
++
++function text(v: unknown, max: number): string | undefined {
++  return typeof v === 'string' && v.trim().length > 0 ? v.trim().slice(0, max) : undefined;
++}
++
++function finite(v: unknown): number | null {
++  return typeof v === 'number' && Number.isFinite(v) ? v : null;
++}
++
++function normaliseWritingStyle(raw: unknown): WritingStyle | null {
++  if (!raw || typeof raw !== 'object') return null;
++  const w = raw as Record<string, unknown>;
++  reportUnknownStyleFields('a writing style', w, KNOWN_WRITING_STYLE_FIELDS);
++  const narrator = text(w.narrator, 500);
++  const voice = text(w.voice, 500);
++  if (!narrator && !voice) return null;
++  const rules = Array.isArray(w.rules)
++    ? w.rules.map((r) => text(r, 500)).filter((r): r is string => !!r).slice(0, 12)
++    : [];
++  const sample = Array.isArray(w.sample)
++    ? w.sample
++        .map((s) => {
++          const o = (s ?? {}) as Record<string, unknown>;
++          reportUnknownStyleFields('a sample line', o, KNOWN_SAMPLE_FIELDS);
++          const line = text(o.line, 500);
++          if (!line) return null;
++          const read = text(o.read, 120);
++          return read ? { line, read } : { line };
++        })
++        .filter((s): s is WritingStyleSample => s !== null)
++        .slice(0, 8)
++    : [];
++  return { narrator: narrator ?? '', voice: voice ?? '', rules, sample };
++}
++
++/**
++ * Field by field, like every other payload of theirs, so a field they add cannot reach a browser
++ * unread and a missing one is `null` rather than `undefined` in a card.
++ *
++ * THE PREVIEW URL IS REBUILT FROM OUR BASE, not passed through. They mint it from the request's
++ * own protocol and host, and behind Railway's proxy that protocol can read `http` — a mixed-content
++ * video on our https page. The path is documented (`/api/v1/styles/:id/preview.mp4`) and public,
++ * so composing it from CONTENT_QUEEN_API_URL is both exact and always https in production.
++ */
++function normaliseStyle(raw: unknown, base: string): VideoStyleInfo | null {
++  if (!raw || typeof raw !== 'object') return null;
++  const s = raw as Record<string, unknown>;
++  reportUnknownStyleFields('a style', s, KNOWN_STYLE_FIELDS);
++  const id = text(s.id, 60);
++  if (!id || !/^[a-z0-9][a-z0-9-]*$/.test(id)) return null;
++  return {
++    id,
++    label: text(s.label, 80) ?? id,
++    default: s.default === true,
++    summary: text(s.summary, 600) ?? '',
++    bestFor: text(s.bestFor, 400) ?? '',
++    previewUrl: text(s.previewUrl, 1000) ? `${base}/api/v1/styles/${encodeURIComponent(id)}/preview.mp4` : null,
++    previewSeconds: finite(s.previewSeconds),
++    estimatedCostPerLessonUsd: finite(s.estimatedCostPerLessonUsd),
++    writingStyle: normaliseWritingStyle(s.writingStyle),
++  };
++}
++
++/** Exported for its test. */
++export function normaliseStyleList(raw: unknown, base: string = baseUrl()): VideoStyleList | null {
++  if (!raw || typeof raw !== 'object') return null;
++  const body = raw as Record<string, unknown>;
++  reportUnknownStyleFields('the style list', body, KNOWN_STYLE_LIST_FIELDS);
++  const styles = (Array.isArray(body.styles) ? body.styles : [])
++    .map((s) => normaliseStyle(s, base))
++    .filter((s): s is VideoStyleInfo => s !== null);
++  if (styles.length === 0) return null;
++  const declared = text(body.default, 60);
++  const defaultStyle = declared && styles.some((s) => s.id === declared)
++    ? declared
++    : styles.find((s) => s.default)?.id ?? styles[0]!.id;
++  return {
++    defaultStyle,
++    // Exactly one card is marked default, and it is the one `default` names.
++    styles: styles.map((s) => ({ ...s, default: s.id === defaultStyle })),
++  };
++}
++
++/**
++ * Five minutes. The list changes when they ship, not between two page loads, and every instructor
++ * opening either Build tab asks for it — so it is cached rather than proxied per view. A failed
++ * refresh serves the last good list: a picker showing yesterday's wording is better than none.
++ */
++const CACHE_MS = 5 * 60 * 1000;
++let cached: { at: number; data: VideoStyleList } | null = null;
++
++/** Test seam: the cache is module state. */
++export function resetStylesCache(): void {
++  cached = null;
++}
++
++/**
++ * Read their style list. FREE, public, and never throws.
++ *
++ * Not gated on CONTENT_QUEEN_JOBS_ENABLED: it spends nothing and needs no credential, and both
++ * forms that show it already explain when creation is switched off.
++ */
++export async function getStyles(): Promise<StylesResult> {
++  if (cached && Date.now() - cached.at < CACHE_MS) return { ok: true, data: cached.data };
++  const base = baseUrl();
++  try {
++    const res = await fetch(`${base}/api/v1/styles`, {
++      headers: { Accept: 'application/json' },
++      signal: AbortSignal.timeout(10_000),
++    });
++    if (!res.ok) {
++      console.warn(`[content-queen-styles] styles returned ${res.status}`);
++      return cached ? { ok: true, data: cached.data } : { ok: false, reason: 'unavailable' };
++    }
++    const list = normaliseStyleList(await res.json().catch(() => null), base);
++    if (!list) {
++      console.warn('[content-queen-styles] styles answer carried no usable style');
++      return cached ? { ok: true, data: cached.data } : { ok: false, reason: 'unavailable' };
++    }
++    cached = { at: Date.now(), data: list };
++    return { ok: true, data: list };
++  } catch (err) {
++    console.warn('[content-queen-styles] styles request failed:', err instanceof Error ? err.message : err);
++    return cached ? { ok: true, data: cached.data } : { ok: false, reason: 'unavailable' };
++  }
++}
++
++// ─── The motion-graphics plan rule, checked before money moves ──────────────────────────────────
++
++export interface PlanProblem {
++  /** Their path syntax, e.g. `modules[0].lessons[1].walkthroughs`. */
++  path: string;
++  message: string;
++}
++
++/**
++ * Their `planner.validate` motion branch, copied: every lesson names at least one model with a
++ * `name`, and walks through at least two situations with a `situation`. Their build answers
++ * `400 invalid_plan` otherwise — which arrives AFTER our ledger rows are written, so checking here
++ * is the difference between "fix this lesson" and "charged, then reversed".
++ *
++ * Returns [] for any other style. Never throws on a malformed plan.
++ */
++export function motionPlanErrors(plan: unknown): PlanProblem[] {
++  const p = plan as { modules?: unknown } | null;
++  if (!p || !Array.isArray(p.modules)) return [];
++  const str = (v: unknown) => typeof v === 'string' && v.trim().length > 0;
++  const out: PlanProblem[] = [];
++  for (const [mi, m] of p.modules.entries()) {
++    const lessons = (m as { lessons?: unknown } | null)?.lessons;
++    if (!Array.isArray(lessons)) continue;
++    for (const [li, l] of lessons.entries()) {
++      const lesson = (l ?? {}) as { title?: unknown; models?: unknown; walkthroughs?: unknown };
++      const at = `modules[${mi}].lessons[${li}]`;
++      const name = str(lesson.title) ? `"${String(lesson.title).trim()}"` : `Lesson ${li + 1} of module ${mi + 1}`;
++      const models = Array.isArray(lesson.models) ? lesson.models : [];
++      if (!models.some((x) => str((x as { name?: unknown } | null)?.name))) {
++        out.push({ path: `${at}.models`, message: `${name} needs at least one model (its name and author).` });
++      }
++      const walks = Array.isArray(lesson.walkthroughs) ? lesson.walkthroughs : [];
++      if (walks.filter((w) => str((w as { situation?: unknown } | null)?.situation)).length < 2) {
++        out.push({ path: `${at}.walkthroughs`, message: `${name} needs at least two walk-throughs, each with a situation.` });
++      }
++    }
++  }
++  return out;
++}
+diff --git a/apps/api/src/routes/content-courses.ts b/apps/api/src/routes/content-courses.ts
+index 8570d5a..ae99109 100644
+--- a/apps/api/src/routes/content-courses.ts
++++ b/apps/api/src/routes/content-courses.ts
+@@ -72,6 +72,7 @@ import { stampPayloadVersion } from '../lib/payload-version.js';
+ import { invalidateCohortCache } from '../lib/owned-filter.js';
+ import { logger } from '../lib/logger.js';
+ import { signContentLessonToken, verifyContentLessonToken } from '../lib/video-token.js';
++import { getStyles, parseStyleInput, motionPlanErrors } from '../lib/content-queen-styles.js';
+ 
+ const router = Router();
+ 
+@@ -152,6 +153,8 @@ const COURSE_PUBLIC = {
+   id: contentCourses.id,
+   topic: contentCourses.topic,
+   series: contentCourses.series,
++  /** The video style every lesson is made in. Old rows are `character-arc` (0067's default). */
++  style: contentCourses.style,
+   status: contentCourses.status,
+   confirmLessons: contentCourses.confirmLessons,
+   authorizedUsd: contentCourses.authorizedUsd,
+@@ -227,6 +230,42 @@ async function loadCourse(req: Request, res: Response) {
+   return row;
+ }
+ 
++/**
++ * GET /api/content-courses/styles — the video styles a course can be made in. FREE.
++ *
++ * DECLARED BEFORE `/:id` (see the header's route-order rule): after it, 'styles' would reach a
++ * uuid column and answer 500.
++ *
++ * Proxied rather than fetched by the browser, the way every other Content Automation fact reaches
++ * the web app: one cached call for everyone, field-by-field normalised, and the preview URL rebuilt
++ * on our configured base (content-queen-styles.ts says why). The preview itself is a public mp4 on
++ * their host and plays straight from there.
++ *
++ * A failure is a 502 with a sentence, and the form falls back to the default style rather than
++ * blocking — the default is what every course was made in until today.
++ */
++router.get(
++  '/styles',
++  requireAuth,
++  requirePermission('content_courses', 'read'),
++  async (_req: Request, res: Response) => {
++    try {
++      const result = await getStyles();
++      if (!result.ok) {
++        res.status(502).json({
++          error: 'Could not load the video styles',
++          detail: 'Content Automation did not answer with its list of video styles. The default style will be used.',
++        });
++        return;
++      }
++      res.json({ default: result.data.defaultStyle, styles: result.data.styles });
++    } catch (e) {
++      logger.error('content_course_styles_failed', { error: e instanceof Error ? e.message : String(e) });
++      res.status(500).json({ error: INTERNAL_ERROR });
++    }
++  },
++);
++
+ /**
+  * POST /api/content-courses — plan a course. FREE.
+  *
+@@ -257,6 +296,16 @@ router.post(
+         return;
+       }
+ 
++      // THE STYLE IS CHOSEN HERE, WITH THE TOPIC, and fixed for the course: their contract makes a
++      // course one style throughout, and a motion-graphics plan has fields a character-arc one
++      // does not. Validated against our list before anything is written or asked.
++      const styleChoice = parseStyleInput(req.body?.style);
++      if (!styleChoice.ok) {
++        res.status(400).json({ error: 'invalid_style', detail: styleChoice.detail });
++        return;
++      }
++      const style = styleChoice.style;
++
+       // AUTHORED MODE — the instructor said what the videos are, so we do not ask their model.
+       //
+       // Their /courses/build validates only that `plan.modules` is an array and that
+@@ -275,6 +324,7 @@ router.post(
+           description: typeof req.body?.description === 'string' ? req.body.description : '',
+           audience: typeof req.body?.audience === 'string' ? req.body.audience : undefined,
+           ...(weeks ? { weeks } : { videos: flat! }),
++          style,
+         });
+         if (!built.ok) {
+           res.status(400).json({ error: 'This course cannot be built', detail: built.detail });
+@@ -287,14 +337,25 @@ router.post(
+           audience: typeof req.body?.audience === 'string' ? req.body.audience : undefined,
+           duration: typeof req.body?.duration === 'string' ? req.body.duration : undefined,
+           description: typeof req.body?.description === 'string' ? req.body.description : undefined,
++          style,
+         });
+ 
+         if (!planned.ok) {
++          if (planned.reason === 'invalid' && planned.partnerCode === 'invalid_style') {
++            // Our list says yes and theirs says no: they retired a style we still offer.
++            res.status(400).json({
++              error: 'invalid_style',
++              detail: planned.detail ?? 'Content Automation does not offer that video style.',
++            });
++            return;
++          }
+           const status = planned.reason === 'rate_limited' ? 429 : planned.reason === 'disabled' ? 503 : 502;
+           res.status(status).json({ error: 'Could not plan this course', reason: planned.reason, detail: planned.detail });
+           return;
+         }
+-        plan = planned.data;
++        // The plan echoes the style it was made for. Stamp ours on it either way, so the stored
++        // plan and the column can never disagree about what build will send.
++        plan = { ...planned.data, style };
+       }
+ 
+       const est = estimate(plan);
+@@ -303,6 +364,7 @@ router.post(
+         .insert(contentCourses)
+         .values({
+           topic,
++          style,
+           status: 'planned',
+           plan,
+           confirmLessons: est.lessons,
+@@ -314,6 +376,7 @@ router.post(
+       res.status(201).json({
+         id: row!.id,
+         status: 'planned',
++        style,
+         plan,
+         estimate: est,
+         // Their own sizing rationale. Shown to whoever is about to pay: it is the cheapest way for
+@@ -606,6 +669,7 @@ router.post(
+             id: contentCourses.id,
+             status: contentCourses.status,
+             plan: contentCourses.plan,
++            style: contentCourses.style,
+             createdBy: contentCourses.createdBy,
+             partnerCourseId: contentCourses.partnerCourseId,
+           })
+@@ -620,6 +684,13 @@ router.post(
+         if (course.partnerCourseId) return { kind: 'already_built' as const };
+ 
+         const plan = course.plan as CoursePlan | null;
++
++        // THE MOTION-GRAPHICS RULE, BEFORE ANY CHARGE. Their build refuses a motion lesson with no
++        // model or fewer than two walk-throughs (400 invalid_plan) — after our ledger rows would
++        // already exist. A stored plan that fails it was made by their planner without them, or
++        // stored before this check; either way the instructor hears which lesson, for free.
++        const planProblems = course.style === 'motion-graphics' ? motionPlanErrors(plan) : [];
++        if (planProblems.length > 0) return { kind: 'invalid_plan' as const, problems: planProblems };
+         const flat = plan ? lessonsOf(plan) : [];
+         const counts = await readSpendCounts(tx as unknown as typeof db, req.user!.id);
+         const decision = decideCourseSpendAuthorization({
+@@ -708,6 +779,17 @@ router.post(
+         res.status(404).json({ error: 'Course not found' });
+         return;
+       }
++      if (outcome.kind === 'invalid_plan') {
++        res.status(400).json({
++          error: 'invalid_plan',
++          detail:
++            'This course is in the Flat Motion Graphics style, and every lesson in it needs a model and '
++            + 'at least two walk-throughs. Nothing has been charged. '
++            + outcome.problems.slice(0, 5).map((p) => p.message).join(' '),
++          errors: outcome.problems,
++        });
++        return;
++      }
+       if (outcome.kind === 'already_built') {
+         res.status(409).json({
+           error: 'This course has already been built',
+@@ -796,6 +878,9 @@ router.post(
+         // that they will send a sample lesson before we should rely on the shape — so this stays
+         // an instructor's choice rather than something we switch on for everybody at once.
+         references: req.body?.references === true,
++        // The style the course was planned in — from OUR column, never from this request. A course
++        // is one style throughout, and the plan's motion fields were validated for this one.
++        style: outcome.course.style === 'motion-graphics' ? 'motion-graphics' : 'character-arc',
+       });
+ 
+       if (!built.ok) {
+@@ -866,7 +951,9 @@ router.post(
+         // A refusal the instructor can act on is a 409, not a 502. Mapping their free
+         // `confirmation_required` to 502 told a person the server had broken when in fact their
+         // own number was wrong and nothing had happened.
+-        const status = correctable ? 409 : unrecoverable ? 500 : 502;
++        // `invalid` is their 400 invalid_style / invalid_plan: refused before anything was reserved
++        // or queued (and reversed above), so it is the request that is wrong, not their service.
++        const status = correctable ? 409 : unrecoverable ? 500 : built.reason === 'invalid' ? 400 : 502;
+         res.status(status).json({
+           error: 'Could not build this course',
+           reason: built.reason,
+diff --git a/apps/api/src/routes/content-videos.ts b/apps/api/src/routes/content-videos.ts
+index cc71d8c..48d9b69 100644
+--- a/apps/api/src/routes/content-videos.ts
++++ b/apps/api/src/routes/content-videos.ts
+@@ -9,8 +9,8 @@
+  *    in this file is built from an EXPLICIT COLUMN LIST for that reason. Never `select()` the row
+  *    and spread it — that is the same mistake as forwarding `correctIndex` to a learner, and it is
+  *    exactly as invisible in review.
+- * 2. A client-supplied id is a claim. The only things read from a body anywhere here are `topic`
+- *    and `cohortId`; the actor, the spend and the partner id are all resolved server-side.
++ * 2. A client-supplied id is a claim. The only things read from a body anywhere here are `topic`,
++ *    `style` (checked against our own list) and `cohortId`; the actor, the spend and the partner id are all resolved server-side.
+  * 3. `checkpoint_snapshot` and `script.checkpoint` CONTAIN THE ANSWER KEY. The script is returned
+  *    to instructors (who are authoring it, and must see it), and must never be served on a
+  *    learner-facing route. There is no learner-facing route in this file; keep it that way.
+@@ -58,6 +58,7 @@ import {
+   isResumable,
+   spendLimitsFromEnv,
+ } from '../lib/content-video-spend.js';
++import { getStyles, parseStyleInput } from '../lib/content-queen-styles.js';
+ import { readSpendCounts } from '../lib/content-video-spend-counts.js';
+ import { REMOVABLE_VIDEO_STATUSES } from '../lib/build-library.js';
+ import { signContentVideoToken, verifyContentVideoToken } from '../lib/video-token.js';
+@@ -99,6 +100,8 @@ const LIVE_STATUSES: ContentVideoStatus[] = ['writing', 'produce_queued', 'produ
+ const JOB_COLUMNS = {
+   id: contentVideoJobs.id,
+   topic: contentVideoJobs.topic,
++  /** The video style it is made in (0067). Old rows are `character-arc`. */
++  style: contentVideoJobs.style,
+   status: contentVideoJobs.status,
+   partnerStage: contentVideoJobs.partnerStage,
+   script: contentVideoJobs.script,
+@@ -191,6 +194,15 @@ router.post(
+       }
+       const cohortId = typeof req.body?.cohortId === 'string' ? req.body.cohortId : null;
+ 
++      // Checked BEFORE the hourly gate, so a bad style never spends one of the platform's six
++      // starts. Absent is the default style — every video made before 2026-10-08 was.
++      const styleChoice = parseStyleInput(req.body?.style);
++      if (!styleChoice.ok) {
++        res.status(400).json({ error: 'invalid_style', detail: styleChoice.detail });
++        return;
++      }
++      const style = styleChoice.style;
++
+       // ─── The hourly gate ────────────────────────────────────────────────────────────────────
+       // Counted in a transaction holding an advisory lock, never in a process-local counter: this
+       // API runs multiple instances, so an in-memory count would let each instance independently
+@@ -222,6 +234,7 @@ router.post(
+           .insert(contentVideoJobs)
+           .values({
+             topic,
++            style,
+             status: 'writing',
+             cohortId,
+             createdBy: req.user!.id,
+@@ -250,7 +263,7 @@ router.post(
+       // Tell the partner only after our own row exists. If this call fails the row stays in
+       // `writing` with no partner id, and the reaper will not be able to progress it — which is
+       // visible and fixable, whereas a partner job with no local row is neither.
+-      const created = await createJob(topic);
++      const created = await createJob(topic, style);
+       if (!created.ok) {
+         await db
+           .update(contentVideoJobs)
+@@ -259,12 +272,23 @@ router.post(
+             error:
+               created.reason === 'rate_limited'
+                 ? 'Content Automation refused the request: their hourly limit was already reached.'
+-                : `Could not reach Content Automation (${created.reason}).`,
++                : created.reason === 'invalid'
++                  ? 'Content Automation does not offer the chosen video style.'
++                  : `Could not reach Content Automation (${created.reason}).`,
+             errorSource: created.reason === 'rate_limited' ? 'partner' : 'lms',
+             terminalAt: new Date(),
+           })
+           .where(eq(contentVideoJobs.id, gate.id));
+ 
++        if (created.reason === 'invalid') {
++          // Their 400 invalid_style: our list offers a style theirs no longer does. Free.
++          res.status(400).json({
++            error: 'invalid_style',
++            detail: 'Content Automation does not offer that video style any more. Pick another and try again.',
++            id: gate.id,
++          });
++          return;
++        }
+         res.status(created.reason === 'rate_limited' ? 429 : 502).json({
+           error: 'Could not start the video',
+           reason: created.reason,
+@@ -294,6 +318,35 @@ router.post(
+   },
+ );
+ 
++/**
++ * GET /api/content-videos/styles — the video styles a single video can be made in. FREE.
++ *
++ * The same list, cache and normalisation as GET /api/content-courses/styles, under this router's
++ * permission so the Make a video tab needs nothing it did not already have. A literal path, so it
++ * sits above `/:id` with the others (see LITERAL PATHS FIRST below).
++ */
++router.get(
++  '/styles',
++  requireAuth,
++  requirePermission('content_videos', 'read'),
++  async (_req: Request, res: Response) => {
++    try {
++      const result = await getStyles();
++      if (!result.ok) {
++        res.status(502).json({
++          error: 'Could not load the video styles',
++          detail: 'Content Automation did not answer with its list of video styles. The default style will be used.',
++        });
++        return;
++      }
++      res.json({ default: result.data.defaultStyle, styles: result.data.styles });
++    } catch (e) {
++      logger.error('content_video_styles_failed', { error: e instanceof Error ? e.message : String(e) });
++      res.status(500).json({ error: INTERNAL_ERROR });
++    }
++  },
++);
++
+ /**
+  * GET /api/content-videos/queue — what the whole platform has in flight, and when a slot frees.
+  *
+@@ -346,7 +399,7 @@ router.get(
+ 
+ // ─── LITERAL PATHS FIRST ─────────────────────────────────────────────────────────────────────
+ //
+-// Every route with a fixed first segment (/queue, /library, /spend) MUST be declared before
++// Every route with a fixed first segment (/styles, /queue, /library, /spend) MUST be declared before
+ // `/:id`. Express matches in declaration order, so `/spend` after `/:id` is caught by the
+ // parameterised route, the literal reaches a uuid column, and Postgres answers 22P02 — which
+ // surfaces as a 500 on a route that looks correct in isolation. That is exactly what happened
+diff --git a/apps/api/tests/unit/content-queen-courses.test.ts b/apps/api/tests/unit/content-queen-courses.test.ts
+index 0f68ecf..a115bbd 100644
+--- a/apps/api/tests/unit/content-queen-courses.test.ts
++++ b/apps/api/tests/unit/content-queen-courses.test.ts
+@@ -341,7 +341,9 @@ describe('planCourse', () => {
+     fetchMock.mockResolvedValue(jsonResponse(planBody()));
+     await planCourse({ topic: 't', audience: 'teachers' });
+     const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
+-    expect(body).toEqual({ topic: 't', audience: 'teachers' });
++    // `style` is the exception, and deliberately: it is always sent (default character-arc), so a
++    // change to their default can never decide how a course is made. See planCourse.
++    expect(body).toEqual({ topic: 't', audience: 'teachers', style: 'character-arc' });
+   });
+ });
+ 
+diff --git a/apps/api/tests/unit/content-queen-styles.test.ts b/apps/api/tests/unit/content-queen-styles.test.ts
+new file mode 100644
+index 0000000..2923920
+--- /dev/null
++++ b/apps/api/tests/unit/content-queen-styles.test.ts
+@@ -0,0 +1,255 @@
++/**
++ * Unit — Content Automation video styles (contract 1.2, additive, 2026-10-08).
++ *
++ * Three things are pinned here, each because getting it wrong costs money or misfiles a course:
++ *
++ *   1. `style` is ALWAYS sent on plan, build and make-video — never left to their default.
++ *   2. A motion-graphics plan without a model and two walk-throughs per lesson is refused on OUR
++ *      side before anything is written (authored) or charged (build), with the lesson named.
++ *   3. Their `400 invalid_plan` / `invalid_style` on build is `invalid` — the reversible reason —
++ *      and carries their per-lesson messages, not just their summary sentence.
++ *
++ * `fetch` is mocked rather than the modules, as in content-queen-courses.test.ts.
++ */
++import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
++import {
++  parseStyleInput,
++  normaliseStyleList,
++  motionPlanErrors,
++  getStyles,
++  resetStylesCache,
++} from '../../src/lib/content-queen-styles.js';
++import { buildAuthoredPlan, buildCourse, lessonsOf, type CoursePlan } from '../../src/lib/content-queen-courses.js';
++import { createJob } from '../../src/lib/content-queen-jobs.js';
++
++function jsonResponse(body: unknown, status = 200) {
++  return { ok: status >= 200 && status < 300, status, json: async () => body } as unknown as Response;
++}
++
++let fetchMock: ReturnType<typeof vi.fn>;
++
++beforeEach(() => {
++  process.env.CONTENT_QUEEN_API_TOKEN = 'test-token-not-a-real-credential';
++  process.env.CONTENT_QUEEN_JOBS_ENABLED = 'true';
++  process.env.CONTENT_QUEEN_PRODUCE_ENABLED = 'true';
++  process.env.CONTENT_QUEEN_API_URL = 'https://cq.example';
++  fetchMock = vi.fn();
++  vi.stubGlobal('fetch', fetchMock);
++  resetStylesCache();
++});
++
++afterEach(() => {
++  vi.unstubAllGlobals();
++  delete process.env.CONTENT_QUEEN_JOBS_ENABLED;
++  delete process.env.CONTENT_QUEEN_PRODUCE_ENABLED;
++  delete process.env.CONTENT_QUEEN_API_TOKEN;
++  delete process.env.CONTENT_QUEEN_API_URL;
++});
++
++const motionVideo = (over: Record<string, unknown> = {}) => ({
++  title: 'Your role as a buddy',
++  slo: 'Explain the buddy role at each stage',
++  models: [{ name: 'Empowerment Dynamic', author: 'David Emerald', summary: 'Coach, not Rescuer' }],
++  walkthroughs: [
++    { title: 'Rescuer vs Coach', situation: 'An employee says their manager never gives feedback.' },
++    { title: 'The 3 Es', situation: 'A new joiner is overwhelmed in week one.' },
++  ],
++  ...over,
++});
++
++describe('parseStyleInput', () => {
++  it('treats absent, null and empty as the default, exactly as their parseStyle does', () => {
++    for (const raw of [undefined, null, '']) {
++      expect(parseStyleInput(raw)).toEqual({ ok: true, style: 'character-arc' });
++    }
++  });
++
++  it('accepts both known ids and refuses anything else with a sentence', () => {
++    expect(parseStyleInput('motion-graphics')).toEqual({ ok: true, style: 'motion-graphics' });
++    const bad = parseStyleInput('claymation');
++    expect(bad.ok).toBe(false);
++    if (!bad.ok) expect(bad.detail).toContain('character-arc');
++    expect(parseStyleInput(42).ok).toBe(false);
++  });
++});
++
++describe('normaliseStyleList', () => {
++  const raw = {
++    default: 'character-arc',
++    styles: [
++      {
++        id: 'character-arc', label: 'Character Arc', default: true, summary: 's', bestFor: 'b',
++        // Theirs, minted from the request's own protocol — http behind a proxy.
++        previewUrl: 'http://internal-host/api/v1/styles/character-arc/preview.mp4',
++        previewSeconds: 12, estimatedCostPerLessonUsd: 1.5,
++        writingStyle: { narrator: 'A warm mentor', voice: 'Aoede', rules: ['r1', ''], sample: [{ line: 'l1' }, { nope: 1 }] },
++        secretField: 'must not reach a browser',
++      },
++      {
++        id: 'motion-graphics', label: 'Flat Motion Graphics', default: false, summary: 's2', bestFor: 'b2',
++        previewUrl: 'x', previewSeconds: 12, estimatedCostPerLessonUsd: 0.5,
++        writingStyle: { narrator: 'n', voice: 'v', rules: [], sample: [{ line: 'You are a buddy.', read: 'with a smile' }] },
++      },
++      { id: 'BAD ID', label: 'dropped' },
++    ],
++  };
++
++  it('rebuilds the preview URL on our base, so it is never mixed content', () => {
++    const list = normaliseStyleList(raw, 'https://cq.example')!;
++    expect(list.styles.map((s) => s.previewUrl)).toEqual([
++      'https://cq.example/api/v1/styles/character-arc/preview.mp4',
++      'https://cq.example/api/v1/styles/motion-graphics/preview.mp4',
++    ]);
++  });
++
++  it('carries only the fields it names, and drops empty rules and sample lines', () => {
++    const list = normaliseStyleList(raw, 'https://cq.example')!;
++    expect(list.styles).toHaveLength(2);
++    expect(JSON.stringify(list)).not.toContain('secretField');
++    expect(list.styles[0]!.writingStyle).toEqual({ narrator: 'A warm mentor', voice: 'Aoede', rules: ['r1'], sample: [{ line: 'l1' }] });
++    expect(list.styles[1]!.writingStyle!.sample).toEqual([{ line: 'You are a buddy.', read: 'with a smile' }]);
++  });
++
++  it('marks exactly one default, the one `default` names', () => {
++    const list = normaliseStyleList({ ...raw, default: 'motion-graphics' }, 'https://cq.example')!;
++    expect(list.defaultStyle).toBe('motion-graphics');
++    expect(list.styles.filter((s) => s.default).map((s) => s.id)).toEqual(['motion-graphics']);
++  });
++
++  it('is null for an answer with no usable style, so the caller can say so', () => {
++    expect(normaliseStyleList({ styles: [] })).toBeNull();
++    expect(normaliseStyleList('nope')).toBeNull();
++  });
++});
++
++describe('getStyles', () => {
++  it('reads their public list without a token, and caches it', async () => {
++    fetchMock.mockResolvedValue(jsonResponse({ default: 'character-arc', styles: [{ id: 'character-arc', label: 'C', previewUrl: 'p' }] }));
++    const a = await getStyles();
++    const b = await getStyles();
++    expect(a.ok && b.ok).toBe(true);
++    expect(fetchMock).toHaveBeenCalledTimes(1);
++    const [url, init] = fetchMock.mock.calls[0]!;
++    expect(url).toBe('https://cq.example/api/v1/styles');
++    expect(JSON.stringify((init as RequestInit).headers ?? {})).not.toContain('Bearer');
++  });
++
++  it('reports unavailable rather than throwing when they are down and nothing is cached', async () => {
++    fetchMock.mockRejectedValue(new Error('ECONNRESET'));
++    expect(await getStyles()).toEqual({ ok: false, reason: 'unavailable' });
++  });
++});
++
++describe('buildAuthoredPlan — motion-graphics', () => {
++  it('carries models, walk-throughs, numbered SLOs and the style', () => {
++    const r = buildAuthoredPlan({
++      topic: 'P&C Buddy', description: 'd', style: 'motion-graphics',
++      weeks: [{ title: 'Week 1', videos: [motionVideo(), motionVideo({ title: 'Listening first' })] }],
++    });
++    expect(r.ok).toBe(true);
++    if (!r.ok) return;
++    expect(r.plan.style).toBe('motion-graphics');
++    expect(r.plan.slos).toEqual([
++      { id: '1.1', text: 'Explain the buddy role at each stage' },
++      { id: '1.2', text: 'Explain the buddy role at each stage' },
++    ]);
++    const [first] = lessonsOf(r.plan);
++    expect(first!.sloIds).toEqual(['1.1']);
++    expect(first!.models).toEqual([{ name: 'Empowerment Dynamic', author: 'David Emerald', summary: 'Coach, not Rescuer' }]);
++    expect(first!.walkthroughs).toHaveLength(2);
++    // And it passes the same rule their build applies.
++    expect(motionPlanErrors(r.plan)).toEqual([]);
++  });
++
++  it('refuses a lesson with no named model, naming the lesson', () => {
++    const r = buildAuthoredPlan({ topic: 't', description: '', style: 'motion-graphics', videos: [motionVideo({ models: [{ name: '  ' }] })] });
++    expect(r.ok).toBe(false);
++    if (!r.ok) expect(r.detail).toMatch(/Video 1 needs a model/);
++  });
++
++  it('refuses fewer than two walk-throughs with a situation', () => {
++    const r = buildAuthoredPlan({
++      topic: 't', description: '', style: 'motion-graphics',
++      videos: [motionVideo({ walkthroughs: [{ title: 'only one', situation: 's' }, { title: 'no situation', situation: '' }] })],
++    });
++    expect(r.ok).toBe(false);
++    if (!r.ok) expect(r.detail).toMatch(/two walk-throughs/);
++  });
++
++  it('refuses a course tag hidden in a walk-through, like one in a title', () => {
++    const r = buildAuthoredPlan({
++      topic: 't', description: '', style: 'motion-graphics',
++      videos: [motionVideo({ walkthroughs: [{ situation: 'see [course-abc123]' }, { situation: 'fine' }] })],
++    });
++    expect(r.ok).toBe(false);
++  });
++
++  it('ignores motion fields entirely in character-arc', () => {
++    const r = buildAuthoredPlan({ topic: 't', description: '', videos: [motionVideo()] });
++    expect(r.ok).toBe(true);
++    if (!r.ok) return;
++    expect(r.plan.style).toBe('character-arc');
++    expect(r.plan.slos).toBeUndefined();
++    expect(lessonsOf(r.plan)[0]!.models).toBeUndefined();
++  });
++});
++
++describe('motionPlanErrors', () => {
++  it('reports their path for each missing field', () => {
++    const plan = {
++      title: 't',
++      modules: [{ title: 'm', lessons: [{ title: 'A', slo: 's', brief: 'b', difficulty: 'novice' }] }],
++    } as CoursePlan;
++    expect(motionPlanErrors(plan).map((p) => p.path)).toEqual([
++      'modules[0].lessons[0].models',
++      'modules[0].lessons[0].walkthroughs',
++    ]);
++  });
++
++  it('never throws on a malformed plan', () => {
++    expect(motionPlanErrors(null)).toEqual([]);
++    expect(motionPlanErrors({ modules: [null, { lessons: 'x' }] })).toEqual([]);
++  });
++});
++
++describe('style on the wire', () => {
++  const plan: CoursePlan = {
++    title: 't', style: 'motion-graphics',
++    modules: [{ title: 'm', lessons: [{ title: 'A', slo: 's', brief: 'b', difficulty: 'novice' }] }],
++  };
++
++  it('build sends the style it is given', async () => {
++    fetchMock.mockResolvedValue(jsonResponse({ courseId: 'course-x1', items: ['a'], rejected: [] }, 202));
++    await buildCourse({ plan, confirmLessons: 1, series: 'test', style: 'motion-graphics' });
++    const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
++    expect(body.style).toBe('motion-graphics');
++  });
++
++  it('their 400 invalid_plan is `invalid` (reversible) and names the lessons', async () => {
++    fetchMock.mockResolvedValue(jsonResponse({
++      error: 'invalid_plan',
++      message: 'This plan cannot be built: 1 problem(s).',
++      errors: [{ path: 'modules[0].lessons[0].walkthroughs', message: 'walks through at least two situations' }],
++    }, 400));
++    const res = await buildCourse({ plan, confirmLessons: 1, series: 'test', style: 'motion-graphics' });
++    expect(res.ok).toBe(false);
++    if (res.ok) return;
++    expect(res.reason).toBe('invalid');
++    expect(res.partnerCode).toBe('invalid_plan');
++    expect(res.detail).toContain('at least two situations');
++  });
++
++  it('make-video sends the style, defaulting to character-arc', async () => {
++    fetchMock.mockResolvedValue(jsonResponse({ jobId: 'j1', status: 'running', owner: 'tenant' }, 202));
++    await createJob('angry parent on the phone');
++    await createJob('angry parent on the phone', 'motion-graphics');
++    const bodies = fetchMock.mock.calls.map((c) => JSON.parse((c[1] as RequestInit).body as string));
++    expect(bodies.map((b) => b.style)).toEqual(['character-arc', 'motion-graphics']);
++  });
++
++  it('make-video maps their 400 invalid_style to `invalid`', async () => {
++    fetchMock.mockResolvedValue(jsonResponse({ error: 'invalid_style', message: 'Unknown style' }, 400));
++    const res = await createJob('t', 'motion-graphics');
++    expect(res).toEqual({ ok: false, reason: 'invalid' });
++  });
++});
+diff --git a/apps/api/tests/unit/partner-clients-detect-drift.test.ts b/apps/api/tests/unit/partner-clients-detect-drift.test.ts
+index 98111e9..aae045b 100644
+--- a/apps/api/tests/unit/partner-clients-detect-drift.test.ts
++++ b/apps/api/tests/unit/partner-clients-detect-drift.test.ts
+@@ -57,6 +57,19 @@ const PARSERS = [
+     call: async (m: Record<string, unknown>) =>
+       (m.getCheckpointCatalogue as () => Promise<unknown>)(),
+   },
++  {
++    module: 'content-queen-styles.ts',
++    what: 'a video style',
++    load: () => import('../../src/lib/content-queen-styles.js'),
++    // Also clears its five-minute cache, so the call below really parses the planted payload.
++    reset: (m: Record<string, unknown>) => (m.resetStyleUnknownFieldLog as () => void)(),
++    // GET /api/v1/styles (public)
++    body: {
++      default: 'character-arc',
++      styles: [{ id: 'character-arc', label: 'Character Arc', previewUrl: 'p', aFieldNobodyNamed: 1 }],
++    },
++    call: async (m: Record<string, unknown>) => (m.getStyles as () => Promise<unknown>)(),
++  },
+ ] as const;
+ 
+ describe('a partner client notices a field it does not read', () => {
+diff --git a/apps/web/src/app/build/CourseBuilderForm.tsx b/apps/web/src/app/build/CourseBuilderForm.tsx
+index 294264c..d690073 100644
+--- a/apps/web/src/app/build/CourseBuilderForm.tsx
++++ b/apps/web/src/app/build/CourseBuilderForm.tsx
+@@ -38,6 +38,13 @@
+  *
+  * 4. NO PROGRESS CAROUSEL. Invented status lines narrate confidently through the minutes when
+  *    something has actually died.
++ *
++ * THE VIDEO STYLE IS PICKED HERE, beside the topic (2026-10-08). Content Automation makes a course
++ * in one of their styles — Character Arc (the Ali story, the default) or Flat Motion Graphics — and
++ * the choice changes what each video needs: a motion-graphics video is BUILT from a named model and
++ * at least two walk-throughs, and their build refuses one without them. So the picker sits above
++ * the videos, and choosing motion graphics adds those fields to every video before anything can be
++ * saved. The style is fixed once the plan is saved, like everything else on it.
+  */
+ import { useState, useEffect, useCallback, useRef } from 'react';
+ import { useRouter } from 'next/navigation';
+@@ -46,14 +53,32 @@ import { apiRequest, errorText } from '@/lib/api';
+ import { planCourse } from '@/lib/content-courses-client';
+ import { formStateFromCourse, resumeTarget, type CourseDetail } from '@/lib/course-resume';
+ import { rememberPlannedCourse, lastPlannedCourse, forgetPlannedCourse } from '@/lib/course-resume-storage';
+-
+-interface VideoRow { title: string; slo: string }
++import {
++  DEFAULT_STYLE,
++  emptyMotionFields,
++  initialStyle,
++  isMotion,
++  loadStyles,
++  motionGaps,
++  motionPayload,
++  styleLabel,
++  type MotionFields,
++  type VideoStyleInfo,
++} from '@/lib/video-styles';
++import { CourseSlos, MotionFieldsEditor, StyleBadge, VideoStylePicker } from '@/components/VideoStyle';
++
++/** `motion` is kept for every video whatever the style, so switching style back and forth loses nothing. */
++interface VideoRow { title: string; slo: string; motion?: MotionFields }
+ interface WeekRow { title: string; videos: VideoRow[] }
+ 
+ interface PlanResponse {
+   id: string;
+   estimate: { lessons: number; estimatedCostUsd: number; estimatedBuildMinutes: number };
+   ourCostUsd: number;
++  /** The style the course was saved in, and (motion-graphics) its numbered SLOs. */
++  style?: string;
++  slos?: { id: string; text: string }[];
++  plan?: { slos?: { id: string; text: string }[] };
+ }
+ interface MaterialiseResponse { cohortId: string; created: boolean }
+ interface SpendResponse {
+@@ -101,7 +126,16 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
+   const [topic, setTopic] = useState('');
+   const [audience, setAudience] = useState('');
+   const [outcomes, setOutcomes] = useState('');
+-  const [weeks, setWeeks] = useState<WeekRow[]>([{ title: '', videos: [{ title: '', slo: '' }] }]);
++  const [weeks, setWeeks] = useState<WeekRow[]>([{ title: '', videos: [{ title: '', slo: '', motion: emptyMotionFields() }] }]);
++
++  // The video style. Starts on the list's default once it loads, unless the instructor (or a
++  // resumed plan) has already chosen — `styleChosen` is what keeps a late answer from overriding.
++  const [styles, setStyles] = useState<VideoStyleInfo[] | null>(null);
++  const [stylesError, setStylesError] = useState<string | null>(null);
++  const [style, setStyleState] = useState<string>(DEFAULT_STYLE);
++  const styleChosen = useRef(false);
++  const setStyle = (id: string) => { styleChosen.current = true; setStyleState(id); };
++  const motion = isMotion(style);
+ 
+   const [price, setPrice] = useState<SpendResponse | null>(null);
+   const [planned, setPlanned] = useState<PlanResponse | null>(null);
+@@ -128,6 +162,24 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
+     })();
+   }, []);
+ 
++  useEffect(() => {
++    let cancelled = false;
++    void (async () => {
++      try {
++        const res = await loadStyles('courses');
++        if (cancelled) return;
++        setStyles(res.styles);
++        if (!styleChosen.current) setStyleState(initialStyle(res));
++      } catch (e) {
++        if (cancelled) return;
++        // Not a reason to block authoring: the default is what every course was made in until
++        // today, and the picker says that is what will happen.
++        setStylesError(errorText(e, 'Could not load the video styles.'));
++      }
++    })();
++    return () => { cancelled = true; };
++  }, []);
++
+   // Rehydrate a planned course from ?focus=<id> (BUG-1) — a tab switch, reload, or the Library's
+   // link should not orphan a plan that only ever lived in this component's state. The tab buttons
+   // drop `focus` (the Library uses it for video ids too), so with no URL id we fall back to the plan
+@@ -159,6 +211,8 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
+           redirecting = true; router.replace(s.redirectTo); return;
+         }
+         setTopic(s.topic); setAudience(s.audience); setOutcomes(s.outcomes); setWeeks(s.weeks);
++        // A saved course's style wins over the list's default, however late the list answers.
++        styleChosen.current = true; setStyleState(s.style);
+         setPlanned(s.planned); setCohortId(s.cohortId);
+         rememberPlannedCourse(s.planned.id);
+       } catch (e) {
+@@ -175,8 +229,11 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
+ 
+   const allVideos = weeks.flatMap((w) => w.videos);
+   const filled = allVideos.filter((v) => v.title.trim() && v.slo.trim());
++  // In motion graphics a video is only complete with its model and walk-throughs — their build
++  // refuses it otherwise, and it is cheaper to say so on the field than in a 400.
++  const motionIncomplete = motion ? allVideos.filter((v) => motionGaps(v.motion).length > 0).length : 0;
+   const complete =
+-    topic.trim().length > 0 && filled.length === allVideos.length && filled.length > 0;
++    topic.trim().length > 0 && filled.length === allVideos.length && filled.length > 0 && motionIncomplete === 0;
+ 
+   // ACROSS EVERY WEEK, not within one. Their queue key is `${series}/${slug}` with no module in
+   // it, so two videos in different weeks collide exactly as readily as two in the same week.
+@@ -205,12 +262,18 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
+ 
+   const updateWeek = (wi: number, title: string) =>
+     setWeeks((prev) => prev.map((w, i) => (i === wi ? { ...w, title } : w)));
+-  const updateVideo = (wi: number, vi: number, field: keyof VideoRow, value: string) =>
++  const updateVideo = (wi: number, vi: number, field: 'title' | 'slo', value: string) =>
+     setWeeks((prev) => prev.map((w, i) => (i !== wi ? w : {
+       ...w, videos: w.videos.map((v, j) => (j === vi ? { ...v, [field]: value } : v)),
+     })));
++  const updateMotion = (wi: number, vi: number, next: MotionFields) =>
++    setWeeks((prev) => prev.map((w, i) => (i !== wi ? w : {
++      ...w, videos: w.videos.map((v, j) => (j === vi ? { ...v, motion: next } : v)),
++    })));
+   const addVideo = (wi: number) =>
+-    setWeeks((prev) => prev.map((w, i) => (i === wi ? { ...w, videos: [...w.videos, { title: '', slo: '' }] } : w)));
++    setWeeks((prev) => prev.map((w, i) => (i === wi ? {
++      ...w, videos: [...w.videos, { title: '', slo: '', motion: emptyMotionFields() }],
++    } : w)));
+   const removeVideo = (wi: number, vi: number) =>
+     setWeeks((prev) => prev.map((w, i) => (i === wi ? { ...w, videos: w.videos.filter((_, j) => j !== vi) } : w)));
+ 
+@@ -226,13 +289,21 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
+         topic: topic.trim(),
+         description: outcomes.trim(),
+         audience: audience.trim() || undefined,
++        style,
+         weeks: weeks.map((w) => ({
+           title: w.title.trim() || undefined,
+-          videos: w.videos.map((v) => ({ title: v.title.trim(), slo: v.slo.trim() })),
++          videos: w.videos.map((v) => ({
++            title: v.title.trim(),
++            slo: v.slo.trim(),
++            // Only in motion graphics. Sent otherwise, the server would ignore them anyway — but a
++            // character-arc plan should not carry fields that look like they decide something.
++            ...(motion ? motionPayload(v.motion ?? emptyMotionFields()) : {}),
++          })),
+         })),
+       });
+-      plannedRef.current = res; // before router.replace, so the rehydrate effect skips it (FIX-6)
+-      setPlanned(res);
++      const saved: PlanResponse = { ...res, style: res.style ?? style, slos: res.plan?.slos ?? [] };
++      plannedRef.current = saved; // before router.replace, so the rehydrate effect skips it (FIX-6)
++      setPlanned(saved);
+       rememberPlannedCourse(res.id);
+       // Put the plan id in the URL as soon as it exists, so reload, back-navigation and a tab
+       // round-trip land on the plan instead of losing it (BUG-1).
+@@ -242,7 +313,7 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
+     } finally {
+       setSaving(false);
+     }
+-  }, [topic, outcomes, audience, weeks, router]);
++  }, [topic, outcomes, audience, weeks, style, motion, router]);
+ 
+   async function createCourse() {
+     if (!planned) return;
+@@ -354,6 +425,32 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
+             />
+           </div>
+ 
++          <div>
++            <p id="ai-style" className={LABEL}>What kind of video?</p>
++            <p className="mt-1 text-[12px] text-[#6b7280]">
++              Every video in the course is made in the style you pick. Watch the previews — and open
++              &ldquo;Rules and sample lines&rdquo; to hear how the script will sound.
++            </p>
++            {planned ? (
++              <p className="mt-2 flex items-center gap-2 text-[13px] text-[#4b5563]">
++                <StyleBadge style={planned.style ?? style} /> This course is made in this style.
++              </p>
++            ) : (
++              <VideoStylePicker
++                styles={styles}
++                value={style}
++                onChange={setStyle}
++                error={stylesError}
++              />
++            )}
++            {motion && !planned ? (
++              <p className="mt-2 text-[12px] text-[#4b5563]">
++                In {styleLabel(style, styles)}, each video teaches through a named model and walks
++                through at least two real situations — you will add those to each video below.
++              </p>
++            ) : null}
++          </div>
++
+           <div>
+             <label className={LABEL}>How many weeks?</label>
+             <div className="mt-2 flex items-center gap-3">
+@@ -455,6 +552,21 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
+                       placeholder="After this video, a learner can…"
+                       className={`mt-2 ${INPUT}`} aria-label={`Week ${wi + 1} video ${vi + 1} outcome`}
+                     />
++                    {motion ? (
++                      <>
++                        <MotionFieldsEditor
++                          value={v.motion ?? emptyMotionFields()}
++                          onChange={(next) => updateMotion(wi, vi, next)}
++                          disabled={!!planned}
++                          label={`Week ${wi + 1} video ${vi + 1}`}
++                        />
++                        {!planned && motionGaps(v.motion).length > 0 && (v.title.trim() || v.slo.trim()) ? (
++                          <p className="mt-1.5 text-[12px] text-[#92400e]">
++                            Still needs {motionGaps(v.motion).join(' and ')}.
++                          </p>
++                        ) : null}
++                      </>
++                    ) : null}
+                   </div>
+                 ))}
+               </div>
+@@ -483,6 +595,15 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
+           </div>
+         ) : null}
+ 
++        {planned && isMotion(planned.style) ? <CourseSlos slos={planned.slos} /> : null}
++
++        {!planned && motionIncomplete > 0 && filled.length > 0 ? (
++          <p className="mt-4 text-[12px] text-[#92400e]">
++            {motionIncomplete} {plural(motionIncomplete, 'video still needs', 'videos still need')} a model
++            and two walk-throughs before this can be saved.
++          </p>
++        ) : null}
++
+         {!planned ? (
+           <div className="mt-5 flex items-center justify-between">
+             <button onClick={() => { forgetPlannedCourse(); router.push('/courses'); }} className="text-sm text-[#9ca3af] hover:text-[#5f6880] transition-colors">
+@@ -619,6 +740,7 @@ export function CourseBuilderForm({ resumeId }: { resumeId?: string | null }) {
+               <li>· This reserves <span className="font-semibold text-[#0f1222]">${planned.ourCostUsd.toFixed(2)}</span> of real money and cannot be undone. The final cost is Content Automation&apos;s real cost for each video and can be higher; the Library shows it once the video is made.</li>
+               <li>· Videos are made <span className="font-semibold text-[#0f1222]">one at a time</span>. Each stops for you to approve before the next begins, so a wrong format costs one video rather than all of them.</li>
+               <li>· They will be filed under <span className="font-mono text-[#0f1222]">{series}</span>.</li>
++              <li>· Every video is made in <span className="font-semibold text-[#0f1222]">{styleLabel(planned.style ?? style, styles)}</span>.</li>
+               <li>· Your course already exists either way. This only adds video to it.</li>
+             </ul>
+             <div className="mt-5 flex justify-end gap-2">
+diff --git a/apps/web/src/app/build/MakeVideoForm.tsx b/apps/web/src/app/build/MakeVideoForm.tsx
+index df3d58f..cb19ef1 100644
+--- a/apps/web/src/app/build/MakeVideoForm.tsx
++++ b/apps/web/src/app/build/MakeVideoForm.tsx
+@@ -13,12 +13,17 @@
+  * 3. SUBMIT LANDS IN THE LIBRARY, NOT ON A WAITING SCREEN. The work runs on the server whether or
+  *    not this tab stays open, and a person told to wait 25 minutes on a page closes it anyway. The
+  *    Library is where they come back to, and the email brings them there.
++ * 4. THE VIDEO STYLE IS PICKED UNDER THE TOPIC (2026-10-08), as a compact version of the course
++ *    builder's picker — preview, what it is best for, and how the script sounds. Sent as `style`;
++ *    absent or unloadable means the default, which is what every video was made in before.
+  */
+-import { useState, useEffect, useCallback } from 'react';
++import { useState, useEffect, useCallback, useRef } from 'react';
+ import { useRouter } from 'next/navigation';
+ import { Loader2 } from 'lucide-react';
+ import { apiRequest, errorText } from '@/lib/api';
+ import { useAuthStore } from '@/store/auth';
++import { DEFAULT_STYLE, initialStyle, loadStyles, type VideoStyleInfo } from '@/lib/video-styles';
++import { VideoStylePicker } from '@/components/VideoStyle';
+ 
+ interface QueueState {
+   inFlight: number;
+@@ -49,6 +54,25 @@ export function MakeVideoForm() {
+   // Re-rendered every 15s purely so the "in N min" countdown does not go stale on an idle tab.
+   const [, setTick] = useState(0);
+   const [queueError, setQueueError] = useState<string | null>(null);
++  const [styles, setStyles] = useState<VideoStyleInfo[] | null>(null);
++  const [stylesError, setStylesError] = useState<string | null>(null);
++  const [style, setStyle] = useState<string>(DEFAULT_STYLE);
++  const styleChosen = useRef(false);
++
++  useEffect(() => {
++    let cancelled = false;
++    void (async () => {
++      try {
++        const res = await loadStyles('videos');
++        if (cancelled) return;
++        setStyles(res.styles);
++        if (!styleChosen.current) setStyle(initialStyle(res));
++      } catch (e) {
++        if (!cancelled) setStylesError(errorText(e, 'Could not load the video styles.'));
++      }
++    })();
++    return () => { cancelled = true; };
++  }, []);
+ 
+   const loadQueue = useCallback(async () => {
+     try {
+@@ -79,7 +103,7 @@ export function MakeVideoForm() {
+     try {
+       const { id } = await apiRequest<{ id: string; status: string }>('/api/content-videos', {
+         method: 'POST',
+-        body: JSON.stringify({ topic: trimmed }),
++        body: JSON.stringify({ topic: trimmed, style }),
+       });
+       router.push(`/build?tab=library&focus=${id}`);
+     } catch (err) {
+@@ -167,6 +191,18 @@ export function MakeVideoForm() {
+           </p>
+         </div>
+ 
++        <div>
++          <p className="block text-sm font-medium text-[#0f1222]">What kind of video?</p>
++          <VideoStylePicker
++            styles={styles}
++            value={style}
++            onChange={(id) => { styleChosen.current = true; setStyle(id); }}
++            disabled={submitting}
++            error={stylesError}
++            compact
++          />
++        </div>
++
+         <div className="flex items-center justify-end pt-1">
+           <button
+             type="submit"
+diff --git a/apps/web/src/app/courses/build/[id]/page.tsx b/apps/web/src/app/courses/build/[id]/page.tsx
+index 718ea26..3d4ddad 100644
+--- a/apps/web/src/app/courses/build/[id]/page.tsx
++++ b/apps/web/src/app/courses/build/[id]/page.tsx
+@@ -25,6 +25,8 @@ import { courseBanner, lessonActions } from '@/lib/course-hold';
+ import { scriptBeatViews, scriptIsReadable, type ScriptData } from '@/lib/lesson-script';
+ import { lessonVideoState } from '@/lib/lesson-preview-status';
+ import LessonPreview from './LessonPreview';
++import { isMotion, type PlanMotionLesson } from '@/lib/video-styles';
++import { CourseSlos, MotionLessonDetails, StyleBadge } from '@/components/VideoStyle';
+ 
+ const POLL_MS = 15_000;
+ 
+@@ -97,6 +99,16 @@ interface Course {
+   id: string;
+   topic: string;
+   series: string | null;
++  /** The video style every lesson is made in. Absent on an older API; such a course is character-arc. */
++  style?: string | null;
++  /**
++   * The plan as stored. Read here only for what the lesson rows do not carry: in motion-graphics,
++   * the course SLOs and each lesson's SLO ids, models and walk-throughs — what its video is built from.
++   */
++  plan?: {
++    slos?: { id: string; text: string }[];
++    modules?: { lessons?: PlanMotionLesson[] }[];
++  } | null;
+   status: string;
+   confirmLessons: number | null;
+   authorizedUsd: string | null;
+@@ -326,7 +338,10 @@ export default function CourseBuildPage() {
+             <ArrowLeft size={14} strokeWidth={2.5} /> Back to the Library
+           </button>
+ 
+-          <h1 className="text-[22px] font-semibold text-[#0f1222]">{course.topic}</h1>
++          <div className="flex flex-wrap items-center gap-2">
++            <h1 className="text-[22px] font-semibold text-[#0f1222]">{course.topic}</h1>
++            <StyleBadge style={course.style} />
++          </div>
+           <p className="mt-1 text-[13px] text-[#6b7280]">
+             {course.confirmLessons ?? course.lessons.length} lessons
+             {course.series ? <> · filed under <span className="font-mono">{course.series}</span></> : null}
+@@ -334,6 +349,8 @@ export default function CourseBuildPage() {
+             {Number(course.partnerSpentUsd) > 0 ? <> · ${Number(course.partnerSpentUsd).toFixed(2)} spent so far</> : null}
+           </p>
+ 
++          {isMotion(course.style) ? <CourseSlos slos={course.plan?.slos} /> : null}
++
+           {course.status === 'planned' ? (
+             <div className="mt-4">
+               <p className="text-[14px] text-[#5b6070]">This course is planned but not created yet.</p>
+@@ -452,6 +469,10 @@ export default function CourseBuildPage() {
+                       </p>
+                       <p className="mt-0.5 text-[14px] font-medium text-[#0f1222]">{l.title}</p>
+                       {l.slo ? <p className="mt-1 text-[12px] text-[#6b7280]">{l.slo}</p> : null}
++                      {isMotion(course.style) ? (
++                        // moduleIndex and lessonIndex are 1-based, matching lessonsOf() on the server.
++                        <MotionLessonDetails lesson={course.plan?.modules?.[l.moduleIndex - 1]?.lessons?.[l.lessonIndex - 1]} />
++                      ) : null}
+                       {l.rejectReason ? (
+                         <p className="mt-1 text-[12px] text-[#991b1b]">Rejected: {l.rejectReason}</p>
+                       ) : null}
+diff --git a/apps/web/src/app/videos/[id]/page.tsx b/apps/web/src/app/videos/[id]/page.tsx
+index 53154f8..9ad88d8 100644
+--- a/apps/web/src/app/videos/[id]/page.tsx
++++ b/apps/web/src/app/videos/[id]/page.tsx
+@@ -20,6 +20,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
+ import { useParams, useRouter } from 'next/navigation';
+ import { ArrowLeft, AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react';
+ import DashboardLayout from '@/components/DashboardLayout';
++import { StyleBadge } from '@/components/VideoStyle';
+ import { apiRequest, errorText, API_ORIGIN } from '@/lib/api';
+ import {
+   videoStopView,
+@@ -48,6 +49,8 @@ interface Qa {
+ interface Job {
+   id: string;
+   topic: string;
++  /** The video style it is made in (2026-10-08). Absent on an older API; such a video is character-arc. */
++  style?: string | null;
+   status: string;
+   partnerStage: string | null;
+   script: Script | null;
+@@ -241,7 +244,10 @@ export default function VideoJobPage() {
+           </button>
+ 
+           <div className="bg-white rounded-xl border border-[#ebebf0] p-6 shadow-[0_1px_3px_rgba(15,18,34,0.05)]">
+-            <div className="text-xs uppercase tracking-wide text-[#9ca3af]">Topic</div>
++            <div className="flex items-center justify-between gap-2">
++              <div className="text-xs uppercase tracking-wide text-[#9ca3af]">Topic</div>
++              <StyleBadge style={job.style} />
++            </div>
+             <h1 className="mt-1 text-[18px] font-bold text-[#0f1222] tracking-[-0.02em]">{job.topic}</h1>
+ 
+             {/* ── Working ─────────────────────────────────────────────────────────────────── */}
+diff --git a/apps/web/src/components/VideoStyle.tsx b/apps/web/src/components/VideoStyle.tsx
+new file mode 100644
+index 0000000..26787b1
+--- /dev/null
++++ b/apps/web/src/components/VideoStyle.tsx
+@@ -0,0 +1,342 @@
++'use client';
++/**
++ * Video styles (Content Automation, 2026-10-08) — the picker and the pieces that show a style's
++ * consequences. Pure helpers and the rules live in lib/video-styles.ts.
++ *
++ * THE PICKER SITS WHERE THE TOPIC IS TYPED, not on a page of its own. The style decides what the
++ * rest of the form asks for (a Flat Motion Graphics video is built from a model and walk-throughs),
++ * so choosing it after the topic and before the videos is the only order in which every field the
++ * instructor sees is one that will be used.
++ *
++ * EACH CARD SHOWS WHAT YOU WILL GET, NOT A DESCRIPTION OF IT: their 12-second preview, muted and
++ * looping, and "how the script sounds" — who narrates and in what voice always visible, the rules
++ * and real sample lines one click away. The sample lines are from shipped videos.
++ */
++import { Loader2, Plus, X } from 'lucide-react';
++import {
++  costPerVideoText,
++  styleLabel,
++  type MotionFields,
++  type VideoStyleInfo,
++} from '@/lib/video-styles';
++
++const MAX_MODELS = 3;
++const MAX_WALKTHROUGHS = 5;
++
++const INPUT =
++  'w-full rounded-lg border border-[#ebebf0] px-3 py-2 text-[13px] text-[#0f1222] '
++  + 'placeholder:text-[#9ca3af] focus:outline-none focus:border-[#3c65f5] focus:ring-2 '
++  + 'focus:ring-[#3c65f5]/10 disabled:bg-gray-50 disabled:text-gray-500 transition-colors';
++
++/** "How the script sounds". Narrator and voice always shown; rules and sample lines in a disclosure. */
++function WritingStyleBlock({ style, compact }: { style: VideoStyleInfo; compact: boolean }) {
++  const w = style.writingStyle;
++  if (!w) return null;
++  return (
++    <div className={`border-t border-[#ebebf0] ${compact ? 'px-3 py-2' : 'px-4 py-3'}`}>
++      <p className="text-[11px] font-semibold uppercase tracking-wide text-[#9ca3af]">How the script sounds</p>
++      {w.narrator ? <p className="mt-1 text-[12px] text-[#4b5563]"><span className="font-medium text-[#0f1222]">Narrator:</span> {w.narrator}</p> : null}
++      {w.voice ? <p className="mt-0.5 text-[12px] text-[#4b5563]"><span className="font-medium text-[#0f1222]">Voice:</span> {w.voice}</p> : null}
++      {w.rules.length > 0 || w.sample.length > 0 ? (
++        <details className="mt-1.5 group">
++          <summary className="cursor-pointer select-none text-[12px] font-medium text-[#3c65f5] hover:underline">
++            Rules and sample lines
++          </summary>
++          {w.rules.length > 0 ? (
++            <ul className="mt-2 list-disc space-y-0.5 pl-4 text-[12px] text-[#4b5563]">
++              {w.rules.map((r, i) => <li key={i}>{r}</li>)}
++            </ul>
++          ) : null}
++          {w.sample.length > 0 ? (
++            <blockquote className="mt-2 space-y-1.5 border-l-2 border-[#3c65f5]/30 pl-3">
++              {w.sample.map((s, i) => (
++                <p key={i} className="text-[12px] text-[#0f1222]">
++                  &ldquo;{s.line}&rdquo;
++                  {s.read ? <span className="ml-1.5 text-[11px] italic text-[#9ca3af]">({s.read})</span> : null}
++                </p>
++              ))}
++            </blockquote>
++          ) : null}
++        </details>
++      ) : null}
++    </div>
++  );
++}
++
++/**
++ * The style picker. `styles === null` while loading; `error` when the list could not be had, in
++ * which case the form carries on in the default style and says so rather than blocking.
++ */
++export function VideoStylePicker({
++  styles,
++  value,
++  onChange,
++  disabled = false,
++  compact = false,
++  error = null,
++}: {
++  styles: VideoStyleInfo[] | null;
++  value: string;
++  onChange: (id: string) => void;
++  disabled?: boolean;
++  compact?: boolean;
++  error?: string | null;
++}) {
++  if (error) {
++    return (
++      <p className="mt-2 rounded-lg border border-[#f59e0b]/30 bg-[#fffbeb] p-2 text-[12px] text-[#92400e]">
++        {error} This will be made in {styleLabel(value)}.
++      </p>
++    );
++  }
++  if (styles === null) {
++    return (
++      <p className="mt-2 inline-flex items-center gap-1.5 text-[12px] text-[#9ca3af]">
++        <Loader2 size={12} className="animate-spin" /> Loading the video styles…
++      </p>
++    );
++  }
++
++  return (
++    <div
++      role="radiogroup"
++      aria-label="Video style"
++      className={`mt-2 grid gap-3 ${compact ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 md:grid-cols-2'}`}
++    >
++      {styles.map((s) => {
++        const on = s.id === value;
++        const cost = costPerVideoText(s.estimatedCostPerLessonUsd);
++        return (
++          <div
++            key={s.id}
++            data-testid={`style-card-${s.id}`}
++            className={`overflow-hidden rounded-xl border bg-white transition-colors ${
++              on ? 'border-[#3c65f5] ring-2 ring-[#3c65f5]/15' : 'border-[#ebebf0]'
++            } ${disabled && !on ? 'opacity-50' : ''}`}
++          >
++            <button
++              type="button"
++              role="radio"
++              aria-checked={on}
++              disabled={disabled}
++              onClick={() => onChange(s.id)}
++              className="block w-full text-left disabled:cursor-default"
++            >
++              {s.previewUrl ? (
++                <video
++                  src={s.previewUrl}
++                  muted
++                  loop
++                  playsInline
++                  autoPlay
++                  preload="metadata"
++                  aria-label={`${s.label} — ${s.previewSeconds ?? 12}-second preview`}
++                  className={`w-full bg-[#0f1222] object-cover ${compact ? 'aspect-video max-h-32' : 'aspect-video'}`}
++                />
++              ) : null}
++              <div className={compact ? 'px-3 py-2' : 'px-4 py-3'}>
++                <div className="flex items-center justify-between gap-2">
++                  <p className="text-[14px] font-semibold text-[#0f1222]">{s.label}</p>
++                  <span
++                    aria-hidden
++                    className={`h-4 w-4 shrink-0 rounded-full border-2 ${on ? 'border-[#3c65f5] bg-[#3c65f5] shadow-[inset_0_0_0_2px_white]' : 'border-[#d1d5db]'}`}
++                  />
++                </div>
++                {s.summary ? <p className="mt-1 text-[12px] text-[#4b5563]">{s.summary}</p> : null}
++                {s.bestFor ? (
++                  <p className="mt-1 text-[12px] text-[#6b7280]"><span className="font-medium">Best for:</span> {s.bestFor}</p>
++                ) : null}
++                {cost ? <p className="mt-1 text-[11px] text-[#9ca3af]">Content Automation estimates {cost}.</p> : null}
++              </div>
++            </button>
++            <WritingStyleBlock style={s} compact={compact} />
++          </div>
++        );
++      })}
++    </div>
++  );
++}
++
++/** The style as a small pill — the Library, the course page, the video page. */
++export function StyleBadge({ style }: { style: string | null | undefined }) {
++  return (
++    <span
++      data-testid="style-badge"
++      className="inline-flex items-center rounded-full bg-[#f0f4ff] px-2 py-0.5 text-[11px] font-medium text-[#3c65f5]"
++    >
++      {styleLabel(style)}
++    </span>
++  );
++}
++
++/**
++ * The model and walk-throughs ONE motion-graphics video is built from, as editable rows. Starts at
++ * their minimum (one model, two walk-throughs); rows beyond the minimum can be removed.
++ */
++export function MotionFieldsEditor({
++  value,
++  onChange,
++  disabled = false,
++  label,
++}: {
++  value: MotionFields;
++  onChange: (next: MotionFields) => void;
++  disabled?: boolean;
++  /** e.g. "Week 1 video 2" — prefixes every aria-label so each input is findable. */
++  label: string;
++}) {
++  const setModel = (i: number, field: keyof MotionFields['models'][number], v: string) =>
++    onChange({ ...value, models: value.models.map((m, j) => (j === i ? { ...m, [field]: v } : m)) });
++  const setWalk = (i: number, field: keyof MotionFields['walkthroughs'][number], v: string) =>
++    onChange({ ...value, walkthroughs: value.walkthroughs.map((w, j) => (j === i ? { ...w, [field]: v } : w)) });
++
++  return (
++    <div className="mt-3 space-y-3 rounded-md border border-dashed border-[#c7d2fe] bg-white p-3">
++      <div>
++        <p className="text-[12px] font-medium text-[#0f1222]">Model it teaches through</p>
++        <p className="text-[11px] text-[#6b7280]">A named framework and who it is by — e.g. SCARF, David Rock.</p>
++        {value.models.map((m, i) => (
++          <div key={i} className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto]">
++            <input
++              value={m.name} onChange={(e) => setModel(i, 'name', e.target.value)} disabled={disabled}
++              placeholder="Model name" maxLength={120} className={INPUT} aria-label={`${label} model ${i + 1} name`}
++            />
++            <input
++              value={m.author} onChange={(e) => setModel(i, 'author', e.target.value)} disabled={disabled}
++              placeholder="Author" maxLength={120} className={INPUT} aria-label={`${label} model ${i + 1} author`}
++            />
++            {!disabled && value.models.length > 1 ? (
++              <button
++                type="button" title="Remove this model"
++                onClick={() => onChange({ ...value, models: value.models.filter((_, j) => j !== i) })}
++                className="rounded px-1.5 text-[#dc2626] hover:bg-[#fef2f2]"
++              >
++                <X size={14} />
++              </button>
++            ) : <span />}
++            <input
++              value={m.summary} onChange={(e) => setModel(i, 'summary', e.target.value)} disabled={disabled}
++              placeholder="In one line, what the model says (optional)" maxLength={400}
++              className={`${INPUT} sm:col-span-2`} aria-label={`${label} model ${i + 1} summary`}
++            />
++          </div>
++        ))}
++        {!disabled && value.models.length < MAX_MODELS ? (
++          <button
++            type="button"
++            onClick={() => onChange({ ...value, models: [...value.models, { name: '', author: '', summary: '' }] })}
++            className="mt-2 inline-flex items-center gap-1 text-[12px] font-medium text-[#3c65f5] hover:underline"
++          >
++            <Plus size={12} /> Another model
++          </button>
++        ) : null}
++      </div>
++
++      <div>
++        <p className="text-[12px] font-medium text-[#0f1222]">Walk-throughs (at least two)</p>
++        <p className="text-[11px] text-[#6b7280]">
++          Real situations the video walks the learner through, step by step, using the model.
++        </p>
++        {value.walkthroughs.map((w, i) => (
++          <div key={i} className="mt-2 rounded-md bg-[#f8f9fb] p-2">
++            <div className="flex items-center gap-2">
++              <input
++                value={w.title} onChange={(e) => setWalk(i, 'title', e.target.value)} disabled={disabled}
++                placeholder={`Walk-through ${i + 1} title (optional)`} maxLength={120} className={INPUT}
++                aria-label={`${label} walk-through ${i + 1} title`}
++              />
++              {!disabled && value.walkthroughs.length > 2 ? (
++                <button
++                  type="button" title="Remove this walk-through"
++                  onClick={() => onChange({ ...value, walkthroughs: value.walkthroughs.filter((_, j) => j !== i) })}
++                  className="rounded px-1.5 text-[#dc2626] hover:bg-[#fef2f2]"
++                >
++                  <X size={14} />
++                </button>
++              ) : null}
++            </div>
++            <textarea
++              value={w.situation} onChange={(e) => setWalk(i, 'situation', e.target.value)} disabled={disabled}
++              rows={2} maxLength={1000}
++              placeholder="The situation — e.g. An employee says their manager never gives feedback…"
++              className={`mt-1.5 ${INPUT}`} aria-label={`${label} walk-through ${i + 1} situation`}
++            />
++          </div>
++        ))}
++        {!disabled && value.walkthroughs.length < MAX_WALKTHROUGHS ? (
++          <button
++            type="button"
++            onClick={() => onChange({ ...value, walkthroughs: [...value.walkthroughs, { title: '', situation: '' }] })}
++            className="mt-2 inline-flex items-center gap-1 text-[12px] font-medium text-[#3c65f5] hover:underline"
++          >
++            <Plus size={12} /> Another walk-through
++          </button>
++        ) : null}
++      </div>
++    </div>
++  );
++}
++
++/** A course's numbered SLOs, as the plan carries them in motion-graphics. */
++export function CourseSlos({ slos }: { slos: { id: string; text: string }[] | null | undefined }) {
++  if (!slos || slos.length === 0) return null;
++  return (
++    <div className="mt-4 rounded-lg border border-[#ebebf0] bg-white p-4">
++      <p className="text-[13px] font-semibold text-[#0f1222]">Course outcomes (SLOs)</p>
++      <ol className="mt-2 space-y-1">
++        {slos.map((s) => (
++          <li key={s.id} className="flex gap-2 text-[12px] text-[#4b5563]">
++            <span className="shrink-0 rounded bg-[#f0f4ff] px-1.5 font-mono text-[11px] text-[#3c65f5]">{s.id}</span>
++            <span>{s.text}</span>
++          </li>
++        ))}
++      </ol>
++    </div>
++  );
++}
++
++/** One motion lesson's SLO ids, models (with authors) and walk-throughs, read-only. */
++export function MotionLessonDetails({
++  lesson,
++}: {
++  lesson: {
++    sloIds?: string[];
++    models?: { name: string; author?: string; summary?: string }[];
++    walkthroughs?: { title?: string; situation: string }[];
++  } | null | undefined;
++}) {
++  if (!lesson) return null;
++  const { sloIds = [], models = [], walkthroughs = [] } = lesson;
++  if (sloIds.length === 0 && models.length === 0 && walkthroughs.length === 0) return null;
++  return (
++    <div className="mt-2 space-y-1.5">
++      {sloIds.length > 0 ? (
++        <div className="flex flex-wrap gap-1">
++          {sloIds.map((id) => (
++            <span key={id} className="rounded bg-[#f0f4ff] px-1.5 font-mono text-[11px] text-[#3c65f5]">SLO {id}</span>
++          ))}
++        </div>
++      ) : null}
++      {models.length > 0 ? (
++        <p className="text-[12px] text-[#4b5563]">
++          <span className="font-medium text-[#0f1222]">Model{models.length > 1 ? 's' : ''}:</span>{' '}
++          {models.map((m, i) => (
++            <span key={i}>
++              {i > 0 ? '; ' : ''}{m.name}{m.author ? <span className="text-[#6b7280]"> — {m.author}</span> : null}
++            </span>
++          ))}
++        </p>
++      ) : null}
++      {walkthroughs.length > 0 ? (
++        <div className="text-[12px] text-[#4b5563]">
++          <span className="font-medium text-[#0f1222]">Walk-throughs:</span>
++          <ul className="mt-0.5 list-disc space-y-0.5 pl-4">
++            {walkthroughs.map((w, i) => (
++              <li key={i}>{w.title ? <span className="font-medium">{w.title}: </span> : null}{w.situation}</li>
++            ))}
++          </ul>
++        </div>
++      ) : null}
++    </div>
++  );
++}
+diff --git a/apps/web/src/lib/content-courses-client.ts b/apps/web/src/lib/content-courses-client.ts
+index 3a2b5f1..d4460f1 100644
+--- a/apps/web/src/lib/content-courses-client.ts
++++ b/apps/web/src/lib/content-courses-client.ts
+@@ -49,7 +49,22 @@ export interface PlanRequest {
+    * Content Automation's §2.2 is explicit that an authored plan is a first-class input — we do not
+    * have to call their planner first. This is the shape /courses/ai-builder collects.
+    */
+-  weeks?: { title?: string; videos: { title: string; slo: string }[] }[];
++  weeks?: {
++    title?: string;
++    videos: {
++      title: string;
++      slo: string;
++      /** motion-graphics only: at least one, with a name. */
++      models?: { name: string; author?: string; summary?: string }[];
++      /** motion-graphics only: at least two, each with a situation. */
++      walkthroughs?: { title?: string; situation: string }[];
++    }[];
++  }[];
++  /**
++   * The video style every lesson is made in — an id from GET /api/content-courses/styles. Fixed
++   * for the course once planned. Absent is `character-arc`.
++   */
++  style?: string;
+ }
+ 
+ /**
+diff --git a/apps/web/src/lib/course-resume.test.ts b/apps/web/src/lib/course-resume.test.ts
+index bf64631..1eed85a 100644
+--- a/apps/web/src/lib/course-resume.test.ts
++++ b/apps/web/src/lib/course-resume.test.ts
+@@ -24,6 +24,34 @@ describe('formStateFromCourse', () => {
+     const s = formStateFromCourse({ ...BASE, retryUsd: 2.5, estimate: { ...BASE.estimate, lessons: 3 } });
+     expect('planned' in s && s.planned.ourCostUsd).toBe(7.5);
+   });
++  it('brings back the style, and the models, walk-throughs and SLOs', () => {
++    const s = formStateFromCourse({
++      ...BASE,
++      style: 'motion-graphics',
++      plan: {
++        ...BASE.plan,
++        slos: [{ id: '1.1', text: 'Name the two axes.' }],
++        modules: [{ title: 'Week 1', lessons: [{
++          title: 'What a bar chart shows', slo: 'Name the two axes.', sloIds: ['1.1'],
++          models: [{ name: 'Axis first', author: 'A. Teacher' }],
++          walkthroughs: [{ situation: 'a sales chart' }, { title: 'Rain', situation: 'a rainfall chart' }],
++        }] }],
++      },
++    });
++    expect(s).toMatchObject({
++      style: 'motion-graphics',
++      planned: { style: 'motion-graphics', slos: [{ id: '1.1', text: 'Name the two axes.' }] },
++      weeks: [{ videos: [{ motion: {
++        models: [{ name: 'Axis first', author: 'A. Teacher', summary: '' }],
++        walkthroughs: [{ title: '', situation: 'a sales chart' }, { title: 'Rain', situation: 'a rainfall chart' }],
++      } }] }],
++    });
++  });
++  it('treats a course from before styles as Character Arc, with no motion fields', () => {
++    const s = formStateFromCourse(BASE);
++    expect('style' in s && s.style).toBe('character-arc');
++    expect('weeks' in s && s.weeks[0]!.videos[0]!.motion).toBeUndefined();
++  });
+   it('hydrates a materialised plan straight to the build step', () => {
+     const s = formStateFromCourse({ ...BASE, cohortId: 'cohort-9' });
+     expect('cohortId' in s && s.cohortId).toBe('cohort-9');
+diff --git a/apps/web/src/lib/course-resume.ts b/apps/web/src/lib/course-resume.ts
+index 657fd13..1254a12 100644
+--- a/apps/web/src/lib/course-resume.ts
++++ b/apps/web/src/lib/course-resume.ts
+@@ -2,39 +2,60 @@
+  * The builder's "planned" state lives on the server (content_courses.plan). This maps the GET body
+  * back onto the form so a tab switch, reload, or the Library's link can resume a plan instead of
+  * orphaning it (2026-09-23 run log, BUG-1). Pure: no fetch, no React.
++ *
++ * The video style comes back too (2026-10-08), with a motion-graphics plan's models and
++ * walk-throughs per lesson, so a resumed Flat Motion Graphics plan shows exactly what will be built.
+  */
++import { DEFAULT_STYLE, isMotion, motionFieldsFromPlan, type MotionFields, type PlanMotionLesson } from './video-styles';
++
+ export interface CourseDetail {
+   id: string;
+   topic: string;
+   status: string;
+   cohortId: string | null;
+   series: string | null;
++  /** Absent on an API from before video styles; such a course is `character-arc`. */
++  style?: string | null;
+   plan: { audience?: string | null; summary?: string | null;
+-          modules: { title: string; lessons: { title: string; slo: string }[] }[] };
++          slos?: { id: string; text: string }[];
++          modules: { title: string; lessons: ({ title: string; slo: string } & PlanMotionLesson)[] }[] };
+   estimate: { lessons: number; estimatedCostUsd: number; estimatedBuildMinutes: number };
+   retryUsd: number;
+ }
+ 
+ export interface ResumeState {
+   topic: string; audience: string; outcomes: string;
+-  weeks: { title: string; videos: { title: string; slo: string }[] }[];
+-  planned: { id: string; estimate: CourseDetail['estimate']; ourCostUsd: number };
++  style: string;
++  weeks: { title: string; videos: { title: string; slo: string; motion?: MotionFields }[] }[];
++  planned: {
++    id: string; estimate: CourseDetail['estimate']; ourCostUsd: number;
++    style: string; slos: { id: string; text: string }[];
++  };
+   cohortId: string | null;
+ }
+ 
+ export function formStateFromCourse(course: CourseDetail): ResumeState | { redirectTo: string } {
+   if (course.status !== 'planned') return { redirectTo: `/courses/build/${course.id}` };
++  const style = course.style || DEFAULT_STYLE;
++  const motion = isMotion(style);
+   return {
+     topic: course.topic,
+     audience: course.plan.audience ?? '',
+     outcomes: course.plan.summary ?? '',
++    style,
+     weeks: course.plan.modules.map((m) => ({
+       title: m.title,
+-      videos: m.lessons.map((l) => ({ title: l.title, slo: l.slo })),
++      videos: m.lessons.map((l) => ({
++        title: l.title,
++        slo: l.slo,
++        ...(motion ? { motion: motionFieldsFromPlan(l) } : {}),
++      })),
+     })),
+     planned: {
+       id: course.id,
+       estimate: course.estimate,
++      style,
++      slos: course.plan.slos ?? [],
+       // Same arithmetic as POST /api/content-courses (routes/content-courses.ts:312); the build
+       // route compares confirmUsd to this figure to the cent.
+       ourCostUsd: Number((course.retryUsd * course.estimate.lessons).toFixed(2)),
+diff --git a/apps/web/src/lib/video-styles.test.ts b/apps/web/src/lib/video-styles.test.ts
+new file mode 100644
+index 0000000..e4f0a17
+--- /dev/null
++++ b/apps/web/src/lib/video-styles.test.ts
+@@ -0,0 +1,98 @@
++/**
++ * Guards on the video-style helpers. The rule that matters is the motion one: a Flat Motion
++ * Graphics video sent without a model and two walk-throughs is refused by Content Automation's
++ * build, so the form must not offer to send it — and must not drop what the instructor wrote.
++ */
++import { describe, it, expect } from 'vitest';
++import {
++  initialStyle,
++  styleLabel,
++  motionGaps,
++  motionPayload,
++  emptyMotionFields,
++  motionFieldsFromPlan,
++  costPerVideoText,
++  type StylesResponse,
++} from './video-styles';
++
++const list: StylesResponse = {
++  default: 'character-arc',
++  styles: [
++    { id: 'character-arc', label: 'Character Arc', default: true, summary: '', bestFor: '', previewUrl: null, previewSeconds: 12, estimatedCostPerLessonUsd: 1.5, writingStyle: null },
++    { id: 'motion-graphics', label: 'Flat Motion Graphics', default: false, summary: '', bestFor: '', previewUrl: null, previewSeconds: 12, estimatedCostPerLessonUsd: 0.5, writingStyle: null },
++  ],
++};
++
++describe('initialStyle', () => {
++  it('starts on the style the list marks default', () => {
++    expect(initialStyle(list)).toBe('character-arc');
++    expect(initialStyle({ ...list, default: 'motion-graphics' })).toBe('motion-graphics');
++  });
++
++  it('falls back to character-arc when the list could not be loaded', () => {
++    expect(initialStyle(null)).toBe('character-arc');
++    expect(initialStyle({ default: 'x', styles: [] })).toBe('character-arc');
++  });
++});
++
++describe('styleLabel', () => {
++  it('labels a stored id without the list, and an old row as Character Arc', () => {
++    expect(styleLabel('motion-graphics')).toBe('Flat Motion Graphics');
++    expect(styleLabel(null)).toBe('Character Arc');
++    expect(styleLabel('new-style', list.styles)).toBe('new-style');
++    expect(styleLabel('motion-graphics', list.styles)).toBe('Flat Motion Graphics');
++  });
++});
++
++describe('motionGaps', () => {
++  it('a fresh video needs a model and two walk-throughs', () => {
++    expect(motionGaps(emptyMotionFields())).toEqual(['a model', 'two walk-throughs']);
++  });
++
++  it('counts only walk-throughs that have a situation', () => {
++    expect(motionGaps({
++      models: [{ name: 'SCARF', author: '', summary: '' }],
++      walkthroughs: [{ title: 'a title only', situation: '' }, { title: '', situation: 'A real situation' }],
++    })).toEqual(['a second walk-through']);
++  });
++
++  it('is empty once the minimum is met', () => {
++    expect(motionGaps({
++      models: [{ name: 'SCARF', author: 'David Rock', summary: '' }],
++      walkthroughs: [{ title: '', situation: 'one' }, { title: '', situation: 'two' }],
++    })).toEqual([]);
++  });
++});
++
++describe('motionPayload', () => {
++  it('drops blank rows and blank optional fields', () => {
++    expect(motionPayload({
++      models: [{ name: ' SCARF ', author: 'David Rock', summary: '' }, { name: '', author: 'x', summary: '' }],
++      walkthroughs: [{ title: '', situation: 'one' }, { title: 'T', situation: 'two' }, { title: 'empty', situation: ' ' }],
++    })).toEqual({
++      models: [{ name: 'SCARF', author: 'David Rock' }],
++      walkthroughs: [{ situation: 'one' }, { title: 'T', situation: 'two' }],
++    });
++  });
++});
++
++describe('motionFieldsFromPlan', () => {
++  it('round-trips what was sent, so a resumed plan shows what will be built', () => {
++    const sent = { models: [{ name: 'GROW', author: 'John Whitmore' }], walkthroughs: [{ situation: 'a' }, { title: 'b', situation: 'b' }] };
++    expect(motionPayload(motionFieldsFromPlan(sent))).toEqual(sent);
++  });
++
++  it('pads a plan with too few rows up to the minimum, never below it', () => {
++    const f = motionFieldsFromPlan({ walkthroughs: [{ situation: 'only' }] });
++    expect(f.models).toHaveLength(1);
++    expect(f.walkthroughs).toHaveLength(2);
++    expect(f.walkthroughs[0]!.situation).toBe('only');
++  });
++});
++
++describe('costPerVideoText', () => {
++  it('says it is an estimate, and says nothing without a number', () => {
++    expect(costPerVideoText(0.5)).toBe('about $0.50 per video');
++    expect(costPerVideoText(null)).toBeNull();
++  });
++});
+diff --git a/apps/web/src/lib/video-styles.ts b/apps/web/src/lib/video-styles.ts
+new file mode 100644
+index 0000000..cf78190
+--- /dev/null
++++ b/apps/web/src/lib/video-styles.ts
+@@ -0,0 +1,158 @@
++/**
++ * Video styles (Content Automation, 2026-10-08) — the pure half, so a test can reach it.
++ *
++ * A course or a single video is made in ONE style, picked where the topic is typed:
++ *   character-arc   — the illustrated story about Ali. The default, and what everything made
++ *                     before today was.
++ *   motion-graphics — flat motion graphics spoken to "you". Every video is BUILT from at least one
++ *                     named model and at least two walk-throughs; their build refuses one without.
++ *
++ * The list itself (labels, previews, prices, how the script sounds) comes from the API — never
++ * written into a page — because it is theirs to change. Only the two ids, and the motion rule,
++ * live here, and the server checks both again.
++ *
++ * Node-environment vitest, no DOM (see apps/web/vitest.config.ts) — keep this file free of React.
++ */
++import { apiRequest } from './api';
++
++export interface WritingStyleSample {
++  line: string;
++  /** motion-graphics only: how the line is read. Shown small and italic. */
++  read?: string;
++}
++
++export interface WritingStyle {
++  narrator: string;
++  voice: string;
++  rules: string[];
++  sample: WritingStyleSample[];
++}
++
++export interface VideoStyleInfo {
++  id: string;
++  label: string;
++  default: boolean;
++  summary: string;
++  bestFor: string;
++  previewUrl: string | null;
++  previewSeconds: number | null;
++  /** THEIR estimate. Our own charge per video comes from /spend and is what the confirm shows. */
++  estimatedCostPerLessonUsd: number | null;
++  writingStyle: WritingStyle | null;
++}
++
++export interface StylesResponse {
++  default: string;
++  styles: VideoStyleInfo[];
++}
++
++export const DEFAULT_STYLE = 'character-arc';
++export const MOTION_STYLE = 'motion-graphics';
++
++/** Labels for showing a stored style without fetching the list (badges, old rows). */
++const KNOWN_LABELS: Record<string, string> = {
++  'character-arc': 'Character Arc',
++  'motion-graphics': 'Flat Motion Graphics',
++};
++
++export function styleLabel(id: string | null | undefined, list?: VideoStyleInfo[] | null): string {
++  const key = id || DEFAULT_STYLE;
++  return list?.find((s) => s.id === key)?.label ?? KNOWN_LABELS[key] ?? key;
++}
++
++export function isMotion(id: string | null | undefined): boolean {
++  return id === MOTION_STYLE;
++}
++
++/** The style a fresh form starts on: the one the list marks default, else ours. */
++export function initialStyle(res: StylesResponse | null): string {
++  if (!res || res.styles.length === 0) return DEFAULT_STYLE;
++  return res.styles.find((s) => s.id === res.default)?.id
++    ?? res.styles.find((s) => s.default)?.id
++    ?? res.styles[0]!.id;
++}
++
++/**
++ * GET the list through our API — `/api/content-courses/styles` or `/api/content-videos/styles`,
++ * whichever router the form already has permission on. Same answer from both.
++ */
++export function loadStyles(from: 'courses' | 'videos'): Promise<StylesResponse> {
++  return apiRequest<StylesResponse>(from === 'courses' ? '/api/content-courses/styles' : '/api/content-videos/styles');
++}
++
++// ─── The motion-graphics fields on one authored video ───────────────────────────────────────────
++
++export interface ModelRow { name: string; author: string; summary: string }
++export interface WalkthroughRow { title: string; situation: string }
++
++export interface MotionFields {
++  models: ModelRow[];
++  walkthroughs: WalkthroughRow[];
++}
++
++/** Their minimum is one model and two walk-throughs, so a new video starts with exactly those rows. */
++export function emptyMotionFields(): MotionFields {
++  return {
++    models: [{ name: '', author: '', summary: '' }],
++    walkthroughs: [{ title: '', situation: '' }, { title: '', situation: '' }],
++  };
++}
++
++/**
++ * What a motion video still needs, as short phrases ("a model", "a second walk-through").
++ * Empty means it can be sent. The server and their build apply the same rule.
++ */
++export function motionGaps(v: Partial<MotionFields> | null | undefined): string[] {
++  const gaps: string[] = [];
++  const models = v?.models ?? [];
++  const walks = v?.walkthroughs ?? [];
++  if (!models.some((m) => m.name.trim())) gaps.push('a model');
++  const situated = walks.filter((w) => w.situation.trim()).length;
++  if (situated === 0) gaps.push('two walk-throughs');
++  else if (situated === 1) gaps.push('a second walk-through');
++  return gaps;
++}
++
++/** What is sent for one video: blank rows dropped, so the server sees only what was written. */
++export function motionPayload(v: MotionFields): {
++  models: { name: string; author?: string; summary?: string }[];
++  walkthroughs: { title?: string; situation: string }[];
++} {
++  return {
++    models: v.models
++      .filter((m) => m.name.trim())
++      .map((m) => ({
++        name: m.name.trim(),
++        ...(m.author.trim() ? { author: m.author.trim() } : {}),
++        ...(m.summary.trim() ? { summary: m.summary.trim() } : {}),
++      })),
++    walkthroughs: v.walkthroughs
++      .filter((w) => w.situation.trim())
++      .map((w) => ({ ...(w.title.trim() ? { title: w.title.trim() } : {}), situation: w.situation.trim() })),
++  };
++}
++
++// ─── Reading a stored plan back (resume, the course page) ───────────────────────────────────────
++
++export interface PlanMotionLesson {
++  sloIds?: string[];
++  models?: { name: string; author?: string; summary?: string }[];
++  walkthroughs?: { title?: string; situation: string }[];
++}
++
++/** A stored plan lesson's motion fields, as form rows. Missing becomes the empty minimum. */
++export function motionFieldsFromPlan(l: PlanMotionLesson | null | undefined): MotionFields {
++  const models = (l?.models ?? []).map((m) => ({ name: m.name ?? '', author: m.author ?? '', summary: m.summary ?? '' }));
++  const walkthroughs = (l?.walkthroughs ?? []).map((w) => ({ title: w.title ?? '', situation: w.situation ?? '' }));
++  const empty = emptyMotionFields();
++  return {
++    models: models.length > 0 ? models : empty.models,
++    walkthroughs: walkthroughs.length >= 2 ? walkthroughs : [...walkthroughs, ...empty.walkthroughs].slice(0, 2),
++  };
++}
++
++/** "$1.50 per video" — their estimate, worded as one. */
++export function costPerVideoText(usd: number | null | undefined): string | null {
++  if (typeof usd !== 'number' || !Number.isFinite(usd)) return null;
++  return `about $${usd.toFixed(2)} per video`;
++}
+-- 
+2.52.0.windows.1
+
