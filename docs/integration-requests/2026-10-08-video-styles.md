@@ -36,11 +36,26 @@ Each style has a **12-second preview video** you can play in the picker.
   `GET /demo/course-builder` on the service, now has the picker on the topic card, loads it from
   `GET /api/v1/styles`, sends `style`, and renders the motion-graphics SLOs, models and walk-throughs.
 
-**One product decision to confirm with Aroma.** The LMS course builder does not call our planner —
-instructors write each video's title and SLO themselves. The patch therefore asks the instructor to
-write, per video, at least one model and two walk-throughs when they choose Flat Motion Graphics
-("Generate Course" stays disabled until they do). If that is too much typing, the alternative is to
-let the LMS call `POST /api/v1/courses/plan` with `style: "motion-graphics"` to draft them.
+**Decided (Aroma, 2026-10-08): the models and walk-throughs are DRAFTED for the instructor.** The LMS
+course builder does not call our planner — instructors write each video's title and SLO themselves —
+so in Flat Motion Graphics the LMS sends those lessons to `POST /api/v1/courses/draft-teaching`
+(token required) and shows what comes back as an editable draft: numbered course SLOs, and per
+lesson the SLO ids, one to three models (name, author, summary) and two walk-throughs (title,
+situation). Lessons are returned in the same order, never changed, merged or dropped. One model
+call, about 20–40 seconds, nothing else spent. The instructor can edit anything; build still
+refuses a lesson with no model or fewer than two walk-throughs.
+
+```
+POST /api/v1/courses/draft-teaching
+{ "topic": "People skills for P&C Buddies", "audience": "…",
+  "lessons": [ { "title": "Your Role as a P&C Buddy", "slo": "…" }, … ] }
+→ 200 { "style": "motion-graphics",
+        "slos": [ { "id": "1.1", "text": "…" }, … ],
+        "lessons": [ { "index": 0, "title": "Your Role as a P&C Buddy", "sloIds": ["1.1","1.2"],
+                       "models": [ { "name": "Empowerment Dynamic", "author": "David Emerald", "summary": "…" } ],
+                       "walkthroughs": [ { "title": "Rescuer vs Coach", "situation": "…" }, { … } ] }, … ] }
+→ 400 bad_request   a lesson with no title or SLO, or more than 30 lessons
+```
 
 ## What to build
 

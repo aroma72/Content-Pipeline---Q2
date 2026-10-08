@@ -194,6 +194,12 @@ function build(opts = {}) {
           description: 'A 12-second sample video in that style (Range requests supported, so it '
             + 'plays in an HTML5 <video> tag).',
           example: `${base}/styles/motion-graphics/preview.mp4` },
+        { method: 'POST', path: '/api/v1/courses/draft-teaching', auth: true,
+          description: 'Flat Motion Graphics: send the lessons an instructor has written '
+            + '({ topic?, audience?, lessons: [{ title, slo }] }, in order) and get back numbered course '
+            + '`slos` and, per lesson, `sloIds`, `models` (name, author, summary) and two '
+            + '`walkthroughs` (title, situation) to show as an editable draft. One model call, '
+            + 'nothing else spent. Lessons are never changed, merged or reordered.' },
         { method: 'POST', path: '/api/v1/courses/plan', auth: true,
           description: 'Topic in, full course plan out: modules, lessons, an SLO and a '
             + 'question per lesson, plus a cost and time estimate. Spends one model call '
@@ -481,6 +487,18 @@ function build(opts = {}) {
     }
     // sendFile answers Range requests, which a <video> element needs to seek.
     res.sendFile(file, { headers: { 'Content-Type': 'video/mp4', 'Cache-Control': 'public, max-age=86400' } });
+  });
+
+  // Flat Motion Graphics: draft the models and walk-throughs for lessons an instructor has
+  // already written (the LMS outlines courses itself and never calls /courses/plan).
+  router.post('/courses/draft-teaching', requireToken, async (req, res) => {
+    try {
+      const draft = await require('./course-planner')
+        .draftTeaching(req.body || {}, { log: (m) => console.log('[course-draft]', m) });
+      res.json(draft);
+    } catch (e) {
+      res.status(e.status || 500).json({ error: e.status === 400 ? 'bad_request' : 'draft_failed', message: e.message });
+    }
   });
 
   router.post('/courses/plan', requireToken, async (req, res) => {

@@ -2230,6 +2230,37 @@ async function styleChecks() {
         return 'invalid_style and invalid_plan, nothing queued or reserved';
       })); });
 
+  await check('draft-teaching drafts models and walk-throughs for the instructor\'s own lessons, unchanged',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      const planner = require(path.join(__dirname, '..', 'server', 'lib', 'course-planner'));
+      let seen = null;
+      planner._setDraftAsk(async (args) => {
+        seen = args;
+        return { slos: [{ id: '1.1', text: 'Interpret a reaction' }, { id: '1.2', text: 'Listen before asking' }],
+          lessons: [
+            { sloIds: ['1.1'], models: [{ name: 'SCARF', author: 'David Rock', summary: 'S C A R F' }],
+              walkthroughs: [{ title: 'Certainty', situation: 'a' }, { title: 'Status', situation: 'b' }] },
+            { sloIds: ['1.2'], models: [{ name: 'RASA', author: 'Julian Treasure', summary: 'R A S A' }],
+              walkthroughs: [{ title: 'Quick chat', situation: 'c' }, { title: 'Exit interview', situation: 'd' }] },
+          ] };
+      });
+      try {
+        const lessons = [{ title: 'Beyond the reaction', slo: 'interpret reactions' }, { title: 'Listen first', slo: 'listen then ask' }];
+        const noAuth = await req(port, { method: 'POST', path: '/api/v1/courses/draft-teaching', body: { lessons } });
+        assert(noAuth.status === 401, `draft-teaching must need a token, got ${noAuth.status}`);
+        const empty = await req(port, { method: 'POST', path: '/api/v1/courses/draft-teaching', headers: auth, body: { lessons: [{ title: 'x' }] } });
+        assert(empty.status === 400 && /slo/.test(empty.json.message), `a lesson without an SLO should be 400, got ${empty.status} ${empty.text}`);
+        const r = await req(port, { method: 'POST', path: '/api/v1/courses/draft-teaching', headers: auth, body: { topic: 'P&C', lessons } });
+        assert(r.status === 200 && r.json.style === 'motion-graphics', `draft: ${r.status} ${r.text}`);
+        assert(r.json.lessons.length === 2 && r.json.lessons[0].title === 'Beyond the reaction'
+          && r.json.lessons[1].models[0].name === 'RASA' && r.json.lessons[1].walkthroughs.length === 2,
+          `lessons were not returned in order with their drafts: ${r.text.slice(0, 300)}`);
+        assert(seen && seen.promptName === 'course_teaching_draft' && /1\. Beyond the reaction — SLO: interpret reactions/.test(seen.input),
+          'the model was not given the instructor\'s lessons in order');
+        return '401 without a token, 400 without an SLO, 200 with drafts in lesson order';
+      } finally { planner._setDraftAsk(null); }
+    }); });
+
   await check('Make a Video refuses an unknown style up front',
     () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
       const r = await req(port, { method: 'POST', path: '/demo/make-video', body: { topic: 'Listening', style: 'oil-painting' } });

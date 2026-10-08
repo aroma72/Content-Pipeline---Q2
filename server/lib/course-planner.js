@@ -191,6 +191,82 @@ function estimate(plan) {
 }
 
 /**
+ * Draft the teaching for a course an instructor has ALREADY outlined (Flat Motion Graphics).
+ *
+ * The LMS course builder does not call plan(): instructors write each lesson's title and SLO
+ * themselves. In the motion-graphics style every lesson is built from named models and
+ * walk-throughs, which an instructor should not have to type from nothing -- so this drafts them
+ * for the instructor's own lessons, unchanged and in order, and the instructor edits the draft.
+ * One model call; spends nothing else. Same shapes as the motion-graphics plan, so what comes back
+ * can be dropped straight into a plan and built.
+ *
+ * @param {{topic?:string, audience?:string, lessons:Array<{title:string, slo:string}>}} req
+ * @returns {{style:'motion-graphics', slos:Array<{id,text}>, lessons:Array<{index,title,sloIds,models,walkthroughs}>}}
+ */
+const DRAFT_SCHEMA = {
+  type: 'object',
+  properties: {
+    slos: MOTION_SCHEMA.properties.slos,
+    lessons: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          sloIds: MOTION_LESSON.properties.sloIds,
+          models: MOTION_LESSON.properties.models,
+          walkthroughs: MOTION_LESSON.properties.walkthroughs,
+        },
+        required: ['sloIds', 'models', 'walkthroughs'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['slos', 'lessons'],
+  additionalProperties: false,
+};
+const MAX_DRAFT_LESSONS = 30;
+// Swappable so the HTTP tests can exercise the route without calling a model.
+let draftAsk = askJson;
+function _setDraftAsk(fn) { draftAsk = fn || askJson; }
+
+async function draftTeaching(req, { log = () => {} } = {}) {
+  const bad = (m) => Object.assign(new Error(m), { status: 400 });
+  const str = (v) => typeof v === 'string' && v.trim().length > 0;
+  const lessons = req && req.lessons;
+  if (!Array.isArray(lessons) || !lessons.length) throw bad('Send lessons: [{ title, slo }, ...] in course order.');
+  if (lessons.length > MAX_DRAFT_LESSONS) throw bad(`At most ${MAX_DRAFT_LESSONS} lessons per draft.`);
+  lessons.forEach((l, i) => {
+    if (!l || !str(l.title)) throw bad(`lessons[${i}].title is required.`);
+    if (!str(l.slo)) throw bad(`lessons[${i}].slo is required -- the draft is built from it.`);
+  });
+
+  const input = [
+    req.topic ? `Course topic: ${String(req.topic).trim()}` : null,
+    req.audience ? `Audience: ${String(req.audience).trim()}` : null,
+    'Lessons, in order:',
+    ...lessons.map((l, i) => `${i + 1}. ${String(l.title).trim()} — SLO: ${String(l.slo).trim()}`),
+  ].filter(Boolean).join('\n');
+
+  log(`drafting models and walk-throughs for ${lessons.length} lesson(s)`);
+  const out = await draftAsk({ log, promptName: 'course_teaching_draft', input, schema: DRAFT_SCHEMA });
+  if (!out || !Array.isArray(out.lessons) || out.lessons.length !== lessons.length) {
+    throw Object.assign(new Error('The draft did not cover every lesson. Try again.'), { status: 502 });
+  }
+  return {
+    style: 'motion-graphics',
+    slos: Array.isArray(out.slos) ? out.slos : [],
+    lessons: out.lessons.map((d, i) => ({
+      index: i,
+      title: lessons[i].title,
+      sloIds: d.sloIds || [],
+      models: d.models || [],
+      walkthroughs: d.walkthroughs || [],
+    })),
+    draftedAt: new Date().toISOString(),
+  };
+}
+
+/**
  * Plan a course. One model call; spends nothing else.
  * @param {{topic:string, duration?:string, audience?:string, description?:string}} req
  */
@@ -328,4 +404,4 @@ function validate(plan, { style } = {}) {
   return errors.length ? { ok: false, errors } : { ok: true };
 }
 
-module.exports = { plan, lessonsOf, estimate, validate, lessonNotes, SCHEMA, LESSON, MOTION_SCHEMA, MOTION_LESSON };
+module.exports = { plan, draftTeaching, _setDraftAsk, lessonsOf, estimate, validate, lessonNotes, SCHEMA, LESSON, MOTION_SCHEMA, MOTION_LESSON };
