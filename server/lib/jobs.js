@@ -53,7 +53,7 @@ function store(opts = {}) {
  * is a job whose `jobId` is once again a bearer credential, which is the whole
  * thing this is here to stop.
  */
-function create({ topic, notes, owner, callbackUrl }, opts = {}) {
+function create({ topic, notes, style, owner, callbackUrl }, opts = {}) {
   const s = store(opts);
   const now = Date.now();
   const job = {
@@ -62,6 +62,8 @@ function create({ topic, notes, owner, callbackUrl }, opts = {}) {
     stage: 'research',
     topic: String(topic || '').slice(0, 300),
     notes: notes ? String(notes).slice(0, 2000) : null,
+    // The video style the job is made in (orchestrator/lib/styles.js).
+    style: style || 'character-arc',
     startedAt: now,
     updatedAt: now,
     ownerKind: owner ? owner.kind : 'anon',
@@ -287,6 +289,7 @@ function toPublic(job, opts = {}) {
     status: job.status,
     stage: job.stage,
     topic: job.topic,
+    style: job.style || 'character-arc',
     elapsedSeconds: Math.round((Date.now() - job.startedAt) / 1000),
     updatedAt: new Date(job.updatedAt || job.startedAt).toISOString(),
     error: job.error,

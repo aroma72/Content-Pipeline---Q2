@@ -1,6 +1,6 @@
 ---
 type: reference
-last_verified: 2026-09-23
+last_verified: 2026-10-08
 owner: Aroma Tahir
 ---
 
@@ -16,6 +16,24 @@ on 2026-09-21 after learning of ten new fields by reading our repository.
 Frozen copies: `docs/contracts/course-api-<version>.md`.
 
 ---
+
+## 1.2, additive — 2026-10-08 — video styles
+
+Reply: `docs/integration-requests/2026-10-08-video-styles.md`.
+
+**New: the instructor chooses a video style as the first step of creating a course.** Two styles:
+`character-arc` (the original Ali story style, the default) and `motion-graphics` (flat motion
+graphics, named models and walk-throughs, spoken to "you"). Sending no `style` changes nothing.
+
+| Change | Where | Example | Commit | LMS file |
+|---|---|---|---|---|
+| `GET /api/v1/styles` (public) | new route | `{"default":"character-arc","styles":[{"id":"motion-graphics","label":"Flat Motion Graphics","previewUrl":"…/api/v1/styles/motion-graphics/preview.mp4","previewSeconds":12,…}]}` | this release | `content-queen-client.ts` + the new style-picker screen |
+| `GET /api/v1/styles/:styleId/preview.mp4` (public, Range) | new route | 12-second sample, 206 on a Range request | this release | style picker `<video>` |
+| `styles[]` | `GET /api/v1` | same array as above | this release | `content-queen-client.ts` |
+| `style` (request) | `POST /api/v1/courses/plan`, `/courses/build`, `/demo/make-video` | `"style": "motion-graphics"`; 400 `invalid_style` if unknown | this release | `content-queen-courses.ts`, `content-queen-jobs.ts` |
+| `style`, `slos[]`; per lesson `sloIds[]`, `models[]`, `walkthroughs[]` | plan response (motion-graphics) | `"models":[{"name":"SCARF","author":"David Rock","summary":"…"}]` | this release | plan editor |
+| `invalid_plan` on missing `models`/`walkthroughs` | `POST /api/v1/courses/build` (motion-graphics) | `{"path":"modules[0].lessons[1].walkthroughs",…}` | this release | plan editor validation |
+| `style` (response) | `GET /api/v1/courses/:courseId` (top level + every item), `GET /demo/make-video/:jobId` | `"style": "motion-graphics"` (older items: `"character-arc"`) | this release | `content-queen-courses.ts`, `content-queen-jobs.ts` |
 
 ## 1.2, additive — 2026-10-05
 

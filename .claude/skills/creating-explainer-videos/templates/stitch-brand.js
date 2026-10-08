@@ -87,7 +87,9 @@ if (!musicSrc) {
 console.log('[brand] mixing ducked background music over the full video …');
 execFileSync(ffmpeg, ['-y', '-i', concatMp4, '-i', musicSrc,
   '-filter_complex',
-  `[1:a]aresample=48000[bed];` +
+  // Fade the bed out over the last 3s: a recorded track is longer than the video and
+  // would otherwise be cut off mid-phrase at the final frame.
+  `[1:a]aresample=48000,afade=t=out:st=${Math.max(0, dur - 3).toFixed(2)}:d=3[bed];` +
   `[bed][0:a]sidechaincompress=threshold=0.03:ratio=6:attack=20:release=500[duck];` +
   `[0:a][duck]amix=inputs=2:normalize=0,alimiter=limit=0.95[a]`,
   '-map', '0:v', '-c:v', 'copy', '-map', '[a]', '-c:a', 'aac', '-b:a', '192k', '-ar', '48000',

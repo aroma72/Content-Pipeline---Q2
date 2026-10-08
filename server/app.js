@@ -384,7 +384,14 @@ function createApp(opts = {}) {
       callbackUrl = ok.url.toString();
     }
 
-    const job = startWrite({ topic, notes: req.body && req.body.notes }, req.owner, callbackUrl);
+    // The video style (GET /api/v1/styles). Refused here when unknown, before a job exists.
+    const styleChoice = require('../orchestrator/lib/styles').parseStyle(req.body && req.body.style);
+    if (!styleChoice.ok) {
+      return res.status(400).json({ error: 'invalid_style', message: styleChoice.message });
+    }
+
+    const job = startWrite({ topic, notes: req.body && req.body.notes, style: styleChoice.style },
+      req.owner, callbackUrl);
     res.status(202).json({
       jobId: job.id,
       status: job.status,
@@ -417,7 +424,8 @@ function createApp(opts = {}) {
   const jobOpts = { store: jobStore, oneVideo, onTransition: notify };
 
   function startWrite(body, jobOwner, callbackUrl) {
-    const job = jobsLib.create({ topic: body.topic, notes: body.notes, owner: jobOwner, callbackUrl }, jobOpts);
+    const job = jobsLib.create({ topic: body.topic, notes: body.notes, style: body.style,
+      owner: jobOwner, callbackUrl }, jobOpts);
     const id = job.id;
 
     oneVideo.write(body, {

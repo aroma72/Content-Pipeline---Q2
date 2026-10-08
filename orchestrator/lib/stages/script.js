@@ -107,6 +107,28 @@ const SCHEMA = {
 // durable copy is byte-for-byte what this stage would have written.
 const { renderBeatsFile } = require('../beats-file');
 
+// ---------------------------------------------------------------------------
+// The motion-graphics style (lib/styles.js): every beat is an HTML template from
+// animation/info-lf.js, spoken to the learner as "you". Its schemas are derived from
+// the house ones rather than copied, so a rule added to the quiz shape (say) reaches
+// both styles. What changes: modes are info|checkpoint only, the template enum is the
+// LearnFree set, nothing about art survives, and each beat may carry a `tone` -- the
+// short emotional cue tts-lesson.js appends to the voice directive.
+const styles = require('../styles');
+const LF_TEMPLATES = ['lfTitle', 'lfModel', 'lfIceberg', 'lfFunnel', 'lfLadder', 'lfTalk', 'lfSplit',
+  'lfVersus', 'lfScale', 'lfOptions', 'lfLoop', 'lfDots', 'lfRecap'];
+function motionBeatProps(props) {
+  const p = JSON.parse(JSON.stringify(props));
+  p.mode = { type: 'string', enum: ['info', 'checkpoint'] };
+  delete p.art; delete p.overlay; delete p.cap; delete p.motion;
+  if (p.info && p.info.properties && p.info.properties.tpl) p.info.properties.tpl.enum = LF_TEMPLATES;
+  p.tone = { type: 'string', description: 'how this line is read aloud: a short emotional cue such as '
+    + '"gently and reassuringly" or "with quiet conviction"; omit on the checkpoint' };
+  return p;
+}
+const MOTION_SCHEMA = JSON.parse(JSON.stringify(SCHEMA));
+MOTION_SCHEMA.properties.beats.items.properties = motionBeatProps(SCHEMA.properties.beats.items.properties);
+
 /**
  * Redraft schema: ONLY the beats that change.
  *
@@ -246,6 +268,11 @@ const EDIT_SCHEMA = {
   additionalProperties: false,
 };
 
+// The motion-graphics redraft patch (see MOTION_SCHEMA above).
+const MOTION_EDIT_SCHEMA = JSON.parse(JSON.stringify(EDIT_SCHEMA));
+MOTION_EDIT_SCHEMA.properties.edits.items.properties = motionBeatProps(EDIT_SCHEMA.properties.edits.items.properties);
+MOTION_EDIT_SCHEMA.properties.new_beats.items.properties = motionBeatProps(EDIT_SCHEMA.properties.new_beats.items.properties);
+
 /**
  * Apply a patch to the previous beats. Beats not named in the patch are carried
  * through untouched -- that is the whole point.
@@ -294,10 +321,14 @@ function applyEdits(previous, patch) {
 
 module.exports = {
   name: 'script',
+  _internals: { MOTION_SCHEMA, MOTION_EDIT_SCHEMA, LF_TEMPLATES },
   maxAttempts: 3,
 
   async run({ item, state: st, artifacts, opts, log }) {
     const brief = artifacts.research;
+    const style = styles.styleOf(item);
+    const motion = style.id === 'motion-graphics';
+    if (motion) log(`style: ${style.id}`);
 
     // A redraft round (ILHAM 3.3): the gate sent this back with a critique, so the
     // next draft must answer it rather than start from scratch and repeat itself.
@@ -319,7 +350,7 @@ module.exports = {
       log,
       state: st,
       stage: 'script',
-      promptName: 'video_script',
+      promptName: style.prompts.script,
       input: JSON.stringify({
         topic: item.topic,
         series: item.series,
@@ -330,16 +361,23 @@ module.exports = {
         // Ali's look is fixed for the whole series, not chosen per video. Three
         // videos produced three different men before this was pinned. Validation
         // rejects a draft that departs from it, so it must be stated here.
-        character_canon: {
-          ali: ALI,
-          rule: 'Every art prompt showing Ali must include this description verbatim. '
-            + 'Vary his pose, expression and props freely; never his age, hair, skin or clothing.',
-        },
+        ...(motion ? {
+          voice: 'Speak to the learner directly as "you". No named protagonist, no Ali: the '
+            + 'people in the walk-throughs are described by their role ("a field coordinator").',
+        } : {
+          character_canon: {
+            ali: ALI,
+            rule: 'Every art prompt showing Ali must include this description verbatim. '
+              + 'Vary his pose, expression and props freely; never his age, hair, skin or clothing.',
+          },
+        }),
         length_requirement: {
           beats_min: 16,
           beats_max: 20,
           why: 'Each beat is one spoken sentence of a measured 6.2 seconds. 16-20 beats lands the finished video in the 1.5-2.5 minute house range.',
-          visual_balance: 'At most a third of beats may be "info". Ali must carry the teaching -- consecutive info cards with no character on screen read as flat.',
+          visual_balance: motion
+            ? 'Every spoken beat is "info". Use at least six different templates, and never the same template three beats in a row.'
+            : 'At most a third of beats may be "info". Ali must carry the teaching -- consecutive info cards with no character on screen read as flat.',
         },
         ...(redraft ? {
           revision_round: redraft.round,
@@ -358,7 +396,7 @@ module.exports = {
           previous_beats: previousBeats || undefined,
         } : {}),
       }, null, 2),
-      schema: patchMode ? EDIT_SCHEMA : SCHEMA,
+      schema: patchMode ? (motion ? MOTION_EDIT_SCHEMA : EDIT_SCHEMA) : (motion ? MOTION_SCHEMA : SCHEMA),
       maxTokens: 16000,
       dryRun: opts.dryRun,
       // The stub must satisfy the same structural rules as a real draft, or a dry

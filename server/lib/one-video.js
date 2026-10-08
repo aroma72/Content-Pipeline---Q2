@@ -54,7 +54,7 @@ async function write(req, { log = () => {}, onStage = () => {} } = {}) {
   if (!topic) throw Object.assign(new Error('a topic is required'), { status: 400 });
 
   const slug = `${slugify(topic)}-${Date.now().toString(36).slice(-4)}`;
-  const item = enqueue(topic, slug, req.notes);
+  const item = enqueue(topic, slug, req.notes, req.style);
 
   onStage('research');
   const st = await spine.execute(item, {
@@ -324,13 +324,14 @@ function finishedFile(dir, slug) {
 }
 
 /** Put the topic on the queue the spine pops from, or reuse it if it is there. */
-function enqueue(topic, slug, notes) {
+function enqueue(topic, slug, notes, style) {
   const id = `${SERIES}/${slug}`;
   const existing = queue.get(id);
   if (existing) return existing;
   return queue.enqueue({
     topic, series: SERIES, slug, source: 'make-a-video',
     notes: notes ? String(notes).slice(0, 2000) : null,
+    style: style || undefined,
   });
 }
 

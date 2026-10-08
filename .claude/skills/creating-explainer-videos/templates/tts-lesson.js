@@ -30,9 +30,13 @@ fs.mkdirSync(AUD, { recursive: true });
 
 // (1) one voice  (2) one style directive — identical on EVERY call.
 const VOICE = process.env.TTS_VOICE || 'Aoede'; // warm, natural, human
-const STYLE = 'Say the following like a warm, friendly human mentor talking to a ' +
+// A video style may set its own directive (TTS_STYLE, from orchestrator/lib/styles.js).
+const STYLE = process.env.TTS_STYLE || ('Say the following like a warm, friendly human mentor talking to a ' +
   'colleague — natural conversational intonation, gentle rhythm, light emphasis on the ' +
-  'key words, unhurried but never flat or robotic. Speak it naturally: ';
+  'key words, unhurried but never flat or robotic. Speak it naturally: ');
+// A beat may add a short emotional cue (`tone`) so the read follows the meaning of the
+// line. With no tone the prefix is exactly STYLE, so existing videos keep their cache.
+const directive = (b) => STYLE + (b && b.tone ? `Read this line ${b.tone}. Say: ` : '');
 const TEMPERATURE = 0.85; // (3) a touch more variation = more human
 
 // ---- WAV helpers ------------------------------------------------------------
@@ -63,10 +67,10 @@ function wavSeconds(file) {
 function ff(args) { execFileSync(ffmpeg, args, { stdio: ['ignore', 'ignore', 'inherit'] }); }
 
 // ---- Gemini TTS -------------------------------------------------------------
-async function synth(text, key) {
+async function synth(text, key, prefix = STYLE) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODELS.tts}:generateContent`;
   const body = {
-    contents: [{ parts: [{ text: STYLE + text }] }],
+    contents: [{ parts: [{ text: prefix + text }] }],
     generationConfig: {
       temperature: TEMPERATURE,
       responseModalities: ['AUDIO'],
@@ -130,12 +134,12 @@ function silenceWav(seconds) {
     // The cache key must cover HOW the line is read, not just the words: keyed on text alone, a
     // voice or style change silently reused every old clip (found 2026-10-06).
     const sigPath = path.join(AUD, `raw_${b.id}.sig`);
-    const sig = `${VOICE}|${TEMPERATURE}|${STYLE}`;
+    const sig = `${VOICE}|${TEMPERATURE}|${directive(b)}`;
     const unchanged = fs.existsSync(rawPath) && fs.existsSync(sidecar) && fs.readFileSync(sidecar, 'utf8') === b.vo
       && fs.existsSync(sigPath) && fs.readFileSync(sigPath, 'utf8') === sig;
     if (!unchanged) {
       process.stdout.write(`[tts] ${b.id} synth … `);
-      try { fs.writeFileSync(rawPath, pcmToWav(await synth(b.vo, key))); fs.writeFileSync(sigPath, sig); console.log('ok'); }
+      try { fs.writeFileSync(rawPath, pcmToWav(await synth(b.vo, key, directive(b)))); fs.writeFileSync(sigPath, sig); console.log('ok'); }
       catch (e) {
         const est = Math.max(1.2, b.vo.split(/\s+/).length * 0.42);
         fs.writeFileSync(rawPath, silenceWav(est));

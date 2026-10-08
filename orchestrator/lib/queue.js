@@ -115,12 +115,19 @@ function enqueue({
   // Whether this lesson should carry external reading. Off unless asked for:
   // it buys a web search per lesson, and most courses do not want one.
   wantReferences = false,
+  // The video style (lib/styles.js), chosen at the start of course creation. Stored on the
+  // item so every stage and every resume builds the lesson the same way. Missing = default.
+  style = null,
   // Who is paying, and the ledger reservation taken for this lesson. Null for a
   // lesson enqueued before tenants were recorded; the tenant guard then stays off.
   tenantId = null, spendRef = null,
 }) {
   if (!topic) throw new Error('enqueue requires a topic');
   if (!series) throw new Error('enqueue requires a series (the explainer-videos subfolder)');
+  // A style we cannot build is refused here, not quietly built in the default -- the
+  // instructor would only find out from the finished video, after the spend.
+  const parsedStyle = require('./styles').parseStyle(style);
+  if (!parsedStyle.ok) throw new Error(parsedStyle.message);
   const finalSlug = slug || slugify(topic);
   const id = `${series}/${finalSlug}`;
 
@@ -137,6 +144,7 @@ function enqueue({
     module: moduleNumber === null ? null : Number(moduleNumber),
     moduleTopic,
     wantReferences: Boolean(wantReferences),
+    style: parsedStyle.style,
     tenantId: tenantId || null,
     spendRef: spendRef || null,
     status: ITEM_STATUS.QUEUED,

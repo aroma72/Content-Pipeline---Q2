@@ -35,6 +35,9 @@ function renderBeatsFile(script) {
       // is the only thing that puts it there.
       Number(b.holdAfter) > 0 ? `    holdAfter: ${JSON.stringify(Number(b.holdAfter))}` : null,
       b.motion ? `    motion: ${JSON.stringify(b.motion)}` : null,
+      // How the line is read (motion-graphics style): tts-lesson.js appends it to the
+      // voice directive. Lost here, the whole video reads in one flat register.
+      b.tone ? `    tone: ${JSON.stringify(b.tone)}` : null,
     ].filter(Boolean).join(',\n');
     return `  {\n${fields},\n  },`;
   });

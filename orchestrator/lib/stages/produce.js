@@ -569,8 +569,11 @@ module.exports = Object.assign(module.exports, {
       log(`beats validated: ${artifacts.script.beats.length} beat(s), no blocking problems`);
     }
 
+    const styleEnv = require('../styles').renderEnv(item);
+    if (Object.keys(styleEnv).length) log(`style: ${require('../styles').styleOf(item).id}`);
     const run = (cmd, args, extra = {}) => shell.run(cmd, args, {
       cwd: dir,
+      env: { ...process.env, ...styleEnv },
       dryRun: opts.dryRun,
       onLine: (line) => log(line.slice(0, 160)),
       ...extra,

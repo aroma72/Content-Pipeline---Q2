@@ -185,10 +185,21 @@ function build(opts = {}) {
           description: 'Your jobs, oldest transition first. Page with ?since= and ?cursor=.' },
         { method: 'GET', path: '/demo/spend', auth: true,
           description: 'What you have spent this month and what remains.' },
+        { method: 'GET', path: '/api/v1/styles', auth: false,
+          description: 'The video styles a course can be built in, each with a label, a summary, '
+            + 'a cost per lesson and a 10-15 second preview video. Show these FIRST when an '
+            + 'instructor starts a course, and send the chosen id as `style` to plan and build.',
+          example: `${base}/styles` },
+        { method: 'GET', path: '/api/v1/styles/:styleId/preview.mp4', auth: false,
+          description: 'A 12-second sample video in that style (Range requests supported, so it '
+            + 'plays in an HTML5 <video> tag).',
+          example: `${base}/styles/motion-graphics/preview.mp4` },
         { method: 'POST', path: '/api/v1/courses/plan', auth: true,
           description: 'Topic in, full course plan out: modules, lessons, an SLO and a '
             + 'question per lesson, plus a cost and time estimate. Spends one model call '
-            + 'and nothing else.' },
+            + 'and nothing else. Optional `style` (from GET /api/v1/styles; default '
+            + '"character-arc"). In "motion-graphics" the plan also carries numbered course '
+            + '`slos`, and per lesson `sloIds`, `models` and `walkthroughs`.' },
         { method: 'POST', path: '/api/v1/courses/build', auth: true,
           description: 'Queues every lesson in a plan as a video. Refuses without '
             + '`confirmLessons` matching the plan, because this spends real money. '
@@ -196,7 +207,9 @@ function build(opts = {}) {
             + '`tenant_budget_exhausted` if it does not fit; nothing is queued), settled '
             + 'to the real cost as each lesson ends -- GET /demo/spend shows it under `courses`. '
             + 'Optional `references: true` adds two or three verified external reading '
-            + 'links to each finished lesson.' },
+            + 'links to each finished lesson. Optional `style` (defaults to the plan\'s '
+            + '`style`, then "character-arc") decides how every lesson is made; 400 '
+            + '`invalid_style` for an id GET /api/v1/styles does not list.' },
         { method: 'GET', path: '/api/v1/courses/:courseId', auth: true,
           description: 'Build progress, and which lesson is waiting for approval. A lesson '
             + 'carries `runId`, a `reason` and a `blockedBy` while blocked, an `error` when it '
@@ -285,6 +298,10 @@ function build(opts = {}) {
       // the day we added a tenth. Adding a value means adding it to BLOCKED_BY in
       // orchestrator/lib/spine-errors.js, which is what this reads.
       blockedBy: require('../../orchestrator/lib/queue').BLOCKED_BY_VALUES,
+      // The video styles a course can be built in, chosen at the very start of course
+      // creation. Same closed-set rule as blockedBy: served, so the LMS can render its
+      // picker (label, summary, preview video) from this rather than hard-coding it.
+      styles: require('../../orchestrator/lib/styles').publicStyles(`${req.protocol}://${req.get('host')}`),
       demo: `${req.protocol}://${req.get('host')}/demo/quiz`,
       howTheQuestionBehaves: {
         summary: 'Nothing about the question is in the video. At atSeconds you PAUSE '
@@ -440,6 +457,32 @@ function build(opts = {}) {
   // find that out by clicking a button, so `build` refuses without an explicit
   // confirmation carrying the lesson count the caller believes it is approving.
 
+  router.get('/styles', (req, res) => {
+    const styles = require('../../orchestrator/lib/styles');
+    res.json({
+      default: styles.DEFAULT_STYLE,
+      styles: styles.publicStyles(`${req.protocol}://${req.get('host')}`),
+      howToUse: 'Show these as the FIRST step of course creation. Send the chosen id as '
+        + '`style` on POST /api/v1/courses/plan and POST /api/v1/courses/build. A course is '
+        + 'built in one style throughout.',
+    });
+  });
+
+  router.get('/styles/:styleId/preview.mp4', (req, res) => {
+    const styles = require('../../orchestrator/lib/styles');
+    if (!styles.isStyle(req.params.styleId)) {
+      return res.status(404).json({ error: 'not_found',
+        message: `No style '${req.params.styleId}'. GET /api/v1/styles lists them.` });
+    }
+    const file = styles.get(req.params.styleId).previewFile;
+    if (!require('fs').existsSync(file)) {
+      return res.status(404).json({ error: 'preview_missing',
+        message: 'This style has no preview video on this server.' });
+    }
+    // sendFile answers Range requests, which a <video> element needs to seek.
+    res.sendFile(file, { headers: { 'Content-Type': 'video/mp4', 'Cache-Control': 'public, max-age=86400' } });
+  });
+
   router.post('/courses/plan', requireToken, async (req, res) => {
     try {
       const plan = await require('./course-planner')
@@ -475,7 +518,17 @@ function build(opts = {}) {
     // no longer what we validated on the way out. A lesson that lost its `slo` in
     // an instructor's form would otherwise queue and build a video with no stated
     // objective, and nobody would find out until they watched it.
-    const invalid = planner.validate(body.plan);
+    // The style: chosen explicitly, else the one the plan was made for, else the default.
+    // An unknown one is refused before anything is reserved or queued.
+    const styles = require('../../orchestrator/lib/styles');
+    const styleChoice = styles.parseStyle(
+      body.style !== undefined && body.style !== null && body.style !== '' ? body.style : body.plan && body.plan.style);
+    if (!styleChoice.ok) {
+      return res.status(400).json({ error: 'invalid_style', message: styleChoice.message,
+        styles: styles.STYLE_VALUES });
+    }
+    const style = styleChoice.style;
+    const invalid = planner.validate(body.plan, { style });
     if (!invalid.ok) {
       return res.status(400).json({
         error: 'invalid_plan',
@@ -552,7 +605,10 @@ function build(opts = {}) {
     // away, so cross-lesson continuity existed only where a lesson's own brief happened
     // to restate it -- which made a "course" a bag of unrelated videos sharing a title.
     // It rides in `notes`, which research.js already reads into every downstream prompt.
-    const scenario = String((body.plan && body.plan.protagonist_scenario) || '').trim();
+    // The motion-graphics style has no protagonist, so a scenario left in an edited plan
+    // must not leak a character into it.
+    const scenario = style === 'motion-graphics' ? ''
+      : String((body.plan && body.plan.protagonist_scenario) || '').trim();
     // Opt-in, per course. Off by default: it buys a web search per lesson, and a
     // caller that did not ask for reading should not be charged for looking.
     const wantReferences = body.references === true;
@@ -567,11 +623,14 @@ function build(opts = {}) {
             `[${courseId}] ${l.brief}`,
             `SLO: ${l.slo}`,
             scenario ? `Running scenario for this course: ${scenario}` : null,
+            // The models and walk-throughs this lesson is built from (motion-graphics).
+            ...planner.lessonNotes(l),
           ].filter(Boolean).join('\n'),
           module: l.module,
           moduleTopic: l.moduleTitle,
           source: 'course-builder',
           wantReferences,
+          style,
           tenantId: req.tenant.id,
           spendRef: (reservations.find((x) => x.slug === queue.slugify(l.title)) || {}).ref || null,
         });
@@ -592,6 +651,7 @@ function build(opts = {}) {
     res.status(202).json({
       courseId,
       series,
+      style,
       queued: queued.length,
       rejected,
       items: queued,
@@ -636,6 +696,8 @@ function build(opts = {}) {
       .filter((i) => (i.notes || '').includes(tag))
       .map((i) => ({
         id: i.id, topic: i.topic, status: i.status, module: i.module,
+        // Items built before styles existed were all made in the original style.
+        style: i.style || 'character-arc',
         ...(i.tenantId ? { tenantId: i.tenantId } : {}),
         ...(i.status === 'queued'
           ? { queuePosition: line.includes(i.id) ? line.indexOf(i.id) + 1 : null }
@@ -799,6 +861,7 @@ function build(opts = {}) {
     const waiting = cw.awaitingApproval(req.params.courseId);
     res.json({
       courseId: req.params.courseId,
+      style: (items[0] && items[0].style) || 'character-arc',
       lessons: items.length,
       done: by('done'),
       failed: by('failed'),

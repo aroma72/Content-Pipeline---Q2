@@ -2119,6 +2119,122 @@ async function adminResetChecks() {
     });
 }
 
+// ---------------------------------------------------------------------------
+// Video styles (orchestrator/lib/styles.js): chosen at the very start of course creation,
+// listed with a preview the LMS can play, stored on every lesson, and refused when unknown.
+async function styleChecks() {
+  console.log('\n-- video styles --');
+  const auth = { authorization: `Bearer ${LMS_TOKEN}` };
+  const withQuietWorker = async (fn) => {
+    const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+    const realKick = cw.kick;
+    cw.kick = () => {};
+    try { return await fn(); } finally { cw.kick = realKick; }
+  };
+  // A motion-graphics lesson is built from its models and walk-throughs, so a plan in
+  // that style must carry them.
+  const lesson = (n, extra = {}) => ({ title: `Lesson ${n}`, brief: `b${n}`, slo: `s${n}`, sloIds: [`1.${n}`],
+    models: [{ name: 'SCARF', author: 'David Rock', summary: 'Status, Certainty, Autonomy, Relatedness, Fairness' }],
+    walkthroughs: [{ title: 'Certainty', situation: 'A new joiner snaps over a laptop delay.' },
+      { title: 'Status', situation: 'A senior employee goes quiet after a restructure.' }], ...extra });
+  const MOTION_PLAN = { title: 'P&C', style: 'motion-graphics', slos: [{ id: '1.1', text: 'Interpret a reaction' }],
+    modules: [{ title: 'Week 1', lessons: [lesson(1), lesson(2)] }] };
+
+  await check('GET /api/v1/styles lists both styles, public, each with a playable preview',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      const r = await req(port, { path: '/api/v1/styles' });
+      assert(r.status === 200, `styles: ${r.status} ${r.text}`);
+      const ids = r.json.styles.map((s) => s.id);
+      assert(ids.join() === 'character-arc,motion-graphics', `wrong styles: ${ids}`);
+      assert(r.json.default === 'character-arc', `default should be character-arc, got ${r.json.default}`);
+      for (const s of r.json.styles) {
+        assert(s.label && s.summary && /\/api\/v1\/styles\/[a-z-]+\/preview\.mp4$/.test(s.previewUrl), `incomplete style: ${JSON.stringify(s)}`);
+        assert(s.previewSeconds >= 10 && s.previewSeconds <= 15, `preview is not 10-15s: ${s.previewSeconds}`);
+      }
+      const idx = await req(port, { path: '/api/v1' });
+      assert(Array.isArray(idx.json.styles) && idx.json.styles.length === 2, 'the index does not serve the styles');
+      assert(idx.json.endpoints.some((e) => e.path === '/api/v1/styles'), 'the index does not list GET /api/v1/styles');
+      return 'two styles, default character-arc, served on the index too';
+    }); });
+
+  await check('each style preview is a real mp4 that answers a Range request (a <video> tag needs it)',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      for (const id of ['character-arc', 'motion-graphics']) {
+        const full = await req(port, { path: `/api/v1/styles/${id}/preview.mp4` });
+        assert(full.status === 200 && /video\/mp4/.test(full.headers['content-type'] || ''), `${id}: ${full.status} ${full.headers['content-type']}`);
+        const part = await req(port, { path: `/api/v1/styles/${id}/preview.mp4`, headers: { range: 'bytes=0-99' } });
+        assert(part.status === 206, `${id}: Range should be 206, got ${part.status}`);
+      }
+      const none = await req(port, { path: '/api/v1/styles/watercolour/preview.mp4' });
+      assert(none.status === 404, `an unknown style should 404, got ${none.status}`);
+      return '200 + 206 for both, 404 for an unknown one';
+    }); });
+
+  await check('a course built in motion-graphics stores the style on every lesson, with its models in the notes',
+    () => { const env = freshEnv();
+      return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, () => withQuietWorker(async () => {
+        const queue = require(path.join(__dirname, 'lib', 'queue'));
+        require(path.join(__dirname, '..', 'server', 'lib', 'job-store')).reset();
+        queue.resetPathCache();
+        const r = await req(port0(), { method: 'POST', path: '/api/v1/courses/build', headers: auth,
+          body: { plan: MOTION_PLAN, confirmLessons: 2, series: 'testing-motion' } });
+        assert(r.status === 202 && r.json.style === 'motion-graphics', `build: ${r.status} ${r.text}`);
+        const items = queue.currentItems().filter((i) => i.series === 'testing-motion');
+        assert(items.length === 2 && items.every((i) => i.style === 'motion-graphics'), `items: ${JSON.stringify(items.map((i) => i.style))}`);
+        assert(items.every((i) => /SCARF \(David Rock\)/.test(i.notes) && /Walk through/.test(i.notes)),
+          'the models and walk-throughs did not reach the lesson notes the script is written from');
+        const view = await req(port0(), { path: `/api/v1/courses/${r.json.courseId}`, headers: auth });
+        assert(view.json.style === 'motion-graphics' && view.json.items.every((i) => i.style === 'motion-graphics'),
+          `the course view does not show the style: ${view.text.slice(0, 300)}`);
+        return 'style on the course, every lesson, and the models in the notes';
+      })); });
+
+  await check('a course with no style is built in character-arc, as every course was before styles',
+    () => { const env = freshEnv();
+      return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, () => withQuietWorker(async () => {
+        const queue = require(path.join(__dirname, 'lib', 'queue'));
+        require(path.join(__dirname, '..', 'server', 'lib', 'job-store')).reset();
+        queue.resetPathCache();
+        const plan = { title: 'T', modules: [{ title: 'M', lessons: [{ title: 'Only one', brief: 'b', slo: 's' }] }] };
+        const r = await req(port0(), { method: 'POST', path: '/api/v1/courses/build', headers: auth,
+          body: { plan, confirmLessons: 1, series: 'testing-default' } });
+        assert(r.status === 202 && r.json.style === 'character-arc', `build: ${r.status} ${r.text}`);
+        const item = queue.currentItems().find((i) => i.series === 'testing-default');
+        assert(item && item.style === 'character-arc', `stored style: ${item && item.style}`);
+        return 'defaults to character-arc';
+      })); });
+
+  await check('an unknown style, or a motion plan missing its walk-throughs, is refused before anything is reserved',
+    () => { const env = freshEnv();
+      return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, () => withQuietWorker(async () => {
+        const queue = require(path.join(__dirname, 'lib', 'queue'));
+        require(path.join(__dirname, '..', 'server', 'lib', 'job-store')).reset();
+        queue.resetPathCache();
+        const bad = await req(port0(), { method: 'POST', path: '/api/v1/courses/build', headers: auth,
+          body: { plan: MOTION_PLAN, style: 'watercolour', confirmLessons: 2, series: 'testing-bad' } });
+        assert(bad.status === 400 && bad.json.error === 'invalid_style', `unknown style: ${bad.status} ${bad.text}`);
+        const thin = JSON.parse(JSON.stringify(MOTION_PLAN));
+        thin.modules[0].lessons[1].walkthroughs = [thin.modules[0].lessons[1].walkthroughs[0]];
+        const t = await req(port0(), { method: 'POST', path: '/api/v1/courses/build', headers: auth,
+          body: { plan: thin, confirmLessons: 2, series: 'testing-thin' } });
+        assert(t.status === 400 && t.json.error === 'invalid_plan'
+          && t.json.errors.some((e) => /walkthroughs/.test(e.path)), `thin plan: ${t.status} ${t.text}`);
+        assert(!queue.currentItems().some((i) => /^testing-(bad|thin)$/.test(i.series)), 'a refused build queued lessons');
+        const sp = await req(port0(), { path: '/demo/spend', headers: auth });
+        assert(sp.json.reservedUsd === 0, `a refused build reserved money: ${sp.text}`);
+        return 'invalid_style and invalid_plan, nothing queued or reserved';
+      })); });
+
+  await check('Make a Video refuses an unknown style up front',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      const r = await req(port, { method: 'POST', path: '/demo/make-video', body: { topic: 'Listening', style: 'oil-painting' } });
+      assert(r.status === 400 && r.json.error === 'invalid_style', `expected 400 invalid_style, got ${r.status} ${r.text}`);
+      const ok = await req(port, { method: 'POST', path: '/demo/make-video', body: { topic: 'Listening', style: 'motion-graphics' } });
+      assert(ok.status === 202, `a valid style should be accepted, got ${ok.status} ${ok.text}`);
+      return '400 for unknown, 202 for motion-graphics';
+    }); });
+}
+
 async function healthChecks() {
   console.log('\n2c. /health reports in-flight one-video jobs, and ok is computed');
 
@@ -2234,6 +2350,7 @@ async function healthChecks() {
   await adminResetChecks();
   await bridgeChecks();
   await lessonFileChecks();
+  await styleChecks();
   for (const d of storeDirs) { try { fs.rmSync(d, { recursive: true, force: true }); } catch { /* best effort */ } }
 
   console.log(`\n${'-'.repeat(64)}`);

@@ -55,7 +55,8 @@ module.exports = {
       log,
       state: st,
       stage: 'gate',
-      promptName: 'script_gate',
+      // Each style is judged against its own house rules (lib/styles.js).
+      promptName: require('../styles').styleOf(ctx.item).prompts.gate,
       input: JSON.stringify({ title: script.title, beats: script.beats }, null, 2),
       schema: SCHEMA,
       maxTokens: 8000,

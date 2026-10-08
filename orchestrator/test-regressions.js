@@ -657,7 +657,10 @@ async function beatChecks() {
     // a template was mentioned in a comment -- including a comment saying it had
     // been deliberately removed, which is the opposite of what the test checks.
     const { knownTemplates } = require('./lib/validate-beats');
-    const rendered = knownTemplates(tplDir) || [];
+    // The house (character-arc) templates only. The lf* ones belong to the motion-graphics
+    // style's own library (info-lf.js) and its own schema -- styleChecks() holds that schema
+    // to every template it offers; this check holds the house schema to the house library.
+    const rendered = (knownTemplates(tplDir) || []).filter((t) => !/^lf[A-Z]/.test(t));
     const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'script.js'), 'utf8');
     const enums = [...src.matchAll(/enum:\s*\[([^\]]*?)\]/g)]
       .map((m) => m[1].match(/'[^']+'/g) || [])
@@ -2311,7 +2314,9 @@ async function redraftChecks() {
 
   check('a redraft uses a patch schema, not the full-script schema', () => {
     assert(/EDIT_SCHEMA/.test(scriptSrc), 'no patch schema');
-    assert(/schema: patchMode \? EDIT_SCHEMA : SCHEMA/.test(scriptSrc), 'the patch schema is not selected on redrafts');
+    // Per style since 2026-10-08: the motion-graphics style has its own patch schema.
+    assert(/schema: patchMode \? \(motion \? MOTION_EDIT_SCHEMA : EDIT_SCHEMA\) : \(motion \? MOTION_SCHEMA : SCHEMA\)/.test(scriptSrc),
+      'the patch schema is not selected on redrafts');
     assert(applyEdits, 'applyEdits not found');
     return 'patch on redraft, full script on first draft';
   });
@@ -5100,6 +5105,95 @@ async function driveOffloadChecks() {
 }
 
 
+// ---------------------------------------------------------------------------
+// Video styles (lib/styles.js): the switch every stage reads. Each check pins one place a
+// style must change behaviour, because a style that only changed the API would ship
+// character-arc videos labelled motion-graphics.
+function styleChecks() {
+  console.log('\n-- video styles --');
+  const styles = require('./lib/styles');
+  const fsx = require('fs');
+
+  check('a style-less item is the original style, and an unknown style is refused', () => {
+    assert(styles.styleOf({}).id === 'character-arc', 'missing style should default to character-arc');
+    assert(styles.styleOf({ style: 'motion-graphics' }).id === 'motion-graphics', 'motion-graphics not resolved');
+    let threw = false; try { styles.styleOf({ style: 'watercolour' }); } catch { threw = true; }
+    assert(threw, 'an unknown style was silently accepted');
+    assert(!styles.parseStyle('watercolour').ok && styles.parseStyle(undefined).style === 'character-arc', 'parseStyle');
+    return 'default + refusal';
+  });
+
+  check('character-arc renders exactly as before; motion-graphics swaps renderer, voice and music', () => {
+    assert(Object.keys(styles.renderEnv({})).length === 0, 'character-arc must not override anything');
+    const env = styles.renderEnv({ style: 'motion-graphics' });
+    assert(env.LESSON_HTML === 'animation/lesson-lf.html', `renderer: ${env.LESSON_HTML}`);
+    assert(env.TTS_VOICE === 'Sulafat' && env.TTS_STYLE, 'voice/directive not set');
+    assert(env.MUSIC_FILE && fsx.existsSync(env.MUSIC_FILE), `the motion-graphics music bed is missing: ${env.MUSIC_FILE}`);
+    return 'LESSON_HTML, TTS_VOICE, TTS_STYLE, MUSIC_FILE';
+  });
+
+  check('every style ships its prompts, its preview, and (motion) its renderer in the templates', () => {
+    const { PATHS } = require('./lib/paths');
+    for (const s of styles.STYLES) {
+      for (const p of Object.values(s.prompts)) {
+        assert(fsx.existsSync(path.join(PATHS.prompts, `${p}.txt`)), `${s.id}: prompt ${p}.txt missing`);
+      }
+      assert(fsx.existsSync(s.previewFile), `${s.id}: preview missing at ${s.previewFile}`);
+    }
+    for (const f of ['lesson-lf.html', 'info-lf.js', 'info-lf.css', 'fonts/RobotoSlab.ttf']) {
+      assert(fsx.existsSync(path.join(PATHS.videoTemplates, 'animation', f)), `template animation/${f} missing`);
+    }
+    return `${styles.STYLES.length} styles complete`;
+  });
+
+  check('the motion script schema allows only info/checkpoint beats, the LearnFree templates, and a tone', () => {
+    const { MOTION_SCHEMA, MOTION_EDIT_SCHEMA, LF_TEMPLATES } = require('./lib/stages/script')._internals;
+    const p = MOTION_SCHEMA.properties.beats.items.properties;
+    assert(p.mode.enum.join() === 'info,checkpoint', `modes: ${p.mode.enum}`);
+    assert(p.info.properties.tpl.enum === LF_TEMPLATES || p.info.properties.tpl.enum.join() === LF_TEMPLATES.join(), 'templates');
+    assert(p.tone && !p.art && !p.motion, 'tone missing, or art/motion still offered');
+    assert(MOTION_EDIT_SCHEMA.properties.edits.items.properties.tone, 'a redraft cannot carry tone');
+    // and the house schema is untouched
+    const house = require('./lib/stages/script');
+    return 'info|checkpoint, lf* only, tone';
+  });
+
+  check('every template the motion schema offers exists in info-lf.js and in the qa-info contract', () => {
+    const { LF_TEMPLATES } = require('./lib/stages/script')._internals;
+    const { PATHS } = require('./lib/paths');
+    const lib = fsx.readFileSync(path.join(PATHS.videoTemplates, 'animation', 'info-lf.js'), 'utf8');
+    const qa = fsx.readFileSync(path.join(PATHS.videoTemplates, 'qa-info.js'), 'utf8');
+    const missing = LF_TEMPLATES.filter((t) => !new RegExp(`\\bT\\.${t}\\s*=`).test(lib) || !new RegExp(`\\b${t}: \\{`).test(qa));
+    assert(!missing.length, `offered but not renderable/checkable: ${missing.join(', ')}`);
+    return `${LF_TEMPLATES.length} templates`;
+  });
+
+  check('beats.js keeps the per-beat tone (the motion style reads it aloud)', () => {
+    const { renderBeatsFile } = require('./lib/beats-file');
+    const out = renderBeatsFile({ title: 't', beats: [{ id: '01', mode: 'info', vo: 'Hi.', tone: 'gently', info: { tpl: 'lfTitle', data: { text: 'x' } } }] });
+    assert(/tone: "gently"/.test(out), 'tone was dropped on the way to disk');
+    return 'written';
+  });
+
+  check('the validator knows the per-series template library, so lf beats are not "unknown"', () => {
+    const { validateBeats } = require('./lib/validate-beats');
+    const { PATHS } = require('./lib/paths');
+    const os = require('os');
+    const dir = fsx.mkdtempSync(path.join(os.tmpdir(), 'style-val-'));
+    fsx.mkdirSync(path.join(dir, 'animation'));
+    for (const f of ['info.js', 'info-lf.js']) fsx.copyFileSync(path.join(PATHS.videoTemplates, 'animation', f), path.join(dir, 'animation', f));
+    const beats = [
+      { id: '01', mode: 'info', vo: 'One.', info: { tpl: 'lfTitle', data: { text: 'x' } } },
+      { id: '02', mode: 'checkpoint', quiz: { stem: 'Which one is it?', options: ['a', 'b', 'c'], answer: 0, explain: 'Because a is right. B and c miss the point.' } },
+      { id: '03', mode: 'info', vo: 'Two.', info: { tpl: 'lfModel', data: { title: 'SCARF', letters: ['S'] } } },
+    ];
+    const { errors } = validateBeats(beats, dir);
+    fsx.rmSync(dir, { recursive: true, force: true });
+    assert(!errors.some((e) => /unknown info template/.test(e)), `lf templates flagged unknown: ${errors.join(' | ')}`);
+    return 'lfTitle + lfModel accepted';
+  });
+}
+
 (async () => {
   await interpreterChecks();
   await beatChecks();
@@ -5116,6 +5210,7 @@ async function driveOffloadChecks() {
   await textFixChecks();
   await courseChecks();
   await driveOffloadChecks();
+  styleChecks();
 
   console.log(`\n${'-'.repeat(64)}`);
   console.log(`  ${pass} passed, ${failures.length} failed` + (skipped ? `, ${skipped} skipped` : ''));

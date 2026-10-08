@@ -76,6 +76,37 @@ const CONTRACT = {
       options: (v) => (arr(v) && v.length >= 3 ? null : 'needs 3+ options'),
     },
   },
+
+  // The motion-graphics style (animation/info-lf.js).
+  lfTitle: { required: ['text'], shape: { text: (v) => (str(v) ? null : 'must be a non-empty string') } },
+  lfModel: {
+    required: ['title', 'letters'],
+    shape: {
+      letters: (v) => (arr(v) && v.length <= 5 ? null : 'needs letters: [...] (2–5 tiles)'),
+      words: (v) => (v === undefined || Array.isArray(v) ? null : 'words must be an array, one per letter'),
+    },
+  },
+  lfIceberg: { required: ['tip'], shape: { tip: (v) => (str(v) ? null : 'must be a non-empty string'),
+    below: (v) => (v === undefined || Array.isArray(v) ? null : 'below must be an array of strings') } },
+  lfFunnel: { required: ['steps'], shape: { steps: (v) => (arr(v) && v.length === 3 && v.every(str) ? null : 'needs exactly 3 string steps') } },
+  lfLadder: { required: ['rungs'], shape: { rungs: (v) => (arr(v) && v.length >= 3 && v.every(str) ? null : 'needs rungs: [bottom ... top], 3+ strings') } },
+  lfJourney: { required: ['stops'], shape: { stops: (v) => (arr(v) && v.every(str) ? null : 'needs stops: [\'…\'] of strings') } },
+  lfStage: { required: ['label', 'icon'], shape: { label: (v) => (str(v) ? null : 'must be a non-empty string') } },
+  lfScale: { required: ['left', 'right'], shape: { left: (v) => (str(v) ? null : 'must be a string'), right: (v) => (str(v) ? null : 'must be a string') } },
+  lfVersus: { required: ['left', 'right'], shape: { left: (v) => (str(v) ? null : 'must be a string'), right: (v) => (str(v) ? null : 'must be a string') } },
+  lfLoop: { required: ['title', 'steps'], shape: { steps: (v) => (arr(v) && v.length === 3 && v.every(str) ? null : 'needs exactly 3 string steps') } },
+  lfOptions: { required: ['title', 'options'], shape: { options: (v) => (arr(v) && v.every(str) ? null : 'needs options: [\'…\'] of strings') } },
+  lfTalk: { required: ['bubble'], shape: { bubble: (v) => (str(v) ? null : 'must be a non-empty string') } },
+  lfSplit: {
+    required: ['left', 'right'],
+    shape: {
+      left: (v) => (card(v) && str(v.title) && (str(v.bubble) || str(v.icon) || v.dim) ? null : 'needs { title, bubble | icon }'),
+      right: (v) => (card(v) && str(v.title) && (str(v.bubble) || str(v.icon) || v.dim) ? null : 'needs { title, bubble | icon }'),
+    },
+  },
+  lfAnswer: { required: ['text'], shape: { text: (v) => (str(v) ? null : 'must be a non-empty string') } },
+  lfDots: { required: ['n'], shape: { n: (v) => (Number.isInteger(v) && v > 0 ? null : 'needs an integer n') } },
+  lfRecap: { required: ['items'], shape: { items: (v) => (arr(v) && v.every(str) ? null : 'needs items: [\'…\'] of strings') } },
 };
 
 const problems = [];

@@ -82,6 +82,84 @@ const SCHEMA = {
   additionalProperties: false,
 };
 
+// ---------------------------------------------------------------------------
+// The FLAT MOTION GRAPHICS style (orchestrator/lib/styles.js). Same plan, three additions
+// Aroma asked for (2026-10-07) so every course in this style reads like the P&C outline:
+//   slos           the course's numbered SLOs ("1.1 Interpret …"), stated once
+//   sloIds         per lesson, which of those it delivers
+//   models         per lesson, the named practical models it teaches (name, author, steps)
+//   walkthroughs   per lesson, at least two situations the model is applied to step by step
+// No protagonist: this style has no recurring character.
+const MOTION_LESSON = JSON.parse(JSON.stringify(LESSON));
+MOTION_LESSON.properties.brief.description = 'two or three sentences: the skill this lesson '
+  + 'teaches, the moment it matters, and the change it makes. This becomes the script brief.';
+MOTION_LESSON.properties.sloIds = {
+  type: 'array', items: { type: 'string' }, minItems: 1,
+  description: 'ids of the course SLOs this lesson delivers, e.g. ["1.1","1.2"]',
+};
+MOTION_LESSON.properties.models = {
+  type: 'array', minItems: 1, maxItems: 3,
+  items: {
+    type: 'object',
+    properties: {
+      name: { type: 'string', description: 'e.g. "SCARF"' },
+      author: { type: 'string', description: 'who it is from, e.g. "David Rock"' },
+      summary: { type: 'string', description: 'one line: its steps or parts' },
+    },
+    required: ['name', 'author', 'summary'],
+    additionalProperties: false,
+  },
+};
+MOTION_LESSON.properties.walkthroughs = {
+  type: 'array', minItems: 2, maxItems: 3,
+  items: {
+    type: 'object',
+    properties: {
+      title: { type: 'string', description: 'the move, e.g. "Rescuer vs Coach"' },
+      situation: { type: 'string', description: 'a concrete workplace moment and how the model is applied to it, step by step; people by role, never by name' },
+    },
+    required: ['title', 'situation'],
+    additionalProperties: false,
+  },
+};
+MOTION_LESSON.required = [...LESSON.required, 'sloIds', 'models', 'walkthroughs'];
+
+const MOTION_SCHEMA = JSON.parse(JSON.stringify(SCHEMA));
+MOTION_SCHEMA.properties.modules.items.properties.lessons.items = MOTION_LESSON;
+MOTION_SCHEMA.properties.slos = {
+  type: 'array', minItems: 1,
+  items: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', description: 'module.number, e.g. "1.3"' },
+      text: { type: 'string', description: 'an observable action, e.g. "Interpret a reaction as a signal of an underlying need"' },
+    },
+    required: ['id', 'text'],
+    additionalProperties: false,
+  },
+};
+MOTION_SCHEMA.properties.protagonist_scenario.description = 'leave empty: this style has no protagonist';
+MOTION_SCHEMA.required = ['title', 'summary', 'audience', 'slos', 'modules'];
+
+/**
+ * What the script writer is told about one lesson, beyond its brief and SLO: the models to
+ * teach and the situations to walk through. Rides in the queue item's `notes`, which the
+ * research and script stages already read into every prompt.
+ */
+function lessonNotes(lesson) {
+  const out = [];
+  if (Array.isArray(lesson.sloIds) && lesson.sloIds.length) out.push(`SLO ids: ${lesson.sloIds.join(', ')}`);
+  if (Array.isArray(lesson.models) && lesson.models.length) {
+    out.push('Models to teach (name the author on first use):');
+    for (const m of lesson.models) out.push(`- ${m.name}${m.author ? ` (${m.author})` : ''}: ${m.summary || ''}`.trim());
+  }
+  if (Array.isArray(lesson.walkthroughs) && lesson.walkthroughs.length) {
+    out.push('Walk through these situations step by step with the model:');
+    for (const w of lesson.walkthroughs) out.push(`- ${w.title}: ${w.situation}`);
+  }
+  return out;
+}
+
 // What one lesson costs to build, from the real per-video figures the spine records:
 // art + TTS is the paid part, and a render occupies the box for about half an hour.
 const PER_LESSON_USD = 1.5;
@@ -96,10 +174,14 @@ function lessonsOf(plan) {
 
 function estimate(plan) {
   const n = lessonsOf(plan).length;
+  // A motion-graphics lesson buys no art, only the voice.
+  let perLesson = PER_LESSON_USD;
+  try { perLesson = require('../../orchestrator/lib/styles').get(plan && plan.style).costPerLessonUsd; } catch { /* unknown style: house rate */ }
   return {
     lessons: n,
+    style: (plan && plan.style) || require('../../orchestrator/lib/styles').DEFAULT_STYLE,
     // Stated as a range because a retry on a failed stage is normal, not exceptional.
-    estimatedCostUsd: Number((n * PER_LESSON_USD).toFixed(2)),
+    estimatedCostUsd: Number((n * perLesson).toFixed(2)),
     estimatedBuildMinutes: n * PER_LESSON_MINUTES,
     estimatedWatchMinutes: Number((n * LESSON_VIDEO_MINUTES).toFixed(1)),
     note: 'Cost is art and text-to-speech per video at the pipeline\'s measured rate. '
@@ -117,6 +199,13 @@ async function plan(req, { log = () => {} } = {}) {
     throw Object.assign(new Error('a topic is required'), { status: 400 });
   }
 
+  // The style is chosen first, before anything is planned: it decides the plan's shape.
+  const styles = require('../../orchestrator/lib/styles');
+  const parsed = styles.parseStyle(req.style);
+  if (!parsed.ok) throw Object.assign(new Error(parsed.message), { status: 400 });
+  const style = parsed.style;
+  const motion = style === 'motion-graphics';
+
   const input = [
     `Topic: ${String(req.topic).trim()}`,
     req.audience ? `Audience: ${req.audience}` : null,
@@ -128,7 +217,8 @@ async function plan(req, { log = () => {} } = {}) {
   ].filter(Boolean).join('\n');
 
   log(`planning course: ${req.topic}`);
-  let draft = await askJson({ log, promptName: 'course_planner', input, schema: SCHEMA });
+  let draft = await askJson({ log, promptName: motion ? 'course_planner_motion' : 'course_planner',
+    input, schema: motion ? MOTION_SCHEMA : SCHEMA });
 
   // The model intermittently returns the plan wrapped in a one-element array,
   // which failed validation with "expected an object, got array" and lost a
@@ -145,10 +235,12 @@ async function plan(req, { log = () => {} } = {}) {
     );
   }
 
+  draft.style = style;
   return {
     ...draft,
+    style,
     request: { topic: req.topic, duration: req.duration || null,
-      audience: req.audience || null, description: req.description || null },
+      audience: req.audience || null, description: req.description || null, style },
     estimate: estimate(draft),
     plannedAt: new Date().toISOString(),
   };
@@ -180,8 +272,11 @@ async function plan(req, { log = () => {} } = {}) {
  *
  * @returns {{ok:true}|{ok:false, errors:Array<{path:string,message:string}>}}
  */
-function validate(plan) {
+function validate(plan, { style } = {}) {
   const errors = [];
+  // A motion-graphics lesson is BUILT from its models and walk-throughs (they are the
+  // script brief), so in that style they are refused when missing, like the SLO is.
+  const motion = (style || (plan && plan.style)) === 'motion-graphics';
   const bad = (p, m) => errors.push({ path: p, message: m });
   const str = (v) => typeof v === 'string' && v.trim().length > 0;
 
@@ -213,6 +308,16 @@ function validate(plan) {
         + 'asked for a video about nothing in particular, and nobody finds out until they watch it.');
       if (!str(l.brief)) bad(`${lp}.brief`, 'Every lesson needs a brief -- it is the prompt the '
         + 'script is written from.');
+      if (motion) {
+        if (!Array.isArray(l.models) || !l.models.some((m) => m && str(m.name))) {
+          bad(`${lp}.models`, 'In the motion-graphics style every lesson names at least one model '
+            + '(name, author, summary) -- the video teaches the skill through it.');
+        }
+        if (!Array.isArray(l.walkthroughs) || l.walkthroughs.filter((w) => w && str(w.situation)).length < 2) {
+          bad(`${lp}.walkthroughs`, 'In the motion-graphics style every lesson walks through at least '
+            + 'two situations ({title, situation}) step by step.');
+        }
+      }
       if (l.difficulty !== undefined && !LESSON.properties.difficulty.enum.includes(l.difficulty)) {
         bad(`${lp}.difficulty`, `If given, \`difficulty\` must be one of: `
           + `${LESSON.properties.difficulty.enum.join(', ')}.`);
@@ -223,4 +328,4 @@ function validate(plan) {
   return errors.length ? { ok: false, errors } : { ok: true };
 }
 
-module.exports = { plan, lessonsOf, estimate, validate, SCHEMA, LESSON };
+module.exports = { plan, lessonsOf, estimate, validate, lessonNotes, SCHEMA, LESSON, MOTION_SCHEMA, MOTION_LESSON };
