@@ -16,6 +16,13 @@ venv
 *.aac
 *.pptx
 *.docx
+# ...except the brand media the service serves itself: the video-style previews
+# (GET /api/v1/styles/:id/preview.mp4) and the motion-graphics music bed (MUSIC_FILE). The
+# first deploy with them shipped neither -- the previews answered 404 preview_missing and
+# a motion-graphics render would have fallen back to synthesized music. .dockerignore
+# already admits brand/**; this file must agree, or they never reach the build.
+!explainer-videos/brand-intro-outro/brand/style-previews/*.mp4
+!explainer-videos/brand-intro-outro/brand/*.mp3
 explainer-videos/**/frames
 explainer-videos/**/art
 explainer-videos/**/clips
