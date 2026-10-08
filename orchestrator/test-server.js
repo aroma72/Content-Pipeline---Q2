@@ -2150,6 +2150,11 @@ async function styleChecks() {
       for (const s of r.json.styles) {
         assert(s.label && s.summary && /\/api\/v1\/styles\/[a-z-]+\/preview\.mp4$/.test(s.previewUrl), `incomplete style: ${JSON.stringify(s)}`);
         assert(s.previewSeconds >= 10 && s.previewSeconds <= 15, `preview is not 10-15s: ${s.previewSeconds}`);
+        // What the script sounds like, so an instructor can judge it before choosing.
+        const w = s.writingStyle || {};
+        assert(w.narrator && w.voice && Array.isArray(w.rules) && w.rules.length >= 2
+          && Array.isArray(w.sample) && w.sample.length >= 3 && w.sample.every((x) => x.line),
+          `${s.id}: no usable writingStyle: ${JSON.stringify(w).slice(0, 200)}`);
       }
       const idx = await req(port, { path: '/api/v1' });
       assert(Array.isArray(idx.json.styles) && idx.json.styles.length === 2, 'the index does not serve the styles');

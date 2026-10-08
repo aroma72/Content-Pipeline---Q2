@@ -34,6 +34,24 @@ const STYLES = [
     summary: 'A story-led explainer: one illustrated character, Ali, is followed through a single '
       + 'real scenario, with painted scenes and animated story moments.',
     bestFor: 'Concepts that land best as a story: tools, workflows, before-and-after change.',
+    // How the script SOUNDS, so an instructor can judge it before choosing. The sample lines are
+    // the opening of a shipped video in this style (self-healing-01), not invented copy.
+    writingStyle: {
+      narrator: 'A warm mentor tells the story of Ali, an invented character, in the third person.',
+      voice: 'Warm, friendly mentor (Gemini "Aoede"), one steady read throughout.',
+      rules: [
+        'Leads with the answer, then follows Ali through ONE real scenario in depth.',
+        'Story arc: the problem, the fix, why it works, the common mistake, the payoff.',
+        'One short spoken sentence per scene, with real numbers on screen.',
+      ],
+      sample: [
+        { line: 'Self-healing is not a smarter brain; it is a room that catches its own mistakes.' },
+        { line: 'Ali keeps every order in one paper ledger on his shop counter.' },
+        { line: 'He asks his AI helper which orders from last month were never paid.' },
+        { line: 'One date in that request is wrong, so the answer comes back completely blank.' },
+        { line: 'Three weeks later the supplier arrives and drops the unpaid bills on his counter.' },
+      ],
+    },
     previewFile: path.join(BRAND, 'style-previews', 'character-arc.mp4'),
     previewSeconds: 12,
     costPerLessonUsd: 1.5,
@@ -49,6 +67,24 @@ const STYLES = [
       + 'skill taught through a named model and walked through on real situations, spoken '
       + 'directly to the learner as "you".',
     bestFor: 'People skills, soft skills, frameworks and models, and step-by-step how-tos.',
+    // Sample lines from the P&C People Skills Course 1 Week 1 video, with the read cue each
+    // line was voiced with.
+    writingStyle: {
+      narrator: 'A calm, composed woman speaks straight to the learner as "you". No named character.',
+      voice: 'Calm and collected with steady energy (Gemini "Sulafat"); each line carries its own emotional cue.',
+      rules: [
+        'Every skill is taught through a named model, credited to its author (e.g. SCARF, RASA, GROW).',
+        'At least two real workplace situations are walked through step by step, with the exact words to say.',
+        'Shape: hook, the model, walk-throughs, the common mistake, a three-line recap.',
+      ],
+      sample: [
+        { line: 'You are a P&C Buddy, and that role is bigger than it first looks.', read: 'with a warm, welcoming smile' },
+        { line: 'You care for the person, and you stay fair to the organisation, both at the same time.', read: 'calmly and with conviction' },
+        { line: 'Lean only toward the person, and you end up taking sides.', read: 'with a gentle note of caution' },
+        { line: 'Say an employee tells you their manager never gives them any feedback.', read: 'with empathy' },
+        { line: 'A supporter asks what they have tried, and helps them plan that conversation themselves.', read: 'warmly and confidently' },
+      ],
+    },
     previewFile: path.join(BRAND, 'style-previews', 'motion-graphics.mp4'),
     previewSeconds: 12,
     // No illustration is bought -- the voice is the only paid call.
@@ -122,6 +158,7 @@ function publicStyles(baseUrl) {
     previewUrl: `${baseUrl}/api/v1/styles/${s.id}/preview.mp4`,
     previewSeconds: s.previewSeconds,
     estimatedCostPerLessonUsd: s.costPerLessonUsd,
+    writingStyle: s.writingStyle,
   }));
 }
 

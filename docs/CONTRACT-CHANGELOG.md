@@ -28,6 +28,7 @@ graphics, named models and walk-throughs, spoken to "you"). Sending no `style` c
 | Change | Where | Example | Commit | LMS file |
 |---|---|---|---|---|
 | `GET /api/v1/styles` (public) | new route | `{"default":"character-arc","styles":[{"id":"motion-graphics","label":"Flat Motion Graphics","previewUrl":"…/api/v1/styles/motion-graphics/preview.mp4","previewSeconds":12,…}]}` | this release | `content-queen-client.ts` + the new style-picker screen |
+| `styles[].writingStyle` | `GET /api/v1/styles`, `GET /api/v1` | `{"narrator":"A calm, composed woman speaks straight to the learner as \"you\"…","voice":"…","rules":[…],"sample":[{"line":"You are a P&C Buddy…","read":"with a warm, welcoming smile"}]}` | this release | style picker ("How the script sounds") |
 | `GET /api/v1/styles/:styleId/preview.mp4` (public, Range) | new route | 12-second sample, 206 on a Range request | this release | style picker `<video>` |
 | `styles[]` | `GET /api/v1` | same array as above | this release | `content-queen-client.ts` |
 | `style` (request) | `POST /api/v1/courses/plan`, `/courses/build`, `/demo/make-video` | `"style": "motion-graphics"`; 400 `invalid_style` if unknown | this release | `content-queen-courses.ts`, `content-queen-jobs.ts` |

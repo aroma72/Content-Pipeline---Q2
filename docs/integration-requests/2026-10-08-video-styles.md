@@ -27,7 +27,10 @@ Each style has a **12-second preview video** you can play in the picker.
 
 **1. A style picker as the first screen of "Create a course".**
 Fetch the list — don't hard-code it — and render a card per style: `label`, `summary`, `bestFor`,
-`estimatedCostPerLessonUsd`, and the preview in a `<video>` element.
+`estimatedCostPerLessonUsd`, the preview in a `<video>` element, and **how the script sounds**
+from `writingStyle`: the `narrator` and `voice` in one line each, the `rules` as a short list,
+and the `sample` lines as a quoted excerpt (motion-graphics lines carry a `read` cue — show it
+small and italic beside the line). The sample lines are real lines from a shipped video.
 
 ```
 GET /api/v1/styles                 (public, no token)
@@ -37,7 +40,9 @@ GET /api/v1/styles                 (public, no token)
       { "id": "character-arc", "label": "Character Arc", "default": true,
         "summary": "…", "bestFor": "…",
         "previewUrl": "https://<host>/api/v1/styles/character-arc/preview.mp4",
-        "previewSeconds": 12, "estimatedCostPerLessonUsd": 1.5 },
+        "previewSeconds": 12, "estimatedCostPerLessonUsd": 1.5,
+        "writingStyle": { "narrator": "…", "voice": "…", "rules": ["…"],
+                          "sample": [ { "line": "…" }, … ] } },
       { "id": "motion-graphics", "label": "Flat Motion Graphics", "default": false, … }
     ],
     "howToUse": "…"
