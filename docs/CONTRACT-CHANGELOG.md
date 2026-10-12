@@ -1,6 +1,6 @@
 ---
 type: reference
-last_verified: 2026-10-08
+last_verified: 2026-10-12
 owner: Aroma Tahir
 ---
 
@@ -14,6 +14,19 @@ for single videos, `content-queen-client.ts` for the catalogue) — the LMS aske
 on 2026-09-21 after learning of ten new fields by reading our repository.
 
 Frozen copies: `docs/contracts/course-api-<version>.md`.
+
+---
+
+## 1.2, fix — 2026-10-12 — motion-graphics produce, Retry, draft ceiling
+
+Reply to the LMS staging report of 2026-10-12. No field added or removed; `contractVersion` stays 1.2.
+
+| Change | Where | Example | Commit | LMS file |
+|---|---|---|---|---|
+| A motion-graphics lesson now produces (it failed in `segment-all.py` with `no art/ folder`) | produce, both the course and single-video paths | — | this release | none |
+| Retry on a lesson that failed **after** its script was approved resumes from that script (same sha, no re-write, no new approval), as long as the held copy is byte-identical | `POST /api/v1/courses/:courseId/lessons/:lessonId/requeue` | log: `resuming from the approved script ec3e8dedc07cf6c6` | this release | none |
+| `draft-teaching` ends at 105 s as `504 {"error":"draft_failed"}` | `POST /api/v1/courses/draft-teaching` | `{"error":"draft_failed","message":"Drafting took longer than 105s. Try again."}` | this release | `content-queen-courses.ts` (keep `DRAFT_TIMEOUT_MS` ≥ 120 s) |
+| `estimatedCostPerLessonUsd` is **all-in** (model + media): motion-graphics 0.5 → **2.0**. Character-arc stays 1.5 and has not yet been measured all-in | `GET /api/v1/styles`, `GET /api/v1` | `"estimatedCostPerLessonUsd": 2` | this release | style picker |
 
 ---
 

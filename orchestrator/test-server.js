@@ -2261,6 +2261,29 @@ async function styleChecks() {
       } finally { planner._setDraftAsk(null); }
     }); });
 
+  // The LMS waits 120s and then shows "Could not draft"; one staging call ran past it
+  // (2026-10-12). Ours must end first, as our own draft_failed, and tell the backend.
+  await check('draft-teaching ends a slow model call as 504 draft_failed, under the LMS timeout',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      const planner = require(path.join(__dirname, '..', 'server', 'lib', 'course-planner'));
+      const saved = process.env.DRAFT_TEACHING_TIMEOUT_MS;
+      process.env.DRAFT_TEACHING_TIMEOUT_MS = '200';
+      let seen = null;
+      planner._setDraftAsk((args) => { seen = args; return new Promise(() => {}); });
+      try {
+        const t0 = Date.now();
+        const r = await req(port, { method: 'POST', path: '/api/v1/courses/draft-teaching', headers: auth,
+          body: { lessons: [{ title: 'Listen first', slo: 'listen then ask' }] } });
+        assert(r.status === 504 && r.json.error === 'draft_failed', `expected 504 draft_failed, got ${r.status} ${r.text}`);
+        assert(Date.now() - t0 < 5000, `the ceiling did not fire (${Date.now() - t0}ms)`);
+        assert(seen && seen.timeoutMs === 200, `the backend was not given the ceiling: ${seen && seen.timeoutMs}`);
+        return `504 in ${Date.now() - t0}ms`;
+      } finally {
+        planner._setDraftAsk(null);
+        if (saved === undefined) delete process.env.DRAFT_TEACHING_TIMEOUT_MS; else process.env.DRAFT_TEACHING_TIMEOUT_MS = saved;
+      }
+    }); });
+
   await check('Make a Video refuses an unknown style up front',
     () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
       const r = await req(port, { method: 'POST', path: '/demo/make-video', body: { topic: 'Listening', style: 'oil-painting' } });

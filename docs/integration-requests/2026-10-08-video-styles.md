@@ -42,7 +42,9 @@ so in Flat Motion Graphics the LMS sends those lessons to `POST /api/v1/courses/
 (token required) and shows what comes back as an editable draft: numbered course SLOs, and per
 lesson the SLO ids, one to three models (name, author, summary) and two walk-throughs (title,
 situation). Lessons are returned in the same order, never changed, merged or dropped. One model
-call, about 20–40 seconds, nothing else spent. The instructor can edit anything; build still
+call, usually 30–50 seconds (measured on 2-lesson courses, 2026-10-12), nothing else spent. A call
+that reaches 105 seconds is ended by us as `504 draft_failed`, so a client timeout of 120 s or more
+always gets our answer rather than its own. The instructor can edit anything; build still
 refuses a lesson with no model or fewer than two walk-throughs.
 
 ```

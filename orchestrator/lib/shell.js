@@ -9,6 +9,7 @@
  */
 
 const { spawn } = require('child_process');
+const { StringDecoder } = require('string_decoder');
 const fs = require('fs');
 const path = require('path');
 
@@ -166,8 +167,13 @@ function run(cmd, args, opts = {}) {
       child.kill('SIGKILL');
     }, timeoutMs);
 
+    // One decoder per stream. `buf.toString()` decoded each chunk on its own, so a
+    // multi-byte character split across two chunks (an em dash is three bytes) came
+    // out as replacement characters -- in error text the LMS shows instructors verbatim.
+    const decoders = { out: new StringDecoder('utf8'), err: new StringDecoder('utf8') };
     const feed = (buf, sink) => {
-      const text = buf.toString();
+      const text = typeof buf === 'string' ? buf : decoders[sink].write(buf);
+      if (!text) return;
       if (sink === 'out') stdout += text; else stderr += text;
       if (onLine) for (const line of text.split(/\r?\n/)) if (line.trim()) onLine(line, sink);
     };
@@ -185,6 +191,8 @@ function run(cmd, args, opts = {}) {
 
     child.on('close', (code) => {
       clearTimeout(timer);
+      feed(decoders.out.end(), 'out');
+      feed(decoders.err.end(), 'err');
       if (timedOut) {
         return reject(new CommandError(
           `Timed out after ${timeoutMs}ms: ${printable}`,

@@ -197,13 +197,13 @@ def process(png: Path):
 
 
 def main():
-    if not ART.exists():
-        print("[seg] no art/ folder — run generate-lesson-art.js first.")
-        sys.exit(1)
-    pngs = sorted(ART.glob("*.png"))
+    # No art is not an error: a script whose beats are all `info` templates (the whole
+    # motion-graphics style) buys no art, so there is nothing to cut out. Exiting 1 here
+    # failed every motion-graphics lesson in produce (2026-10-12).
+    pngs = sorted(ART.glob("*.png")) if ART.exists() else []
     if not pngs:
-        print("[seg] art/ is empty.")
-        sys.exit(1)
+        print("[seg] no art/*.png -- nothing to segment (all beats are info templates?).")
+        return
     only = [s for s in os.environ.get("SEG_IDS", "").split(",") if s]
     for png in pngs:
         if only and png.stem not in only:

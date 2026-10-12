@@ -174,7 +174,7 @@ function lessonsOf(plan) {
 
 function estimate(plan) {
   const n = lessonsOf(plan).length;
-  // A motion-graphics lesson buys no art, only the voice.
+  // Per style: a motion-graphics lesson buys no art, but its script still costs model spend.
   let perLesson = PER_LESSON_USD;
   try { perLesson = require('../../orchestrator/lib/styles').get(plan && plan.style).costPerLessonUsd; } catch { /* unknown style: house rate */ }
   return {
@@ -184,7 +184,8 @@ function estimate(plan) {
     estimatedCostUsd: Number((n * perLesson).toFixed(2)),
     estimatedBuildMinutes: n * PER_LESSON_MINUTES,
     estimatedWatchMinutes: Number((n * LESSON_VIDEO_MINUTES).toFixed(1)),
-    note: 'Cost is art and text-to-speech per video at the pipeline\'s measured rate. '
+    note: 'Cost is the expected spend per video, including the model calls that write and check '
+      + 'the script, not only the art and text-to-speech. '
       + 'Build time is wall-clock, one video at a time. Neither is spent until a build '
       + 'is explicitly started.',
   };
@@ -225,6 +226,7 @@ const DRAFT_SCHEMA = {
   additionalProperties: false,
 };
 const MAX_DRAFT_LESSONS = 30;
+const DRAFT_TIMEOUT_MS = 105_000;
 // Swappable so the HTTP tests can exercise the route without calling a model.
 let draftAsk = askJson;
 function _setDraftAsk(fn) { draftAsk = fn || askJson; }
@@ -248,7 +250,18 @@ async function draftTeaching(req, { log = () => {} } = {}) {
   ].filter(Boolean).join('\n');
 
   log(`drafting models and walk-throughs for ${lessons.length} lesson(s)`);
-  const out = await draftAsk({ log, promptName: 'course_teaching_draft', input, schema: DRAFT_SCHEMA });
+  // A ceiling below the LMS's own 120s request timeout, so a slow model call ends as our
+  // 504 draft_failed rather than their timeout (one LMS staging call ran past 120s on
+  // 2026-10-12). Passed to the backend too, so the CLI child is killed, not orphaned.
+  const ceilingMs = Number(process.env.DRAFT_TEACHING_TIMEOUT_MS) || DRAFT_TIMEOUT_MS;
+  let timer;
+  const out = await Promise.race([
+    draftAsk({ log, promptName: 'course_teaching_draft', input, schema: DRAFT_SCHEMA, timeoutMs: ceilingMs }),
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(Object.assign(
+        new Error(`Drafting took longer than ${Math.round(ceilingMs / 1000)}s. Try again.`), { status: 504 })), ceilingMs);
+    }),
+  ]).finally(() => clearTimeout(timer));
   if (!out || !Array.isArray(out.lessons) || out.lessons.length !== lessons.length) {
     throw Object.assign(new Error('The draft did not cover every lesson. Try again.'), { status: 502 });
   }

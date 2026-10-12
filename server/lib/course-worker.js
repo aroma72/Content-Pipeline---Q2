@@ -698,6 +698,24 @@ function skip(lessonId, by = 'Aroma', courseId = null, tenantId = null) {
 }
 
 /**
+ * The script approval a retry may carry: only when the held script on the volume is
+ * still, byte for byte, the one the person approved.
+ *
+ * queue.requeue() clears the approval because a new attempt usually writes a new
+ * script. But a lesson that failed AFTER approval (in produce) has nothing to rewrite:
+ * clearing it sent a retry back to research, re-bought the script (~$1.76 on the LMS
+ * staging run, 2026-10-12) and asked the instructor to approve a different text. The
+ * sha is what makes keeping it safe -- seedFromScript resumes at script-approval,
+ * which re-checks the bytes on disk against it, so nothing unapproved can render.
+ */
+function approvalStillValid(item) {
+  if (!item.scriptApproved || !item.scriptApprovedSha || item.scriptNotes) return {};
+  const held = deliverables.findScript(item.series, item.slug);
+  if (!held || deliverables.fingerprint(held.beats) !== item.scriptApprovedSha) return {};
+  return { scriptApproved: item.scriptApproved, scriptApprovedSha: item.scriptApprovedSha };
+}
+
+/**
  * Put one failed lesson back in the queue.
  *
  * A course is many lessons and they fail one at a time; rebuilding the course is
@@ -728,8 +746,11 @@ function requeue(lessonId, by = 'Aroma', courseId = null, tenantId = null) {
     return { ok: false, why: `That lesson was stopped when '${item.stoppedWithCourse}' was rejected. `
       + 'It never ran, so there is nothing to retry; build the course again if you want it.' };
   }
-  queue.requeue(lessonId, { requeuedBy: by });
-  log(`requeued ${lessonId} by ${by} -- building it again from the start`);
+  const kept = approvalStillValid(item);
+  queue.requeue(lessonId, { requeuedBy: by, ...kept });
+  log(kept.scriptApproved
+    ? `requeued ${lessonId} by ${by} -- resuming from the approved script ${kept.scriptApprovedSha}, not re-writing it`
+    : `requeued ${lessonId} by ${by} -- building it again from the start`);
   kick();
   return { ok: true };
 }
@@ -811,4 +832,5 @@ module.exports = {
   drain, kick, status, approve, approveScript, revise, reject, requeue, skip, resume,
   queued, eligible, heldCourses, courseTagOf, awaitingApproval, restore, bootDecision,
   readBoot, markBoot, MAX_HUMAN_REVISIONS,
+  _internals: { approvalStillValid },
 };

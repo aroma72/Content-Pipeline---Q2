@@ -4533,6 +4533,37 @@ async function courseChecks() {
     return 'approval and sha cleared, the revision budget kept';
   });
 
+  // ...except when the failure came AFTER the approval and the held script is still the
+  // approved bytes. LMS staging, 2026-10-12: a motion lesson failed in produce, and a
+  // Retry would have re-written (and re-charged, ~$1.76) a script the instructor had
+  // already read and approved, then asked them to approve a different one.
+  check('a retry keeps the script approval only while the held script is the approved one', () => {
+    const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+    const deliverables = require(path.join(__dirname, 'lib', 'deliverables'));
+    const { approvalStillValid } = cw._internals;
+    const saved = { find: deliverables.findScript, fp: deliverables.fingerprint };
+    const approved = { series: 'demo', slug: 'mg', scriptApproved: 'lms', scriptApprovedSha: 'ec3e8dedc07cf6c6' };
+    try {
+      deliverables.findScript = () => ({ beats: '/vol/demo/mg/beats.js' });
+      deliverables.fingerprint = () => 'ec3e8dedc07cf6c6';
+      const kept = approvalStillValid(approved);
+      assert(kept.scriptApproved === 'lms' && kept.scriptApprovedSha === 'ec3e8dedc07cf6c6',
+        `the approval of an unchanged script was dropped: ${JSON.stringify(kept)}`);
+
+      deliverables.fingerprint = () => 'ffff0000ffff0000';
+      assert(!approvalStillValid(approved).scriptApproved, 'an approval was carried onto DIFFERENT bytes');
+      deliverables.findScript = () => null;
+      assert(!approvalStillValid(approved).scriptApproved, 'an approval was carried with no held script to check');
+      deliverables.findScript = () => ({ beats: 'x' }); deliverables.fingerprint = () => 'ec3e8dedc07cf6c6';
+      assert(!approvalStillValid({ ...approved, scriptNotes: 'rewrite it' }).scriptApproved,
+        'an approval survived notes asking for a rewrite');
+      assert(!approvalStillValid({ ...approved, scriptApproved: false }).scriptApproved, 'invented an approval');
+      return 'kept on matching sha; dropped on changed bytes, no copy, notes, or no approval';
+    } finally {
+      deliverables.findScript = saved.find; deliverables.fingerprint = saved.fp;
+    }
+  });
+
   // ── a stopped course is not a held course ────────────────────────────────────
   // course-mub7whoa read `held.by: <a lesson Aroma rejected>` for a day, and /health
   // counted it in heldCourses, with nothing queued behind it. A hold that can never
@@ -5192,6 +5223,94 @@ function styleChecks() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Motion-graphics PRODUCE. Planning, drafting and the script gate all passed on the LMS
+// staging run (2026-10-12) and produce still died 10s after approval: segment-all.py
+// exited 1 on "no art/ folder", because a motion script is all info beats and buys no
+// art. No check here reached that step, which is how it shipped -- so these run produce.
+async function motionProduceChecks() {
+  console.log('\n-- motion-graphics produce (segment-all with no art) --');
+  const os = require('os');
+  const shell = require('./lib/shell');
+  const produce = require('./lib/stages/produce');
+
+  // Dry-run produce with shell.run recorded: which commands would this script issue?
+  const commandsFor = async (style, beats) => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mg-produce-'));
+    const saved = { v: process.env.EXPLAINER_VIDEOS_DIR, j: process.env.JOB_STORE_DIR, run: shell.run };
+    process.env.EXPLAINER_VIDEOS_DIR = path.join(tmp, 'videos');
+    process.env.JOB_STORE_DIR = path.join(tmp, 'store');
+    const ran = [];
+    try {
+      shell.run = async (cmd, args) => { ran.push(`${cmd} ${(args || []).join(' ')}`); return { code: 0, stdout: '', stderr: '' }; };
+      const log = Object.assign(() => {}, { always: () => {} });
+      await produce.run({
+        item: { id: 's/l', series: 's', slug: 'l', topic: 't', style },
+        state: { runId: 'r', redrafts: 0, interventions: [], spend: [] },
+        artifacts: { script: { title: 'T', beats } },
+        opts: { dryRun: true },
+        log,
+      });
+      return ran;
+    } finally {
+      shell.run = saved.run;
+      if (saved.v === undefined) delete process.env.EXPLAINER_VIDEOS_DIR; else process.env.EXPLAINER_VIDEOS_DIR = saved.v;
+      if (saved.j === undefined) delete process.env.JOB_STORE_DIR; else process.env.JOB_STORE_DIR = saved.j;
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  };
+
+  await checkAsync('a motion-graphics (all-info) produce does not run segment-all, and still compiles', async () => {
+    const ran = await commandsFor('motion-graphics', [
+      { id: '01', mode: 'info', vo: 'You are a buddy.', info: { tpl: 'lfTitle', data: { text: 'x' } } },
+      { id: '02', mode: 'checkpoint', quiz: { stem: 'Q?', options: ['a', 'b', 'c'], answer: 0, explain: 'A.' } },
+    ]);
+    assert(!ran.some((c) => /segment-all\.py/.test(c)), `segment-all ran with no art to cut: ${ran.join(' | ')}`);
+    assert(!ran.some((c) => /generate-lesson-art/.test(c)), 'art was generated for an all-info script');
+    assert(ran.some((c) => /compile-lesson\.js/.test(c)), `produce stopped before the render: ${ran.join(' | ')}`);
+    return `${ran.length} command(s), no segment-all`;
+  });
+
+  await checkAsync('a character-arc produce with art still segments its cutouts', async () => {
+    const ran = await commandsFor(undefined, [
+      { id: '01', mode: 'ali', vo: 'Ali opens his ledger.', art: 'Ali at a shop counter' },
+    ]);
+    assert(ran.some((c) => /segment-all\.py/.test(c)), `segment-all was skipped for a beat with art: ${ran.join(' | ')}`);
+    return 'segmented';
+  });
+
+  await checkAsync('shell.run keeps a multi-byte character that is split across two output chunks', async () => {
+    // An em dash is e2 80 94. Write the first byte, wait so it lands as its own chunk,
+    // then the rest -- and fail, so it also has to survive into the error message.
+    const script = "process.stderr.write(Buffer.from([0x61,0xe2]));"
+      + "setTimeout(()=>{process.stderr.write(Buffer.from([0x80,0x94,0x62]));process.exit(1)},150)";
+    let err = null;
+    try { await shell.run(process.execPath, ['-e', script], { timeoutMs: 10000 }); } catch (e) { err = e; }
+    assert(err && err.stderr === 'a—b', `decoded as ${JSON.stringify(err && err.stderr)}`);
+    assert(/a—b/.test(err.message), `error text lost the dash: ${err.message}`);
+    return 'a—b intact';
+  });
+
+  check('the template segment-all.py exits 0 when there is no art/ (a hand run of a motion video)', () => {
+    const { spawnSync } = require('child_process');
+    const { PATHS } = require('./lib/paths');
+    // `python3` is a Store stub on Windows; `py` is the launcher there, `python` on Linux.
+    const py = ['python', 'py'].find((c) => {
+      const r = spawnSync(c, ['-c', 'import numpy, PIL'], { encoding: 'utf8' });
+      return r.status === 0;
+    });
+    if (!py) return skip('no Python with numpy + Pillow on PATH');
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'seg-noart-'));
+    try {
+      const r = spawnSync(py, [path.join(PATHS.videoTemplates, 'segment-all.py')], { cwd: tmp, encoding: 'utf8' });
+      assert(r.status === 0, `segment-all.py exited ${r.status} with no art/: ${(r.stdout || '') + (r.stderr || '')}`);
+      return `${py}: exit 0`;
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+}
+
 (async () => {
   await interpreterChecks();
   await beatChecks();
@@ -5209,6 +5328,7 @@ function styleChecks() {
   await courseChecks();
   await driveOffloadChecks();
   styleChecks();
+  await motionProduceChecks();
 
   console.log(`\n${'-'.repeat(64)}`);
   console.log(`  ${pass} passed, ${failures.length} failed` + (skipped ? `, ${skipped} skipped` : ''));

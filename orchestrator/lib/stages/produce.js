@@ -576,7 +576,9 @@ module.exports = Object.assign(module.exports, {
       // CHECKPOINT_HANDOFF=api: here the LMS reads the question from the API (live, from
       // beats.js), so verify.js does not demand the checkpoint.json/QUESTION.md files a video
       // made by hand ships for review.
-      env: { ...process.env, ...styleEnv, CHECKPOINT_HANDOFF: 'api' },
+      // PYTHONIOENCODING: segment-all.py prints an em dash; its bytes must not depend on
+      // the container's locale on the way into an error string the LMS shows verbatim.
+      env: { ...process.env, ...styleEnv, CHECKPOINT_HANDOFF: 'api', PYTHONIOENCODING: 'utf-8' },
       dryRun: opts.dryRun,
       onLine: (line) => log(line.slice(0, 160)),
       ...extra,
@@ -873,7 +875,10 @@ module.exports = Object.assign(module.exports, {
     // 2. art -- paid, skipped only when EVERY art beat has its file. Checking
     // "the folder is non-empty" once let a failed image slip through to render.
     const missingArt = missingPerBeat(beatsForArt, dir, 'art', (id) => `${id}.png`);
-    if (beatsForArt.length && missingArt.length === 0) {
+    const artBeatCount = beatsForArt.filter((b) => b.mode !== 'info' && b.art).length;
+    if (beatsForArt.length && artBeatCount === 0) {
+      log.always('no beat needs art (every beat is an info template) -- nothing to generate');
+    } else if (beatsForArt.length && missingArt.length === 0) {
       log.always(`art/ complete (${beatsForArt.filter((b) => b.mode !== 'info' && b.art).length} image(s)) -- skipping generate-lesson-art (no re-spend)`);
     } else if (beatsForArt.length && missingArt.length && hasOutput(path.join(dir, 'art'), '.png')) {
       // Regenerate ONLY the gaps. generate-lesson-art.js takes ART_IDS for this.
@@ -934,9 +939,17 @@ module.exports = Object.assign(module.exports, {
     await sensor('qa-art.js', 'anatomy/rendering defects in the generated art',
       { redraftable: true });
 
-    // 3. cutout
-    log('segmenting cutouts');
-    await run('python', ['segment-all.py']);
+    // 3. cutout -- only when there is art to cut. A motion-graphics script is all
+    // `info` beats, so the art step rightly buys nothing and art/ never exists;
+    // segment-all.py then exited 1 ("no art/ folder") and failed every motion
+    // lesson 10s after its script was approved (LMS staging, 2026-10-12). Keyed on
+    // the beats, not the style, so an all-info character-arc script is covered too.
+    if (!beatsForArt.some((b) => b.mode !== 'info' && b.art)) {
+      log.always('no beat has art -- skipping segment-all (nothing to cut out)');
+    } else {
+      log('segmenting cutouts');
+      await run('python', ['segment-all.py']);
+    }
 
     // 4. voiceover -- paid, and skipped only when every beat's audio was made
     // from the sentence the script still holds. "Some wavs exist" is not that:

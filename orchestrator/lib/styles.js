@@ -87,8 +87,11 @@ const STYLES = [
     },
     previewFile: path.join(BRAND, 'style-previews', 'motion-graphics.mp4'),
     previewSeconds: 12,
-    // No illustration is bought -- the voice is the only paid call.
-    costPerLessonUsd: 0.5,
+    // ALL-IN, as the LMS shows it to instructors as "about $X per video". No art is bought,
+    // so media is only the voice (~$0.05) -- but the script is not free: the first real lesson
+    // (LMS staging, 2026-10-12, 22 beats, one redraft) spent $1.76 in model calls before
+    // produce. 0.5 counted the voice alone and understated the bill ~3.5x.
+    costPerLessonUsd: 2.0,
     prompts: { script: 'video_script_motion', gate: 'script_gate_motion' },
     render: {
       // The LearnFree renderer, shipped in the skill templates and copied into every video.

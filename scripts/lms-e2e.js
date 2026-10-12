@@ -8,6 +8,9 @@
  *   node scripts/lms-e2e.js --yes           # also produces, up to --cap per video (default $3.00)
  *   node scripts/lms-e2e.js --yes --only=course|single
  *   node scripts/lms-e2e.js --base https://staging.example
+ *   node scripts/lms-e2e.js --style=motion-graphics   # both flows in that style (default: character-arc).
+ *       The motion PRODUCE is the step that broke on 2026-10-12 (segment-all with no art/);
+ *       planning and drafting never reach it, so a style change is not tested without --yes.
  *
  * Course flow   plan -> build (409 without confirm, 400 on a broken plan) -> script-approval
  *               -> script/beats/script.md -> stale-sha approve (409) -> quote -> approve
@@ -48,6 +51,8 @@ const YES = process.argv.includes('--yes') || process.env.CONFIRM_SPEND === '1';
 const CAP = Number(arg('cap', '3.00'));
 const ONLY = arg('only', 'both');
 const KEEP_DRIVE = process.argv.includes('--keep-drive');
+const STYLE = arg('style', null);
+const STYLE_BODY = STYLE ? { style: STYLE } : {};
 const SERIES = arg('series', `lms-e2e-${new Date().toISOString().slice(0, 10)}`);
 
 const { _internals: { COST, i2vSeconds } } = require('../orchestrator/lib/stages/produce');
@@ -173,17 +178,18 @@ async function courseFlow() {
     topic: 'Writing a clear prompt for an AI assistant',
     audience: 'working adults new to AI tools', duration: 'one short lesson',
     description: 'One lesson: give the AI a role, the context and the exact output you want.',
+    ...STYLE_BODY,
   } });
   if (!expect(F, 'POST /courses/plan', planR.status === 200 && planR.data && planR.data.modules, `HTTP ${planR.status}`)) return;
   const plan = planR.data;
   plan.modules = [{ ...plan.modules[0], lessons: [plan.modules[0].lessons[0]] }];
 
-  const noConfirm = await http('POST', '/api/v1/courses/build', { body: { plan, series: SERIES } });
+  const noConfirm = await http('POST', '/api/v1/courses/build', { body: { plan, series: SERIES, ...STYLE_BODY } });
   expect(F, 'build without confirmLessons is refused (409)', noConfirm.status === 409, `HTTP ${noConfirm.status}`);
   const broken = await http('POST', '/api/v1/courses/build', { body: { plan: { title: 'x', modules: [{ title: 'm', lessons: [{}] }] }, series: SERIES, confirmLessons: 1 } });
   expect(F, 'a broken plan is refused (400)', broken.status === 400, `HTTP ${broken.status}`);
 
-  const built = await http('POST', '/api/v1/courses/build', { body: { plan, series: SERIES, confirmLessons: 1 } });
+  const built = await http('POST', '/api/v1/courses/build', { body: { plan, series: SERIES, confirmLessons: 1, ...STYLE_BODY } });
   if (!expect(F, 'POST /courses/build (202)', built.status === 202 && built.data && built.data.courseId, `HTTP ${built.status} ${JSON.stringify(built.data).slice(0, 200)}`)) return;
   const courseId = built.data.courseId;
   console.log(`    courseId ${courseId}`);
@@ -278,7 +284,9 @@ async function singleFlow() {
   console.log('\nSingle-video flow (/demo/make-video)');
   const made = await http('POST', '/demo/make-video', { body: {
     topic: 'Checking an AI answer before you use it',
-    notes: `lms-e2e ${SERIES}: a short lesson; give 2 story-critical beats small motion.`,
+    notes: STYLE === 'motion-graphics' ? `lms-e2e ${SERIES}: a short lesson.`
+      : `lms-e2e ${SERIES}: a short lesson; give 2 story-critical beats small motion.`,
+    ...STYLE_BODY,
   } });
   if (!expect(F, 'POST /demo/make-video (202)', made.status === 202 && made.data && made.data.jobId, `HTTP ${made.status} owner ${made.data && made.data.owner}`)) return null;
   const jobId = made.data.jobId;
