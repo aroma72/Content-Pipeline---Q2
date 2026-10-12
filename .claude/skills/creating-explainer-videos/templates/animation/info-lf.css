@@ -72,9 +72,13 @@ html,body{width:1920px;height:1080px;overflow:hidden;background:var(--cream);col
 .half.l{left:0} .half.r{right:0}
 .half.dim .dimmable{opacity:.28;filter:saturate(.3)}
 
-/* option rows: label and its marker on one baseline */
-.optrow{position:absolute;display:flex;align-items:center;gap:var(--gap-m);height:80px}
-.optrow .lbl{position:static}
+/* option rows: label and its marker on one baseline -- when they fit. Rows start at x=1248,
+   so 624px is the frame's right margin; a row that would run past it wraps the marker under
+   the label, and a long label wraps instead of running off (qa-frames, 2026-10-12: "Open the
+   policy together" + "Their choice" spilled 204px). Row pitch is 200px: two lines + marker fit. */
+.optrow{position:absolute;display:flex;flex-wrap:wrap;align-items:center;column-gap:var(--gap-m);row-gap:0;
+  min-height:80px;max-width:624px}
+.optrow .lbl{position:static;white-space:normal;line-height:1.1}
 .optrow .tag{position:static}
 
 /* recap: three calm cards, one rhythm */

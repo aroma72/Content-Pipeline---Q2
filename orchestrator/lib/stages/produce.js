@@ -364,6 +364,9 @@ function missingPerBeat(beats, dir, subdir, name) {
     .map((b) => b.id);
 }
 
+// The voice step pads every clip with a 0.4s or 0.7s pause; a clip at or under that is pause alone.
+const SILENT_CLIP_SECONDS = 0.75;
+
 /**
  * Beats whose voiceover was made from a DIFFERENT sentence than the script now
  * holds.
@@ -382,6 +385,16 @@ function missingPerBeat(beats, dir, subdir, name) {
  * @returns {string[]} ids needing a fresh take
  */
 function staleVo(beats, dir) {
+  // A clip no longer than its breathing pause holds no speech. The TTS step used to write
+  // the sidecar even for a silent fallback, so a folder made with a dead key reads as done:
+  // on 2026-10-12 produce's retry skipped TTS and built a lesson whose every beat was 0.4s.
+  // The sidecar fix stops new ones; this catches folders poisoned before it.
+  let durations = {};
+  try { durations = JSON.parse(fs.readFileSync(path.join(dir, 'durations.json'), 'utf8')); } catch { /* none yet */ }
+  const silent = (b) => {
+    const d = Number(durations[b.id]);
+    return Number.isFinite(d) && d <= SILENT_CLIP_SECONDS && String(b.vo).trim().split(/\s+/).length >= 3;
+  };
   return (beats || [])
     .filter((b) => b && b.mode !== 'checkpoint' && b.vo)
     .filter((b) => {
@@ -389,6 +402,7 @@ function staleVo(beats, dir) {
       const wav = path.join(dir, 'audio', `vo_${b.id}.wav`);
       try {
         if (!fs.existsSync(wav) || fs.statSync(wav).size === 0) return true;
+        if (silent(b)) return true;
         return fs.readFileSync(sidecar, 'utf8') !== b.vo;
       } catch { return true; }
     })

@@ -105,14 +105,55 @@ function pythonPresent() {
   }
 }
 
-/** The key the paid steps use. Absent, art and speech fail after the run has started. */
-function mediaCredential() {
+/**
+ * The key the paid steps use -- and whether Google still ACCEPTS it.
+ *
+ * "Present" was the whole check, and on 2026-10-12 production ran on a key Google had
+ * stopped accepting (400 API_KEY_INVALID). Every voice call fell back to silence, and a
+ * lesson came within one approval of publishing a silent video. Listing models is free
+ * and takes well under a second, so ask. Same key order as templates/lib/config.js.
+ *
+ * Only Google refusing the key is a failure. A network error, a timeout or a 5xx says
+ * nothing about the key, so it is `unknown`, never a reason to stop a run.
+ */
+const CREDENTIAL_TTL_MS = 10 * 60 * 1000;
+let credentialCache = null; // { key, at, result } -- one probe per key per ten minutes
+
+async function mediaCredential({ fetchImpl = globalThis.fetch, now = Date.now } = {}) {
   const k = process.env.GEMINI_API_KEY || process.env.GOOGLE_STUDIO_API_KEY;
   if (!k) {
     return bad('media credential', 'no GEMINI_API_KEY / GOOGLE_STUDIO_API_KEY',
       'Art and speech cannot be bought without it.');
   }
-  return ok('media credential', 'present');
+  if (credentialCache && credentialCache.key === k && now() - credentialCache.at < CREDENTIAL_TTL_MS) {
+    return credentialCache.result;
+  }
+  const unknown = (why) => ({ name: 'media credential', ok: null, why: `present; validity unknown (${why})` });
+  let result;
+  try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 8000);
+    let res;
+    try {
+      res = await fetchImpl('https://generativelanguage.googleapis.com/v1beta/models?pageSize=1',
+        { headers: { 'x-goog-api-key': k }, signal: ctl.signal });
+    } finally { clearTimeout(t); }
+    if (res.ok) {
+      result = ok('media credential', 'present and accepted by Google');
+    } else if ([400, 401, 403].includes(res.status)) {
+      let reason = '';
+      try { const j = await res.json(); reason = (j.error && (j.error.message || j.error.status)) || ''; } catch { /* no body */ }
+      result = bad('media credential', `Google refused the key (HTTP ${res.status}${reason ? `: ${reason}` : ''})`,
+        'Issue a new key in Google AI Studio and set GEMINI_API_KEY. Every voice and picture would fail.');
+    } else {
+      result = unknown(`HTTP ${res.status}`);
+    }
+  } catch (e) {
+    result = unknown(e.name === 'AbortError' ? 'timed out' : e.message.split('\n')[0]);
+  }
+  // A refusal or a pass is worth remembering; an unknown is retried next time.
+  if (result.ok !== null) credentialCache = { key: k, at: now(), result };
+  return result;
 }
 
 /**
@@ -172,7 +213,7 @@ async function check({ videoDir } = {}) {
     await browserLaunches(),
     ffmpegPresent(),
     pythonPresent(),
-    mediaCredential(),
+    await mediaCredential(),
     durableStore(),
     diskSpace(videoDir),
   ];
@@ -190,4 +231,4 @@ function format(report) {
   }).join('\n');
 }
 
-module.exports = { check, format };
+module.exports = { check, format, _internals: { mediaCredential, resetCredentialCache: () => { credentialCache = null; } } };

@@ -139,14 +139,27 @@ function silenceWav(seconds) {
       && fs.existsSync(sigPath) && fs.readFileSync(sigPath, 'utf8') === sig;
     if (!unchanged) {
       process.stdout.write(`[tts] ${b.id} synth … `);
-      try { fs.writeFileSync(rawPath, pcmToWav(await synth(b.vo, key, directive(b)))); fs.writeFileSync(sigPath, sig); console.log('ok'); }
-      catch (e) {
+      try {
+        fs.writeFileSync(rawPath, pcmToWav(await synth(b.vo, key, directive(b)))); fs.writeFileSync(sigPath, sig); console.log('ok');
+        fs.writeFileSync(sidecar, b.vo);
+      } catch (e) {
+        // A bad credential fails every beat the same way. Stop at the first one: 21 silent
+        // fallbacks is just a slower way of reporting the same thing (2026-10-12).
+        if (/API_KEY_INVALID|PERMISSION_DENIED|API key not valid|TTS HTTP 40[13]\b/i.test(String(e.message))) {
+          console.error(`\n[tts] ❌ the Gemini key was refused -- no voice can be made: ${e.message}`);
+          console.error('[tts] Replace GEMINI_API_KEY, then re-run. Nothing was written for this beat.');
+          process.exit(1);
+        }
         const est = Math.max(1.2, b.vo.split(/\s+/).length * 0.42);
         fs.writeFileSync(rawPath, silenceWav(est));
         fellBack.push(b.id);
         console.log(`FALLBACK silence ${est.toFixed(1)}s (${e.message})`);
+        // NO sidecar for a silent clip. The sidecar is what tells produce (staleVo) and
+        // compile-lesson this beat's voice is done; writing it here let produce's automatic
+        // retry skip TTS and build a video out of silence (LMS staging, 2026-10-12).
+        try { fs.unlinkSync(sidecar); } catch { /* none */ }
+        try { fs.unlinkSync(sigPath); } catch { /* none */ }
       }
-      fs.writeFileSync(sidecar, b.vo);
     }
     raw.push({ b, rawPath, secs: wavSeconds(rawPath) });
   }

@@ -95,7 +95,9 @@ const CONTRACT = {
   lfScale: { required: ['left', 'right'], shape: { left: (v) => (str(v) ? null : 'must be a string'), right: (v) => (str(v) ? null : 'must be a string') } },
   lfVersus: { required: ['left', 'right'], shape: { left: (v) => (str(v) ? null : 'must be a string'), right: (v) => (str(v) ? null : 'must be a string') } },
   lfLoop: { required: ['title', 'steps'], shape: { steps: (v) => (arr(v) && v.length === 3 && v.every(str) ? null : 'needs exactly 3 string steps') } },
-  lfOptions: { required: ['title', 'options'], shape: { options: (v) => (arr(v) && v.every(str) ? null : 'needs options: [\'…\'] of strings') } },
+  // At most 4: the renderer fits four rows (two lines each) inside 1080px, and a fifth leaves the frame.
+  lfOptions: { required: ['title', 'options'], shape: { options: (v) => (!(arr(v) && v.every(str)) ? 'needs options: [\'…\'] of strings'
+    : (v.length < 2 || v.length > 4) ? `needs 2 to 4 options, got ${v.length} -- more leave the frame` : null) } },
   lfTalk: { required: ['bubble'], shape: { bubble: (v) => (str(v) ? null : 'must be a non-empty string') } },
   lfSplit: {
     required: ['left', 'right'],

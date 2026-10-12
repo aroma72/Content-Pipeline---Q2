@@ -46,9 +46,12 @@ function mixAudio({ beats, durations, audioDir, outPath }) {
 
   // narration = amix of all delayed clips, trimmed to total
   filters.push(`${labels.join('')}amix=inputs=${labels.length}:normalize=0[narrmix]`);
-  filters.push(`[narrmix]atrim=0:${total.toFixed(3)},asetpts=N/SR/TB[narr]`);
 
   const mp = music.musicPath();
+  // With a bed the narration is used twice -- as the sidechain key and as the dry voice --
+  // and an ffmpeg label can be consumed only once, so split it. Reusing `[narr]` failed every
+  // video with music ("matches no streams"); no style set MUSIC_FILE until motion-graphics.
+  filters.push(`[narrmix]atrim=0:${total.toFixed(3)},asetpts=N/SR/TB${mp ? ',asplit=2[narr][narrkey]' : '[narr]'}`);
   let outLabel = '[narr]';
   if (mp) {
     const midx = inCount++;
@@ -58,7 +61,7 @@ function mixAudio({ beats, durations, audioDir, outPath }) {
       `volume=${music.musicGainDb}dB[bed]`
     );
     filters.push(
-      `[bed][narr]sidechaincompress=threshold=${music.duckThreshold}:ratio=${music.duckRatio}:` +
+      `[bed][narrkey]sidechaincompress=threshold=${music.duckThreshold}:ratio=${music.duckRatio}:` +
       `attack=20:release=400[duck]`
     );
     filters.push(`[narr][duck]amix=inputs=2:normalize=0,alimiter=limit=0.95[mix]`);

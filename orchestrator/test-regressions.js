@@ -5291,6 +5291,139 @@ async function motionProduceChecks() {
     return 'a—b intact';
   });
 
+  // A template folder to run a real gate or mixer in, outside the repo.
+  const scaffold = (prefix, beats, durations) => {
+    const { PATHS } = require('./lib/paths');
+    const { renderBeatsFile } = require('./lib/beats-file');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+    produce._internals.copyTemplates(PATHS.videoTemplates, dir, null);
+    if (beats) fs.writeFileSync(path.join(dir, 'beats.js'), renderBeatsFile({ title: 'T', beats }));
+    if (durations) fs.writeFileSync(path.join(dir, 'durations.json'), JSON.stringify(durations));
+    return dir;
+  };
+
+  // LMS staging, 2026-10-12: beats 08 and 09 of approved script ec3e8dedc07cf6c6 held the
+  // lesson at qa-frames -- the chosen option row plus its nowrap "Their choice" tag ran off the
+  // right edge (optrow and tag by 40px and 204px). Verbatim, plus the longest case we allow.
+  await checkAsync('lfOptions keeps a long chosen option and its tag inside the frame (qa-frames)', async () => {
+    const { spawnSync } = require('child_process');
+    const opts = ['Leave it with me', 'Open the policy together', 'Email the supervisor'];
+    const beats = [
+      { id: '08', mode: 'info', vo: 'Here are your three first moves.', info: { tpl: 'lfOptions', data: { title: 'Your first move', bg: 'cream', options: opts, chosen: 0 } } },
+      { id: '09', mode: 'info', vo: 'Opening the policy together keeps you fair.', info: { tpl: 'lfOptions', data: { title: 'Your first move', bg: 'cream', options: opts, chosen: 1 } } },
+      { id: '10', mode: 'info', vo: 'The longest options still have to fit.', info: { tpl: 'lfOptions', data: { title: 'Four long options', options: [
+        'Tell them you will sort it out yourself', 'Read the leave policy together, line by line',
+        'Escalate straight to their line manager today', 'Ask what they have already tried so far'], chosen: 3 } } },
+    ];
+    const dir = scaffold('lfopts-', beats, { '08': 3, '09': 3, 10: 3 });
+    try {
+      const r = spawnSync(process.execPath, ['qa-frames.js'], {
+        cwd: dir, encoding: 'utf8', timeout: 5 * 60 * 1000,
+        env: { ...process.env, LESSON_HTML: 'animation/lesson-lf.html', NODE_PATH: path.join(__dirname, '..', 'node_modules') },
+      });
+      const out = `${r.stdout || ''}${r.stderr || ''}`;
+      if (/Could not find|Failed to launch|Browser was not found/i.test(out)) {
+        return skip('no launchable browser for qa-frames');
+      }
+      assert(r.status === 0 && /PASS/.test(out), `qa-frames exit ${r.status}: ${out.split('\n').filter((l) => /FAIL|spill|beat/.test(l)).slice(0, 6).join(' | ')}`);
+      return '08, 09 verbatim + 4 long options: inside 1920x1080';
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // Bug B, LMS staging 2026-10-12: with a music bed, `[narr]` was consumed twice (sidechain key
+  // AND dry voice) and ffmpeg refused the graph -- every video with music failed at compile.
+  // Motion-graphics is the first style to set MUSIC_FILE, which is why it was never hit.
+  check('mix-audio builds a narration + ducked music bed, as long as the voice', () => {
+    const { execFileSync } = require('child_process');
+    const { PATHS } = require('./lib/paths');
+    const ffmpeg = require(path.join(__dirname, '..', 'node_modules', 'ffmpeg-static'));
+    const durations = { a: 1.5, b: 2.0, c: 1.0 };
+    const beats = Object.keys(durations).map((id) => ({ id, mode: 'info', vo: 'x y z' }));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mix-'));
+    const saved = process.env.MUSIC_FILE;
+    try {
+      fs.mkdirSync(path.join(dir, 'audio'), { recursive: true });
+      const tone = (out, secs, hz) => execFileSync(ffmpeg, ['-y', '-f', 'lavfi', '-i', `sine=frequency=${hz}:duration=${secs}`,
+        '-ar', '24000', '-ac', '1', out], { stdio: 'ignore' });
+      for (const [id, s] of Object.entries(durations)) tone(path.join(dir, 'audio', `vo_${id}.wav`), s, 440);
+      const bed = path.join(dir, 'bed.wav'); tone(bed, 2, 220);
+      process.env.MUSIC_FILE = bed;
+      // The template itself, where it sits: its ffmpeg-static resolves from the repo.
+      const { mixAudio } = require(path.join(PATHS.videoTemplates, 'mix-audio.js'));
+      const out = path.join(dir, 'mix.wav');
+      const total = mixAudio({ beats, durations, audioDir: path.join(dir, 'audio'), outPath: out });
+      const secs = (fs.statSync(out).size - 44) / (48000 * 2 * 2);
+      assert(Math.abs(secs - total) < 0.1, `mixed ${secs.toFixed(2)}s, voice is ${total}s`);
+      return `${secs.toFixed(2)}s mixed for ${total}s of voice, with a bed`;
+    } finally {
+      if (saved === undefined) delete process.env.MUSIC_FILE; else process.env.MUSIC_FILE = saved;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // The 0.4s timeline. A dead key made every beat a silent fallback; tts-lesson wrote the
+  // sidecars anyway, and produce's retry read silence as finished voice.
+  check('a silent clip (duration = its pause) is stale voice, even with a matching sidecar', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'silentvo-'));
+    try {
+      fs.mkdirSync(path.join(dir, 'audio'));
+      const beats = [
+        { id: '01', mode: 'info', vo: 'You are a P&C Buddy, and that role is big.' },
+        { id: '02', mode: 'info', vo: 'Say it calmly to them.' },
+        { id: '03', mode: 'info', vo: 'Hi.' },
+      ];
+      for (const b of beats) {
+        fs.writeFileSync(path.join(dir, 'audio', `vo_${b.id}.wav`), Buffer.alloc(100));
+        fs.writeFileSync(path.join(dir, 'audio', `vo_${b.id}.txt`), b.vo);
+      }
+      fs.writeFileSync(path.join(dir, 'durations.json'), JSON.stringify({ '01': 0.4, '02': 3.1, '03': 0.7 }));
+      const stale = produce._internals.staleVo(beats, dir);
+      assert(stale.join() === '01', `expected only the silent 01 to be stale, got [${stale.join()}]`);
+      return '0.4s on a 10-word line -> re-record; a real 3.1s clip and a one-word line are kept';
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  check('tts-lesson never writes a sidecar for a silent fallback, and stops on a refused key', () => {
+    const { PATHS } = require('./lib/paths');
+    const src = fs.readFileSync(path.join(PATHS.videoTemplates, 'tts-lesson.js'), 'utf8');
+    const fallback = src.slice(src.indexOf('FALLBACK silence'), src.indexOf('raw.push('));
+    assert(!/writeFileSync\(sidecar/.test(fallback) && /unlinkSync\(sidecar\)/.test(fallback),
+      'a silent fallback still leaves a sidecar, which marks the silence as finished voice');
+    assert(/API_KEY_INVALID/.test(src) && /process\.exit\(1\)/.test(src), 'a refused key still makes one silent clip per beat');
+    return 'no sidecar on fallback; fail fast on API_KEY_INVALID';
+  });
+
+  await checkAsync('preflight fails a key Google refuses, and calls a network error unknown', async () => {
+    const { _internals: pf } = require('./lib/preflight');
+    const saved = { g: process.env.GEMINI_API_KEY, s: process.env.GOOGLE_STUDIO_API_KEY };
+    process.env.GEMINI_API_KEY = 'test-key-not-real';
+    const reply = (status, body) => async () => ({ ok: status < 300, status, json: async () => body });
+    try {
+      pf.resetCredentialCache();
+      const refused = await pf.mediaCredential({ fetchImpl: reply(400, { error: { message: 'API key not valid.', status: 'INVALID_ARGUMENT' } }) });
+      assert(refused.ok === false && /refused the key/.test(refused.why) && /GEMINI_API_KEY/.test(refused.fix),
+        `a refused key passed preflight: ${JSON.stringify(refused)}`);
+      assert(!JSON.stringify(refused).includes('test-key-not-real'), 'the key leaked into the preflight report');
+      pf.resetCredentialCache();
+      const down = await pf.mediaCredential({ fetchImpl: async () => { throw new Error('getaddrinfo ENOTFOUND'); } });
+      assert(down.ok === null, `a network error must be unknown, not a verdict on the key: ${JSON.stringify(down)}`);
+      const five = await pf.mediaCredential({ fetchImpl: reply(503, {}) });
+      assert(five.ok === null, 'a Google 5xx was treated as a bad key');
+      const good = await pf.mediaCredential({ fetchImpl: reply(200, { models: [] }) });
+      assert(good.ok === true, 'an accepted key did not pass');
+      let calls = 0;
+      const again = await pf.mediaCredential({ fetchImpl: async () => { calls++; return { ok: false, status: 400, json: async () => ({}) }; } });
+      assert(again.ok === true && calls === 0, 'the verdict was not cached -- every lesson would probe');
+      return 'refused -> fail (no key in the text), network/5xx -> unknown, pass cached';
+    } finally {
+      pf.resetCredentialCache();
+      if (saved.g === undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY = saved.g;
+      if (saved.s === undefined) delete process.env.GOOGLE_STUDIO_API_KEY; else process.env.GOOGLE_STUDIO_API_KEY = saved.s;
+    }
+  });
+
   check('the template segment-all.py exits 0 when there is no art/ (a hand run of a motion video)', () => {
     const { spawnSync } = require('child_process');
     const { PATHS } = require('./lib/paths');

@@ -316,7 +316,11 @@
     f.appendChild(head(d.title, { soft: true }));
     const fig = figure('a', 330, true); place(fig, 180, 380); anim(fig, 0.04, 'up', { float: '4' }); f.appendChild(fig);
     const opts = d.options || [];
-    const ys = opts.map((_, i) => 420 + i * 200);
+    // Up to three options keep the 200px pitch from y=420. A fourth row there would start at
+    // y=980 and a wrapped one leaves the frame, so four rows start higher and sit tighter.
+    const top = opts.length > 3 ? 380 : 420;
+    const pitch = opts.length > 1 ? Math.min(200, (860 - top) / (opts.length - 1)) : 0;
+    const ys = opts.map((_, i) => top + i * pitch);
     let svg = '';
     opts.forEach((_, i) => {
       svg += `<path d="M640 610 C860 610 900 ${ys[i]} 1120 ${ys[i]}" pathLength="1" stroke="var(--paper)" stroke-width="6" fill="none"
