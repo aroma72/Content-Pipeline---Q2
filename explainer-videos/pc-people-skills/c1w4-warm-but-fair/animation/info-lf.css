@@ -1,0 +1,89 @@
+/* info-lf.css — LearnFree-style flat motion graphics (P&C people-skills series).
+   Reference look: GCF LearnFree "Hard Skills vs Soft Skills" — full-bleed colour fields,
+   a bold slab-serif title beside a rule, an airy italic slab for the "soft" side,
+   simple geometric shapes, flat icons and flat figures. Fonts are bundled (OFL / Apache).
+
+   Revision 2 (Aroma, 2026-10-06): no red highlight boxes behind text (they read as cheap) —
+   emphasis is a soft mustard marker stripe under the words; people are warm skin tones in
+   non-blue clothing; one spacing scale so text never crowds other text. */
+@font-face{font-family:'LF Slab';src:url('fonts/RobotoSlab.ttf') format('truetype');font-weight:100 900}
+@font-face{font-family:'LF Soft';src:url('fonts/ZillaSlab-LightItalic.ttf') format('truetype');font-style:italic;font-weight:300}
+@font-face{font-family:'LF Text';src:url('fonts/ZillaSlab-Regular.ttf') format('truetype');font-weight:400}
+
+:root{
+  --cream:#FBF0D9; --paper:#FFFBF2; --teal:#2F9A92; --teal-d:#22807A; --teal-l:#9FD3CB;
+  --mustard:#EAB22A; --mustard-d:#C9921A; --ink:#1F1F1F; --muted:#6B6458;
+  --marker:rgba(234,178,42,.55);
+  /* spacing scale: every gap between two pieces of text is one of these */
+  --m:120px; --gap-s:24px; --gap-m:48px; --gap-l:80px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1920px;height:1080px;overflow:hidden;background:var(--cream);color:var(--ink);font-family:'LF Text',Georgia,serif}
+#stage{position:relative;width:1920px;height:1080px;background:var(--cream)}
+.layer{position:absolute;inset:0;opacity:0;overflow:hidden}
+.info-wrap{position:absolute;inset:0}
+.lf{position:absolute;inset:0;overflow:hidden}
+
+/* colour fields */
+.bg-cream{background:var(--cream)} .bg-teal{background:var(--teal)} .bg-mustard{background:var(--mustard)}
+/* paper grain, like the reference's printed texture */
+.lf::after{content:'';position:absolute;inset:0;pointer-events:none;opacity:.10;mix-blend-mode:multiply;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .55 0'/></filter><rect width='240' height='240' filter='url(%23n)'/></svg>")}
+
+/* titles: bold slab beside an ink rule; soft = airy italic beside a thin paper rule */
+.lf-head{position:absolute;left:var(--m);top:96px;display:flex;align-items:stretch;gap:32px}
+.lf-head .rule{width:8px;background:var(--ink);border-radius:2px}
+.lf-head .t{font-family:'LF Slab';font-weight:900;font-size:110px;line-height:1.02;letter-spacing:-1px;color:var(--ink)}
+.lf-head .s{font-family:'LF Soft';font-style:italic;font-weight:300;font-size:56px;line-height:1.2;color:var(--ink);margin-top:var(--gap-s)}
+.lf-head.soft .t{font-family:'LF Soft';font-style:italic;font-weight:300;color:var(--paper);letter-spacing:0}
+.lf-head.soft .s{color:var(--paper)}
+.lf-head.soft .rule{width:4px;background:var(--paper);opacity:.85}
+.lf-head.small .t{font-size:84px}
+
+/* big title card: centred block, title / subtitle / shapes on one vertical rhythm */
+.lf-titlecard .lf-head{left:0;right:0;top:300px;justify-content:center;text-align:center}
+.lf-titlecard .lf-head .rule{display:none}
+.lf-titlecard .t{font-size:168px}
+.lf-titlecard .s{margin-top:32px}
+.lf-titlecard.on-mustard .t,.lf-titlecard.on-mustard .s{color:var(--ink)}
+.shapes{position:absolute;left:0;right:0;top:720px;display:flex;justify-content:center;align-items:flex-end;gap:40px}
+.shapes .sq{background:var(--mustard)} .on-mustard .shapes .sq{background:var(--paper)}
+.shapes .dot{border-radius:50%;background:var(--teal-l)}
+
+/* emphasis: a soft marker stripe under the words — never a filled red box */
+.tag{position:absolute;font-family:'LF Slab';font-weight:700;font-size:52px;line-height:1.2;color:var(--ink);
+  padding:0 12px;white-space:nowrap;background:linear-gradient(transparent 58%,var(--marker) 58%,var(--marker) 92%,transparent 92%)}
+.on-dark .tag{color:var(--paper);background:linear-gradient(transparent 58%,rgba(234,178,42,.8) 58%,rgba(234,178,42,.8) 92%,transparent 92%)}
+
+.lbl{position:absolute;font-family:'LF Soft';font-style:italic;font-weight:300;font-size:50px;line-height:1.2;color:var(--ink);white-space:nowrap}
+.on-dark .lbl{color:var(--paper)}
+.lbl.hard{font-family:'LF Slab';font-style:normal;font-weight:700;font-size:44px}
+.lbl.center{text-align:center}
+
+/* speech bubble */
+.bubble{position:absolute;background:var(--paper);color:var(--ink);font-family:'LF Text';font-size:48px;line-height:1.3;
+  padding:32px 44px;border-radius:30px;max-width:760px;box-shadow:0 8px 0 rgba(0,0,0,.08)}
+.bubble::after{content:'';position:absolute;bottom:-34px;left:64px;border:20px solid transparent;
+  border-top:24px solid var(--paper);border-left:24px solid var(--paper)}
+.bubble .w{display:inline-block;white-space:pre}
+
+/* split screen */
+.half{position:absolute;top:0;bottom:0;width:50%;overflow:hidden}
+.half.l{left:0} .half.r{right:0}
+.half.dim .dimmable{opacity:.28;filter:saturate(.3)}
+
+/* option rows: label and its marker on one baseline */
+.optrow{position:absolute;display:flex;align-items:center;gap:var(--gap-m);height:80px}
+.optrow .lbl{position:static}
+.optrow .tag{position:static}
+
+/* recap: three calm cards, one rhythm */
+.recap{position:absolute;left:0;right:0;top:420px;display:flex;flex-direction:column;align-items:center;gap:36px}
+.recap .card{font-family:'LF Slab';font-weight:700;font-size:64px;color:var(--ink);background:var(--paper);
+  padding:22px 56px;min-width:900px;text-align:center;border-bottom:8px solid var(--ink)}
+
+/* driver hooks */
+[data-at]{transform-box:fill-box;transform-origin:center}
+.lf-head .rule[data-at]{transform-origin:50% 0}
+.stopc{fill:var(--teal-l)} .hl .stopc{fill:var(--mustard)}
+.optc{fill:var(--teal-l)} .optc.hl{fill:var(--mustard)}

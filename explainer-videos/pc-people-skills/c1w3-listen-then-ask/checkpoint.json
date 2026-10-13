@@ -1,0 +1,58 @@
+{
+  "videoId": "c1w3-listen-then-ask",
+  "series": "pc-people-skills",
+  "deliverable": "c1w3-listen-then-ask_final.mp4",
+  "timing": {
+    "trusted": true,
+    "relativeTo": "c1w3-listen-then-ask_final.mp4",
+    "introOffsetSeconds": 2.6,
+    "introOffsetSource": "probed",
+    "lessonSeconds": 149.482,
+    "note": "atSeconds is measured from the start of the delivered file, which begins with the brand intro. lessonAtSeconds excludes it."
+  },
+  "deliverableOnServer": true,
+  "youtube": null,
+  "youtubeVideoId": null,
+  "durability": "ephemeral",
+  "catalogueUpdatedAt": "2026-10-13T04:52:33.687Z",
+  "checkpoints": [
+    {
+      "id": "q1",
+      "beatId": "15",
+      "revealBeatId": null,
+      "atSeconds": 95.346,
+      "lessonAtSeconds": 92.746,
+      "pausesVideo": true,
+      "resumeAfterFeedback": true,
+      "requiresAnswer": true,
+      "blocking": true,
+      "allowSkip": false,
+      "resumeAtSeconds": 95.346,
+      "rendersInVideo": false,
+      "pause": {
+        "atBeatBoundary": true,
+        "afterBeatId": "14",
+        "beforeBeatId": "16",
+        "boundaryLessonSeconds": 92.996,
+        "leadSeconds": 0.25,
+        "safe": true
+      },
+      "preamble": "Let's answer a quick question, to check the concept landed.",
+      "stem": "A content designer is leaving after two years. In the exit interview, which question will teach you the most?",
+      "options": [
+        "You're leaving for a better salary, right?",
+        "What made you start looking?",
+        "Why didn't you raise this with us earlier?",
+        "The team was supportive though, wasn't it?"
+      ],
+      "correctIndex": 1,
+      "feedback": {
+        "correct": "Exactly. It is open, so they choose what matters, and it carries no assumption, so you hear the real reason instead of the one you expected.",
+        "incorrect": "\"What made you start looking?\" is open, so the person decides what matters and you hear the real reason. \"You're leaving for a better salary, right?\" and \"The team was supportive, wasn't it?\" are leading questions: they hand over the answer you expect, so you mostly get a polite yes and learn nothing. \"Why didn't you raise this earlier?\" sounds like blame, so people get defensive and say less. If you need the why, ask \"what led you to…\" instead."
+      },
+      "explanation": "\"What made you start looking?\" is open, so the person decides what matters and you hear the real reason. \"You're leaving for a better salary, right?\" and \"The team was supportive, wasn't it?\" are leading questions: they hand over the answer you expect, so you mostly get a polite yes and learn nothing. \"Why didn't you raise this earlier?\" sounds like blame, so people get defensive and say less. If you need the why, ask \"what led you to…\" instead.",
+      "explanationSource": "authored",
+      "revealAtSeconds": null
+    }
+  ]
+}

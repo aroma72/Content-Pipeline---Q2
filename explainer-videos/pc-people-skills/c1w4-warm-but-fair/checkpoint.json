@@ -1,0 +1,58 @@
+{
+  "videoId": "c1w4-warm-but-fair",
+  "series": "pc-people-skills",
+  "deliverable": "c1w4-warm-but-fair_final.mp4",
+  "timing": {
+    "trusted": true,
+    "relativeTo": "c1w4-warm-but-fair_final.mp4",
+    "introOffsetSeconds": 2.6,
+    "introOffsetSource": "probed",
+    "lessonSeconds": 127.937,
+    "note": "atSeconds is measured from the start of the delivered file, which begins with the brand intro. lessonAtSeconds excludes it."
+  },
+  "deliverableOnServer": true,
+  "youtube": null,
+  "youtubeVideoId": null,
+  "durability": "ephemeral",
+  "catalogueUpdatedAt": "2026-10-13T05:52:38.305Z",
+  "checkpoints": [
+    {
+      "id": "q1",
+      "beatId": "14",
+      "revealBeatId": null,
+      "atSeconds": 85.989,
+      "lessonAtSeconds": 83.389,
+      "pausesVideo": true,
+      "resumeAfterFeedback": true,
+      "requiresAnswer": true,
+      "blocking": true,
+      "allowSkip": false,
+      "resumeAtSeconds": 85.989,
+      "rendersInVideo": false,
+      "pause": {
+        "atBeatBoundary": true,
+        "afterBeatId": "13",
+        "beforeBeatId": "15",
+        "boundaryLessonSeconds": 83.639,
+        "leadSeconds": 0.25,
+        "safe": true
+      },
+      "preamble": "Let's answer a quick question, to check the concept landed.",
+      "stem": "An employee whose parent is in hospital asks you to guarantee them two weeks off. What do you say?",
+      "options": [
+        "\"Done. I'll make sure you get the two weeks.\"",
+        "\"Leave isn't my department, you'll need to ask your manager.\"",
+        "\"Let's look at the options together, and I'll help you ask your manager today.\"",
+        "\"At least it's only two weeks you need.\""
+      ],
+      "correctIndex": 2,
+      "feedback": {
+        "correct": "Exactly. You stay warm and on their side of the problem, while being honest that the decision sits with their manager. Helping them ask today is support you can actually deliver.",
+        "incorrect": "The fair and warm answer is to explore the options together and help them ask their manager today. Promising the two weeks feels kind, but leave is the manager's decision, so it is a promise you may not be able to keep, and it is unfair to others who follow the process. Sending them off to their manager is accurate but cold: it leaves them alone at a hard moment. \"At least…\" is sympathy, not empathy; it shrinks what they are going through."
+      },
+      "explanation": "The fair and warm answer is to explore the options together and help them ask their manager today. Promising the two weeks feels kind, but leave is the manager's decision, so it is a promise you may not be able to keep, and it is unfair to others who follow the process. Sending them off to their manager is accurate but cold: it leaves them alone at a hard moment. \"At least…\" is sympathy, not empathy; it shrinks what they are going through.",
+      "explanationSource": "authored",
+      "revealAtSeconds": null
+    }
+  ]
+}

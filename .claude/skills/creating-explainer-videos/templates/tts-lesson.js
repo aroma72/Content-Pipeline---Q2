@@ -194,7 +194,8 @@ function silenceWav(seconds) {
     console.log(`[tts] ${b.id} tempo×${factor.toFixed(3)} +${pause}s pause -> ${durations[b.id]}s`);
   }
   // cleanup raw
-  for (const { rawPath } of raw) { try { fs.unlinkSync(rawPath); } catch {} }
+  // Raw clips are KEPT: the cache check above needs raw_<id>.wav to exist, so deleting them here
+  // meant every re-run re-voiced (and re-billed) every line. Found 2026-10-13 on c1w4.
 
   fs.writeFileSync(path.join(process.cwd(), 'durations.json'), JSON.stringify(durations, null, 2));
   const total = Object.values(durations).reduce((a, b) => a + b, 0);

@@ -1,0 +1,58 @@
+{
+  "videoId": "c1w2-beyond-the-reaction",
+  "series": "pc-people-skills",
+  "deliverable": "c1w2-beyond-the-reaction_final.mp4",
+  "timing": {
+    "trusted": true,
+    "relativeTo": "c1w2-beyond-the-reaction_final.mp4",
+    "introOffsetSeconds": 2.6,
+    "introOffsetSource": "probed",
+    "lessonSeconds": 136.047,
+    "note": "atSeconds is measured from the start of the delivered file, which begins with the brand intro. lessonAtSeconds excludes it."
+  },
+  "deliverableOnServer": true,
+  "youtube": null,
+  "youtubeVideoId": null,
+  "durability": "ephemeral",
+  "catalogueUpdatedAt": "2026-10-08T09:26:57.787Z",
+  "checkpoints": [
+    {
+      "id": "q1",
+      "beatId": "16",
+      "revealBeatId": null,
+      "atSeconds": 105.259,
+      "lessonAtSeconds": 102.659,
+      "pausesVideo": true,
+      "resumeAfterFeedback": true,
+      "requiresAnswer": true,
+      "blocking": true,
+      "allowSkip": false,
+      "resumeAtSeconds": 105.259,
+      "rendersInVideo": false,
+      "pause": {
+        "atBeatBoundary": true,
+        "afterBeatId": "15",
+        "beforeBeatId": "17",
+        "boundaryLessonSeconds": 102.909,
+        "leadSeconds": 0.25,
+        "safe": true
+      },
+      "preamble": "Let's answer a quick question, to check the concept landed.",
+      "stem": "A senior employee has gone quiet since a restructure moved their team under a newer manager. What do you do first?",
+      "options": [
+        "Explain the business reasons for the restructure to them again",
+        "Ask them privately how the change lands, and ask for their read on the new setup",
+        "Leave it for now; they will adjust in a few weeks",
+        "Tell them in the team meeting that their role matters as much as ever"
+      ],
+      "correctIndex": 1,
+      "feedback": {
+        "correct": "Exactly. The quiet is the tip of the iceberg; underneath is status. Asking privately, and asking for their expert read, gives back the standing the change took away.",
+        "incorrect": "The need underneath is status, so you respond to that: ask privately how it lands, and ask for their read on the new setup, which shows their experience still counts. Explaining the business reasons again answers certainty, not status, and can feel like a lecture. Leaving it lets the silence harden into disengagement. Reassuring them in the team meeting puts them on the spot in front of others, which can make the status threat worse, and it tells rather than shows."
+      },
+      "explanation": "The need underneath is status, so you respond to that: ask privately how it lands, and ask for their read on the new setup, which shows their experience still counts. Explaining the business reasons again answers certainty, not status, and can feel like a lecture. Leaving it lets the silence harden into disengagement. Reassuring them in the team meeting puts them on the spot in front of others, which can make the status threat worse, and it tells rather than shows.",
+      "explanationSource": "authored",
+      "revealAtSeconds": null
+    }
+  ]
+}

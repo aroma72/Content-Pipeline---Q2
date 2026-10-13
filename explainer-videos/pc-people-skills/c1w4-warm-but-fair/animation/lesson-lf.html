@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lesson timeline · LearnFree style</title>
+<!-- P&C people-skills series: flat motion graphics only (animation/info-lf.*). Selected with
+     LESSON_HTML=animation/lesson-lf.html for compile-lesson.js and qa-frames.js. -->
+<link rel="stylesheet" href="info-lf.css">
+</head>
+<body>
+<div id="stage"></div>
+<script src="info-lf.js"></script>
+<script>
+/*
+ * Seekable timeline (LAW 10): every visual state is a pure function of time. compile-lesson.js
+ * injects window.__DATA = {beats, durations}; a standalone preview falls back to ./data.json.
+ */
+const stage = document.getElementById('stage');
+let TL = [];
+
+function makeLayer(beat) {
+  const L = document.createElement('div');
+  L.className = 'layer'; L.dataset.id = beat.id;
+  const tpl = beat.info && window.InfoTemplates[beat.info.tpl];
+  const wrap = document.createElement('div'); wrap.className = 'info-wrap';
+  if (tpl) wrap.appendChild(tpl(beat.info.data || {}));
+  L.appendChild(wrap);
+  return L;
+}
+
+function buildTimeline(data) {
+  let t = 0;
+  data.beats.forEach((b) => {
+    if (b.mode === 'checkpoint') return;          // never drawn, zero time
+    const dur = (data.durations[b.id] || 2) * 1000;
+    const layer = makeLayer(b);
+    stage.appendChild(layer);
+    TL.push({ id: b.id, start: t, end: t + dur, dur, layer, beat: b,
+      nodes: [...layer.querySelectorAll('[data-at],[data-dim],[data-float],[data-spin],[data-move],[data-tilt],[data-pan]')] });
+    t += dur;
+  });
+}
+
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const easeOut = (a) => 1 - Math.pow(1 - a, 3);
+const backOut = (a) => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(a - 1, 3) + c1 * Math.pow(a - 1, 2); };
+
+function driveLayer(item, ms) {
+  const p = clamp((ms - item.start) / item.dur, 0, 1);
+  const secs = (ms - item.start) / 1000;
+  // balance beam angle, shared by the beam and the pans hanging off it
+  let theta = 0;
+  const beam = item.layer.querySelector('[data-tilt]');
+  if (beam) {
+    const target = parseFloat(beam.dataset.tilt) || 0;
+    const settle = easeOut(clamp((p - 0.15) / 0.35, 0, 1));
+    const wobble = 7 * Math.sin(p * 14) * Math.exp(-p * 5);
+    theta = target * 12 * settle + wobble * (target ? 0.4 : 1);
+  }
+  item.nodes.forEach((n, idx) => {
+    const ds = n.dataset;
+    let op = 1, tx = 0, ty = 0, sc = 1, sx = 1, rot = 0;
+    if (ds.at != null) {
+      const at = parseFloat(ds.at) || 0, dur = parseFloat(ds.dur) || 0.1;
+      const a = clamp((p - at) / dur, 0, 1), e = easeOut(a);
+      switch (ds.in) {
+        case 'pop': op = Math.min(1, a * 2.5); sc = a >= 1 ? 1 : 0.35 + 0.65 * backOut(a); break;
+        case 'up': op = a; ty = (1 - e) * 60; break;
+        case 'left': op = a; tx = -(1 - e) * 120; break;
+        case 'right': op = a; tx = (1 - e) * 120; break;
+        case 'slideL': tx = -(1 - e) * 960; break;
+        case 'slideR': tx = (1 - e) * 960; break;
+        case 'grow': sx = e; op = a > 0 ? 1 : 0; break;
+        default: op = a;                            // fade
+      }
+      if (ds.until != null) op *= 1 - clamp((p - parseFloat(ds.until)) / 0.06, 0, 1);
+      if (ds.dim) op *= 0.4;   // a stepped-back item (e.g. the rungs not being discussed)
+    }
+    if (ds.draw != null) {                          // stroke draws on (pathLength="1")
+      const at = parseFloat(ds.at) || 0, dur = parseFloat(ds.dur) || 0.3;
+      n.style.strokeDashoffset = String(1 - easeOut(clamp((p - at) / dur, 0, 1)));
+      op = p >= at ? 1 : 0;
+    }
+    if (ds.hl != null) n.classList.toggle('hl', p >= parseFloat(ds.hl));
+    if (ds.float) ty += Math.sin(ms / 1000 * 1.6 + idx * 1.3) * parseFloat(ds.float);
+    if (ds.spin) rot += secs * parseFloat(ds.spin);
+    if (ds.move) {
+      const [x0, y0, x1, y1] = ds.move.split(',').map(Number);
+      const m = easeOut(clamp((p - parseFloat(ds.mat || 0.5)) / parseFloat(ds.mdur || 0.25), 0, 1));
+      tx += x0 + (x1 - x0) * m; ty += y0 + (y1 - y0) * m;
+    }
+    if (ds.tilt != null) rot += theta;
+    if (ds.pan) ty += parseFloat(ds.pan) * 480 * Math.sin(theta * Math.PI / 180);
+    n.style.opacity = String(op);
+    let tr = `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px)`;
+    if (rot) tr += ` rotate(${rot.toFixed(2)}deg)`;
+    if (sc !== 1 || sx !== 1) tr += ` scale(${(sc * sx).toFixed(4)}, ${sc.toFixed(4)})`;
+    n.style.transform = tr;
+  });
+  // the beam pivots on its own centre
+  if (beam) { beam.style.transformBox = 'view-box'; beam.style.transformOrigin = '960px 429px'; }
+}
+
+window.seekTo = async function (ms) {
+  let active = TL[TL.length - 1];
+  for (const it of TL) { if (ms >= it.start && ms < it.end) { active = it; break; } }
+  for (const it of TL) it.layer.style.opacity = (it === active) ? 1 : 0;
+  if (active) driveLayer(active, ms);
+};
+
+(function init() {
+  const go = (d) => {
+    buildTimeline(d);
+    document.fonts.ready
+      .then(() => window.seekTo(0))
+      .then(() => { window.ready = true; })
+      .catch((e) => { window.__readyError = (e && e.message) || String(e); window.ready = true; });
+  };
+  if (window.__DATA) go(window.__DATA);
+  else fetch('./data.json').then(r => r.json()).then(go).catch(() => { document.title = 'no data'; window.ready = true; });
+})();
+</script>
+</body>
+</html>

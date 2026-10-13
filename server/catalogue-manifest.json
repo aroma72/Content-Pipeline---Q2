@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-06T09:58:25.058Z",
-  "gitCommit": "9c8c7b5fa4cbb9b57f47c6026ee7039b816b5350",
+  "generatedAt": "2026-10-13T07:55:09.926Z",
+  "gitCommit": "e7fa11a199da1359136a1981a9769fd68156bcc8",
   "paths": {
     "agentic-workflows/orchestrator": {
       "committedAt": "2026-08-20T16:36:22+05:00"
@@ -145,6 +145,15 @@
     },
     "pc-people-skills/c1w1-your-role": {
       "committedAt": "2026-10-06T14:51:07+05:00"
+    },
+    "pc-people-skills/c1w2-beyond-the-reaction": {
+      "committedAt": null
+    },
+    "pc-people-skills/c1w3-listen-then-ask": {
+      "committedAt": null
+    },
+    "pc-people-skills/c1w4-warm-but-fair": {
+      "committedAt": null
     },
     "self-healing/self-healing-01-fixes-its-own-mistakes": {
       "committedAt": "2026-09-02T17:36:52+05:00"
