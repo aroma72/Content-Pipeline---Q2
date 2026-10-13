@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-13T07:55:09.926Z",
-  "gitCommit": "e7fa11a199da1359136a1981a9769fd68156bcc8",
+  "generatedAt": "2026-10-13T09:47:25.490Z",
+  "gitCommit": "fc0c24d8ac06300b6b62066802f542dd0659dc20",
   "paths": {
     "agentic-workflows/orchestrator": {
       "committedAt": "2026-08-20T16:36:22+05:00"
@@ -147,13 +147,13 @@
       "committedAt": "2026-10-06T14:51:07+05:00"
     },
     "pc-people-skills/c1w2-beyond-the-reaction": {
-      "committedAt": null
+      "committedAt": "2026-10-13T13:00:26+05:00"
     },
     "pc-people-skills/c1w3-listen-then-ask": {
-      "committedAt": null
+      "committedAt": "2026-10-13T13:00:26+05:00"
     },
     "pc-people-skills/c1w4-warm-but-fair": {
-      "committedAt": null
+      "committedAt": "2026-10-13T13:00:26+05:00"
     },
     "self-healing/self-healing-01-fixes-its-own-mistakes": {
       "committedAt": "2026-09-02T17:36:52+05:00"
@@ -178,6 +178,9 @@
     },
     "testing/ai-in-2030": {
       "committedAt": "2026-08-20T16:36:22+05:00"
+    },
+    "testing/how-to-solve-complex-problems": {
+      "committedAt": "2026-10-13T14:41:15+05:00"
     }
   }
 }

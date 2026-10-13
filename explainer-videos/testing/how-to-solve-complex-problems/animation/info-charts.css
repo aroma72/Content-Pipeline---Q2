@@ -1,0 +1,94 @@
+/* info-charts.css — styling for the CHARTS-ONLY format's pie / line / sketch templates.
+   Loaded after info.css so it can lean on the same tokens (--bg --ink --head --accent
+   --muted --line --card --serif --sans) and the same motion primitives (.seq / .io-late).
+
+   THE PIE RAMP. Sequential, single hue, light -> dark, stepped by value; the emphasis
+   slice wears the brand accent instead. Lightness is monotonic across ramp1..ramp4 so the
+   ramp reads as an ordered scale rather than four unrelated browns. Each step sits below
+   3:1 against the cream surface, which the dataviz contrast check WARNs about — the
+   required relief is visible labels, and every slice carries its name, value and share in
+   the legend, plus a surface-coloured gap so adjacent equal-value slices stay separate.
+
+   qa-frames enforces a 28px floor on computed type; nothing here goes below 34px. */
+
+:root{
+  --ramp1:#D5C6A6;   /* lightest step used — still separable from the cream surface */
+  --ramp2:#C9B899;
+  --ramp3:#AB9670;
+  --ramp4:#8A7553;   /* darkest — biggest non-emphasis slice */
+  --grid:#DED5C4;
+}
+
+/* ------------------------------------------------------------------ pie ---- */
+.piewrap{display:flex;flex-direction:column;align-items:center;gap:36px;position:relative}
+.pie-row{display:flex;align-items:center;gap:96px}
+
+.pie-disc{position:relative;width:560px;height:560px;flex:none}
+.pie-svg{width:560px;height:560px;display:block}
+/* stroke-dasharray is written by the driver each frame; the 2px surface gap between
+   slices comes from the GAP the template subtracts from every arc length. */
+.pie-arc{stroke-dasharray:0 4000;stroke-linecap:butt}
+.pie-arc.ramp1{stroke:var(--ramp1)}
+.pie-arc.ramp2{stroke:var(--ramp2)}
+.pie-arc.ramp3{stroke:var(--ramp3)}
+.pie-arc.ramp4{stroke:var(--ramp4)}
+.pie-arc.accent{stroke:var(--accent)}
+
+.pie-hole{position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;pointer-events:none}
+.pie-total{font-family:var(--serif);font-weight:700;font-size:148px;line-height:.92;color:var(--head)}
+.pie-unit{font-family:var(--sans);font-size:44px;color:var(--muted);margin-top:8px}
+
+.pie-key{display:flex;flex-direction:column;gap:22px;min-width:660px}
+.pie-key-row{display:grid;grid-template-columns:46px 1fr auto 132px;align-items:center;
+  gap:26px;font-family:var(--sans);font-size:44px;color:var(--ink)}
+.pie-sw{width:46px;height:46px;border-radius:10px;display:block}
+.pie-sw.ramp1{background:var(--ramp1)} .pie-sw.ramp2{background:var(--ramp2)}
+.pie-sw.ramp3{background:var(--ramp3)} .pie-sw.ramp4{background:var(--ramp4)}
+.pie-sw.accent{background:var(--accent)}
+.pie-name{color:var(--ink)}
+/* Text wears text tokens, never the series colour — the swatch beside it carries identity. */
+.pie-val{font-family:var(--serif);font-weight:700;font-size:48px;color:var(--head);text-align:right}
+.pie-pct{font-family:var(--sans);font-size:38px;color:var(--muted);text-align:right}
+.pie-key-row.big .pie-name{font-weight:700;color:var(--head)}
+.pie-key-row.big .pie-val{font-size:58px}
+
+.pie-note{font-family:var(--sans);font-style:italic;font-size:40px;color:var(--muted);text-align:center}
+
+/* ----------------------------------------------------------------- line ---- */
+.linewrap{display:flex;flex-direction:column;align-items:center;gap:30px}
+.line-svg{width:1460px;height:560px;display:block}
+.line-grid{stroke:var(--grid);stroke-width:2}
+.line-axis{stroke:var(--line);stroke-width:3}
+.line-ytick{font-family:var(--sans);font-size:36px;fill:var(--muted)}
+.line-xtick{font-family:var(--sans);font-size:40px;fill:var(--muted)}
+/* 2px is the mark spec for a line; this canvas is 1920 wide and shown as video, so the
+   line is scaled up proportionally rather than left hairline-thin. */
+.line-path{stroke:var(--accent);stroke-width:9;stroke-linecap:round;stroke-linejoin:round}
+.line-dot{fill:var(--card);stroke:var(--accent);stroke-width:7}
+.line-dot.big{fill:var(--accent);stroke:var(--accent)}
+.line-vlab{font-family:var(--serif);font-weight:700;font-size:54px;fill:var(--head)}
+.line-vlab.big{font-size:64px}
+.line-note{font-family:var(--sans);font-style:italic;font-size:40px;color:var(--muted);text-align:center}
+
+/* ----------------------------------------------- grid at 20 cells (beat 06) ---
+   The shared `.cellgrid` is 4 columns of 210x150 cells, sized for the n=12 case it was
+   built for. At n=20 that is five rows, and the bottom row ran under the lower-third
+   caption and off the frame. Re-laid as 5 x 4 with shorter cells: 20 fits inside the safe
+   area with room to spare, and the tick stays far above the 28px type floor. Scoped to
+   this stylesheet, so the shared template keeps its own defaults. */
+.cellgrid{grid-template-columns:repeat(5,1fr);gap:24px}
+.cellgrid .cell{width:196px;height:124px}
+.cellgrid .cell .tick{font-size:64px}
+
+/* --------------------------------------------------------------- sketch ---- */
+.sketchwrap{display:flex;flex-direction:column;align-items:center;gap:36px}
+.sketch-svg{width:1680px;height:420px;display:block}
+/* the pencil filter is what makes these read as drawn by hand rather than as a flowchart */
+.sketch-box{fill:var(--card);stroke:var(--head);stroke-width:5;filter:url(#pencil)}
+.sketch-node.accent .sketch-box{stroke:var(--accent);stroke-width:7;fill:#FCF6E9}
+/* font-size is set per node by the template, which fits it to the box width */
+.sketch-lab{font-family:var(--sans);font-weight:600;fill:var(--head)}
+.sketch-node.accent .sketch-lab{fill:#8A5E1C}
+.sketch-arrow{stroke:var(--head);stroke-width:5;stroke-linecap:round;stroke-dasharray:0 4000}
+.sketch-note{font-family:var(--sans);font-style:italic;font-size:40px;color:var(--muted);text-align:center}
