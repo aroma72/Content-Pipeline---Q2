@@ -186,6 +186,7 @@ async function executeStages(item, opts = {}) {
     reviewApproved = null,   // a person watched it and said publish
     scriptApproved = null,   // a person read the script and said it may be spent on
     scriptApprovedSha = null, // ...and this is the script they read
+    reviewedVideo = null,    // { sha256, bytes, runId } of the file that person watched
   } = opts;
 
   const stages = loadStages(stageOverrides);
@@ -311,7 +312,7 @@ async function executeStages(item, opts = {}) {
           state: st,
           artifacts: st.artifacts,
           opts: {
-            dryRun, budgetUsd, reviewApproved, scriptApproved, scriptApprovedSha,
+            dryRun, budgetUsd, reviewApproved, scriptApproved, scriptApprovedSha, reviewedVideo,
             lenient: Boolean(st.lenient),
           },
           log: stageLog,

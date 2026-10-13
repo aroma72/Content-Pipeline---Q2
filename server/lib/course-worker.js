@@ -28,10 +28,18 @@
  * behaviour you want: a course that hit a wall should not keep spending.
  *
  * APPROVING
- * approve() records the approval on the queue item and requeues it. The spine
- * resumes from its saved state, so the completed stages -- including the
- * expensive render -- are skipped, not repeated. It picks up at review, passes
- * now that approval is present, and uploads.
+ * approve() records the approval on the queue item and requeues it. The build
+ * that follows starts AT `review`, seeded with the video that blocked there, so
+ * nothing is rendered again: review passes now that approval is present, and
+ * upload publishes the file the person watched. That file was fingerprinted
+ * (sha256) the moment the lesson blocked, and upload checks it; if it is gone or
+ * different, the lesson blocks at review again and the next approval rebuilds it
+ * for a fresh review, rather than publishing a render nobody has seen.
+ *
+ * Until 2026-10-13 this paragraph said the run resumed from saved state. It had
+ * not since the script gate landed: every build started from the held script,
+ * so an approval re-recorded the voice, re-rendered every beat (~25 minutes, a
+ * second charge) and published THAT. The LMS caught it from our own logs.
  *
  * approveScript() and revise() are the same idea one gate earlier, with one
  * difference that is the point of the whole feature: they resume from the SCRIPT
@@ -343,6 +351,103 @@ function interruptedReason(i, cause) {
       + 'read it, as it would have. Or reject to stop the course.';
 }
 
+/** Where a lesson stands once a finished video is waiting for a person. */
+const VIDEO_REVIEW_BLOCKS = new Set(['review', 'post-render-check']);
+
+/**
+ * What to publish an approved lesson FROM: the video that went to review.
+ *
+ * Mirrors one-video.js approve(), which has always resumed at `review` with the
+ * produce/qa artifacts seeded. Run state is not on the volume, so the seed is
+ * rebuilt from what is: the fingerprint on the queue item and the held script
+ * (for the upload's title and description). The path is only where produce would
+ * have written it -- upload resolves the bytes through the render dir, the volume
+ * and Drive in turn, and checks them against the fingerprint wherever they are.
+ *
+ * Null when no copy of the video exists anywhere: then there is nothing an
+ * approval could publish, and the caller blocks for a rebuild.
+ */
+function seedForPublish(item) {
+  const rv = item.reviewedVideo || null;
+  const dir = videoDir(item.series, item.slug);
+  const finalPath = (rv && rv.finalPath) || path.join(dir, 'out', `${item.slug}_final.mp4`);
+  let anywhere = fs.existsSync(finalPath);
+  if (!anywhere) {
+    try {
+      anywhere = Boolean(deliverables.find(item.series, item.slug) || deliverables.driveCopy(item.series, item.slug));
+    } catch { anywhere = false; }
+  }
+  if (!anywhere) return null;
+
+  let beats = [];
+  let ctx = {};
+  try {
+    const held = deliverables.findScript(item.series, item.slug);
+    if (held) {
+      ctx = held.context || {};
+      delete require.cache[require.resolve(held.beats)];
+      const mod = require(held.beats);
+      if (Array.isArray(mod)) beats = mod;
+    }
+  } catch { /* the description loses its transcript; the video is unaffected */ }
+
+  return {
+    reviewedVideo: rv,
+    seedArtifacts: {
+      produce: { dir, finalPath, title: item.topic, sensorResults: [], synthesised: true },
+      ...(rv && Number.isFinite(rv.qaScore) ? { qa: { combined_score: rv.qaScore } } : {}),
+      script: { title: ctx.topic || item.topic, beats, beatCount: beats.length },
+    },
+  };
+}
+
+/**
+ * Fingerprint the finished video a lesson has just blocked with, so an approval
+ * can be held to exactly these bytes. Never fatal: a lesson whose fingerprint
+ * could not be taken publishes the way lessons blocked before this existed do.
+ */
+function recordReviewedVideo(item, final, runId) {
+  try {
+    const produced = (final && final.artifacts && final.artifacts.produce) || {};
+    let file = produced.finalPath && fs.existsSync(produced.finalPath) ? produced.finalPath : null;
+    if (!file) {
+      const held = deliverables.find(item.series, item.slug);
+      file = held ? held.file : null;
+    }
+    if (!file) { log(`${item.id}: blocked with a finished video but none was found to fingerprint`); return; }
+    const sha256 = deliverables.fileSha256(file);
+    if (!sha256) { log(`${item.id}: could not read ${file} to fingerprint it`); return; }
+    const qa = (final && final.artifacts && final.artifacts.qa) || {};
+    const fresh = queue.get(item.id);
+    queue.setStatus(item.id, fresh.status, {
+      reviewedVideo: {
+        sha256,
+        bytes: fs.statSync(file).size,
+        runId,
+        finalPath: produced.finalPath || file,
+        qaScore: typeof qa.combined_score === 'number' ? qa.combined_score : null,
+        at: new Date().toISOString(),
+      },
+      reviewedVideoLost: false,
+    });
+    log(`${item.id}: reviewed video fingerprinted (sha256 ${sha256.slice(0, 16)}..., run ${runId})`);
+  } catch (e) {
+    log(`${item.id}: could not fingerprint the reviewed video (${e.message})`);
+  }
+}
+
+/** The reviewed video is gone or changed: block, and make the next approval a rebuild. */
+function markReviewedVideoLost(item, runId, reason) {
+  queue.setStatus(item.id, queue.ITEM_STATUS.BLOCKED, {
+    runId,
+    reason,
+    blockedBy: 'review',
+    reviewedVideoLost: true,
+    reviewApproved: false,
+    reviewedVideo: null,
+  });
+}
+
 async function buildOne(item) {
   const st = state.create(item);
   // Record that this lesson is being built BEFORE any of it is paid for. The
@@ -361,9 +466,34 @@ async function buildOne(item) {
   const wall = tenant && Number.isFinite(tenant.maxRunUsd) && tenant.maxRunUsd !== null
     ? tenant.maxRunUsd : Infinity;
 
+  // An approved video is published, not made again. See the APPROVING note above.
+  // Only for a lesson that blocked WITH a finished video. One approved at another
+  // block (time-ceiling, say) has no reviewed video to publish and builds as before.
+  const publishing = Boolean(item.reviewApproved)
+    && Boolean(item.reviewedVideo || VIDEO_REVIEW_BLOCKS.has(item.blockedBy || queue.DEFAULT_BLOCKED_BY));
+  const publish = publishing ? seedForPublish(item) : null;
+  if (publishing && !publish) {
+    const why = 'The reviewed video is no longer available: no copy of it was found in the render '
+      + 'directory, on the volume or on Drive. Nothing was published. It must be rebuilt and '
+      + 'reviewed again -- approve to rebuild it, or reject.';
+    log(`${item.id}: approved, but ${why}`);
+    markReviewedVideoLost(item, st.runId, why);
+    current = null;
+    const outcome = { id: item.id, topic: item.topic, status: 'blocked', finishedAt: new Date().toISOString() };
+    history.push(outcome);
+    settleSpend(item, outcome.status);
+    return outcome;
+  }
+  if (publish) {
+    log(`${item.id}: approved -- publishing the reviewed video, not rendering it again`
+      + (publish.reviewedVideo
+        ? ` (sha256 ${publish.reviewedVideo.sha256.slice(0, 16)}..., run ${publish.reviewedVideo.runId})`
+        : ' (blocked before review fingerprints existed; publishing the held copy unchecked)'));
+  }
+
   // A script a person has already read is never written again: they approved a
   // particular one, and a fresh draft is a different one.
-  const resumeFrom = seedFromScript(item);
+  const resumeFrom = publish ? null : seedFromScript(item);
   if (resumeFrom) {
     log(`${item.id}: resuming at '${resumeFrom.fromStage}' from the held script`
       + `${resumeFrom.sha ? ` (${resumeFrom.sha})` : ''} -- not re-writing it`);
@@ -373,6 +503,7 @@ async function buildOne(item) {
     const final = await spine.execute(item, {
       resumeState: st,
       ...(resumeFrom ? { fromStage: resumeFrom.fromStage, seedArtifacts: resumeFrom.seedArtifacts } : {}),
+      ...(publish ? { fromStage: 'review', seedArtifacts: publish.seedArtifacts, reviewedVideo: publish.reviewedVideo } : {}),
       budgetUsd: Math.min(config.pipeline.budgetUsd, wall),
       // The pre-spend gate. Absent it, `script-approval` blocks before references
       // -- the pause this worker now opens with, rather than the one it ends with.
@@ -429,6 +560,12 @@ async function buildOne(item) {
     // no room left under the tenant's monthly ceiling to account for it. The hold
     // survives the pause; the next build's settle, or reject(), is what closes it.
     const fresh = queue.get(item.id);
+    if (fresh && fresh.status === queue.ITEM_STATUS.BLOCKED && VIDEO_REVIEW_BLOCKS.has(fresh.blockedBy)) {
+      // A publish that blocked at review is upload's fingerprint check failing:
+      // the video that was watched is not the one that can be found.
+      if (publish) markReviewedVideoLost(item, st.runId, fresh.reason || 'The reviewed video is no longer available.');
+      else recordReviewedVideo(item, final, st.runId);
+    }
     if (fresh && fresh.blockedBy === 'script-approval') {
       log(`${item.id}: reservation held open across the script pause (spent so far: `
         + `$${Number(fresh.spendUsdTotal) || 0})`);
@@ -524,15 +661,20 @@ function approve(lessonId, by = 'Aroma', courseId = null, tenantId = null) {
   // review for a video that does not exist -- publishing nothing, or something
   // stale. Approving THAT means "yes, rebuild it", so the approval is not
   // carried and the lesson blocks at review again once it has really been made.
-  const rebuild = item.interrupted === true;
+  //
+  // The same holds for a lesson whose reviewed video went missing (or changed)
+  // between review and approval: approving it means "rebuild it", and the new
+  // render blocks at review for a person before anything is published.
+  const rebuild = item.interrupted === true || item.reviewedVideoLost === true;
   queue.setStatus(lessonId, queue.ITEM_STATUS.QUEUED, rebuild
-    ? { interrupted: false, rebuildApprovedBy: by, approvedAt: new Date().toISOString() }
+    ? { interrupted: false, reviewedVideoLost: false, reviewedVideo: null, reviewApproved: false,
+      rebuildApprovedBy: by, approvedAt: new Date().toISOString() }
     : { reviewApproved: by, approvedAt: new Date().toISOString() });
   log(rebuild
-    ? `approved ${lessonId} by ${by} -- rebuilding the lesson a restart interrupted`
-    : `approved ${lessonId} by ${by} -- resuming to publish, then the next lesson`);
+    ? `approved ${lessonId} by ${by} -- rebuilding the lesson (${item.interrupted ? 'a restart interrupted it' : 'its reviewed video is gone'})`
+    : `approved ${lessonId} by ${by} -- publishing the reviewed video, then the next lesson`);
   kick();
-  return { ok: true };
+  return { ok: true, rebuild };
 }
 
 /**

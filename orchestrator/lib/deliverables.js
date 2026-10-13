@@ -201,6 +201,28 @@ function fingerprint(beatsPath) {
 }
 
 /**
+ * The full sha256 of a finished video, or null if it cannot be read.
+ *
+ * Not fingerprint(): that one is truncated for people to read in messages. This
+ * one is compared by machine -- the bytes a person watched at review against the
+ * bytes about to go to YouTube -- and the LMS compares it against its own download,
+ * so it is the whole digest. Streamed in chunks: a _final.mp4 is 20-30MB.
+ */
+function fileSha256(file) {
+  let fd = null;
+  try {
+    const hash = crypto.createHash('sha256');
+    const buf = Buffer.alloc(1 << 20);
+    fd = fs.openSync(file, 'r');
+    let n;
+    while ((n = fs.readSync(fd, buf, 0, buf.length, null)) > 0) hash.update(buf.subarray(0, n));
+    return hash.digest('hex');
+  } catch { return null; } finally {
+    if (fd !== null) { try { fs.closeSync(fd); } catch { /* already closed */ } }
+  }
+}
+
+/**
  * Drop a lesson's persisted copy.
  *
  * Only ever on an explicit request -- the LMS calls this once their own copy is
@@ -367,6 +389,6 @@ function list() {
 }
 
 module.exports = {
-  persist, find, findScript, fingerprint, forget, forgetVideoOnly,
+  persist, find, findScript, fingerprint, fileSha256, forget, forgetVideoOnly,
   driveRecord, driveCopy, videoMeta, list, dirFor,
 };

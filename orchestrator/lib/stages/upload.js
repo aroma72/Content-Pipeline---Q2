@@ -161,6 +161,40 @@ module.exports = {
     // missing rather than one that was deliberately moved.
     const resolved = await resolveSource(finalPath, item, log);
     const uploadPath = resolved.path;
+
+    // THE BYTES A PERSON WATCHED, AND NO OTHER.
+    //
+    // A course lesson is approved hours after it was rendered, and the copy found
+    // above is keyed by series/slug, not by run -- so "a _final.mp4 exists" is not
+    // the same claim as "this is the video that was reviewed". When the caller
+    // recorded what was reviewed, check it. A mismatch or a missing file is NOT
+    // re-rendered here: that would publish a video nobody has seen, which is what
+    // the review gate exists to stop (LMS memo 2026-10-13 §3). It blocks at review,
+    // and the worker turns the next approval into a rebuild a person then watches.
+    let sha256 = null;
+    if (opts.reviewedVideo && opts.reviewedVideo.sha256) {
+      const expected = opts.reviewedVideo.sha256;
+      sha256 = uploadPath ? require('../deliverables').fileSha256(uploadPath) : null;
+      if (sha256 !== expected) {
+        resolved.cleanup();
+        const what = uploadPath
+          ? `the copy found (${resolved.from}) is not the file that was reviewed `
+            + `(sha256 ${String(sha256).slice(0, 16)}..., reviewed ${expected.slice(0, 16)}...)`
+          : 'no copy of it was found in the render directory, on the volume or on Drive';
+        (log.always || log)(`reviewed video check FAILED: ${what}`);
+        throw new BlockedError(
+          'The reviewed video is no longer available: ' + what + '. Nothing was published. '
+          + 'It must be rebuilt and reviewed again -- approve to rebuild it, or reject.',
+          {
+            blocker: 'reviewed video no longer available',
+            code: 'review',
+            details: { reviewedVideoLost: true, expectedSha256: expected, foundSha256: sha256, from: resolved.from },
+          }
+        );
+      }
+      log(`reviewed video verified (sha256 ${expected.slice(0, 16)}..., from ${resolved.from})`);
+    }
+
     if (!uploadPath) {
       throw new BlockedError(
         `Deliverable is missing at ${finalPath}, and no copy was found on the volume ` +
@@ -287,6 +321,8 @@ module.exports = {
       // Which copy was published. Worth recording: "it came back from Drive" is
       // the difference between a healthy offload and a missing render.
       sourcedFrom: resolved.from,
+      // The digest of the published bytes, when they were checked against review.
+      ...(sha256 ? { sha256 } : {}),
     };
   },
 };

@@ -285,9 +285,13 @@ const markSavedToDrive = (id, drive = {}) => {
 // carry an authorisation for a script this attempt has not written yet.
 // humanRevisions is deliberately NOT cleared -- the revision budget is per lesson,
 // not per attempt, or a requeue would be a way to buy five more rounds.
+// And the review fingerprint: it names the video a person watched LAST attempt,
+// and a requeue builds a new one that nobody has watched yet.
 const requeue = (id, extra) => setStatus(id, ITEM_STATUS.QUEUED, {
   requeuedAt: new Date().toISOString(),
   reviewApproved: false,
+  reviewedVideo: null,
+  reviewedVideoLost: false,
   interrupted: false,
   scriptApproved: false,
   scriptApprovedSha: null,

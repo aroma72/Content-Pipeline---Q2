@@ -845,6 +845,32 @@ async function lessonFileChecks() {
       return 'deliverableAvailable true, videoLocal false, Drive link beside them';
     }, { withMp4: true, offloaded: true }));
 
+  // LMS memo 2026-10-13 §4: reject() wrote stoppedWithCourse and skip() wrote
+  // skipped, and this view dropped both -- a lesson a Reject stopped read as an
+  // ordinary failure. §3: the digest of the video under review, so the LMS can
+  // check that what it downloaded is what an approval will publish.
+  await check('the course view says why a lesson failed, and which video is under review', () =>
+    withCourse(async (port) => {
+      const queue = require(path.join(__dirname, 'lib', 'queue'));
+      queue.setStatus(LESSON, queue.ITEM_STATUS.BLOCKED, { reviewedVideo: { sha256: 'f'.repeat(64), runId: 'run-fixture-1' } });
+      for (const slug of ['stopped-sibling', 'skipped-sibling']) {
+        queue.enqueue({ topic: slug, series: 'fixtures', slug, source: 'course-builder', notes: `[${COURSE}] b` });
+      }
+      queue.setStatus('fixtures/stopped-sibling', queue.ITEM_STATUS.FAILED,
+        { stoppedWithCourse: LESSON, stoppedAt: '2026-10-13T07:07:22Z', error: `stopped with the course: ${LESSON} was rejected` });
+      queue.setStatus('fixtures/skipped-sibling', queue.ITEM_STATUS.FAILED, { skipped: true, error: 'broke' });
+
+      const r = await req(port, { path: `/api/v1/courses/${COURSE}`, headers: auth });
+      assert(r.status === 200, `expected 200, got ${r.status} ${r.text}`);
+      const by = (id) => (r.json.items || []).find((i) => i.id === id) || {};
+      assert(by('fixtures/stopped-sibling').stoppedWithCourse === LESSON,
+        `stoppedWithCourse missing: ${JSON.stringify(by('fixtures/stopped-sibling'))}`);
+      assert(by('fixtures/stopped-sibling').stoppedAt === '2026-10-13T07:07:22Z', 'stoppedAt missing');
+      assert(by('fixtures/skipped-sibling').skipped === true, 'skipped missing');
+      assert(by(LESSON).reviewedSha256 === 'f'.repeat(64), `reviewedSha256 missing: ${JSON.stringify(by(LESSON))}`);
+      return 'stoppedWithCourse, skipped and reviewedSha256 served';
+    }, { withMp4: true, blockedBy: 'review' }));
+
   await check('the course view reads the Drive record off the volume when the queue flag is missing', () =>
     withCourse(async (port) => {
       // Production 2026-10-05: lessons offloaded by the backfill script, or already

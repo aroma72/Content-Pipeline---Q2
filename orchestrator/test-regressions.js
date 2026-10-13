@@ -3876,6 +3876,9 @@ async function courseChecks() {
   // every option invisible to the suite -- which is how courses shipped running to
   // 'qa', one stage short of the review they are built around, with nothing failing.
   let lastSpineOpts = null;
+  // Kept for the few checks that must prove what the REAL spine does with the
+  // options the worker passed -- always with every paid stage overridden.
+  const realExecute = spine.execute;
   spine.execute = async (item, opts) => { lastSpineOpts = opts; return { status: 'blocked' }; };
 
   const freshQueue = () => {
@@ -4242,6 +4245,11 @@ async function courseChecks() {
     course('course-a', 'a1'); course('course-a', 'a2');
     queue.fail('demo/a1', 'run-1', 'script never validated');
     queue.block('demo/a2', 'run-2', 'awaiting human review', 'review');
+    // A video to approve. Without one there is nothing reviewed to publish, and an
+    // approval now blocks for a rebuild instead of rendering and publishing blind.
+    const a2File = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cq-a2-')), 'a2_final.mp4');
+    fs.writeFileSync(a2File, 'a2');
+    queue.setStatus('demo/a2', queue.ITEM_STATUS.BLOCKED, { reviewedVideo: { sha256: 'x', finalPath: a2File, runId: 'run-2' } });
     outcomes['demo/a2'] = 'done';
     cw.approve('demo/a2', 'Aroma', 'course-a');
     for (let i = 0; i < 50 && cw.status().running; i++) await new Promise((res) => setTimeout(res, 10));
@@ -4670,6 +4678,166 @@ async function courseChecks() {
       'the spend gate is back on the run total, so token spend now eats the art budget');
     return 'media only, and an untagged call still counts as media';
   });
+
+  // ── approving a course lesson publishes the video that was reviewed ─────────
+  // LMS memo 2026-10-13 §3, from our own production log: approving a lesson that
+  // was blocked at review started a NEW run from the held script, re-recorded the
+  // voice, re-rendered all 19 beats (~25 minutes, a second charge) and uploaded
+  // THAT -- a video nobody had watched. buildOne() always resumed at
+  // script-approval because scriptApproved was set; reviewApproved only took
+  // effect after a second produce. The single-video path never had this bug.
+  {
+    const crypto = require('crypto');
+    const harness = spine.execute;
+    const sha = (f) => crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex');
+    const reviewedFile = (slug, bytes = 'reviewed video bytes') => {
+      const d = fs.mkdtempSync(path.join(os.tmpdir(), 'cq-reviewed-'));
+      const f = path.join(d, `${slug}_final.mp4`);
+      fs.writeFileSync(f, bytes);
+      return f;
+    };
+    // A build that blocks at review WITH a finished video, the way the real spine does.
+    const blocksAtReviewWith = (file) => async (item, opts) => {
+      lastSpineOpts = opts;
+      queue.block(item.id, 'run-render', 'awaiting human review', 'review', 0.19);
+      return { status: 'blocked', artifacts: { produce: { finalPath: file }, qa: { combined_score: 5.6 } } };
+    };
+    const stage = (name, run) => ({ name, maxAttempts: 1, run });
+    const mustNotRun = (name) => stage(name, async () => { throw new Error(`${name} ran -- the approved video was made again`); });
+
+    try {
+      await checkAsync('a lesson that blocks at review is fingerprinted with the file it blocked with', async () => {
+        await fresh();
+        const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+        const file = reviewedFile('fp');
+        course('course-fp', 'fp');
+        spine.execute = blocksAtReviewWith(file);
+        await cw.drain();
+        const rv = queue.get('demo/fp').reviewedVideo;
+        assert(rv && rv.sha256 === sha(file), `no fingerprint, or the wrong one: ${JSON.stringify(rv)}`);
+        assert(rv.bytes === fs.statSync(file).size && rv.finalPath === file, 'size or path not recorded');
+        assert(rv.qaScore === 5.6, 'the QA score the upload description needs was not kept');
+        return rv.sha256.slice(0, 12);
+      });
+
+      await checkAsync('approving publishes from review, never re-running produce', async () => {
+        await fresh();
+        const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+        const file = reviewedFile('pub');
+        course('course-pub', 'pub', { scriptApproved: 'Aroma', scriptApprovedSha: 'abc' });
+        spine.execute = blocksAtReviewWith(file);
+        await cw.drain();
+        const reviewed = queue.get('demo/pub').reviewedVideo;
+
+        // The worker's half: what it asks the spine to do once approved.
+        spine.execute = async (item, opts) => { lastSpineOpts = opts; queue.done(item.id, 'run-pub', {}, 0); return { status: 'done' }; };
+        assert(cw.approve('demo/pub', 'Aroma', 'course-pub').ok, 'approve refused');
+        await settled();
+        assert(lastSpineOpts.fromStage === 'review',
+          `the approved lesson resumed at '${lastSpineOpts.fromStage}' -- it will record the voice and render again`);
+        assert(lastSpineOpts.reviewedVideo && lastSpineOpts.reviewedVideo.sha256 === reviewed.sha256,
+          'the reviewed fingerprint did not reach the spine, so upload cannot check it');
+        assert(lastSpineOpts.seedArtifacts.produce.finalPath === file, 'the seed does not point at the reviewed file');
+        assert(lastSpineOpts.reviewApproved === 'Aroma', 'the approval did not ride along');
+
+        // The spine's half, for real: from those options, nothing before review runs,
+        // no new _final.mp4 appears, and upload sends exactly the reviewed bytes.
+        const yt = require('./lib/youtube');
+        const savedYt = { isAuthorised: yt.isAuthorised, uploadVideo: yt.uploadVideo };
+        const sent = [];
+        yt.isAuthorised = () => true;
+        // 'public' so the stage writes no provisional record into the repo's .beads.
+        yt.uploadVideo = async ({ filePath }) => { sent.push(sha(filePath)); return { url: 'https://youtu.be/t', videoId: 't', privacyStatus: 'public', bytes: 1 }; };
+        const before = fs.readdirSync(path.dirname(file));
+        try {
+          const real = await realExecute(queue.get('demo/pub'), {
+            ...lastSpineOpts, resumeState: null, skipOffload: true,
+            stageOverrides: {
+              references: mustNotRun('references'), produce: mustNotRun('produce'), qa: mustNotRun('qa'),
+            },
+          });
+          assert(real.status === 'done', `the publish run ended '${real.status}': ${JSON.stringify(real.stages.upload || real.stages.review)}`);
+          assert(sent.length === 1 && sent[0] === reviewed.sha256, 'upload sent bytes other than the reviewed file');
+          assert(real.artifacts.upload.sha256 === reviewed.sha256, 'the published digest is not recorded on the run');
+          assert(JSON.stringify(fs.readdirSync(path.dirname(file))) === JSON.stringify(before), 'a new file was written beside the reviewed video');
+        } finally {
+          yt.isAuthorised = savedYt.isAuthorised; yt.uploadVideo = savedYt.uploadVideo;
+        }
+        return 'review -> upload, the reviewed sha published';
+      });
+
+      await checkAsync('a reviewed video that changed is blocked at review, not published', async () => {
+        await fresh();
+        const file = reviewedFile('chg');
+        const item = course('course-chg', 'chg');
+        const expected = sha(file);
+        fs.writeFileSync(file, 'a different render');
+        const yt = require('./lib/youtube');
+        const savedYt = { isAuthorised: yt.isAuthorised, uploadVideo: yt.uploadVideo };
+        let uploaded = 0;
+        yt.isAuthorised = () => true;
+        yt.uploadVideo = async () => { uploaded++; return { url: 'x', videoId: 'x', privacyStatus: 'public', bytes: 1 }; };
+        try {
+          const real = await realExecute(item, {
+            fromStage: 'review', stopAfter: 'upload', quiet: true, skipOffload: true, reviewApproved: 'Aroma',
+            reviewedVideo: { sha256: expected, bytes: 20, runId: 'run-render' },
+            seedArtifacts: { produce: { finalPath: file }, script: { title: 't', beats: [] } },
+          });
+          assert(uploaded === 0, 'a video that is not the reviewed one was uploaded');
+          assert(real.status === 'blocked' && real.stages.upload.code === 'review',
+            `expected a block at review, got ${real.status}/${real.stages.upload && real.stages.upload.code}`);
+          assert(queue.get(item.id).blockedBy === 'review', 'the queue does not say it is waiting at review');
+        } finally {
+          yt.isAuthorised = savedYt.isAuthorised; yt.uploadVideo = savedYt.uploadVideo;
+        }
+        return 'blocked, nothing uploaded';
+      });
+
+      await checkAsync('a reviewed video that is gone blocks at review, and the next approval rebuilds it', async () => {
+        await fresh();
+        const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+        const file = reviewedFile('gone');
+        course('course-gone', 'gone', { scriptApproved: 'Aroma', scriptApprovedSha: 'abc' });
+        spine.execute = blocksAtReviewWith(file);
+        await cw.drain();
+        fs.rmSync(file);
+
+        let ran = 0;
+        spine.execute = async (item, opts) => { ran++; lastSpineOpts = opts; return { status: 'done' }; };
+        assert(cw.approve('demo/gone', 'Aroma', 'course-gone').ok, 'approve refused');
+        await settled();
+        const after = queue.get('demo/gone');
+        assert(ran === 0, 'the spine ran for a lesson with nothing to publish -- it would have re-rendered');
+        assert(after.status === 'blocked' && after.blockedBy === 'review', `left '${after.status}/${after.blockedBy}'`);
+        assert(after.reviewedVideoLost === true && !after.reviewApproved && !after.reviewedVideo,
+          'the lost-video flags are wrong, so the next approval would try to publish again');
+        assert(/no longer available/.test(after.reason || ''), `the reason does not say what happened: ${after.reason}`);
+
+        // Approving again means "rebuild it": no approval is carried, so the new
+        // render stops at review for a person before anything is published.
+        spine.execute = harness;
+        const r = cw.approve('demo/gone', 'Aroma', 'course-gone');
+        assert(r.ok && r.rebuild === true, 'the second approval was not a rebuild');
+        const q = queue.get('demo/gone');
+        assert(!q.reviewApproved && q.rebuildApprovedBy === 'Aroma' && q.reviewedVideoLost === false,
+          'the rebuild carried an approval -- it would publish the new render unwatched');
+        await settled();
+        return 'blocked, then rebuilt for a fresh review';
+      });
+
+      check('a requeue forgets the video the last attempt was reviewed with', () => {
+        freshQueue();
+        queue.enqueue({ topic: 'x', series: 'demo', slug: 'rq', source: 'course-builder' });
+        queue.setStatus('demo/rq', queue.ITEM_STATUS.FAILED, { reviewedVideo: { sha256: 'a' }, reviewedVideoLost: true });
+        queue.requeue('demo/rq');
+        const i = queue.get('demo/rq');
+        assert(!i.reviewedVideo && i.reviewedVideoLost === false, 'a requeued lesson still names the old reviewed video');
+        return 'cleared';
+      });
+    } finally {
+      spine.execute = harness;
+    }
+  }
 
   // buildOne() reaches the script stage, which writes into explainer-videos/.
   // A leftover fixture series becomes a REAL catalogue row served to the LMS --

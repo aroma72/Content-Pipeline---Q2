@@ -254,7 +254,8 @@ function build(opts = {}) {
         { method: 'POST', path: '/api/v1/courses/:courseId/lessons/:lessonId/reject',
           auth: true,
           description: 'Reject a lesson. THIS course stops: its queued lessons are failed, free, '
-            + 'with `stoppedWithCourse` naming the rejection. Other courses continue.' },
+            + 'with `stoppedWithCourse` naming the rejected lesson (its id) and `stoppedAt`, both on '
+            + 'GET /courses/:courseId. Other courses continue.' },
         { method: 'POST', path: '/api/v1/courses/:courseId/lessons/:lessonId/skip',
           auth: true,
           description: 'Drop ONE failed lesson for free so its course continues without it. The '
@@ -734,6 +735,14 @@ function build(opts = {}) {
         // later `done`, and reporting it would describe a lesson by a failure it has
         // already moved past.
         ...(i.status === 'failed' && i.error ? { error: i.error } : {}),
+        // WHY it failed, as data. reject() has always written these on the siblings
+        // it stops, and skip() writes `skipped` -- and this projection dropped all
+        // three, so a lesson a Reject stopped read as an ordinary failure to every
+        // client (LMS memo 2026-10-13 §4). `stoppedWithCourse` is the id of the
+        // rejected lesson, so it is truthy wherever a boolean is expected.
+        ...(i.status === 'failed' && i.stoppedWithCourse
+          ? { stoppedWithCourse: i.stoppedWithCourse, stoppedAt: i.stoppedAt || null } : {}),
+        ...(i.status === 'failed' && i.skipped === true ? { skipped: true } : {}),
         ...(i.status === 'blocked' && i.reason ? { reason: i.reason } : {}),
         // Which blocked this is. `reason` is free text written by whatever stopped
         // the lesson -- sometimes a sentence a model wrote -- so a caller that has
@@ -745,6 +754,13 @@ function build(opts = {}) {
         // queue.block() so items blocked before this field existed still read as
         // the normal case.
         ...(i.status === 'blocked' ? { blockedBy: i.blockedBy || queue.DEFAULT_BLOCKED_BY } : {}),
+        // The video under review, by digest. Recorded the moment the lesson blocked
+        // with a finished video; approve publishes exactly these bytes or blocks
+        // again (`reviewedVideoLost`) -- it never re-renders and publishes. A caller
+        // can sha256 what it downloaded from GET .../file and compare.
+        ...(i.status === 'blocked' && i.reviewedVideo && i.reviewedVideo.sha256
+          ? { reviewedSha256: i.reviewedVideo.sha256 } : {}),
+        ...(i.status === 'blocked' && i.reviewedVideoLost === true ? { reviewedVideoLost: true } : {}),
         // Whether GET .../file will actually serve bytes right now.
         //
         // A fact, not an inference. The LMS reasonably read our own documentation
@@ -814,6 +830,10 @@ function build(opts = {}) {
           ...(i.artifacts && i.artifacts.upload && i.artifacts.upload.url
             ? { youtube: i.artifacts.upload.url, youtubeVideoId: i.artifacts.upload.videoId }
             : {}),
+          // The digest of the bytes that went to YouTube, when they were checked
+          // against the reviewed file -- equal to the `reviewedSha256` it had at review.
+          ...(i.artifacts && i.artifacts.upload && i.artifacts.upload.sha256
+            ? { publishedSha256: i.artifacts.upload.sha256 } : {}),
           // External reading, when the course asked for it and the links survived
           // being fetched. ABSENT means none were verified -- never "we did not
           // look", and never a link we could not open ourselves. The consumer said
@@ -1059,8 +1079,12 @@ function build(opts = {}) {
     res.status(202).json({
       approved: req.params.lessonId,
       by,
-      note: 'Publishing this lesson, then building the next one. The render is not '
-        + 'repeated -- the run resumes from where it stopped.',
+      ...(r.rebuild ? { rebuild: true } : {}),
+      note: r.rebuild
+        ? 'Rebuilding this lesson: the video it was waiting with is gone, so there is nothing '
+          + 'reviewed to publish. It will block at review again for a person to watch.'
+        : 'Publishing the video that was reviewed -- the same bytes, checked against '
+          + '`reviewedSha256` -- then building the next one. Nothing is rendered again.',
     });
   });
 
