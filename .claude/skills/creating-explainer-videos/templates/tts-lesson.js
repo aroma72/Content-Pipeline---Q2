@@ -161,7 +161,7 @@ function silenceWav(seconds) {
         try { fs.unlinkSync(sigPath); } catch { /* none */ }
       }
     }
-    raw.push({ b, rawPath, secs: wavSeconds(rawPath) });
+    raw.push({ b, rawPath, secs: wavSeconds(rawPath), cached: unchanged });
   }
   // A silent fallback = a beat with NO speech. Never let this pass as a clean build:
   // surface it loudly and exit non-zero so the run is re-tried (this was the v7 defect).
@@ -171,15 +171,32 @@ function silenceWav(seconds) {
     process.exitCode = 1;
   }
 
-  // ---- Pass 2a: tempo-to-median (chars/sec), clamp ±10% ----
-  const rates = raw.map(r => r.secs / Math.max(8, r.b.vo.length)); // sec per char
-  const median = [...rates].sort((a, b) => a - b)[Math.floor(rates.length / 2)];
+  // ---- Pass 2a: tempo-to-median (chars/sec), clamp ±10% -- with PINNING ----
+  // A take that was a cache hit AND already has its final wav and a measured
+  // duration is PINNED: bytes and seconds kept verbatim, no ffmpeg pass. The
+  // median is still over the whole lesson. Without this, changing one line
+  // moved the median and re-timed every other clip by a few percent, so a
+  // partial redo (contract 1.3) could never splice the untouched scenes back.
+  // TTS_PIN=0 restores the old behaviour.
+  const { plan } = require('./lib/tts-plan');
+  let prevDur = {};
+  try { prevDur = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'durations.json'), 'utf8')); } catch { prevDur = {}; }
+  const PIN = process.env.TTS_PIN !== '0';
+  const planned = plan(raw.map((r) => ({
+    id: r.b.id, secs: r.secs, voLen: r.b.vo.length,
+    pinned: PIN && r.cached && fs.existsSync(path.join(AUD, `vo_${r.b.id}.wav`)) && typeof prevDur[r.b.id] === 'number',
+    pinnedSecs: prevDur[r.b.id],
+  })));
 
   const durations = {};
   for (let i = 0; i < raw.length; i++) {
     const { b, rawPath } = raw[i];
-    let factor = rates[i] / median;            // >1 => slower than median => speed up
-    factor = Math.min(1.1, Math.max(0.9, factor));
+    if (planned[i].pinned) {
+      durations[b.id] = planned[i].secs;
+      console.log(`[tts] ${b.id} pinned (unchanged take) -> ${durations[b.id]}s`);
+      continue;
+    }
+    let factor = planned[i].factor;            // >1 => slower than median => speed up
     // human breathing pause after each sentence; a touch longer when the visual/mode changes
     const nb = raw[i + 1] && raw[i + 1].b;
     const pause = ((!nb || nb.mode !== b.mode) ? 0.7 : 0.4) + (b.holdAfter || 0);

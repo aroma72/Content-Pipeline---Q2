@@ -6175,6 +6175,256 @@ async function redoBuildChecks() {
   });
 }
 
+/**
+ * Contract 1.3 -- rendering only the flagged seconds and splicing them in.
+ *
+ * The hour of Chrome is the cost a redo exists to avoid. These prove the
+ * mechanism end to end where a test machine can: a real ffmpeg splice of
+ * colour bars (the old render) with a new segment, pixel-probed; produce
+ * choosing the range + splice path only when an exact plan exists; and the
+ * Drive offload treating a rebuilt video as a NEW file rather than "already
+ * there". The two scripts that need Chrome or Gemini are checked at source.
+ */
+async function redoRenderChecks() {
+  console.log('');
+  console.log('12e. contract 1.3 -- render only the flagged seconds, splice, re-offload');
+
+  const osMod = require('os');
+  const { execFileSync, spawnSync } = require('child_process');
+  const T = path.join(__dirname, '..', '.claude', 'skills', 'creating-explainer-videos', 'templates');
+  const NODE_PATH = path.join(__dirname, '..', 'node_modules');
+  const produce = require(path.join(__dirname, 'lib', 'stages', 'produce'));
+  const { splicePlan } = require(path.join(T, 'lib', 'splice-plan'));
+  let ffmpeg = null;
+  try { ffmpeg = require(path.join(NODE_PATH, 'ffmpeg-static')); } catch { ffmpeg = null; }
+  const ff = (args) => execFileSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', ...args], { stdio: ['ignore', 'ignore', 'inherit'] });
+  const pixelAt = (file, t) => {
+    const buf = execFileSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-ss', String(t), '-i', file,
+      '-frames:v', '1', '-vf', 'scale=1:1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-']);
+    return [buf[0], buf[1], buf[2]];
+  };
+  const seconds = (file) => {
+    const r = spawnSync(ffmpeg, ['-i', file], { encoding: 'utf8' });
+    const m = String(r.stderr || '').match(/Duration:\s*(\d+):(\d+):(\d+\.\d+)/);
+    return m ? (+m[1] * 3600 + +m[2] * 60 + +m[3]) : NaN;
+  };
+  const dominant = ([r, g, b]) => (r > 150 && g < 100 && b < 100) ? 'red' : (g > 150 && r < 100 && b < 100) ? 'green'
+    : (b > 150 && r < 100 && g < 100) ? 'blue' : (r > 150 && g > 150 && b < 100) ? 'yellow' : `rgb(${r},${g},${b})`;
+
+  await checkAsync('splice-lesson replaces exactly the flagged seconds of the old bare render and remixes the audio', async () => {
+    if (!ffmpeg || !fs.existsSync(ffmpeg)) return skip('no ffmpeg-static in node_modules');
+    const dir = fs.mkdtempSync(path.join(osMod.tmpdir(), 'cq-splice-'));
+    produce._internals.copyTemplates(T, dir, null);
+    const beats = [
+      { id: '01', mode: 'scene', vo: 'one', art: 'a', cap: 'c' },
+      { id: '02', mode: 'scene', vo: 'two', art: 'b', cap: 'c' },
+      { id: '03', mode: 'checkpoint', quiz: { stem: 'q', options: ['a', 'b'], answer: 0, explain: 'x' } },
+      { id: '04', mode: 'scene', vo: 'four', art: 'd', cap: 'c' },
+    ];
+    fs.writeFileSync(path.join(dir, 'beats.js'), `module.exports = ${JSON.stringify(beats)};\n`);
+    const durations = { '01': 1, '02': 1, '04': 1 };
+    fs.writeFileSync(path.join(dir, 'durations.json'), JSON.stringify(durations));
+    fs.mkdirSync(path.join(dir, 'audio'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'out'), { recursive: true });
+    for (const id of ['01', '02', '04']) {
+      ff(['-y', '-f', 'lavfi', '-i', 'anullsrc=r=24000:cl=mono', '-t', '1', path.join(dir, 'audio', `vo_${id}.wav`)]);
+    }
+    // The "old" bare render: red | green | blue, one second each, 30 fps.
+    const old = path.join(dir, 'out', 'lesson.mp4');
+    ff(['-y', '-f', 'lavfi', '-i', 'color=c=red:s=64x64:r=30', '-f', 'lavfi', '-i', 'color=c=green:s=64x64:r=30',
+      '-f', 'lavfi', '-i', 'color=c=blue:s=64x64:r=30', '-filter_complex',
+      '[0:v]trim=0:1,setpts=PTS-STARTPTS[a];[1:v]trim=0:1,setpts=PTS-STARTPTS[b];[2:v]trim=0:1,setpts=PTS-STARTPTS[c];[a][b][c]concat=n=3:v=1:a=0[v]',
+      '-map', '[v]', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-r', '30', old]);
+    // The re-rendered flagged beat (02): yellow, one second, video only.
+    const seg = path.join(dir, 'out', 'seg_30_60.mp4');
+    ff(['-y', '-f', 'lavfi', '-i', 'color=c=yellow:s=64x64:r=30', '-t', '1', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-r', '30', seg]);
+    const plan = splicePlan({ oldOrder: ['01', '02', '04'], oldDurations: durations, newOrder: ['01', '02', '04'], newDurations: durations, flaggedIds: ['02'], fps: 30 });
+    assert(plan.ok, plan.why);
+    plan.segmentFiles = { '30_60': 'out/seg_30_60.mp4' };
+    fs.writeFileSync(path.join(dir, 'out', 'splice-plan.json'), JSON.stringify(plan));
+
+    const r = spawnSync(process.execPath, ['splice-lesson.js', '--plan', 'out/splice-plan.json'], {
+      cwd: dir, encoding: 'utf8', timeout: 5 * 60 * 1000, env: { ...process.env, NODE_PATH },
+    });
+    assert(r.status === 0, `splice-lesson exit ${r.status}: ${(r.stderr || r.stdout || '').slice(-600)}`);
+    assert(fs.existsSync(path.join(dir, 'out', 'lesson.prev.mp4')), 'the previous bare render was not kept');
+    const dur = seconds(old);
+    assert(Math.abs(dur - 3) < 0.15, `spliced lesson is ${dur}s, not 3s`);
+    const at = (t) => dominant(pixelAt(old, t));
+    assert(at(0.5) === 'red', `0.5s is ${at(0.5)}, expected the kept red`);
+    assert(at(1.5) === 'yellow', `1.5s is ${at(1.5)}, expected the NEW yellow`);
+    assert(at(2.5) === 'blue', `2.5s is ${at(2.5)}, expected the kept blue`);
+    fs.rmSync(dir, { recursive: true, force: true });
+    return 'red | yellow | blue, 3.0s, prev kept';
+  });
+
+  // produce with shell.run recorded, in a scaffolded video dir, on a redo.
+  const redoCommands = async ({ withResidue, flagged = ['02'] }) => {
+    const shell = require(path.join(__dirname, 'lib', 'shell'));
+    const jobStore = require(path.join(__dirname, '..', 'server', 'lib', 'job-store'));
+    const deliverables = require(path.join(__dirname, 'lib', 'deliverables'));
+    const tmp = fs.mkdtempSync(path.join(osMod.tmpdir(), 'cq-redo-produce-'));
+    const saved = { v: process.env.EXPLAINER_VIDEOS_DIR, j: process.env.JOB_STORE_DIR, d: process.env.JOB_STORE_DURABLE, run: shell.run };
+    process.env.EXPLAINER_VIDEOS_DIR = path.join(tmp, 'videos');
+    process.env.JOB_STORE_DIR = path.join(tmp, 'store');
+    process.env.JOB_STORE_DURABLE = '1';
+    jobStore.reset();
+    const ran = [];
+    try {
+      const { videoDir } = require(path.join(__dirname, 'lib', 'paths'));
+      const dir = videoDir('s', 'l');
+      fs.mkdirSync(path.join(dir, 'out'), { recursive: true });
+      const beats = [
+        { id: '01', mode: 'ali', vo: 'Ali opens his ledger.', art: 'Ali at a shop counter', cap: 'Monday' },
+        { id: '02', mode: 'scene', vo: 'The bank is closed.', art: 'a bank', cap: 'Closed' },
+        { id: '03', mode: 'checkpoint', quiz: { stem: 'Why is the shop quiet?', options: ['a', 'b', 'c', 'd'], answer: 1, explain: 'B looks right at a glance because the shop is open, but only A explains why nobody came in.' } },
+        { id: '04', mode: 'scene', vo: 'So Ali waits.', art: 'Ali waiting', cap: 'Waiting' },
+      ];
+      const durations = { '01': 2.5, '02': 3, '04': 2 };
+      fs.writeFileSync(path.join(dir, 'beats.js'), `module.exports = ${JSON.stringify(beats)};\n`);
+      fs.writeFileSync(path.join(dir, 'durations.json'), JSON.stringify(durations));
+      fs.writeFileSync(path.join(dir, 'out', 'lesson.mp4'), 'OLD BARE RENDER');
+      // An outdated template in the folder, as a first build left it.
+      fs.writeFileSync(path.join(dir, 'compile-lesson.js'), '// v0 -- no --range here\n');
+      if (withResidue) {
+        const dest = deliverables.dirFor('s', 'l');
+        fs.mkdirSync(dest, { recursive: true });
+        fs.writeFileSync(path.join(dest, 'residue.json'), JSON.stringify({
+          series: 's', slug: 'l', round: 0, durations, beatOrder: ['01', '02', '04'],
+          files: [], tarBytes: 1, tarMd5: 'x', drive: null,
+        }));
+      }
+      shell.run = async (cmd, args) => { ran.push(`${cmd} ${(args || []).join(' ')}`); return { code: 0, stdout: '', stderr: '' }; };
+      const log = Object.assign(() => {}, { always: () => {} });
+      await produce.run({
+        item: { id: 's/l', series: 's', slug: 'l', topic: 't' },
+        state: { runId: 'r', redrafts: 0, interventions: [], spend: [] },
+        artifacts: { script: { title: 'T', beats }, videoRedo: { round: 1, beats: flagged } },
+        opts: { dryRun: true, videoRedo: { round: 1, beats: flagged } },
+        log,
+      });
+      return { ran, dir };
+    } finally {
+      shell.run = saved.run;
+      if (saved.v === undefined) delete process.env.EXPLAINER_VIDEOS_DIR; else process.env.EXPLAINER_VIDEOS_DIR = saved.v;
+      if (saved.j === undefined) delete process.env.JOB_STORE_DIR; else process.env.JOB_STORE_DIR = saved.j;
+      if (saved.d === undefined) delete process.env.JOB_STORE_DURABLE; else process.env.JOB_STORE_DURABLE = saved.d;
+    }
+  };
+
+  await checkAsync('produce on a redo with residue renders only the flagged range, splices, and reuses the bumpers', async () => {
+    const { ran, dir } = await redoCommands({ withResidue: true });
+    const joined = ran.join(' | ');
+    const range = ran.find((c) => /compile-lesson\.js --range 75:165 --out out[\\/]seg_75_165\.mp4/.test(c));
+    assert(range, `no range render for beat 02 (frames 75-165 at 30fps): ${joined}`);
+    assert(!ran.some((c) => /compile-lesson\.js$/.test(c)), `the whole lesson was rendered as well: ${joined}`);
+    assert(ran.some((c) => /splice-lesson\.js --plan/.test(c)), `no splice: ${joined}`);
+    assert(ran.some((c) => /stitch-brand\.js .*--reuse-bumpers/.test(c)), `bumpers rendered again: ${joined}`);
+    const plan = JSON.parse(fs.readFileSync(path.join(dir, 'out', 'splice-plan.json'), 'utf8'));
+    assert(plan.ok && plan.segmentFiles && plan.segmentFiles['75_165'], `plan file: ${JSON.stringify(plan).slice(0, 200)}`);
+    assert(!/v0 -- no --range/.test(fs.readFileSync(path.join(dir, 'compile-lesson.js'), 'utf8')), 'the outdated compile-lesson.js was not refreshed');
+    return 'range 75:165, splice, --reuse-bumpers, templates refreshed';
+  });
+
+  await checkAsync('produce on a redo WITHOUT residue falls back to a whole render and says so', async () => {
+    const { ran } = await redoCommands({ withResidue: false });
+    const joined = ran.join(' | ');
+    assert(ran.some((c) => /compile-lesson\.js$/.test(c)), `no whole render: ${joined}`);
+    assert(!ran.some((c) => /--range|splice-lesson/.test(c)), `a partial render was attempted with nothing to splice into: ${joined}`);
+    return 'whole render, no splice';
+  });
+
+  await checkAsync('the Drive offload treats a rebuilt video as a new file: content-aware, round-named, old copy trashed only when allowed', async () => {
+    const gdrive = require(path.join(__dirname, 'lib', 'gdrive'));
+    const deliverables = require(path.join(__dirname, 'lib', 'deliverables'));
+    const driveOffload = require(path.join(__dirname, 'lib', 'drive-offload'));
+    const jobStore = require(path.join(__dirname, '..', 'server', 'lib', 'job-store'));
+    const queue = require(path.join(__dirname, 'lib', 'queue'));
+    const videoMetaMod = require(path.join(__dirname, 'lib', 'video-meta'));
+    const saved = { up: gdrive.uploadFile, conf: gdrive.isConfigured, fid: gdrive.folderId, trash: gdrive.trashFile, env: process.env.GDRIVE_TRASH_SUPERSEDED };
+    gdrive.isConfigured = () => true;
+    gdrive.folderId = () => 'test-folder';
+    try {
+      const dir = fs.mkdtempSync(path.join(osMod.tmpdir(), 'cq-reoffload-'));
+      jobStore.reset(); queue.resetPathCache();
+      delete process.env.RAILWAY_VOLUME_MOUNT_PATH;
+      process.env.JOB_STORE_DIR = dir; process.env.JOB_STORE_DURABLE = '1';
+      queue.enqueue({ topic: 'x', series: 'fixtures', slug: 'a-lesson', source: 'course-builder', notes: '[course-a] b' });
+      queue.setStatus('fixtures/a-lesson', 'queued', { videoRedoRound: 2 });
+      const dest = deliverables.dirFor('fixtures', 'a-lesson');
+      fs.mkdirSync(dest, { recursive: true });
+      const mp4 = path.join(dest, 'a-lesson_final.mp4');
+      fs.writeFileSync(mp4, 'THE REBUILT VIDEO');
+      fs.writeFileSync(path.join(dest, 'beats.js'), 'module.exports = [];');
+      fs.writeFileSync(path.join(dest, 'durations.json'), '{}');
+      // The record of the PREVIOUS version, with a different sha.
+      fs.writeFileSync(path.join(dest, 'drive.json'), JSON.stringify({
+        saved2drive: true, driveFileId: 'old-file', driveUrl: 'u', driveName: 'fixtures__a-lesson_final.mp4',
+        bytes: 5, md5: 'm', sha256: 'not-the-sha-of-the-rebuilt-video', verified: true, savedAt: 'x',
+      }));
+      assert(driveOffload.isOffloaded('fixtures', 'a-lesson') === false, 'a rebuilt video on the volume still reads as offloaded');
+
+      const meta = await videoMetaMod.capture(mp4);
+      let uploadedName = null;
+      const trashed = [];
+      gdrive.uploadFile = async (o) => { uploadedName = o.name; return { fileId: 'new-file', name: o.name, bytes: meta.bytes, md5: meta.md5, webViewLink: 'u2' }; };
+      gdrive.trashFile = async (id) => { trashed.push(id); return { fileId: id, trashed: true }; };
+
+      delete process.env.GDRIVE_TRASH_SUPERSEDED;
+      let res = await driveOffload.offload({ series: 'fixtures', slug: 'a-lesson' });
+      assert(res.ok && !res.alreadyOffloaded, `not uploaded again: ${JSON.stringify(res)}`);
+      assert(uploadedName === 'fixtures__a-lesson_final.r2.mp4', `named ${uploadedName}`);
+      const rec = JSON.parse(fs.readFileSync(path.join(dest, 'drive.json'), 'utf8'));
+      assert(rec.driveFileId === 'new-file' && rec.sha256 === meta.sha256, 'the record does not name the new file');
+      assert(rec.supersedes === 'old-file', 'the record forgot which file it replaced');
+      assert(trashed.length === 0, 'the previous copy was trashed without GDRIVE_TRASH_SUPERSEDED');
+      assert(driveOffload.isOffloaded('fixtures', 'a-lesson') === true || !fs.existsSync(mp4), 'after a verified upload the lesson should read as offloaded');
+
+      // Same again with trashing allowed.
+      fs.writeFileSync(mp4, 'THE REBUILT VIDEO, ROUND THREE');
+      queue.setStatus('fixtures/a-lesson', 'queued', { videoRedoRound: 3 });
+      const meta3 = await videoMetaMod.capture(mp4);
+      gdrive.uploadFile = async (o) => { uploadedName = o.name; return { fileId: 'file-3', name: o.name, bytes: meta3.bytes, md5: meta3.md5, webViewLink: 'u3' }; };
+      process.env.GDRIVE_TRASH_SUPERSEDED = '1';
+      res = await driveOffload.offload({ series: 'fixtures', slug: 'a-lesson' });
+      assert(res.ok && uploadedName === 'fixtures__a-lesson_final.r3.mp4', `round 3: ${uploadedName} ${JSON.stringify(res)}`);
+      assert(trashed.length === 1 && trashed[0] === 'new-file', `trashed ${JSON.stringify(trashed)}, expected the round-2 file`);
+      return 'content-aware, .r2/.r3 names, supersedes recorded, trash gated';
+    } finally {
+      gdrive.uploadFile = saved.up; gdrive.isConfigured = saved.conf; gdrive.folderId = saved.fid; gdrive.trashFile = saved.trash;
+      if (saved.env === undefined) delete process.env.GDRIVE_TRASH_SUPERSEDED; else process.env.GDRIVE_TRASH_SUPERSEDED = saved.env;
+    }
+  });
+
+  // The two scripts that need Chrome or Gemini to run are held to their source.
+  check('compile-lesson.js takes --range/--out for a partial render and forces keyframes at beat starts', () => {
+    const src = fs.readFileSync(path.join(T, 'compile-lesson.js'), 'utf8');
+    assert(/--range/.test(src) && /--out/.test(src), 'no --range/--out option');
+    assert(/frames[/\\]?.*range|range_\$\{/.test(src) || /rangeFrames/.test(src), 'a range render does not use its own frames dir');
+    assert(/force_key_frames/.test(src), 'no -force_key_frames at beat starts');
+    return '--range a:b --out, keyframes at beat starts';
+  });
+
+  check('tts-lesson.js pins unflagged takes through tts-plan and skips their ffmpeg pass', () => {
+    const src = fs.readFileSync(path.join(T, 'tts-lesson.js'), 'utf8');
+    assert(/require\('\.\/lib\/tts-plan'\)/.test(src), 'tts-lesson does not use tts-plan');
+    assert(/pinned/.test(src), 'no pinning');
+    const pinAt = src.indexOf('.pinned');
+    const ffAt = src.indexOf("ff(['-y', '-i', rawPath");
+    assert(pinAt !== -1 && ffAt !== -1 && pinAt < ffAt, 'the pin check does not come before the ffmpeg pass');
+    return 'plan() consulted, pinned beats skip atempo/loudnorm';
+  });
+
+  check('stitch-brand.js reuses rendered bumpers on request', () => {
+    const src = fs.readFileSync(path.join(T, 'stitch-brand.js'), 'utf8');
+    assert(/--reuse-bumpers/.test(src), 'no --reuse-bumpers flag');
+    const flagAt = src.indexOf('--reuse-bumpers');
+    const renderAt = src.indexOf('render-bumpers.js');
+    assert(flagAt !== -1 && renderAt !== -1 && flagAt < renderAt, 'the reuse check does not guard the bumper render');
+    return 'intro/outro kept when present';
+  });
+}
+
 async function motionProduceChecks() {
   console.log('\n-- motion-graphics produce (segment-all with no art) --');
   const os = require('os');
@@ -6410,6 +6660,7 @@ async function motionProduceChecks() {
   await residueChecks();
   await videoRedoChecks();
   await redoBuildChecks();
+  await redoRenderChecks();
   styleChecks();
   await motionProduceChecks();
 

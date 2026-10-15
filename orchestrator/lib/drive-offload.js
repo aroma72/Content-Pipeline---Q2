@@ -104,10 +104,32 @@ function driveRecord(series, slug) {
   try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; }
 }
 
-/** True once the bytes are on Drive, whatever is or is not still on disk. */
+/**
+ * True once THESE bytes are on Drive, whatever is or is not still on disk.
+ *
+ * Content-aware since 1.3: a scene redo writes a new _final.mp4 to the volume
+ * while drive.json still describes the previous one. Judged by the record alone
+ * this read as "already on Drive" and the rebuilt video was never uploaded --
+ * the reviewer kept watching the old one. If a volume copy exists and its
+ * sha256 differs from the record's, it is a new file.
+ */
 function isOffloaded(series, slug) {
   const r = driveRecord(series, slug);
-  return Boolean(r && r.saved2drive && r.driveFileId);
+  if (!(r && r.saved2drive && r.driveFileId)) return false;
+  const held = deliverables.find(series, slug);
+  if (held && held.file && r.sha256) {
+    const sha = deliverables.fileSha256(held.file);
+    if (sha && sha !== r.sha256) return false;
+  }
+  return true;
+}
+
+/** The lesson's redo round from the queue, or 0 -- so a rebuilt file gets its own name. */
+function redoRoundOf(series, slug) {
+  try {
+    const item = require('./queue').get(`${series}/${slug}`);
+    return (item && Number(item.videoRedoRound)) || 0;
+  } catch { return 0; }
 }
 
 /**
@@ -236,7 +258,12 @@ async function offload({
   }
 
   // --- 2. upload --------------------------------------------------------------
-  const driveName = `${series}__${path.basename(source)}`;
+  // A redo's file carries its round, so two versions never share a name and the
+  // record can say which one it points at.
+  const round = redoRoundOf(series, slug);
+  const base = round ? path.basename(source).replace(/\.mp4$/i, `.r${round}.mp4`) : path.basename(source);
+  const driveName = `${series}__${base}`;
+  const previous = driveRecord(series, slug);
   let up;
   try {
     up = await gdrive.uploadFile({ filePath: source, name: driveName, log });
@@ -276,6 +303,10 @@ async function offload({
     savedAt: new Date().toISOString(),
     series,
     slug,
+    ...(round ? { round } : {}),
+    // The file this one replaced (a scene redo), so it can be trashed once this
+    // one is proven -- and so nobody has to guess which of two is current.
+    supersedes: previous && previous.driveFileId && previous.driveFileId !== up.fileId ? previous.driveFileId : null,
   };
   try {
     fs.writeFileSync(path.join(dest, 'drive.json'), JSON.stringify(record, null, 2));
@@ -298,6 +329,17 @@ async function offload({
   // The queue is the record the LMS polls, so the flag has to reach it -- from
   // here, the one place that knows the upload verified, whoever the caller is.
   flagQueue(series, slug, record, log);
+
+  // The superseded copy: only now, only when asked (GDRIVE_TRASH_SUPERSEDED=1),
+  // and only to the trash. The default keeps every reviewed version.
+  if (record.supersedes && /^(1|true)$/i.test(String(process.env.GDRIVE_TRASH_SUPERSEDED || ''))) {
+    try {
+      await gdrive.trashFile(record.supersedes);
+      log(`trashed the superseded copy ${record.supersedes}`);
+    } catch (e) {
+      log(`superseded copy ${record.supersedes} not trashed (${e.message}) -- harmless, it is a spare`);
+    }
+  }
 
   // --- 5. reclaim -------------------------------------------------------------
   let freed = 0;

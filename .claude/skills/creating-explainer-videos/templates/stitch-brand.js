@@ -43,10 +43,17 @@ fs.mkdirSync(workDir, { recursive: true });
 const intro = path.join(workDir, 'intro.mp4');
 const outro = path.join(workDir, 'outro.mp4');
 
-console.log(`[brand] rendering bumpers via ${brandDir} (title="${title}") …`);
-execFileSync(process.execPath, [path.join(brandDir, 'render-bumpers.js'),
-  '--title', title, '--intro', intro, '--outro', outro],
-  { stdio: 'inherit', env: { ...process.env, LESSON_TITLE: title } });
+// --reuse-bumpers (contract 1.3 scene redo): the title has not changed, so the
+// two Chrome renders are skipped when both files are already here.
+const reuseBumpers = process.argv.includes('--reuse-bumpers') && fs.existsSync(intro) && fs.existsSync(outro);
+if (reuseBumpers) {
+  console.log('[brand] reusing the rendered bumpers (--reuse-bumpers)');
+} else {
+  console.log(`[brand] rendering bumpers via ${brandDir} (title="${title}") …`);
+  execFileSync(process.execPath, [path.join(brandDir, 'render-bumpers.js'),
+    '--title', title, '--intro', intro, '--outro', outro],
+    { stdio: 'inherit', env: { ...process.env, LESSON_TITLE: title } });
+}
 
 for (const f of [intro, outro]) {
   if (!fs.existsSync(f)) { console.error(`[brand] bumper missing: ${f}`); process.exit(1); }

@@ -13,6 +13,16 @@
  *   SAMPLE_IDS=03,05 node compile-lesson.js --sample
  *                                     spot-check: early/mid/late frame WITHIN
  *                                     each named beat -> preview-lesson/
+ *   node compile-lesson.js --range 75:165 --out out/seg_75_165.mp4
+ *                                     PARTIAL render (contract 1.3 scene redo):
+ *                                     frames [75,165) of the timeline, video
+ *                                     only, into its own file. splice-lesson.js
+ *                                     puts it back into the bare render; the
+ *                                     page is driven by absolute ms, so a beat
+ *                                     renders identically on its own.
+ *
+ * Every encode forces a keyframe at each beat start, so a later splice can
+ * stream-copy unchanged beats bit for bit instead of re-encoding them.
  */
 const fs = require('fs');
 const path = require('path');
@@ -66,8 +76,15 @@ for (const b of beats) {
 
 const isSample = process.argv.includes('--sample');
 const reuse = process.argv.includes('--reuse');
+const argAfter = (flag) => { const i = process.argv.indexOf(flag); return i !== -1 ? process.argv[i + 1] : null; };
+// --range a:b (frames, [a,b) in the whole timeline) with --out <mp4>: a partial render.
+const rangeArg = argAfter('--range');
+const outArg = argAfter('--out');
 const framesDir = path.join(CWD, 'frames', NAME);
 const previewDir = path.join(CWD, 'preview-lesson');
+// A keyframe at every beat start, on every encode: beat boundaries are hard
+// cuts, and a keyframe there is what lets a splice keep unchanged beats exactly.
+const keyframeTimes = beats.map((b) => starts[b.id].toFixed(3)).join(',');
 
 function rmrf(p) { fs.rmSync(p, { recursive: true, force: true }); }
 
@@ -219,6 +236,53 @@ async function renderFull() {
   console.log(`[compile] all ${written} frames verified present`);
 }
 
+/**
+ * Render frames [a, b) of the timeline into their own file, video only.
+ * Same page, same seekTo(ms), same encoder settings as the full render -- the
+ * only difference is which frames are asked for and where they land.
+ */
+async function renderRange(a, b, outPath) {
+  const totalFrames = Math.round(total * FPS);
+  if (!(Number.isInteger(a) && Number.isInteger(b) && a >= 0 && b > a && b <= totalFrames)) {
+    throw new Error(`--range ${a}:${b} is outside this lesson's ${totalFrames} frames`);
+  }
+  const rangeFrames = path.join(CWD, 'frames', `range_${a}_${b}`);
+  rmrf(rangeFrames);
+  fs.mkdirSync(rangeFrames, { recursive: true });
+  const count = b - a;
+  console.log(`[compile] RANGE ${a}:${b} (${count} frames, ${(count / FPS).toFixed(2)}s of ${total.toFixed(1)}s) -> ${rangeFrames}`);
+  const os = require('os');
+  const gb = os.totalmem() / 1073741824;
+  const byMemory = Math.max(1, Math.floor(gb / 1.2));
+  const WORKERS = Math.max(1, Math.min(parseInt(process.env.RENDER_WORKERS || '6', 10), os.cpus().length - 2, byMemory, count));
+  let done = 0;
+  const stripe = async (w) => {
+    const { browser, page } = await openPage(w);
+    try {
+      for (let f = a + w; f < b; f += WORKERS) {
+        await page.evaluate((t) => window.seekTo(t), (f / FPS) * 1000);
+        await page.screenshot({ path: path.join(rangeFrames, `f_${String(f - a).padStart(6, '0')}.png`) });
+        if ((++done) % 60 === 0) process.stdout.write(`\r[compile] frame ${done}/${count}`);
+      }
+    } finally { await browser.close(); }
+  };
+  const results = await Promise.allSettled(Array.from({ length: WORKERS }, (_, w) => stripe(w)));
+  const failure = results.find((r) => r.status === 'rejected');
+  if (failure) throw explain(failure.reason);
+  const written = fs.readdirSync(rangeFrames).filter((f) => f.endsWith('.png')).length;
+  if (written !== count) throw new Error(`range render incomplete: ${written}/${count} frames`);
+  const out = path.resolve(CWD, outPath);
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  console.log(`\n[compile] encoding range -> ${outPath} (video only)`);
+  execFileSync(ffmpeg, ['-y',
+    '-framerate', String(FPS), '-i', path.join(rangeFrames, 'f_%06d.png'),
+    '-c:v', 'libx264', '-preset', 'medium', '-crf', '18', '-pix_fmt', 'yuv420p',
+    '-r', String(FPS), '-s', `${W}x${H}`,
+    out], { stdio: ['ignore', 'ignore', 'inherit'] });
+  rmrf(rangeFrames);
+  console.log(`[compile] range ${a}:${b} -> ${outPath}`);
+}
+
 async function renderSample() {
   const ids = (process.env.SAMPLE_IDS || beats.slice(0, 2).map(b => b.id).join(',')).split(',').map(s => s.trim());
   rmrf(previewDir); fs.mkdirSync(previewDir, { recursive: true });
@@ -250,6 +314,7 @@ function encode() {
     '-i', audio,
     '-c:v', 'libx264', '-preset', 'medium', '-crf', '18', '-pix_fmt', 'yuv420p',
     '-r', String(FPS), '-s', `${W}x${H}`,
+    '-force_key_frames', keyframeTimes,
     '-c:a', 'aac', '-b:a', '192k', '-ar', '48000',
     '-shortest', outMp4], { stdio: ['ignore', 'ignore', 'inherit'] });
   console.log(`\n[compile] BARE lesson -> out/${NAME}.mp4  (NOT the deliverable — run stitch-brand.js)`);
@@ -261,6 +326,13 @@ function encode() {
 // "#<ErrorEvent>"' with no indication of what was wrong or where.
 (async () => {
   if (isSample) { await renderSample(); return; }
+  if (rangeArg) {
+    const m = String(rangeArg).match(/^(\d+):(\d+)$/);
+    if (!m) throw new Error(`--range wants a:b in frames, got '${rangeArg}'`);
+    if (!outArg) throw new Error('--range needs --out <mp4>');
+    await renderRange(Number(m[1]), Number(m[2]), outArg);
+    return;
+  }
   await renderFull();
   encode();
   // The mp4 is written; the frame PNGs are only an intermediate. Kept with --reuse

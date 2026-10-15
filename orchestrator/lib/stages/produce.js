@@ -507,6 +507,40 @@ function copyTemplates(src, dest, log, { refresh = false } = {}) {
 }
 
 /**
+ * The splice plan for a scene redo, or null when no exact plan exists.
+ *
+ * Old timing comes from the residue manifest (what the reviewed render was cut
+ * to); new timing from durations.json after tts-lesson pinned the unflagged
+ * takes. Anything that is not exact -- a changed order, an unflagged beat whose
+ * length moved, no manifest -- is a null here and a whole render upstream.
+ */
+function redoSplicePlan({ dir, item, beats, flagged, log = () => {} }) {
+  let manifest = null;
+  try { manifest = require('../residue').manifest(item.series, item.slug); } catch { manifest = null; }
+  if (!manifest || !manifest.durations || !Array.isArray(manifest.beatOrder)) {
+    log('scene redo: no residue manifest with the previous timing');
+    return null;
+  }
+  let newDurations;
+  try { newDurations = JSON.parse(fs.readFileSync(path.join(dir, 'durations.json'), 'utf8')); } catch {
+    log('scene redo: no durations.json for the new timing');
+    return null;
+  }
+  const { renderable } = require(path.join(PATHS.videoTemplates, 'lib', 'beats-util'));
+  const { splicePlan } = require(path.join(PATHS.videoTemplates, 'lib', 'splice-plan'));
+  const newOrder = renderable(beats || []).map((b) => String(b.id));
+  const plan = splicePlan({
+    oldOrder: manifest.beatOrder.map(String), oldDurations: manifest.durations,
+    newOrder, newDurations, flaggedIds: (flagged || []).map(String), fps: 30,
+  });
+  if (!plan.ok) {
+    log(`scene redo: no exact splice possible (${plan.why})`);
+    return null;
+  }
+  return plan;
+}
+
+/**
  * Does the post-render text check have anything new to look at?
  *
  * Only when the script bytes differ from what the pre-spend sensors judged. An
@@ -1141,13 +1175,48 @@ module.exports = Object.assign(module.exports, {
     const bare = path.join('out', 'lesson.mp4');
     const barePath = path.join(dir, bare);
 
+    // A scene redo (contract 1.3): render ONLY the flagged seconds and splice
+    // them into the bare render that was reviewed. Needs the residue manifest
+    // (old timing), the old out/lesson.mp4 (restored from the residue), and a
+    // script whose order did not change -- splice-plan refuses anything less
+    // exact, and then the whole lesson renders as before. Templates are
+    // refreshed first: this folder was scaffolded by an older set, and the old
+    // compile-lesson.js has no --range.
+    const redo = opts.videoRedo || null;
+    let spliced = false;
+    if (redo) {
+      copyTemplates(PATHS.videoTemplates, dir, log, { refresh: true });
+      const plan = fs.existsSync(barePath)
+        ? redoSplicePlan({ dir, item, beats: beatsForArt, flagged: redo.beats || [], log })
+        : (log('scene redo: no previous bare render to splice into'), null);
+      if (plan) {
+        const segmentFiles = {};
+        for (const r of plan.ranges) {
+          const seg = path.join('out', `seg_${r.startFrame}_${r.endFrame}.mp4`);
+          log(`rendering scene(s) ${r.ids.join(', ')}: frames ${r.startFrame}-${r.endFrame}`);
+          await run('node', ['compile-lesson.js', '--range', `${r.startFrame}:${r.endFrame}`, '--out', seg],
+            { timeoutMs: 90 * 60 * 1000 });
+          segmentFiles[`${r.startFrame}_${r.endFrame}`] = seg;
+        }
+        const planFile = path.join('out', 'splice-plan.json');
+        fs.mkdirSync(path.join(dir, 'out'), { recursive: true });
+        fs.writeFileSync(path.join(dir, planFile), JSON.stringify({ ...plan, segmentFiles }, null, 2));
+        log(`splicing ${plan.ranges.length} new run(s) into the previous render`);
+        await run('node', ['splice-lesson.js', '--plan', planFile], { timeoutMs: 30 * 60 * 1000 });
+        spliced = true;
+      }
+    }
+
     // The render is the single most expensive step (~1h for a 75s lesson), so
     // skip it when the existing mp4 is newer than every input that feeds it.
     // Same reasoning as not re-buying art: a retry after a later step failed
     // should not redo an hour of work that is already correct.
-    if (!opts.dryRun && fs.existsSync(barePath) && isFresherThanInputs(barePath, dir)) {
+    if (spliced) {
+      /* the bare render was just rebuilt from its parts */
+    } else if (!opts.dryRun && fs.existsSync(barePath) && isFresherThanInputs(barePath, dir)) {
       log(`compile skipped -- ${bare} is newer than beats.js, art/ and audio/`);
     } else {
+      if (redo) log('scene redo: rendering the whole lesson (no exact splice was possible)');
       // compile-lesson.js wipes frames unless --reuse (LAW 3) -- a stale frame
       // cache once made edits silently not appear, so never --reuse here.
       log('compiling lesson');
@@ -1201,6 +1270,8 @@ module.exports = Object.assign(module.exports, {
       log('wrapping in brand bumpers');
       await run('node', [
         'stitch-brand.js', '--title', title, '--lesson', bare, '--out', final,
+        // The title is unchanged on a redo; the two Chrome renders are not.
+        ...(redo ? ['--reuse-bumpers'] : []),
       ], { timeoutMs: 30 * 60 * 1000 });
     }
 
