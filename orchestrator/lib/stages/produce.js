@@ -595,6 +595,9 @@ module.exports = Object.assign(module.exports, {
       env: { ...process.env, ...styleEnv, CHECKPOINT_HANDOFF: 'api', PYTHONIOENCODING: 'utf-8' },
       dryRun: opts.dryRun,
       onLine: (line) => log(line.slice(0, 160)),
+      // A cancel (contract 1.3) kills whatever child is running: art, voice, a
+      // clip, or an hour of Chrome. Everything here is restartable.
+      signal: opts.abortSignal || null,
       ...extra,
     });
 

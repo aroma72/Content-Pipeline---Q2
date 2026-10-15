@@ -999,6 +999,113 @@ async function lessonFileChecks() {
       return 'empty refused, notes accepted, the cost stated';
     }, { scriptGate: true }));
 
+  // ── contract 1.3: redo one scene, cancel one lesson ─────────────────────────
+  const withRedoFlag = async (fn) => {
+    const prev = process.env.COURSE_VIDEO_REDO;
+    process.env.COURSE_VIDEO_REDO = '1';
+    try { return await fn(); } finally {
+      if (prev === undefined) delete process.env.COURSE_VIDEO_REDO; else process.env.COURSE_VIDEO_REDO = prev;
+    }
+  };
+  /** The fixture's residue: enough for isAvailable() to say the volume has it. */
+  const withResidue = () => {
+    const deliverables = require(path.join(__dirname, 'lib', 'deliverables'));
+    const dest = deliverables.dirFor('fixtures', 'a-lesson-that-blocked');
+    fs.writeFileSync(path.join(dest, 'residue.tar'), Buffer.alloc(512, 0));
+    fs.writeFileSync(path.join(dest, 'residue.json'), JSON.stringify({
+      series: 'fixtures', slug: 'a-lesson-that-blocked', round: 0, files: [{ path: 'beats.js', bytes: 1, sha256: 'x' }],
+      tarBytes: 512, tarMd5: 'y', durations: { '01': 2.5 }, drive: null,
+    }));
+  };
+
+  await check('video/revise is off by default, and says which switch turns it on', () =>
+    withCourse(async (port) => {
+      const r = await req(port, { method: 'POST', headers: auth,
+        path: `/api/v1/courses/${COURSE}/lessons/${LESSON}/video/revise`,
+        body: { by: 'aroma', why: 'the shop is a bank', beats: ['01'] } });
+      assert(r.status === 409 && r.json.error === 'cannot_revise_video' && r.json.reason === 'not_enabled',
+        `flag off: ${r.status} ${r.text}`);
+      assert(/COURSE_VIDEO_REDO/.test(r.json.message), 'the refusal does not name the switch');
+      return '409 not_enabled, names COURSE_VIDEO_REDO';
+    }, { withMp4: true, blockedBy: 'review' }));
+
+  await check('video/revise needs notes and a scene, refuses a scene that is not in the script, and says why', () =>
+    withRedoFlag(() => withCourse(async (port) => {
+      withResidue();
+      const p = `/api/v1/courses/${COURSE}/lessons/${LESSON}/video/revise`;
+      let r = await req(port, { method: 'POST', headers: auth, path: p, body: { by: 'aroma', beats: ['01'] } });
+      assert(r.status === 409 && r.json.reason === 'no_notes', `no notes: ${r.status} ${r.text}`);
+      r = await req(port, { method: 'POST', headers: auth, path: p, body: { by: 'aroma', why: 'wrong' } });
+      assert(r.status === 409 && r.json.reason === 'no_beats', `no beats: ${r.status} ${r.text}`);
+      r = await req(port, { method: 'POST', headers: auth, path: p, body: { by: 'aroma', why: 'wrong', beats: ['42'] } });
+      assert(r.status === 409 && r.json.reason === 'unknown_beat', `unknown beat: ${r.status} ${r.text}`);
+      r = await req(port, { method: 'POST', headers: auth, path: `/api/v1/courses/course-other/lessons/${LESSON}/video/revise`,
+        body: { by: 'aroma', why: 'wrong', beats: ['01'] } });
+      assert(r.status === 404, `another course's lesson: ${r.status} ${r.text}`);
+      return 'no_notes, no_beats, unknown_beat, 404 across courses';
+    }, { withMp4: true, blockedBy: 'review' })));
+
+  await check('video/revise with a scene id and a span is accepted, says what it reserved, and the course view shows the redo', () =>
+    withRedoFlag(() => withCourse(async (port) => {
+      withResidue();
+      const r = await req(port, { method: 'POST', headers: auth,
+        path: `/api/v1/courses/${COURSE}/lessons/${LESSON}/video/revise`,
+        body: { by: 'aroma', why: 'the shop is a bank', beats: ['01'], spans: [{ fromSec: 3.0, toSec: 3.5 }] } });
+      assert(r.status === 202, `refused: ${r.status} ${r.text}`);
+      assert(r.json.round === 1 && typeof r.json.redosLeft === 'number', `round/left: ${r.text}`);
+      assert(JSON.stringify(r.json.beats) === '["01"]', `beats: ${JSON.stringify(r.json.beats)}`);
+      assert(Array.isArray(r.json.mappedFromSpans) && r.json.mappedFromSpans[0].beats.includes('01'), 'the span was not mapped to beat 01');
+      assert(/course does not stop/i.test(r.json.note), 'the note does not say the course continues');
+      const view = await req(port, { path: `/api/v1/courses/${COURSE}`, headers: auth });
+      const item = view.json.items.find((i) => i.id === LESSON);
+      assert(item.redoRound === 1 && JSON.stringify(item.redoBeats) === '["01"]' && /bank/.test(item.redoWhy),
+        `course view lacks the redo: ${JSON.stringify(item)}`);
+      return `202, round 1, ${r.json.redosLeft} left, view shows redoRound/redoBeats/redoWhy`;
+    }, { withMp4: true, blockedBy: 'review' })));
+
+  await check('the course view tells a reviewer whether a redo is even possible (residueAvailable, redosLeft)', () =>
+    withCourse(async (port) => {
+      let view = await req(port, { path: `/api/v1/courses/${COURSE}`, headers: auth });
+      let item = view.json.items.find((i) => i.id === LESSON);
+      assert(item.residueAvailable === false && typeof item.redosLeft === 'number' && item.redosLeft > 0,
+        `before residue: ${JSON.stringify({ residueAvailable: item.residueAvailable, redosLeft: item.redosLeft })}`);
+      withResidue();
+      view = await req(port, { path: `/api/v1/courses/${COURSE}`, headers: auth });
+      item = view.json.items.find((i) => i.id === LESSON);
+      assert(item.residueAvailable === true, 'residue on the volume is not reported');
+      return 'false then true; redosLeft reported';
+    }, { withMp4: true, blockedBy: 'review' }));
+
+  await check('cancel drops one blocked lesson, the view says cancelled, and a second cancel is idempotent', () =>
+    withCourse(async (port) => {
+      const p = `/api/v1/courses/${COURSE}/lessons/${LESSON}/cancel`;
+      let r = await req(port, { method: 'POST', headers: auth, path: p, body: { by: 'aroma', why: 'not needed' } });
+      assert(r.status === 202 && r.json.cancelled === LESSON && r.json.aborting === false, `cancel: ${r.status} ${r.text}`);
+      assert(/nothing else in the course is touched/i.test(r.json.note), 'the note does not say siblings are safe');
+      const view = await req(port, { path: `/api/v1/courses/${COURSE}`, headers: auth });
+      const item = view.json.items.find((i) => i.id === LESSON);
+      assert(item.status === 'failed' && item.cancelled === true && item.cancelledBy === 'aroma' && item.skipped === true,
+        `view after cancel: ${JSON.stringify(item)}`);
+      assert(view.json.worker.held === null, 'a cancelled lesson still holds its course');
+      r = await req(port, { method: 'POST', headers: auth, path: p, body: { by: 'aroma' } });
+      assert(r.status === 200 && r.json.alreadyFailed === true, `second cancel: ${r.status} ${r.text}`);
+      r = await req(port, { method: 'POST', headers: auth, path: `/api/v1/courses/course-other/lessons/${LESSON}/cancel`, body: { by: 'aroma' } });
+      assert(r.status === 404, `another course's lesson: ${r.status} ${r.text}`);
+      return '202, view cancelled + skipped, hold lifted, 200 on repeat, 404 across courses';
+    }, { withMp4: true, blockedBy: 'review' }));
+
+  await check('the index publishes both 1.3 routes and the redo facts', () =>
+    withCourse(async (port) => {
+      const r = await req(port, { path: '/api/v1' });
+      const paths = (r.json.endpoints || []).map((e) => `${e.method} ${e.path}`);
+      assert(paths.includes('POST /api/v1/courses/:courseId/lessons/:lessonId/video/revise'), 'video/revise not listed');
+      assert(paths.includes('POST /api/v1/courses/:courseId/lessons/:lessonId/cancel'), 'cancel not listed');
+      assert(r.json.contractVersion === '1.3', `contractVersion ${r.json.contractVersion}`);
+      assert(r.json.videoRedo && typeof r.json.videoRedo.enabled === 'boolean' && r.json.videoRedo.maxRounds >= 1
+        && r.json.videoRedo.reserveUsd > 0, `videoRedo block: ${JSON.stringify(r.json.videoRedo)}`);
+      return `1.3, videoRedo ${JSON.stringify(r.json.videoRedo)}`;
+    }));
+
   await check('the course view says a script is ready to read without a fetch', () =>
     withCourse(async (port) => {
       const r = await req(port, { path: `/api/v1/courses/${COURSE}`, headers: auth });

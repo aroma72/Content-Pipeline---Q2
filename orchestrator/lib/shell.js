@@ -111,6 +111,10 @@ function run(cmd, args, opts = {}) {
     onLine = null,
     dryRun = false,
     input = null,                 // written to the child's stdin, which is then closed
+    // An AbortSignal (contract 1.3 cancel). On abort the child gets SIGTERM, then
+    // SIGKILL five seconds later, and the promise rejects with `aborted: true` so
+    // a stage can tell "stopped on purpose" from "crashed" and not retry it.
+    signal = null,
   } = opts;
 
   const full = `${cmd} ${args.join(' ')}`;
@@ -149,6 +153,13 @@ function run(cmd, args, opts = {}) {
   // health-check scheduler dead for three months; quote the path.
   const spawnTarget = isBatch ? `"${exe}"` : exe;
 
+  if (signal && signal.aborted) {
+    const err = new CommandError(`Cancelled before it started: ${printable}`,
+      { code: null, stdout: '', stderr: '', cmd: printable });
+    err.aborted = true;
+    return Promise.reject(err);
+  }
+
   return new Promise((resolve, reject) => {
     const child = spawn(spawnTarget, args, {
       cwd,
@@ -175,6 +186,15 @@ function run(cmd, args, opts = {}) {
       child.kill('SIGKILL');
     }, timeoutMs);
 
+    let aborted = false;
+    const onAbort = () => {
+      aborted = true;
+      try { child.kill('SIGTERM'); } catch { /* already gone */ }
+      const hard = setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* gone */ } }, 5000);
+      if (hard.unref) hard.unref();
+    };
+    if (signal) signal.addEventListener('abort', onAbort, { once: true });
+
     // One decoder per stream. `buf.toString()` decoded each chunk on its own, so a
     // multi-byte character split across two chunks (an em dash is three bytes) came
     // out as replacement characters -- in error text the LMS shows instructors verbatim.
@@ -199,8 +219,14 @@ function run(cmd, args, opts = {}) {
 
     child.on('close', (code) => {
       clearTimeout(timer);
+      if (signal) signal.removeEventListener('abort', onAbort);
       feed(decoders.out.end(), 'out');
       feed(decoders.err.end(), 'err');
+      if (aborted) {
+        const err = new CommandError(`Cancelled: ${printable}`, { code: null, stdout, stderr, cmd: printable });
+        err.aborted = true;
+        return reject(err);
+      }
       if (timedOut) {
         return reject(new CommandError(
           `Timed out after ${timeoutMs}ms: ${printable}`,

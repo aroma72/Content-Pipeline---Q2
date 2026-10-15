@@ -187,6 +187,8 @@ async function executeStages(item, opts = {}) {
     scriptApproved = null,   // a person read the script and said it may be spent on
     scriptApprovedSha = null, // ...and this is the script they read
     reviewedVideo = null,    // { sha256, bytes, runId } of the file that person watched
+    abortSignal = null,      // contract 1.3 cancel: stop between stages, kill the child in flight
+    videoRedo = null,        // contract 1.3 redo: { round, why, beats } -- scopes the script patch
   } = opts;
 
   const stages = loadStages(stageOverrides);
@@ -236,6 +238,19 @@ async function executeStages(item, opts = {}) {
     if (idx < skipUntil) {
       log(name, 'skipped (--from)');
       continue;
+    }
+
+    // A person cancelled this lesson (contract 1.3). Checked here, between stages,
+    // for the same reason as the time ceiling below; a paid child in flight is
+    // also killed by shell.run through the same signal, and its stage's retry
+    // loop does not retry a cancelled command.
+    if (abortSignal && abortSignal.aborted) {
+      const why = abortReason(abortSignal);
+      state.recordIntervention(st, { stage: name, kind: 'cancelled', detail: `${why}; stopped before '${name}'.` });
+      log.always(name, `CANCELLED: ${why}`);
+      state.finish(st, state.STATUS.FAILED);
+      settleQueue(log, () => queue.fail(item.id, st.runId, `cancelled: ${why}`, spentSoFar(st)), 'fail', item.id);
+      return st;
     }
 
     // Checked between stages rather than inside one: interrupting a paid call
@@ -314,6 +329,7 @@ async function executeStages(item, opts = {}) {
           opts: {
             dryRun, budgetUsd, reviewApproved, scriptApproved, scriptApprovedSha, reviewedVideo,
             lenient: Boolean(st.lenient),
+            abortSignal, videoRedo,
           },
           log: stageLog,
         });
@@ -323,6 +339,14 @@ async function executeStages(item, opts = {}) {
         break;
       } catch (err) {
         lastErr = err;
+
+        // A command shell.run killed on the cancel signal is not a failure to retry:
+        // the next attempt would be cancelled before it started. Fall out to the
+        // between-stages check above on the next loop, which fails the run as cancelled.
+        if (err && err.aborted === true) {
+          log.always(name, `cancelled mid-stage: ${err.message.split('\n')[0]}`);
+          break;
+        }
 
         // Blocked is terminal for this run -- retrying a missing API spec is pointless.
         if (err instanceof BlockedError) {
@@ -488,6 +512,17 @@ async function executeStages(item, opts = {}) {
     // Rewound: resume at the earlier stage without touching completion logic.
     if (rewound) continue;
 
+    // Cancelled inside a stage: fail now, as the between-stages check would, so
+    // the queue says "cancelled" rather than "<stage> failed after N attempts".
+    if (!succeeded && abortSignal && abortSignal.aborted) {
+      const why = abortReason(abortSignal);
+      state.recordIntervention(st, { stage: name, kind: 'cancelled', detail: `${why}; stopped during '${name}'.` });
+      log.always(name, `CANCELLED: ${why}`);
+      state.finish(st, state.STATUS.FAILED);
+      settleQueue(log, () => queue.fail(item.id, st.runId, `cancelled: ${why}`, spentSoFar(st)), 'fail', item.id);
+      return st;
+    }
+
     if (!succeeded) {
       recordFailure(st, name, lastErr);
       state.finish(st, state.STATUS.FAILED);
@@ -607,6 +642,15 @@ async function execute(item, opts = {}) {
   }
 
   return st;
+}
+
+/** The sentence a cancel carried, or a plain one. */
+function abortReason(signal) {
+  const r = signal && signal.reason;
+  if (!r) return 'cancelled by a person';
+  if (typeof r === 'string') return r;
+  if (r && r.message && r.name !== 'AbortError') return r.message;
+  return 'cancelled by a person';
 }
 
 /** residue.enabled(), but a broken require must not fail a paid run. */

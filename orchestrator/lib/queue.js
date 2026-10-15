@@ -296,6 +296,12 @@ const requeue = (id, extra) => setStatus(id, ITEM_STATUS.QUEUED, {
   scriptApproved: false,
   scriptApprovedSha: null,
   scriptNotes: null,
+  // A redo that failed is retried as a plain build of the current script: the
+  // scoped patch it was asked for either landed (the script changed) or was the
+  // thing that failed. videoRedoRound is NOT cleared -- the cap is per lesson.
+  videoRedo: null,
+  videoRedoBy: null,
+  abortRequested: false,
   error: null,
   reason: null,
   blockedBy: null,

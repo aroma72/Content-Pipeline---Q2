@@ -82,6 +82,21 @@ const config = {
     // starts; settled to the real cost when the lesson ends. $2.50 is what the
     // LMS already authorises per lesson, and above every measured full-cost run.
     courseLessonReserveUsd: num(process.env.PIPELINE_COURSE_LESSON_RESERVE_USD, 2.5),
+    // Contract 1.3 -- "redo one scene" at video review. Off until Content
+    // Automation and the LMS have both deployed it; with it off the route
+    // answers 409 not_enabled and nothing else changes.
+    // A getter, read at call time: the flag is flipped on a running service (and
+    // in tests) and must not be frozen at the moment this module loaded.
+    get videoRedoEnabled() {
+      return process.env.COURSE_VIDEO_REDO === '1' || process.env.COURSE_VIDEO_REDO === 'true';
+    },
+    // What one redo reserves: a couple of images, a voice line, a motion clip at
+    // most, and one small model call. Measured runs put a 2-beat redo at
+    // $0.45-0.65; the first lesson's $2.50 was settled when it blocked at review.
+    courseLessonRedoReserveUsd: num(process.env.PIPELINE_COURSE_LESSON_REDO_RESERVE_USD, 0.75),
+    // Redos per lesson. Separate from the 5 script revisions: a redo re-buys
+    // media and re-renders, so the budget for it is smaller.
+    maxVideoRedos: Math.max(0, Math.floor(num(process.env.PIPELINE_MAX_VIDEO_REDOS, 3))),
     dryRun: process.env.PIPELINE_DRY_RUN === '1',
     // A video costing more than budgetUsd is not refused outright — it stops and
     // asks. Aroma's rule: never exceed the ceiling without explicit permission,

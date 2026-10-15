@@ -126,7 +126,7 @@ function sendJson(req, res, payload) {
 }
 
 /** The course-API contract version. docs/CONTRACT-CHANGELOG.md says what each one added. */
-const CONTRACT_VERSION = '1.2';
+const CONTRACT_VERSION = '1.3';
 
 /**
  * @param {object} [opts]
@@ -292,6 +292,16 @@ function build(opts = {}) {
             + 'durations.json, kept before the frame gate can block. For a lesson that stopped '
             + 'before its render this is the only artefact there is, and it answers what the '
             + 'findings were about without paying for another build.' },
+        { method: 'POST', path: '/api/v1/courses/:courseId/lessons/:lessonId/video/revise', auth: true,
+          description: '1.3. Send a REVIEWED video back for one or more scenes: {why, beats?: ["07"], '
+            + 'spans?: [{fromSec, toSec}] in the file you watched, by}. Only those scenes change '
+            + '(their art, motion, caption or spoken line); everything else is kept frame for frame. '
+            + 'Cents and minutes, not $1.50 and an hour. The course does not stop. The lesson pauses '
+            + 'at review again with a new reviewedSha256. 409 cannot_revise_video carries `reason`.' },
+        { method: 'POST', path: '/api/v1/courses/:courseId/lessons/:lessonId/cancel', auth: true,
+          description: '1.3. Drop ONE lesson at $0 beyond what it already bought. Unlike /reject it '
+            + 'stops nothing else: the lesson is failed with `cancelled`, its hold is lifted, and the '
+            + 'next lesson of the course builds. A build in flight is stopped.' },
         { method: 'GET', path: '/api/v1/deliverables', auth: true,
           description: 'Everything currently held on the volume, with sizes. So the store can be '
             + 'watched rather than discovered full, and so "is it actually there?" is one call. '
@@ -305,6 +315,13 @@ function build(opts = {}) {
       // the day we added a tenth. Adding a value means adding it to BLOCKED_BY in
       // orchestrator/lib/spine-errors.js, which is what this reads.
       blockedBy: require('../../orchestrator/lib/queue').BLOCKED_BY_VALUES,
+      // Contract 1.3: whether a reviewed video can be sent back scene by scene here,
+      // how many times, and what one redo reserves. Served so the LMS shows the
+      // button only where it works.
+      videoRedo: (() => {
+        const p = require('./config').config.pipeline;
+        return { enabled: Boolean(p.videoRedoEnabled), maxRounds: p.maxVideoRedos, reserveUsd: p.courseLessonRedoReserveUsd };
+      })(),
       // The video styles a course can be built in, chosen at the very start of course
       // creation. Same closed-set rule as blockedBy: served, so the LMS can render its
       // picker (label, summary, preview video) from this rather than hard-coding it.
@@ -761,6 +778,24 @@ function build(opts = {}) {
         ...(i.status === 'blocked' && i.reviewedVideo && i.reviewedVideo.sha256
           ? { reviewedSha256: i.reviewedVideo.sha256 } : {}),
         ...(i.status === 'blocked' && i.reviewedVideoLost === true ? { reviewedVideoLost: true } : {}),
+        // Contract 1.3. A lesson that has been sent back scene by scene says so, and
+        // a reviewed one says whether it still CAN be: the paid inputs it was made
+        // from are either kept (`residueAvailable`) or a redo is a full rebuild.
+        ...(Number(i.videoRedoRound) ? {
+          redoRound: Number(i.videoRedoRound),
+          ...(i.videoRedo ? { redoBeats: i.videoRedo.beats || [], redoWhy: i.videoRedo.why || null } : {}),
+        } : {}),
+        ...(i.status === 'blocked' ? (() => {
+          const p = require('./config').config.pipeline;
+          let avail = { volume: false, drive: false };
+          try { avail = require('../../orchestrator/lib/residue').isAvailable(i.series, i.slug); } catch { /* absent */ }
+          return {
+            redosLeft: Math.max(0, p.maxVideoRedos - (Number(i.videoRedoRound) || 0)),
+            residueAvailable: Boolean(avail.volume || avail.drive),
+          };
+        })() : {}),
+        ...(i.status === 'failed' && i.cancelled === true
+          ? { cancelled: true, cancelledBy: i.cancelledBy || null, cancelledAt: i.cancelledAt || null } : {}),
         // Whether GET .../file will actually serve bytes right now.
         //
         // A fact, not an inference. The LMS reasonably read our own documentation
@@ -1061,6 +1096,67 @@ function build(opts = {}) {
       revisionsLeft: r.remaining,
       note: 'Rewriting the script from your notes and re-checking it, then it pauses for you '
         + 'again. This costs a model call, not a render -- no media has been bought.',
+    });
+  });
+
+  /**
+   * Contract 1.3 -- send a REVIEWED video back for one or more scenes. Registered
+   * before /approve for the same greedy-`:lessonId(*)` reason as the script routes.
+   */
+  router.post('/courses/:courseId/lessons/:lessonId(*)/video/revise', requireToken, (req, res) => {
+    const p = require('./config').config.pipeline;
+    if (!p.videoRedoEnabled) {
+      return res.status(409).json({
+        error: 'cannot_revise_video', reason: 'not_enabled',
+        message: 'Scene redo is not switched on here (COURSE_VIDEO_REDO). Approve, or reject.',
+      });
+    }
+    const b = req.body || {};
+    const by = b.by || req.tenant.id;
+    const r = require('./course-worker').reviseVideo(req.params.lessonId, {
+      why: b.why, beats: b.beats, spans: b.spans, by, fullRebuild: b.fullRebuild === true,
+    }, req.params.courseId, req.tenant.id);
+    if (!r.ok) {
+      const status = r.reason === 'tenant_budget_exhausted' ? 402 : r.reason === 'no_such_lesson' ? 404 : 409;
+      const { ok: _ok, why, ...rest } = r;
+      return res.status(status).json({ error: 'cannot_revise_video', message: why, ...rest });
+    }
+    res.status(202).json({
+      revising: req.params.lessonId,
+      by,
+      round: r.round,
+      redosLeft: r.redosLeft,
+      beats: r.beats,
+      mappedFromSpans: r.mappedFromSpans,
+      reservedUsd: r.reservedUsd,
+      note: `Remaking scene(s) ${r.beats.join(', ')} from your notes; every other scene is kept as it was. `
+        + 'Cents of media and a few minutes, then it pauses at review again with a new reviewedSha256. '
+        + 'The course does not stop.',
+    });
+  });
+
+  /** Contract 1.3 -- drop ONE lesson; the course carries on. */
+  router.post('/courses/:courseId/lessons/:lessonId(*)/cancel', requireToken, (req, res) => {
+    const why = (req.body && req.body.why) || '';
+    const by = (req.body && req.body.by) || req.tenant.id;
+    const r = require('./course-worker').cancel(req.params.lessonId, why, by, req.params.courseId, req.tenant.id);
+    if (!r.ok) {
+      const status = r.reason === 'no_such_lesson' ? 404 : 409;
+      return res.status(status).json({ error: 'cannot_cancel', reason: r.reason, message: r.why });
+    }
+    if (r.alreadyFailed) {
+      return res.status(200).json({ cancelled: req.params.lessonId, alreadyFailed: true, by,
+        note: 'That lesson had already failed; it no longer holds its course.' });
+    }
+    res.status(202).json({
+      cancelled: req.params.lessonId,
+      by,
+      aborting: r.aborting,
+      note: r.aborting
+        ? 'The build in flight is being stopped. The lesson will read `failed` with `cancelled` once it has; '
+          + 'it settles at what it bought before the stop. Nothing else in the course is touched.'
+        : 'This lesson is dropped and no longer holds its course; the next lesson builds now. '
+          + 'Nothing else in the course is touched.',
     });
   });
 

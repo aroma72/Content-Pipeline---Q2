@@ -5679,6 +5679,312 @@ async function residueChecks() {
   if (envBefore.folder === undefined) delete process.env.GDRIVE_RESIDUE_FOLDER_ID; else process.env.GDRIVE_RESIDUE_FOLDER_ID = envBefore.folder;
 }
 
+/**
+ * Contract 1.3 -- the third decision at video review.
+ *
+ * At `review` a person could publish a video or reject it, and rejecting stopped
+ * the whole course (1.1 §3). A reviewer who disliked ONE scene had no move that
+ * kept the course alive. These prove the two new verbs and the one mechanism
+ * under them: `video/revise` sends only the flagged beats back (notes + beat ids,
+ * or seconds in the delivered file mapped to beats), takes its own small
+ * reservation and never touches a sibling; `cancel` drops one lesson at $0 and
+ * lifts its hold; and a build in flight can actually be stopped, which neither
+ * reject nor anything else could do before.
+ */
+async function videoRedoChecks() {
+  console.log('');
+  console.log('12c. contract 1.3 -- redo one scene, cancel one lesson, abort a build in flight');
+
+  const osMod = require('os');
+  const jobStore = require(path.join(__dirname, '..', 'server', 'lib', 'job-store'));
+  const queue = require(path.join(__dirname, 'lib', 'queue'));
+  const deliverables = require(path.join(__dirname, 'lib', 'deliverables'));
+  const residue = require(path.join(__dirname, 'lib', 'residue'));
+  const spine = require(path.join(__dirname, 'lib', 'spine'));
+  const shell = require(path.join(__dirname, 'lib', 'shell'));
+  const ledger = require(path.join(__dirname, '..', 'server', 'lib', 'ledger'));
+  const checkpoints = require(path.join(__dirname, '..', 'server', 'lib', 'checkpoints'));
+  const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+
+  const savedExec = spine.execute;
+  const savedAvail = residue.isAvailable;
+  const savedRestore = residue.restore;
+  const savedVid = process.env.EXPLAINER_VIDEOS_DIR;
+  const savedRedo = process.env.COURSE_VIDEO_REDO;
+  process.env.COURSE_VIDEO_REDO = '1';
+
+  let lastSpineOpts = null;
+  let restoreCalls = 0;
+  spine.execute = async (item, opts) => { lastSpineOpts = opts; return { status: 'blocked' }; };
+  residue.isAvailable = () => ({ volume: true, drive: false });
+  residue.restore = async () => { restoreCalls += 1; return { from: 'volume' }; };
+
+  const fresh = () => {
+    const dir = fs.mkdtempSync(path.join(osMod.tmpdir(), 'cq-redo-'));
+    jobStore.reset();
+    queue.resetPathCache();
+    delete process.env.RAILWAY_VOLUME_MOUNT_PATH;
+    process.env.JOB_STORE_DIR = dir;
+    process.env.JOB_STORE_DURABLE = '1';
+    process.env.EXPLAINER_VIDEOS_DIR = fs.mkdtempSync(path.join(osMod.tmpdir(), 'cq-redo-vd-'));
+    lastSpineOpts = null;
+    restoreCalls = 0;
+    return dir;
+  };
+  const store = () => jobStore.shared();
+  const settle = async () => { for (let i = 0; i < 50 && cw.status().running; i++) await new Promise((r) => setTimeout(r, 10)); };
+
+  /** A course lesson with a reservation, a held script (3 beats, one checkpoint) and timings. */
+  function lesson(course, slug, extra = {}) {
+    const r = ledger.reserve(store(), { tenantId: 'lms', jobId: course, usd: 2.5, key: `demo/${slug}`, kind: 'course' });
+    const it = queue.enqueue({
+      topic: slug, series: 'demo', slug, source: 'course-builder',
+      notes: `[${course}] b`, tenantId: 'lms', spendRef: r.ref, ...extra,
+    });
+    const vid = fs.mkdtempSync(path.join(osMod.tmpdir(), 'cq-redo-held-'));
+    fs.writeFileSync(path.join(vid, 'beats.js'),
+      'module.exports=[{id:"01",mode:"ali",vo:"Ali opens the shop.",art:"a shop",cap:"Monday"},'
+      + '{id:"02",mode:"scene",vo:"The bank is closed.",art:"a bank"},'
+      + '{id:"03",mode:"checkpoint",quiz:{stem:"Why?",options:["a","b","c","d"],answer:1,explain:"because"}}];');
+    fs.writeFileSync(path.join(vid, 'durations.json'), '{"01":2.5,"02":3}');
+    fs.writeFileSync(path.join(vid, 'run-context.json'), JSON.stringify({ topic: slug, research: { brief: 'b' }, gate: { verdict: 'READY' }, sha: 'deadbeefdeadbeef' }));
+    deliverables.persist({ series: 'demo', slug, videoDir: vid });
+    return it;
+  }
+  const atReview = (id, blockedBy = 'review') => {
+    queue.block(id, 'run-1', 'awaiting human review', blockedBy);
+    queue.setStatus(id, 'blocked', { reviewedVideo: { sha256: 'abc', finalPath: '/nowhere', runId: 'run-1' }, scriptApproved: 'aroma', scriptApprovedSha: 'deadbeefdeadbeef' });
+  };
+  const rows = (tenant = 'lms') => store().readLedger(tenant, ledger.monthKey());
+
+  check('beatsForSpan maps seconds in the DELIVERED file to renderable beats, through the intro offset', () => {
+    const beats = [{ id: '01' }, { id: '02' }, { id: '03', mode: 'checkpoint', quiz: { stem: 'q' } }];
+    const durations = { '01': 2.5, '02': 3 };
+    const f = (fromSec, toSec) => checkpoints.beatsForSpan({ beats, durations, introSeconds: 2.6, fromSec, toSec });
+    assert(JSON.stringify(f(3.0, 4.0)) === '["01"]', `3.0-4.0 -> ${JSON.stringify(f(3.0, 4.0))}`);
+    assert(JSON.stringify(f(5.2, 5.3)) === '["02"]', `5.2-5.3 -> ${JSON.stringify(f(5.2, 5.3))}`);
+    assert(JSON.stringify(f(2.6, 2.6)) === '["01"]', `a point at the first frame -> ${JSON.stringify(f(2.6, 2.6))}`);
+    assert(JSON.stringify(f(0, 0.5)) === '[]', `inside the intro -> ${JSON.stringify(f(0, 0.5))}`);
+    assert(JSON.stringify(f(4.0, 6.0)) === '["01","02"]', `across a cut -> ${JSON.stringify(f(4.0, 6.0))}`);
+    assert(JSON.stringify(f(20, 30)) === '[]', `past the end -> ${JSON.stringify(f(20, 30))}`);
+    return 'intro-shifted, checkpoint never named';
+  });
+
+  check('video/revise refuses, by reason, everything that is not a reviewed video with notes and real beats', () => {
+    fresh();
+    lesson('course-a', 'r1');
+    const r = (body, id = 'demo/r1') => cw.reviseVideo(id, { by: 'aroma', ...body }, 'course-a', 'lms');
+    let x = r({ why: 'wrong colours', beats: ['01'] });
+    assert(!x.ok && x.reason === 'not_at_review', `queued lesson: ${JSON.stringify(x)}`);
+    atReview('demo/r1');
+    x = r({ why: '   ', beats: ['01'] });
+    assert(!x.ok && x.reason === 'no_notes', `empty notes: ${JSON.stringify(x)}`);
+    x = r({ why: 'wrong colours' });
+    assert(!x.ok && x.reason === 'no_beats', `no beats or spans: ${JSON.stringify(x)}`);
+    x = r({ why: 'wrong colours', beats: ['09'] });
+    assert(!x.ok && x.reason === 'unknown_beat', `unknown beat: ${JSON.stringify(x)}`);
+    x = r({ why: 'wrong colours', beats: ['03'] });
+    assert(!x.ok && x.reason === 'unknown_beat', `a checkpoint beat has nothing to render: ${JSON.stringify(x)}`);
+    x = r({ why: 'wrong colours', spans: [{ fromSec: 0, toSec: 1 }] });
+    assert(!x.ok && x.reason === 'no_beats', `a span inside the intro names nothing: ${JSON.stringify(x)}`);
+    residue.isAvailable = () => ({ volume: false, drive: false });
+    x = r({ why: 'wrong colours', beats: ['01'] });
+    assert(!x.ok && x.reason === 'no_residue', `no residue anywhere: ${JSON.stringify(x)}`);
+    residue.isAvailable = () => ({ volume: true, drive: false });
+    x = cw.reviseVideo('demo/r1', { by: 'aroma', why: 'x', beats: ['01'] }, 'course-b', 'lms');
+    assert(!x.ok && /course/.test(x.why), `another course's lesson: ${JSON.stringify(x)}`);
+    queue.claim('demo/r1', 'run-2');
+    x = r({ why: 'wrong colours', beats: ['01'] });
+    assert(!x.ok && x.reason === 'building', `claimed lesson: ${JSON.stringify(x)}`);
+    queue.done('demo/r1', 'run-2', {}, 0);
+    x = r({ why: 'wrong colours', beats: ['01'] });
+    assert(!x.ok && x.reason === 'already_published', `done lesson: ${JSON.stringify(x)}`);
+    return 'not_at_review, no_notes, no_beats, unknown_beat x2, no_residue, building, already_published';
+  });
+
+  await checkAsync('video/revise takes a fresh small reservation, queues the lesson as a redo, and touches no sibling', async () => {
+    fresh();
+    const a1 = lesson('course-a', 'a1');
+    lesson('course-a', 'a2');
+    atReview('demo/a1');
+    const before = rows().length;
+    const r = cw.reviseVideo('demo/a1', { by: 'aroma', why: 'scene 2 is a bank, not a shop', spans: [{ fromSec: 5.2, toSec: 5.3 }], beats: ['01'] }, 'course-a', 'lms');
+    assert(r.ok, `refused: ${JSON.stringify(r)}`);
+    assert(r.round === 1 && r.redosLeft === 2, `round/left: ${r.round}/${r.redosLeft}`);
+    assert(JSON.stringify(r.beats) === '["01","02"]', `beats = ${JSON.stringify(r.beats)} (span 5.2s is beat 02)`);
+    assert(Number(r.reservedUsd) > 0 && Number(r.reservedUsd) < 2.5, `reserved ${r.reservedUsd} -- a redo must not re-reserve a whole lesson`);
+    // kick() is synchronous up to the first await, so the stubbed worker has
+    // already claimed it: "queued as a redo" is proven by the worker taking it.
+    await settle();
+    const it = queue.get('demo/a1');
+    assert(it.status === 'blocked', `the redo was not built by the worker: status ${it.status}`);
+    assert(it.videoRedo && it.videoRedo.round === 1 && it.videoRedo.why.includes('bank'), 'videoRedo not recorded');
+    assert(JSON.stringify(it.videoRedo.beats) === '["01","02"]', 'videoRedo.beats wrong');
+    assert(it.videoRedo.baseSha256 === 'abc', 'the video being replaced is not named');
+    assert(it.videoRedoRound === 1 && it.videoRedoBy === 'aroma', 'round/by not on the item');
+    assert(it.reviewApproved === false && it.reviewedVideo === null, 'the old review decision survived');
+    assert(it.scriptApproved && it.scriptApprovedSha === null, 'the scoped patch needs scriptApproved kept and the sha cleared, so the stage re-binds it');
+    assert(it.spendRef && it.spendRef !== a1.spendRef, 'spendRef still names the settled reservation');
+    assert(Array.isArray(it.spendRefHistory) && it.spendRefHistory.includes(a1.spendRef), 'the old ref is not kept');
+    const added = rows().slice(before);
+    assert(added.some((e) => e.type === 'reserve' && e.ref === it.spendRef && e.key === 'demo/a1#redo1'), `no redo reservation in the ledger: ${JSON.stringify(added)}`);
+    const a2 = queue.get('demo/a2');
+    assert(a2.status !== 'failed' && !a2.stoppedWithCourse, `the sibling was touched: ${a2.status}`);
+    return 'reserved, built as a redo, sibling untouched';
+  });
+
+  check('video/revise stops at its own cap and at a refused budget', () => {
+    fresh();
+    lesson('course-a', 'c1');
+    atReview('demo/c1');
+    queue.setStatus('demo/c1', 'blocked', { videoRedoRound: 3 });
+    let x = cw.reviseVideo('demo/c1', { by: 'aroma', why: 'again', beats: ['01'] }, 'course-a', 'lms');
+    assert(!x.ok && x.reason === 'redo_cap', `cap: ${JSON.stringify(x)}`);
+    queue.setStatus('demo/c1', 'blocked', { videoRedoRound: 0 });
+    const tenants = require(path.join(__dirname, '..', 'server', 'lib', 'tenants'));
+    const realRegistry = tenants.registry;
+    tenants.registry = () => ({ byId: () => ({ id: 'lms', monthlyUsd: 0.01, maxRunUsd: 4 }) });
+    try {
+      x = cw.reviseVideo('demo/c1', { by: 'aroma', why: 'again', beats: ['01'] }, 'course-a', 'lms');
+    } finally { tenants.registry = realRegistry; }
+    assert(!x.ok && x.reason === 'tenant_budget_exhausted', `budget: ${JSON.stringify(x)}`);
+    assert(queue.get('demo/c1').status === 'blocked', 'a refused redo moved the lesson');
+    return 'redo_cap, tenant_budget_exhausted';
+  });
+
+  await checkAsync('a redo builds from the script stage with the scope, the held research, and the residue restored', async () => {
+    fresh();
+    lesson('course-a', 'd1');
+    atReview('demo/d1');
+    cw.reviseVideo('demo/d1', { by: 'aroma', why: 'make the shop blue', beats: ['01'] }, 'course-a', 'lms');
+    await settle();
+    await cw.drain();
+    assert(lastSpineOpts, 'the spine was never run');
+    assert(lastSpineOpts.fromStage === 'script', `fromStage ${lastSpineOpts.fromStage}`);
+    const seed = lastSpineOpts.seedArtifacts || {};
+    assert(seed.videoRedo && JSON.stringify(seed.videoRedo.beats) === '["01"]', 'videoRedo not seeded');
+    assert(seed.redraftFeedback && seed.redraftFeedback.requestedBy === 'human-video-review'
+      && JSON.stringify(seed.redraftFeedback.scope.ids) === '["01"]' && seed.redraftFeedback.latest[0].includes('blue'),
+      `redraftFeedback: ${JSON.stringify(seed.redraftFeedback)}`);
+    assert(seed.research && seed.research.brief === 'b', 'the held research was not seeded');
+    assert(seed.script && seed.script.beats.length === 3, 'the held script was not seeded');
+    assert(lastSpineOpts.scriptApproved && lastSpineOpts.scriptApprovedSha === null, 'approval/sha not passed as redo expects');
+    assert(lastSpineOpts.videoRedo, 'videoRedo not passed as a spine option');
+    assert(restoreCalls === 1, `residue.restore called ${restoreCalls} time(s)`);
+    assert(typeof lastSpineOpts.abortSignal === 'object' && 'aborted' in lastSpineOpts.abortSignal, 'no abortSignal passed to the spine');
+    return 'script stage, scoped feedback, research + script seeded, residue restored';
+  });
+
+  check('cancel drops only this lesson, at the right ledger outcome for its state, and lifts the hold', () => {
+    fresh();
+    const q = lesson('course-a', 'q1');
+    lesson('course-a', 'q2');
+    // queued: released, nothing was bought
+    let r = cw.cancel('demo/q1', 'not needed', 'aroma', 'course-a', 'lms');
+    assert(r.ok && r.cancelled === 'demo/q1' && r.aborting === false, JSON.stringify(r));
+    let it = queue.get('demo/q1');
+    assert(it.status === 'failed' && it.cancelled === true && it.cancelledBy === 'aroma' && it.skipped === true, JSON.stringify(it));
+    assert(/cancelled by aroma: not needed/.test(it.error), `error text: ${it.error}`);
+    assert(rows().some((e) => e.type === 'release' && e.ref === q.spendRef), 'queued cancel did not release');
+    // kick() has already handed the sibling to the (stubbed) worker; what matters
+    // is that it was not failed or stopped.
+    const q2 = queue.get('demo/q2');
+    assert(q2.status !== 'failed' && !q2.stoppedWithCourse && !q2.cancelled, `the sibling was touched: ${q2.status}`);
+    assert(!cw.heldCourses().has('course-a'), 'a cancelled lesson still holds its course');
+    // blocked at review: settled, the video stays wherever it is
+    const b = lesson('course-b', 'b1');
+    atReview('demo/b1');
+    r = cw.cancel('demo/b1', '', 'aroma', 'course-b', 'lms');
+    assert(r.ok, JSON.stringify(r));
+    assert(rows().some((e) => e.type === 'settle' && e.ref === b.spendRef && e.outcome === 'cancelled'), 'blocked cancel did not settle');
+    // done: refused; failed: idempotent
+    lesson('course-c', 'c1');
+    queue.done('demo/c1', 'run-9', {}, 0);
+    r = cw.cancel('demo/c1', '', 'aroma', 'course-c', 'lms');
+    assert(!r.ok && r.reason === 'already_published', JSON.stringify(r));
+    r = cw.cancel('demo/b1', '', 'aroma', 'course-b', 'lms');
+    assert(r.ok && r.alreadyFailed === true, `second cancel: ${JSON.stringify(r)}`);
+    // another course's lesson
+    r = cw.cancel('demo/q2', '', 'aroma', 'course-zzz', 'lms');
+    assert(!r.ok && /course/.test(r.why), JSON.stringify(r));
+    return 'queued released, blocked settled, done refused, failed idempotent, sibling untouched';
+  });
+
+  check('cancel and reject on a CLAIMED lesson ask the build to stop instead of racing it', () => {
+    fresh();
+    lesson('course-a', 'k1');
+    queue.claim('demo/k1', 'run-k');
+    let aborted = [];
+    const r = cw.cancel('demo/k1', 'changed my mind', 'aroma', 'course-a', 'lms', { abort: (id, why) => { aborted.push([id, why]); return true; } });
+    assert(r.ok && r.aborting === true, JSON.stringify(r));
+    let it = queue.get('demo/k1');
+    assert(it.status === 'claimed' && it.abortRequested === true && it.cancelledBy === 'aroma', `claimed lesson not marked: ${JSON.stringify(it)}`);
+    assert(aborted.length === 1 && aborted[0][0] === 'demo/k1', 'abortCurrent was not asked');
+    // reject on claimed: the same ask, then the usual course stop
+    lesson('course-b', 'k2');
+    lesson('course-b', 'k3');
+    queue.claim('demo/k2', 'run-k2');
+    aborted = [];
+    const rj = cw.reject('demo/k2', 'wrong', 'course-b', 'lms', { abort: (id) => { aborted.push(id); return true; } });
+    assert(rj.ok, JSON.stringify(rj));
+    assert(queue.get('demo/k2').abortRequested === true, 'reject did not ask the claimed build to stop');
+    assert(aborted.length === 1, 'reject did not call abort');
+    assert(queue.get('demo/k3').status === 'failed' && queue.get('demo/k3').stoppedWithCourse === 'demo/k2', 'reject no longer stops the course');
+    return 'abortRequested + abort() on both';
+  });
+
+  await checkAsync('shell.run kills the child when its signal aborts, and says so', async () => {
+    const ac = new AbortController();
+    const started = Date.now();
+    const p = shell.run(process.execPath, ['-e', 'setTimeout(()=>{}, 60000)'], { signal: ac.signal, timeoutMs: 120000 });
+    setTimeout(() => ac.abort(), 150);
+    let err = null;
+    try { await p; } catch (e) { err = e; }
+    const ms = Date.now() - started;
+    assert(err && err.aborted === true, `did not reject as aborted: ${err && err.message}`);
+    assert(ms < 10000, `took ${ms}ms to stop -- the child outlived the abort`);
+    return `stopped in ${ms}ms`;
+  });
+
+  await checkAsync('the spine stops between stages when its signal aborts: the lesson fails as cancelled and the next stage never starts', async () => {
+    fresh();
+    const it = lesson('course-a', 's1');
+    queue.claim('demo/s1', 'run-s1');
+    const ac = new AbortController();
+    let scriptRan = false;
+    const stub = (name, run) => ({ name, maxAttempts: 1, run });
+    // courseChecks() stubs spine.execute for the whole process and never restores
+    // it, so "the real spine" has to be a pristine copy of the module.
+    const realSpine = (() => {
+      const k = require.resolve(path.join(__dirname, 'lib', 'spine'));
+      const cached = require.cache[k];
+      delete require.cache[k];
+      const m = require(k);
+      require.cache[k] = cached;
+      return m;
+    })();
+    const st = await realSpine.execute(it, {
+      quiet: true, stopAfter: 'gate', budgetUsd: null, skipOffload: true, abortSignal: ac.signal,
+      stageOverrides: {
+        research: stub('research', async () => { ac.abort(); return { slo: 's' }; }),
+        script: stub('script', async () => { scriptRan = true; return { title: 't', beats: [] }; }),
+        gate: stub('gate', async () => ({ verdict: 'READY' })),
+      },
+    });
+    assert(st.status === 'failed', `run ended ${st.status}`);
+    assert(!scriptRan, 'the stage after the abort still ran');
+    const after = queue.get('demo/s1');
+    assert(after.status === 'failed' && /cancel/i.test(after.error || ''), `queue says ${after.status}: ${after.error}`);
+    return 'failed as cancelled, script never started';
+  });
+
+  spine.execute = savedExec;
+  residue.isAvailable = savedAvail;
+  residue.restore = savedRestore;
+  if (savedVid === undefined) delete process.env.EXPLAINER_VIDEOS_DIR; else process.env.EXPLAINER_VIDEOS_DIR = savedVid;
+  if (savedRedo === undefined) delete process.env.COURSE_VIDEO_REDO; else process.env.COURSE_VIDEO_REDO = savedRedo;
+}
+
 async function motionProduceChecks() {
   console.log('\n-- motion-graphics produce (segment-all with no art) --');
   const os = require('os');
@@ -5912,6 +6218,7 @@ async function motionProduceChecks() {
   await courseChecks();
   await driveOffloadChecks();
   await residueChecks();
+  await videoRedoChecks();
   styleChecks();
   await motionProduceChecks();
 

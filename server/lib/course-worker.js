@@ -76,6 +76,7 @@ const queue = require('../../orchestrator/lib/queue');
 const spine = require('../../orchestrator/lib/spine');
 const state = require('../../orchestrator/lib/state');
 const deliverables = require('../../orchestrator/lib/deliverables');
+const residue = require('../../orchestrator/lib/residue');
 const { videoDir } = require('../../orchestrator/lib/paths');
 const { config } = require('./config');
 const ledger = require('./ledger');
@@ -182,7 +183,10 @@ function humanReleased(i) {
     // FIRST now. Without these two, approving lesson two's script while lesson one
     // is blocked would queue it and never build it: its course is held, and
     // eligible() only lets a released lesson through a hold.
-    || i.scriptApproved || i.scriptRevisedBy);
+    || i.scriptApproved || i.scriptRevisedBy
+    // A video sent back with scene notes (contract 1.3). The lesson that holds the
+    // course IS the one being redone, so without this it would queue and never build.
+    || i.videoRedoBy);
 }
 
 /**
@@ -335,6 +339,87 @@ function humanFeedback(item, ctx) {
 }
 
 /**
+ * A reviewer's scene notes, in the shape the script stage reads feedback in --
+ * the same shape as humanFeedback() with a `scope` the stage must honour: only
+ * these beat ids may change, and only their visual/voice fields. Everything else
+ * in the script is carried through verbatim by the patch.
+ */
+function redoFeedback(item, ctx) {
+  const redo = item.videoRedo || {};
+  const prior = (ctx.redraftFeedback && ctx.redraftFeedback.history) || [];
+  const round = Number(redo.round) || 1;
+  const note = `Scene(s) ${(redo.beats || []).join(', ')}: ${redo.why}`;
+  return {
+    round,
+    fromStage: 'script',
+    requestedBy: 'human-video-review',
+    scope: { ids: [...(redo.beats || [])], allowVo: true },
+    latest: [note],
+    history: [...prior, { round, critique: [note] }],
+  };
+}
+
+/**
+ * What a redo resumes FROM (contract 1.3): the held script, the held research,
+ * and the paid inputs put back where produce will look for them. Starts at
+ * `script` so the writer patches only the flagged beats; `script-approval` then
+ * re-binds the sha to the patched file and lets it through (the reviewer's scoped
+ * instruction IS the approval of that scoped change); produce re-buys only what
+ * the patch touched and renders only those seconds.
+ *
+ * Null when the held script is gone -- then the lesson builds from scratch like a
+ * plain requeue, which is still correct, just not cheap.
+ */
+async function seedForRedo(item) {
+  if (!item.videoRedo || !item.videoRedoBy) return null;
+  const held = deliverables.findScript(item.series, item.slug);
+  if (!held) return null;
+
+  let beats = null;
+  try {
+    delete require.cache[require.resolve(held.beats)];
+    const mod = require(held.beats);
+    if (!Array.isArray(mod) || !mod.length) return null;
+    beats = mod;
+  } catch (e) {
+    log(`${item.id}: could not read the held script for the redo (${e.message})`);
+    return null;
+  }
+
+  const dir = videoDir(item.series, item.slug);
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.copyFileSync(held.beats, path.join(dir, 'beats.js'));
+    if (held.durations) fs.copyFileSync(held.durations, path.join(dir, 'durations.json'));
+  } catch (e) {
+    log(`${item.id}: could not restore the script to the render dir (${e.message})`);
+    return null;
+  }
+  // The paid inputs. Not fatal when missing: produce then re-buys the flagged
+  // beats' inputs AND everything else -- the full-rebuild fallback the route
+  // warned about when it saw no residue.
+  let restored = { from: null };
+  try {
+    restored = await residue.restore({ series: item.series, slug: item.slug, videoDir: dir, log: (m) => log(`${item.id}: ${m}`) });
+  } catch (e) {
+    log(`${item.id}: residue restore threw (${e.message}) -- building without it`);
+  }
+
+  const ctx = held.context || {};
+  return {
+    fromStage: 'script',
+    residueFrom: restored.from,
+    seedArtifacts: {
+      script: { title: ctx.topic || item.topic, beats, beatsPath: path.join(dir, 'beats.js'), beatCount: beats.length },
+      ...(ctx.research ? { research: ctx.research } : {}),
+      ...(ctx.gate ? { gate: ctx.gate } : {}),
+      redraftFeedback: redoFeedback(item, ctx),
+      videoRedo: item.videoRedo,
+    },
+  };
+}
+
+/**
  * The sentence on a lesson parked as `interrupted`. The cost of a rebuild depends
  * on how far it got: a lesson interrupted before its script was ever
  * fingerprinted had not reached the spend at all, and quoting ~$1.50 at that
@@ -342,6 +427,10 @@ function humanFeedback(item, ctx) {
  * a bill that does not exist.
  */
 function interruptedReason(i, cause) {
+  if (i.videoRedo && i.videoRedoBy) {
+    return `interrupted ${cause} during a scene redo (round ${i.videoRedo.round || 1}). The video `
+      + 'that was reviewed is kept. Approve to run the redo again (cents, minutes), or reject to stop the course.';
+  }
   return i.scriptSha
     ? `interrupted ${cause} before it finished. Nothing was published, `
       + 'and the partial render did not survive. Approve to rebuild this lesson '
@@ -457,7 +546,11 @@ async function buildOne(item) {
   // again, and the first attempt's spend vanished with no record of it. Let a
   // failure here throw -- a build with no record of itself is the thing to stop.
   queue.claim(item.id, st.runId);
-  current = { id: item.id, topic: item.topic, courseId: courseTagOf(item), startedAt: new Date().toISOString() };
+  // The handle a cancel (or a reject of a lesson in flight) pulls. Held on
+  // `current` so abortCurrent() can find it; passed down so the spine stops
+  // between stages and shell.run kills the child inside one.
+  const abort = new AbortController();
+  current = { id: item.id, topic: item.topic, courseId: courseTagOf(item), startedAt: new Date().toISOString(), abort };
   log(`building ${item.id} (run ${st.runId})`);
 
   // The media budget is the service ceiling, or the tenant's own per-run wall
@@ -491,9 +584,17 @@ async function buildOne(item) {
         : ' (blocked before review fingerprints existed; publishing the held copy unchecked)'));
   }
 
+  // A scene redo (contract 1.3): the held script is patched, not rewritten, and
+  // the paid inputs come back before produce looks for them.
+  const redo = (!publish && item.videoRedo && item.videoRedoBy) ? await seedForRedo(item) : null;
+  if (redo) {
+    log(`${item.id}: redo round ${item.videoRedo.round} of scene(s) ${(item.videoRedo.beats || []).join(', ')}`
+      + ` -- residue ${redo.residueFrom ? `from the ${redo.residueFrom}` : 'NOT found; this will re-buy everything'}`);
+  }
+
   // A script a person has already read is never written again: they approved a
   // particular one, and a fresh draft is a different one.
-  const resumeFrom = publish ? null : seedFromScript(item);
+  const resumeFrom = (publish || redo) ? null : seedFromScript(item);
   if (resumeFrom) {
     log(`${item.id}: resuming at '${resumeFrom.fromStage}' from the held script`
       + `${resumeFrom.sha ? ` (${resumeFrom.sha})` : ''} -- not re-writing it`);
@@ -503,7 +604,9 @@ async function buildOne(item) {
     const final = await spine.execute(item, {
       resumeState: st,
       ...(resumeFrom ? { fromStage: resumeFrom.fromStage, seedArtifacts: resumeFrom.seedArtifacts } : {}),
+      ...(redo ? { fromStage: 'script', seedArtifacts: redo.seedArtifacts, videoRedo: item.videoRedo } : {}),
       ...(publish ? { fromStage: 'review', seedArtifacts: publish.seedArtifacts, reviewedVideo: publish.reviewedVideo } : {}),
+      abortSignal: abort.signal,
       budgetUsd: Math.min(config.pipeline.budgetUsd, wall),
       // The pre-spend gate. Absent it, `script-approval` blocks before references
       // -- the pause this worker now opens with, rather than the one it ends with.
@@ -551,6 +654,23 @@ async function buildOne(item) {
       } catch (e2) {
         log(`${item.id}: could not park the lost-claim lesson either (${e2.message}); restore() will at next boot`);
       }
+      return outcome;
+    }
+    // A person stopped this build (cancel, or a reject of a lesson in flight). The
+    // spine has already failed the queue item as cancelled; say which decision it
+    // was, lift the hold for a cancel, and settle at what was really bought.
+    if (after && after.abortRequested && after.status === queue.ITEM_STATUS.FAILED) {
+      const isCancel = after.abortKind !== 'reject';
+      try {
+        queue.setStatus(item.id, queue.ITEM_STATUS.FAILED, {
+          abortRequested: false,
+          ...(isCancel ? { cancelled: true, skipped: true, cancelledAt: after.cancelledAt || new Date().toISOString() } : {}),
+        });
+      } catch (e2) {
+        log(`${item.id}: could not record the cancel outcome (${e2.message})`);
+      }
+      settleSpend(item, isCancel ? 'cancelled' : 'rejected');
+      log(`${item.id}: build stopped on request (${isCancel ? 'cancelled' : 'rejected'})`);
       return outcome;
     }
     // Do NOT close the reservation for a pause that happens BEFORE the spend it
@@ -626,6 +746,19 @@ async function drain() {
 
 function kick() {
   drain().catch((e) => log('drain crashed: ' + e.message));
+}
+
+/**
+ * Stop the build in flight, if it is this lesson. The spine stops between stages
+ * and shell.run kills the child inside one; buildOne() then records the outcome.
+ * False when this lesson is not the one being built (nothing to stop).
+ */
+function abortCurrent(lessonId, why = 'cancelled by a person') {
+  if (!current || current.id !== lessonId || !current.abort) return false;
+  if (current.abort.signal.aborted) return true;
+  current.abort.abort(why);
+  log(`${lessonId}: abort requested -- ${why}`);
+  return true;
 }
 
 /**
@@ -768,7 +901,7 @@ function revise(lessonId, notes = '', by = 'Aroma', courseId = null, tenantId = 
  * every queued sibling, free, with a reason naming the rejection. Other courses
  * are released -- before this kicked, a reject left the whole worker idle.
  */
-function reject(lessonId, why = '', courseId = null, tenantId = null) {
+function reject(lessonId, why = '', courseId = null, tenantId = null, { abort = abortCurrent } = {}) {
   const item = queue.get(lessonId);
   if (!item) return { ok: false, why: `No lesson '${lessonId}'.` };
   const wrong = notThisCourse(item, courseId) || notThisTenant(item, tenantId);
@@ -781,17 +914,30 @@ function reject(lessonId, why = '', courseId = null, tenantId = null) {
     return { ok: false, why: 'That lesson is already published, so it cannot be rejected. '
       + 'Take the video down on YouTube if it should not be public.' };
   }
-  queue.setStatus(lessonId, queue.ITEM_STATUS.FAILED, {
-    rejectedAt: new Date().toISOString(),
-    error: `rejected by a human${why ? ': ' + why : ''}`,
-  });
+  if (item.status === queue.ITEM_STATUS.CLAIMED) {
+    // A build in flight. Marking it failed here used to race the spine, whose next
+    // block/done write overwrote the rejection and the build carried on spending.
+    // Ask the build to stop instead; buildOne() records the outcome and settles.
+    queue.setStatus(lessonId, queue.ITEM_STATUS.CLAIMED, {
+      abortRequested: true, abortKind: 'reject',
+      rejectedAt: new Date().toISOString(),
+      error: `rejected by a human${why ? ': ' + why : ''}`,
+    });
+    abort(lessonId, `rejected by a human${why ? ': ' + why : ''}`);
+  } else {
+    queue.setStatus(lessonId, queue.ITEM_STATUS.FAILED, {
+      rejectedAt: new Date().toISOString(),
+      error: `rejected by a human${why ? ': ' + why : ''}`,
+    });
+  }
   // Rejected before it was ever claimed: nothing was bought, give the money back.
   // Otherwise settle at what it has cost so far -- normally a repeat of the settle
   // buildOne() wrote (last settle wins, same figure), but for a lesson a restart
   // parked as `interrupted` it is the only settle there will ever be, and without
   // it the reservation would sit on the tenant's ledger until the month rolled.
+  // A build in flight settles when it stops, at what it really bought.
   if (item.status === queue.ITEM_STATUS.QUEUED) releaseSpend(item, 'rejected_before_build');
-  else settleSpend(item, 'rejected');
+  else if (item.status !== queue.ITEM_STATUS.CLAIMED) settleSpend(item, 'rejected');
   // The course stops here. Its queued siblings are failed now rather than left
   // `queued` behind a hold: a queued lesson reads as "still coming" to the LMS,
   // and a hold is invisible to a consumer that only reads statuses. Nothing was
@@ -814,6 +960,206 @@ function reject(lessonId, why = '', courseId = null, tenantId = null) {
   log(`rejected ${lessonId}${why ? ' -- ' + why : ''}${stopped.length ? ` -- stopped ${stopped.length} queued sibling(s)` : ''}`);
   kick();
   return { ok: true, stopped };
+}
+
+/**
+ * Cancel ONE lesson (contract 1.3). Unlike reject it stops nothing else: the
+ * lesson is failed with `cancelled`, its hold is lifted (`skipped`, the same flag
+ * skip() uses, so heldCourses() lets the course move), and the next lesson of
+ * the course builds. Costs $0 beyond what was already bought: a queued lesson's
+ * reservation is released, a blocked one settles, a build in flight is stopped
+ * and settles when it has.
+ *
+ * @returns {{ok:true, cancelled:string, aborting:boolean, alreadyFailed?:true}|{ok:false, reason:string, why:string}}
+ */
+function cancel(lessonId, why = '', by = 'Aroma', courseId = null, tenantId = null, { abort = abortCurrent } = {}) {
+  const item = queue.get(lessonId);
+  if (!item) return { ok: false, reason: 'no_such_lesson', why: `No lesson '${lessonId}'.` };
+  const wrong = notThisCourse(item, courseId) || notThisTenant(item, tenantId);
+  if (wrong) return { reason: 'no_such_lesson', ...wrong };
+  if (item.status === queue.ITEM_STATUS.DONE) {
+    return { ok: false, reason: 'already_published', why: 'That lesson is already published, so there is '
+      + 'nothing to cancel. Take the video down on YouTube if it should not be public.' };
+  }
+  if (item.status === queue.ITEM_STATUS.FAILED) {
+    // Idempotent: a second cancel, or a cancel of a lesson that failed on its own,
+    // changes nothing and says so. The hold is lifted either way.
+    if (item.skipped !== true) {
+      queue.setStatus(lessonId, queue.ITEM_STATUS.FAILED, { skipped: true, skippedBy: by, skippedAt: new Date().toISOString() });
+    }
+    return { ok: true, cancelled: lessonId, alreadyFailed: true, aborting: false };
+  }
+  const at = new Date().toISOString();
+  const error = `cancelled by ${by}${why ? ': ' + why : ''}`;
+  if (item.status === queue.ITEM_STATUS.CLAIMED) {
+    queue.setStatus(lessonId, queue.ITEM_STATUS.CLAIMED, {
+      abortRequested: true, abortKind: 'cancel', cancelledBy: by, cancelledAt: at, cancelWhy: why || null, error,
+    });
+    const asked = abort(lessonId, error);
+    log(`cancel ${lessonId} by ${by} -- build in flight, ${asked ? 'stopping it' : 'no build found to stop'}`);
+    return { ok: true, cancelled: lessonId, aborting: true };
+  }
+  queue.setStatus(lessonId, queue.ITEM_STATUS.FAILED, {
+    cancelled: true, cancelledBy: by, cancelledAt: at, cancelWhy: why || null,
+    skipped: true, skippedBy: by, skippedAt: at,
+    error, reason: null, blockedBy: null,
+  });
+  if (item.status === queue.ITEM_STATUS.QUEUED) releaseSpend(item, 'cancelled_before_build');
+  else settleSpend(item, 'cancelled');
+  log(`cancel ${lessonId} by ${by}${why ? ' -- ' + why : ''} -- its course continues without it`);
+  kick();
+  return { ok: true, cancelled: lessonId, aborting: false };
+}
+
+/**
+ * Send a REVIEWED VIDEO back for one or more scenes (contract 1.3).
+ *
+ * The soft path at the second gate, as `revise` is at the first. The reviewer
+ * names what is wrong and WHERE -- beat ids, or seconds in the file they watched,
+ * mapped to beats through the intro offset -- and the lesson goes back to the
+ * script stage with a scoped patch: only those beats may change, and only their
+ * visual and voice fields. produce then re-buys only what the patch touched and
+ * renders only those seconds, splicing them into the bare render it kept. The
+ * course does not stop; no sibling is touched.
+ *
+ * Takes its OWN small reservation: the lesson's first one was settled when it
+ * blocked at review, so without this a redo would spend against nothing.
+ *
+ * @returns {{ok:true, round, redosLeft, beats, mappedFromSpans, reservedUsd}
+ *          |{ok:false, reason:string, why:string}}
+ */
+function reviseVideo(lessonId, { why = '', beats = null, spans = null, by = 'Aroma', fullRebuild = false } = {}, courseId = null, tenantId = null) {
+  const item = queue.get(lessonId);
+  if (!item) return { ok: false, reason: 'no_such_lesson', why: `No lesson '${lessonId}'.` };
+  const wrong = notThisCourse(item, courseId) || notThisTenant(item, tenantId);
+  if (wrong) return { reason: 'no_such_lesson', ...wrong };
+  if (item.status === queue.ITEM_STATUS.DONE) {
+    return { ok: false, reason: 'already_published', why: 'That lesson is already published. Take it down '
+      + 'on YouTube and requeue it if it must change.' };
+  }
+  if (item.status === queue.ITEM_STATUS.CLAIMED) {
+    return { ok: false, reason: 'building', why: 'That lesson is being built right now. Wait for it to '
+      + 'pause at review, then send it back.' };
+  }
+  if (item.status !== queue.ITEM_STATUS.BLOCKED || !VIDEO_REVIEW_BLOCKS.has(item.blockedBy || queue.DEFAULT_BLOCKED_BY)) {
+    return { ok: false, reason: 'not_at_review', why: `That lesson is not waiting with a finished video `
+      + `(${item.blockedBy || item.status}). A script is sent back with /script/revise.` };
+  }
+  const text = String(why || '').trim();
+  if (!text) {
+    return { ok: false, reason: 'no_notes', why: 'A redo needs notes saying what is wrong with the scene -- '
+      + 'the writer and the artist are answering them.' };
+  }
+  const round = (Number(item.videoRedoRound) || 0) + 1;
+  const max = config.pipeline.maxVideoRedos;
+  if (round > max) {
+    return { ok: false, reason: 'redo_cap', why: `This video has already been sent back ${max} time(s). `
+      + 'Approve it, reject the lesson, or requeue it for a full rebuild.' };
+  }
+
+  // The scenes. Ids are checked against the HELD script -- the one the video was
+  // rendered from -- and seconds are mapped through the same timing the
+  // checkpoints use, so "1:20" means what the reviewer saw.
+  const held = deliverables.findScript(item.series, item.slug);
+  let heldBeats = null;
+  let durations = null;
+  if (held) {
+    try {
+      delete require.cache[require.resolve(held.beats)];
+      const mod = require(held.beats);
+      if (Array.isArray(mod) && mod.length) heldBeats = mod;
+      if (held.durations) durations = JSON.parse(fs.readFileSync(held.durations, 'utf8'));
+    } catch { heldBeats = null; }
+  }
+  if (!heldBeats) {
+    return { ok: false, reason: 'no_script', why: 'The script this video was made from is no longer held, '
+      + 'so a scene cannot be named. Requeue the lesson for a full rebuild.' };
+  }
+  const checkpoints = require('./checkpoints');
+  const renderable = new Set(heldBeats.filter((b) => b && b.mode !== 'checkpoint').map((b) => String(b.id)));
+  const ids = new Set();
+  for (const id of Array.isArray(beats) ? beats : []) {
+    const s = String(id);
+    if (!renderable.has(s)) {
+      return { ok: false, reason: 'unknown_beat', why: `There is no renderable scene '${s}' in this lesson. `
+        + `Scenes are ${[...renderable].join(', ')}.` };
+    }
+    ids.add(s);
+  }
+  const mappedFromSpans = [];
+  if (Array.isArray(spans) && spans.length) {
+    const introSeconds = checkpoints.introOffset(videoDir(item.series, item.slug)).seconds;
+    for (const sp of spans) {
+      const fromSec = Number(sp && sp.fromSec);
+      const toSec = Number(sp && sp.toSec);
+      if (!Number.isFinite(fromSec) || !Number.isFinite(toSec) || fromSec < 0 || toSec < fromSec) {
+        return { ok: false, reason: 'bad_span', why: `A span needs numeric fromSec <= toSec: ${JSON.stringify(sp)}.` };
+      }
+      const hit = checkpoints.beatsForSpan({ beats: heldBeats, durations, introSeconds, fromSec, toSec });
+      mappedFromSpans.push({ fromSec, toSec, beats: hit });
+      for (const id of hit) ids.add(id);
+    }
+  }
+  if (!ids.size) {
+    return { ok: false, reason: 'no_beats', why: 'Name at least one scene: `beats` (ids from GET .../script) '
+      + 'or `spans` ({fromSec, toSec} in the file you watched) that lands on a spoken scene.' };
+  }
+  const beatIds = heldBeats.map((b) => String(b.id)).filter((id) => ids.has(id));
+
+  if (!fullRebuild) {
+    const avail = residue.isAvailable(item.series, item.slug);
+    if (!avail.volume && !avail.drive) {
+      return { ok: false, reason: 'no_residue', why: 'The inputs this video was made from were not kept, so a '
+        + 'partial redo is not possible. Send `fullRebuild: true` to rebuild the whole lesson (~$1.50, '
+        + 'about an hour), or reject it.' };
+    }
+  }
+
+  // Money: a fresh, small hold. The first reservation settled when the lesson
+  // blocked; this one settles when the redo does.
+  let reservedUsd = 0;
+  let spendRef = item.spendRef || null;
+  const s = store();
+  if (s && item.tenantId) {
+    const tenant = tenants.registry().byId(item.tenantId) || null;
+    const r = ledger.reserve(s, {
+      tenantId: item.tenantId, jobId: courseTagOf(item), usd: config.pipeline.courseLessonRedoReserveUsd,
+      key: `${lessonId}#redo${round}`, tenant, kind: 'course',
+    });
+    if (!r.ok) return { ok: false, reason: r.reason || 'ledger_unavailable', why: r.why, ...r };
+    reservedUsd = config.pipeline.courseLessonRedoReserveUsd;
+    spendRef = r.ref;
+  }
+
+  const at = new Date().toISOString();
+  const redo = {
+    round, why: text, beats: beatIds, spans: mappedFromSpans, by, at,
+    baseSha256: (item.reviewedVideo && item.reviewedVideo.sha256) || null,
+    fullRebuild: Boolean(fullRebuild),
+  };
+  queue.setStatus(lessonId, queue.ITEM_STATUS.QUEUED, {
+    videoRedo: redo,
+    videoRedoRound: round,
+    videoRedoBy: by,
+    videoRedoHistory: [...(item.videoRedoHistory || []), redo],
+    // The decision on the old video is void; the new one is reviewed again.
+    reviewApproved: false,
+    reviewedVideo: null,
+    reviewedVideoLost: false,
+    // The script WAS approved; the patch is scoped by the reviewer's own
+    // instruction. The sha is cleared so script-approval re-binds it to the
+    // patched file rather than refusing the build for a changed script.
+    scriptApproved: item.scriptApproved || by,
+    scriptApprovedSha: null,
+    scriptNotes: null,
+    spendRef,
+    ...(item.spendRef && item.spendRef !== spendRef
+      ? { spendRefHistory: [...(item.spendRefHistory || []), item.spendRef] } : {}),
+    error: null, reason: null, blockedBy: null,
+  });
+  log(`video/revise ${lessonId} round ${round} by ${by} -- scene(s) ${beatIds.join(', ')}: ${text.slice(0, 80)}`);
+  kick();
+  return { ok: true, round, redosLeft: max - round, beats: beatIds, mappedFromSpans, reservedUsd };
 }
 
 /**
@@ -972,7 +1318,8 @@ function restore() {
 
 module.exports = {
   drain, kick, status, approve, approveScript, revise, reject, requeue, skip, resume,
+  cancel, reviseVideo, abortCurrent,
   queued, eligible, heldCourses, courseTagOf, awaitingApproval, restore, bootDecision,
   readBoot, markBoot, MAX_HUMAN_REVISIONS,
-  _internals: { approvalStillValid },
+  _internals: { approvalStillValid, seedForRedo, redoFeedback },
 };

@@ -592,7 +592,40 @@ function forVideo(series, slug) {
  * separately invented one -- a demo assembled from three different runs shows
  * the shape of the flow while quietly lying about it. See lib/demo-sample.js.
  */
+/**
+ * Which renderable beats a span of the DELIVERED file touches (contract 1.3).
+ *
+ * A reviewer scrubs the video they watched and says "fix 1:20 to 1:35". That file
+ * starts with the brand intro, so a second in it is `introSeconds` plus the
+ * lesson-relative time -- the same shift `forPath` applies to every checkpoint.
+ * Beat starts come from `durations.json` in script order; a checkpoint beat is
+ * never voiced and never drawn, so it has no span and is never named. Pure.
+ *
+ * @returns {string[]} beat ids whose [start, end) overlaps [fromSec, toSec]
+ */
+function beatsForSpan({ beats, durations, introSeconds = 0, fromSec, toSec }) {
+  if (!Array.isArray(beats) || !durations) return [];
+  const from = Number(fromSec);
+  const to = Number(toSec);
+  if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) return [];
+  const hits = [];
+  let running = 0;
+  for (const b of beats) {
+    if (!b || isCheckpointBeat(b)) continue;
+    const d = durations[b.id];
+    if (typeof d !== 'number' || !(d > 0)) continue;
+    const start = introSeconds + running;
+    const end = start + d;
+    running += d;
+    // A point span (from === to) hits the beat that is on screen at that instant;
+    // a range hits every beat it overlaps. The boundary belongs to the next beat.
+    const overlaps = from === to ? (from >= start && from < end) : (from < end && to > start);
+    if (overlaps) hits.push(b.id);
+  }
+  return hits;
+}
+
 function sampleCheckpoints() {
   return require('./demo-sample').checkpointPayload(PREAMBLE, PAUSE_LEAD_SECONDS);
 }
-module.exports = { forPath, forVideo, sampleCheckpoints, listVideos, findByVideoId, videoDirs, etagOf, PREAMBLE };
+module.exports = { forPath, forVideo, sampleCheckpoints, listVideos, findByVideoId, videoDirs, etagOf, PREAMBLE, beatsForSpan, introOffset };
