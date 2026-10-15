@@ -80,6 +80,13 @@ assumes a single writer.
 |---|---|
 | `TENANTS_JSON` | A JSON **array**. One variable, not four per tenant, because Railway has no atomic multi-variable save — four would leave a window where a live token has no budget. Each entry may carry `maxRunUsd`, which since 2026-09-23 also caps a course lesson's media budget. |
 | `PIPELINE_COURSE_LESSON_RESERVE_USD` | Optional, default `2.50`. What `POST /api/v1/courses/build` reserves per lesson on the tenant ledger before queueing; settled to the real cost when the lesson ends. Keep it at or above the LMS's own per-lesson hold. |
+| `COURSE_VIDEO_REDO` | Optional, default off. `1` switches on contract 1.3's `POST …/lessons/:id/video/revise` (remake only the flagged scenes of a reviewed video). Off, the route answers `409 not_enabled` and nothing else changes. Read at call time, so it can be flipped on a running service. Turn on `RESIDUE_KEEP` first, or every redo is a full rebuild. |
+| `PIPELINE_COURSE_LESSON_REDO_RESERVE_USD` | Optional, default `0.75`. What one scene redo reserves on the tenant ledger (a couple of images, a voice line, at most one clip, one small model call); settled to the real cost. A 2-beat redo measured $0.45–0.65. |
+| `PIPELINE_MAX_VIDEO_REDOS` | Optional, default `3`. Redos per lesson, separate from the 5 script revisions. |
+| `REDO_MODEL` | Optional, default `claude-sonnet-5`. The model for the scoped redo patch — a small, bounded edit that does not need the writer's pinned model. |
+| `RESIDUE_KEEP` | Optional, default off. `1` keeps a lesson's paid inputs (art, cutouts, voice takes, clips, the bare render — never frames) as one `residue.tar` per lesson on the volume and on Drive (`GDRIVE_RESIDUE_FOLDER_ID`), BEFORE the working dirs are reclaimed. Needs Drive configured; without a verified Drive copy the working dirs are simply kept. ~130–170 MB per lesson. |
+| `RESIDUE_VOLUME_CACHE_GB` | Optional, default `10`. Reserved for the volume hot-cache eviction (`residue.evictCold`); volume tars of `done`/`failed` lessons with a Drive copy are evicted first. |
+| `TTS_PIN` | Optional, default on. `0` restores the old voice pass that re-times every clip toward the lesson median on every run; on, an unchanged take keeps its bytes and seconds (required for a partial redo to splice). |
 
 ```json
 [
@@ -168,6 +175,8 @@ and one credential to rotate instead of two accounts that can drift apart.
 | `GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_JSON` | *(unset)* | **Preferred.** The service account key as inline JSON — same variable name Cohort2LP uses. Scope is the broad `drive`, which is required: `drive.file` cannot write into a pre-existing Shared Drive folder. Breadth is bounded by the grant, not the scope — the account can only see Drives shared *with* it. |
 | `GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_PATH` | *(unset)* | The same key as a file path, for local dev. Inline JSON wins if both are set. |
 | `GDRIVE_FOLDER_ID` | *(unset)* | The target folder — `UnPublished-CQ-Videos`, on the Taleemabad University **Shared Drive**, so files are owned by the Drive and survive anyone leaving. |
+| `GDRIVE_RESIDUE_FOLDER_ID` | *(unset)* | Contract 1.3. A second folder on the same Shared Drive for `<series>__<slug>_residue.r<round>.tar` — the paid inputs a scene redo reuses. Required when `RESIDUE_KEEP=1`; without it residue stays on the volume only and the working dirs are kept. |
+| `GDRIVE_TRASH_SUPERSEDED` | *(unset)* | Contract 1.3. `1` moves the PREVIOUS `_final` of a redone lesson to the Drive trash once the new `_final.r<round>.mp4` has verified. Off, every reviewed version is kept. |
 
 Fallback only, if there is no service account key:
 

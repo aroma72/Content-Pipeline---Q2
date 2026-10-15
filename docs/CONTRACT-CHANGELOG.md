@@ -17,6 +17,45 @@ Frozen copies: `docs/contracts/course-api-<version>.md`.
 
 ---
 
+## 1.3, additive — 2026-10-15 — scene redo, cancel, and a build that can be stopped
+
+Reply: `docs/integration-requests/2026-10-15-scene-redo-and-cancel.md`. Frozen copy:
+`docs/contracts/course-api-v1.3.md`. `contractVersion` is `1.3`.
+
+**New: a third decision at video review, and a lesson-level cancel.** At `review` a reviewer could
+publish or reject, and reject stopped the course (1.1 §3). Now they can send ONE OR MORE SCENES
+back with notes: only those beats change (their art, motion, caption or spoken line), everything
+else is kept frame for frame, and the lesson pauses at review again — cents and minutes, not $1.50
+and an hour. Separately, `cancel` drops one lesson without touching its siblings, and a build in
+flight can now actually be stopped. **Both verbs are off by default** (`COURSE_VIDEO_REDO`); with the
+switch off `video/revise` answers `409 not_enabled` and nothing else changes.
+
+| Change | Where | Example | Commit | LMS file |
+|---|---|---|---|---|
+| `POST …/lessons/:lessonId/video/revise` `{why, beats?, spans?, by, fullRebuild?}` | new route (token) | `{"why":"the shop is a bank","beats":["07"],"spans":[{"fromSec":80,"toSec":95}],"by":"instructor"}` → `202 {"revising":"…","round":1,"redosLeft":2,"beats":["07","08"],"mappedFromSpans":[…],"reservedUsd":0.75}` | this release | `content-queen-courses.ts` (`reviseLessonVideo`), the review screen |
+| `409 cannot_revise_video` with `reason` | same route | `not_enabled`, `not_at_review`, `building`, `already_published`, `no_notes`, `no_beats`, `unknown_beat`, `bad_span`, `no_script`, `no_residue`, `redo_cap`; `402 tenant_budget_exhausted` | this release | error handling |
+| `POST …/lessons/:lessonId/cancel` `{why, by}` | new route (token) | `202 {"cancelled":"…","aborting":false}`; `200 {"alreadyFailed":true}` on repeat; `409 cannot_cancel` (`already_published`) | this release | `content-queen-courses.ts` (`cancelLesson`) |
+| `redoRound`, `redoBeats[]`, `redoWhy` | `GET /courses/:courseId` items, once a redo happened | `"redoRound":1,"redoBeats":["07"]` | this release | `KNOWN_COURSE_ITEM_FIELDS`, poll mirror |
+| `redosLeft`, `residueAvailable` | items while `blocked` | `"redosLeft":3,"residueAvailable":true` — false means a redo would be a full rebuild (`fullRebuild:true`) | this release | review screen (show the button only when true) |
+| `cancelled`, `cancelledBy`, `cancelledAt` | items that are `failed` because of a cancel | `"cancelled":true,"cancelledBy":"instructor"` | this release | poll mirror; hide the row |
+| `reviewedSha256` changes on every redo | items while `blocked` at review | — | this release | **re-archive** on change: a rebuilt video is a new file |
+| `videoRedo {enabled, maxRounds, reserveUsd}` | `GET /api/v1` | `{"enabled":true,"maxRounds":3,"reserveUsd":0.75}` | this release | feature flag |
+| Reject on a lesson that is **building** stops the build (it used to race it and lose) | `POST …/reject` | — | this release | none |
+| Drive copy of a redone lesson is a new file `…_final.r<round>.mp4`; the previous one is kept unless `GDRIVE_TRASH_SUPERSEDED=1` | offload | — | this release | none (the LMS keeps its own copy) |
+
+**Money.** The lesson's $2.50 reservation settled when it blocked at review. A redo takes its own
+hold of `PIPELINE_COURSE_LESSON_REDO_RESERVE_USD` (default $0.75) and settles at what it bought —
+a 2-beat redo measured $0.45–0.65. It does **not** count against the 5 script revisions; its own cap
+is `PIPELINE_MAX_VIDEO_REDOS` (3). `spendUsdTotal` on the item includes every redo.
+
+**What "everything else is kept" means.** Unchanged beats are frame-identical to the reviewed
+video before one final re-encode of the bare lesson (a splice must decode through a cut; stream
+copy is keyframe-bound), so the bytes differ while the pictures do not. Checkpoint times follow
+`durations.json`; a re-voiced scene that changed length moves every later checkpoint, and
+`GET …/checkpoints` says so through its ETag.
+
+---
+
 ## 1.2, fix — 2026-10-12 — motion-graphics produce, Retry, draft ceiling
 
 Reply to the LMS staging report of 2026-10-12. No field added or removed; `contractVersion` stays 1.2.
