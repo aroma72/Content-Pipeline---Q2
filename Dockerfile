@@ -90,6 +90,7 @@ RUN set -eux; \
 RUN set -eux; \
     /usr/bin/chromium --version; \
     /usr/bin/ffmpeg -version | head -1; \
+    tar --version | head -1; \
     python3 -c "import PIL, numpy; print('pillow', PIL.__version__, 'numpy', numpy.__version__)"
 
 # produce.js invokes `python`, but Debian ships only `python3`. On Windows the

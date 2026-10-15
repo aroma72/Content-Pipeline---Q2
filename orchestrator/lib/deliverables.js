@@ -236,13 +236,15 @@ function forget(series, slug) {
   // Once a lesson is on Drive, drive.json IS the lesson's only pointer to its video,
   // and beats.js / durations.json still answer its questions and timings. Deleting
   // the directory here erased all of that while the queue went on saying
-  // `saved2drive`. So an offloaded lesson loses only its video bytes, if any remain.
+  // `saved2drive`. So an offloaded lesson loses only its video bytes, if any remain
+  // -- and its residue.tar (1.3), which is bytes with a Drive copy of its own;
+  // residue.json stays, like drive.json, as the pointer to that copy.
   const drive = driveRecord(series, slug);
   if (drive && drive.saved2drive) {
     let removed = 0;
     try {
       for (const f of fs.readdirSync(dest)) {
-        if (/\.mp4$/i.test(f)) { fs.unlinkSync(path.join(dest, f)); removed++; }
+        if (/\.(mp4|tar)$/i.test(f)) { fs.unlinkSync(path.join(dest, f)); removed++; }
       }
       return { ok: true, keptDriveRecord: true, removedVideos: removed };
     } catch (e) {

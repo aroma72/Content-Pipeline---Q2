@@ -5396,6 +5396,289 @@ function styleChecks() {
 // staging run (2026-10-12) and produce still died 10s after approval: segment-all.py
 // exited 1 on "no art/ folder", because a motion script is all info beats and buys no
 // art. No check here reached that step, which is how it shipped -- so these run produce.
+/**
+ * 1.3 — a lesson's paid inputs survive review so a redo re-buys only what changed.
+ *
+ * Until now RECLAIMABLE deleted art/, audio/, clips/, layers/ and out/ the moment
+ * the _final.mp4 verified on Drive -- even for a lesson blocked at review. The
+ * reviewer who then asked for one scene to change paid for every scene again and
+ * waited an hour of Chrome for a video that was 95% identical. residue.js keeps
+ * the keep-set as one tar per lesson: on the volume as a hot cache, on Drive as
+ * the durable copy, with the same proven-copy-before-delete discipline as the
+ * video itself.
+ */
+async function residueChecks() {
+  console.log('');
+  console.log('12b. paid inputs are kept so a redo rebuilds only the flagged scenes');
+
+  const osMod = require('os');
+  const crypto = require('crypto');
+  const gdrive = require(path.join(__dirname, 'lib', 'gdrive'));
+  const deliverables = require(path.join(__dirname, 'lib', 'deliverables'));
+  const residue = require(path.join(__dirname, 'lib', 'residue'));
+  const jobStore = require(path.join(__dirname, '..', 'server', 'lib', 'job-store'));
+
+  const realUpload = gdrive.uploadFile;
+  const realDownload = gdrive.downloadFile;
+  const realTrash = gdrive.trashFile;
+  const realConfigured = gdrive.isConfigured;
+  const realFolderId = gdrive.folderId;
+  const envBefore = {
+    keep: process.env.RESIDUE_KEEP,
+    folder: process.env.GDRIVE_RESIDUE_FOLDER_ID,
+  };
+
+  gdrive.isConfigured = () => true;
+  gdrive.folderId = () => 'final-folder';
+  process.env.RESIDUE_KEEP = '1';
+  process.env.GDRIVE_RESIDUE_FOLDER_ID = 'residue-folder';
+
+  const md5Of = (p) => crypto.createHash('md5').update(fs.readFileSync(p)).digest('hex');
+  const write = (dir, rel, content) => {
+    const p = path.join(dir, rel);
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, content);
+    return p;
+  };
+
+  /** A render dir as produce leaves it: paid inputs, the bare render, and scratch. */
+  function freshRenderDir() {
+    const vd = fs.mkdtempSync(path.join(osMod.tmpdir(), 'cq-residue-vd-'));
+    write(vd, 'beats.js', 'module.exports = [{ id: "01" }, { id: "02" }];');
+    write(vd, 'durations.json', JSON.stringify({ '01': 4.5, '02': 3.9 }));
+    write(vd, 'art/01.png', 'PNG-01');
+    write(vd, 'art/01.txt', 'a shop at dawn');
+    write(vd, 'art/02.png', 'PNG-02');
+    write(vd, 'art/02.txt', 'a bank at noon');
+    write(vd, 'layers/01/boy.png', 'CUTOUT');
+    write(vd, 'layers/01/anchors.json', '{}');
+    write(vd, 'audio/vo_01.wav', 'WAV-01');
+    write(vd, 'audio/vo_01.txt', 'Ali opens the shop');
+    write(vd, 'audio/raw_01.wav', 'RAW-01');
+    write(vd, 'audio/raw_01.sig', 'Aoede|1|');
+    write(vd, 'audio/_mix_lesson.wav', 'MIX');            // rebuilt by every splice
+    write(vd, 'clips/02.mp4', 'CLIP-02');
+    write(vd, 'clips/02.txt', 'slow pan');
+    write(vd, 'out/lesson.mp4', 'BARE-RENDER');
+    write(vd, 'out/_bumpers/intro.mp4', 'INTRO');
+    write(vd, 'out/_bumpers/outro.mp4', 'OUTRO');
+    write(vd, 'out/_bumpers/_concat.mp4', 'CONCAT');       // rebuilt by stitch
+    write(vd, 'out/a-lesson_final.mp4', 'FINAL');           // has its own offload
+    write(vd, 'frames/lesson/f_000001.png', 'FRAME');       // regenerable, huge
+    write(vd, 'node_modules/x/index.js', '');
+    return vd;
+  }
+
+  function freshVolume() {
+    const dir = fs.mkdtempSync(path.join(osMod.tmpdir(), 'cq-residue-vol-'));
+    jobStore.reset();
+    delete process.env.RAILWAY_VOLUME_MOUNT_PATH;
+    process.env.JOB_STORE_DIR = dir;
+    process.env.JOB_STORE_DURABLE = '1';
+    return dir;
+  }
+
+  const tarAvailable = (() => {
+    try {
+      const r = require('child_process').spawnSync(require(path.join(__dirname, 'lib', 'shell')).resolveCommand('tar'), ['--version']);
+      return r.status === 0;
+    } catch { return false; }
+  })();
+
+  check('the keep list names paid inputs and the bare render, never scratch or the branded final', () => {
+    const vd = freshRenderDir();
+    const kept = residue.keepList(vd).sort();
+    for (const must of [
+      'beats.js', 'durations.json', 'art/01.png', 'art/01.txt', 'layers/01/boy.png',
+      'audio/vo_01.wav', 'audio/vo_01.txt', 'audio/raw_01.wav', 'audio/raw_01.sig',
+      'clips/02.mp4', 'clips/02.txt', 'out/lesson.mp4', 'out/_bumpers/intro.mp4', 'out/_bumpers/outro.mp4',
+    ]) assert(kept.includes(must), `${must} is not kept -- a redo would re-buy or re-render it`);
+    for (const never of [
+      'frames/lesson/f_000001.png', 'node_modules/x/index.js', 'audio/_mix_lesson.wav',
+      'out/_bumpers/_concat.mp4', 'out/a-lesson_final.mp4',
+    ]) assert(!kept.includes(never), `${never} is kept -- it is scratch, or has its own copy`);
+    return `${kept.length} files`;
+  });
+
+  await checkAsync('pack writes residue.tar + a manifest with a sha per file, and the tar holds only the keep list', async () => {
+    if (!tarAvailable) return skip('no tar binary on this machine');
+    freshVolume();
+    const vd = freshRenderDir();
+    const res = await residue.pack({ series: 'fixtures', slug: 'a-lesson', videoDir: vd, round: 1 });
+    assert(res.ok, `pack failed: ${res.skipped}`);
+    const dest = deliverables.dirFor('fixtures', 'a-lesson');
+    assert(fs.existsSync(path.join(dest, 'residue.tar')), 'no residue.tar on the volume');
+    const m = JSON.parse(fs.readFileSync(path.join(dest, 'residue.json'), 'utf8'));
+    assert(m.series === 'fixtures' && m.slug === 'a-lesson' && m.round === 1, 'manifest misnames the lesson');
+    assert(m.files.length === residue.keepList(vd).length, 'manifest file count differs from the keep list');
+    assert(m.files.every((f) => /^[0-9a-f]{64}$/.test(f.sha256) && f.bytes > 0), 'a manifest entry lacks sha256/bytes');
+    assert(m.durations['01'] === 4.5, 'manifest does not carry durations');
+    assert(m.beatsSha && m.beatsSha.length === 16, 'manifest does not fingerprint beats.js');
+    assert(m.tarBytes > 0 && /^[0-9a-f]{32}$/.test(m.tarMd5), 'manifest does not record the tar md5/bytes');
+    assert(m.drive === null, 'a fresh pack claims a Drive copy');
+    // What is IN the tar is the whole point: a frame or the branded final in here
+    // would be the old gigabytes under a new name.
+    const listed = require('child_process').spawnSync(
+      require(path.join(__dirname, 'lib', 'shell')).resolveCommand('tar'), ['-tf', path.join(dest, 'residue.tar')], { encoding: 'utf8' },
+    ).stdout.split(/\r?\n/).filter(Boolean).map((s) => s.replace(/^\.\//, ''));
+    assert(listed.includes('art/01.png') && listed.includes('out/lesson.mp4'), `tar lacks a kept file: ${listed.join(',')}`);
+    assert(!listed.some((f) => f.startsWith('frames/') || f.includes('_final.mp4') || f.includes('node_modules')),
+      `tar holds scratch or the final: ${listed.join(',')}`);
+    return `${m.files.length} files, ${m.tarBytes} bytes`;
+  });
+
+  await checkAsync('packing the same inputs twice is a no-op that keeps the Drive record', async () => {
+    if (!tarAvailable) return skip('no tar binary on this machine');
+    freshVolume();
+    const vd = freshRenderDir();
+    await residue.pack({ series: 'fixtures', slug: 'a-lesson', videoDir: vd, round: 1 });
+    const dest = deliverables.dirFor('fixtures', 'a-lesson');
+    const m1 = JSON.parse(fs.readFileSync(path.join(dest, 'residue.json'), 'utf8'));
+    m1.drive = { fileId: 'r1', md5: m1.tarMd5, bytes: m1.tarBytes, name: 'x' };
+    fs.writeFileSync(path.join(dest, 'residue.json'), JSON.stringify(m1));
+    const again = await residue.pack({ series: 'fixtures', slug: 'a-lesson', videoDir: vd, round: 1 });
+    assert(again.ok && again.unchanged === true, 'identical inputs were re-packed');
+    const m2 = JSON.parse(fs.readFileSync(path.join(dest, 'residue.json'), 'utf8'));
+    assert(m2.drive && m2.drive.fileId === 'r1', 'a no-op pack dropped the Drive record');
+    return 'unchanged, record kept';
+  });
+
+  await checkAsync('offload uploads the tar to the residue folder, verifies md5, records it, and trashes the previous round', async () => {
+    if (!tarAvailable) return skip('no tar binary on this machine');
+    freshVolume();
+    const vd = freshRenderDir();
+    await residue.pack({ series: 'fixtures', slug: 'a-lesson', videoDir: vd, round: 2 });
+    const dest = deliverables.dirFor('fixtures', 'a-lesson');
+    const m = JSON.parse(fs.readFileSync(path.join(dest, 'residue.json'), 'utf8'));
+    m.drive = { fileId: 'old-round', md5: 'x', bytes: 1, name: 'fixtures__a-lesson_residue.r1.tar' };
+    fs.writeFileSync(path.join(dest, 'residue.json'), JSON.stringify(m));
+    let uploaded = null;
+    const trashed = [];
+    gdrive.uploadFile = async (o) => {
+      uploaded = o;
+      return { fileId: 'r2', name: o.name, bytes: fs.statSync(o.filePath).size, md5: md5Of(o.filePath), webViewLink: 'u' };
+    };
+    gdrive.trashFile = async (id, o) => { trashed.push([id, o && o.folder]); return { fileId: id, trashed: true }; };
+    const res = await residue.offload({ series: 'fixtures', slug: 'a-lesson' });
+    assert(res.ok, `offload failed: ${res.skipped}`);
+    assert(uploaded.parentId === 'residue-folder', `uploaded into ${uploaded.parentId}, not the residue folder`);
+    assert(uploaded.name === 'fixtures__a-lesson_residue.r2.tar', `tar named ${uploaded.name}`);
+    assert(uploaded.mimeType === 'application/x-tar', `tar uploaded as ${uploaded.mimeType}`);
+    const after = JSON.parse(fs.readFileSync(path.join(dest, 'residue.json'), 'utf8'));
+    assert(after.drive && after.drive.fileId === 'r2' && after.drive.verified === true, 'the Drive copy was not recorded as verified');
+    assert(trashed.length === 1 && trashed[0][0] === 'old-round' && trashed[0][1] === 'residue-folder',
+      `previous round not trashed in the residue folder: ${JSON.stringify(trashed)}`);
+    return after.drive.name;
+  });
+
+  await checkAsync('an md5 mismatch records nothing and trashes nothing', async () => {
+    if (!tarAvailable) return skip('no tar binary on this machine');
+    freshVolume();
+    const vd = freshRenderDir();
+    await residue.pack({ series: 'fixtures', slug: 'a-lesson', videoDir: vd, round: 1 });
+    let trashCalls = 0;
+    gdrive.uploadFile = async (o) => ({ fileId: 'bad', name: o.name, bytes: 1, md5: 'not-the-hash', webViewLink: 'u' });
+    gdrive.trashFile = async () => { trashCalls += 1; return {}; };
+    const res = await residue.offload({ series: 'fixtures', slug: 'a-lesson' });
+    assert(!res.ok, 'a mismatched upload was accepted');
+    const dest = deliverables.dirFor('fixtures', 'a-lesson');
+    const m = JSON.parse(fs.readFileSync(path.join(dest, 'residue.json'), 'utf8'));
+    assert(m.drive === null, 'a Drive record was written for an upload that did not verify');
+    assert(trashCalls === 0, 'something was trashed after a failed verify');
+    return res.skipped;
+  });
+
+  await checkAsync('restore: render dir intact → nothing moves; emptied → from the volume; volume gone → from Drive; nothing → null', async () => {
+    if (!tarAvailable) return skip('no tar binary on this machine');
+    freshVolume();
+    const vd = freshRenderDir();
+    await residue.pack({ series: 'fixtures', slug: 'a-lesson', videoDir: vd, round: 1 });
+    const dest = deliverables.dirFor('fixtures', 'a-lesson');
+
+    const r0 = await residue.restore({ series: 'fixtures', slug: 'a-lesson', videoDir: vd });
+    assert(r0.from === 'render-dir', `intact render dir restored from ${r0.from}`);
+
+    const { reclaimWorkingDirs } = require(path.join(__dirname, 'lib', 'drive-offload'));
+    reclaimWorkingDirs(vd);
+    assert(!fs.existsSync(path.join(vd, 'art', '01.png')), 'fixture: reclaim did not clear art/');
+    const r1 = await residue.restore({ series: 'fixtures', slug: 'a-lesson', videoDir: vd });
+    assert(r1.from === 'volume', `after reclaim, restored from ${r1.from}`);
+    assert(fs.readFileSync(path.join(vd, 'art', '01.png'), 'utf8') === 'PNG-01', 'art/01.png did not come back intact');
+    assert(fs.readFileSync(path.join(vd, 'out', 'lesson.mp4'), 'utf8') === 'BARE-RENDER', 'out/lesson.mp4 did not come back');
+    assert(!fs.existsSync(path.join(vd, 'frames')), 'restore brought frames/ back');
+
+    // Volume tar gone (evicted or a fresh volume), Drive record present.
+    const tarPath = path.join(dest, 'residue.tar');
+    const tarBytes = fs.readFileSync(tarPath);
+    const m = JSON.parse(fs.readFileSync(path.join(dest, 'residue.json'), 'utf8'));
+    m.drive = { fileId: 'rX', md5: m.tarMd5, bytes: m.tarBytes, name: 'n', verified: true };
+    fs.writeFileSync(path.join(dest, 'residue.json'), JSON.stringify(m));
+    fs.unlinkSync(tarPath);
+    reclaimWorkingDirs(vd);
+    let asked = null;
+    gdrive.downloadFile = async ({ fileId, toPath }) => { asked = fileId; fs.writeFileSync(toPath, tarBytes); return { path: toPath, bytes: tarBytes.length }; };
+    const r2 = await residue.restore({ series: 'fixtures', slug: 'a-lesson', videoDir: vd });
+    assert(r2.from === 'drive' && asked === 'rX', `restored from ${r2.from} (asked Drive for ${asked})`);
+    assert(fs.readFileSync(path.join(vd, 'clips', '02.mp4'), 'utf8') === 'CLIP-02', 'clips/02.mp4 did not come back from Drive');
+
+    // A Drive download whose md5 does not match the manifest is refused, not untarred.
+    fs.unlinkSync(tarPath);
+    reclaimWorkingDirs(vd);
+    gdrive.downloadFile = async ({ toPath }) => { fs.writeFileSync(toPath, 'garbage'); return { path: toPath, bytes: 7 }; };
+    const r3 = await residue.restore({ series: 'fixtures', slug: 'a-lesson', videoDir: vd });
+    assert(r3.from === null && /md5/.test(r3.why || ''), `a corrupt download was restored (${JSON.stringify(r3)})`);
+    assert(!fs.existsSync(path.join(vd, 'art', '01.png')), 'a corrupt tar was untarred');
+
+    // Nothing anywhere.
+    fs.rmSync(dest, { recursive: true, force: true });
+    const r4 = await residue.restore({ series: 'fixtures', slug: 'a-lesson', videoDir: vd });
+    assert(r4.from === null, `restored from ${r4.from} with no residue anywhere`);
+    return 'render-dir → volume → drive → null';
+  });
+
+  await checkAsync('isAvailable says where the residue is, without touching Drive', async () => {
+    if (!tarAvailable) return skip('no tar binary on this machine');
+    freshVolume();
+    const vd = freshRenderDir();
+    assert(JSON.stringify(residue.isAvailable('fixtures', 'a-lesson')) === JSON.stringify({ volume: false, drive: false }), 'available before any pack');
+    await residue.pack({ series: 'fixtures', slug: 'a-lesson', videoDir: vd, round: 1 });
+    const a = residue.isAvailable('fixtures', 'a-lesson');
+    assert(a.volume === true && a.drive === false, `after pack: ${JSON.stringify(a)}`);
+    return JSON.stringify(a);
+  });
+
+  check('the feature is off unless RESIDUE_KEEP says so, so a deploy changes nothing by itself', () => {
+    delete process.env.RESIDUE_KEEP;
+    assert(residue.enabled() === false, 'residue keep is on with the flag unset');
+    process.env.RESIDUE_KEEP = '1';
+    assert(residue.enabled() === true, 'RESIDUE_KEEP=1 did not turn it on');
+    return 'default off';
+  });
+
+  // The ordering IS the feature: residue must be proven on Drive before RECLAIMABLE
+  // may run, else the first redo re-buys everything exactly as before.
+  check('spine.execute packs and offloads residue BEFORE the Drive offload, and keeps working dirs until it verified', () => {
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'spine.js'), 'utf8');
+    const start = src.indexOf('async function execute(');
+    const body = src.slice(start, src.indexOf('\n}\n', start));
+    const packAt = body.indexOf('residue.pack(');
+    const offAt = body.indexOf('residue.offload(');
+    const driveAt = body.indexOf('driveOffload.offload(');
+    assert(packAt !== -1 && offAt !== -1, 'spine.execute never packs/offloads residue');
+    assert(packAt < driveAt && offAt < driveAt, 'residue is handled AFTER the Drive offload -- RECLAIMABLE has already deleted it');
+    assert(/keepWorkingDirs:\s*[^,}]*residue/.test(body), 'keepWorkingDirs is not tied to the residue result');
+    return 'residue → drive offload, keepWorkingDirs gated';
+  });
+
+  gdrive.uploadFile = realUpload;
+  gdrive.downloadFile = realDownload;
+  gdrive.trashFile = realTrash;
+  gdrive.isConfigured = realConfigured;
+  gdrive.folderId = realFolderId;
+  if (envBefore.keep === undefined) delete process.env.RESIDUE_KEEP; else process.env.RESIDUE_KEEP = envBefore.keep;
+  if (envBefore.folder === undefined) delete process.env.GDRIVE_RESIDUE_FOLDER_ID; else process.env.GDRIVE_RESIDUE_FOLDER_ID = envBefore.folder;
+}
+
 async function motionProduceChecks() {
   console.log('\n-- motion-graphics produce (segment-all with no art) --');
   const os = require('os');
@@ -5628,6 +5911,7 @@ async function motionProduceChecks() {
   await textFixChecks();
   await courseChecks();
   await driveOffloadChecks();
+  await residueChecks();
   styleChecks();
   await motionProduceChecks();
 

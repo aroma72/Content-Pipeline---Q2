@@ -541,6 +541,33 @@ async function execute(item, opts = {}) {
 
   if (opts.dryRun || opts.skipOffload) return st;
 
+  // 1.3: the paid inputs (art, voice, clips, cutouts, the bare render) are kept
+  // BEFORE the Drive offload below may reclaim them, so a reviewer's "redo scene
+  // 07" re-buys one scene instead of the lesson. Off unless RESIDUE_KEEP says so.
+  // While it is on, RECLAIMABLE waits for a PROVEN residue copy on Drive -- a
+  // failed or unconfigured residue upload leaves the working dirs exactly as
+  // they would have been left before this module existed. Never fails a run.
+  let residueVerified = false;
+  if (residueEnabledSafe()) {
+    try {
+      const residue = require('./residue');
+      const { videoDir } = require('./paths');
+      const produced = st.artifacts && st.artifacts.produce;
+      const dir = (produced && produced.dir) || videoDir(item.series, item.slug);
+      const rlog = (m) => { if (!opts.quiet) console.log(`  [residue] ${m}`); };
+      const packed = await residue.pack({
+        series: item.series, slug: item.slug, videoDir: dir,
+        round: item.videoRedoRound || 0, log: rlog,
+      });
+      let off = null;
+      if (packed.ok) off = await residue.offload({ series: item.series, slug: item.slug, log: rlog });
+      residueVerified = Boolean(off && off.ok);
+      st.residue = { packed, offload: off };
+    } catch (e) {
+      console.log(`  [residue] skipped: ${e.message}`);
+    }
+  }
+
   try {
     const driveOffload = require('./drive-offload');
     const produced = st.artifacts && st.artifacts.produce;
@@ -549,6 +576,9 @@ async function execute(item, opts = {}) {
       slug: item.slug,
       finalPath: produced && produced.finalPath,
       videoDir: produced && produced.dir,
+      // With residue keeping ON, the paid inputs may only go once their tar is
+      // proven on Drive. With it OFF this is `false`, which is today's behaviour.
+      keepWorkingDirs: residueEnabledSafe() && !residueVerified,
       log: (m) => { if (!opts.quiet) console.log(`  [drive] ${m}`); },
     });
     // Recorded on the run state so a later reader can tell "never offloaded" from
@@ -577,6 +607,11 @@ async function execute(item, opts = {}) {
   }
 
   return st;
+}
+
+/** residue.enabled(), but a broken require must not fail a paid run. */
+function residueEnabledSafe() {
+  try { return require('./residue').enabled(); } catch { return false; }
 }
 
 /**

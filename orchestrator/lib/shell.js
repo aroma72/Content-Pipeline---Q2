@@ -24,6 +24,14 @@ const EXTRA_LOOKUP = {
     path.join(APPDATA, 'npm', 'node_modules', '@railway', 'cli', 'bin', 'railway.exe'),
   ] : [],
 
+  // Git for Windows puts GNU tar on PATH, and GNU tar reads `C:\...` as
+  // `host:path` ("Cannot connect to C: resolve failed"). Windows 10+ ships
+  // bsdtar in System32, which takes drive letters as paths. residue.js packs and
+  // restores through this; on the Linux image the name resolves to Debian's tar.
+  tar: [
+    path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe'),
+  ],
+
   python: LOCALAPPDATA ? [
     path.join(LOCALAPPDATA, 'Programs', 'Python', 'Python314', 'python.exe'),
     path.join(LOCALAPPDATA, 'Programs', 'Python', 'Python313', 'python.exe'),
