@@ -49,6 +49,22 @@ module.exports = {
   async run(ctx) {
     const { artifacts, opts, log, state: st } = ctx;
     const script = artifacts.script;
+
+    // A scene redo (contract 1.3): the script this patch sits on was gated and
+    // approved before it was rendered, and the patch could only touch the
+    // flagged beats' visual/voice fields. Gating it again costs a model call and
+    // can demand edits to beats the reviewer did not flag -- which the redo
+    // scope would then refuse, looping to nothing. The free sensors still run in
+    // script-approval, scoped.
+    if ((opts && opts.videoRedo) || artifacts.videoRedo) {
+      log('scene redo -- the script was gated before; only scoped fields changed, not gating again');
+      return {
+        verdict: 'READY',
+        reasons: ['scene redo: the script was gated and approved before this patch; only flagged beats changed'],
+        fixes: [],
+        skipped: 'video-redo',
+      };
+    }
     log(`gating ${script.beatCount} beats`);
 
     const result = await askJson({

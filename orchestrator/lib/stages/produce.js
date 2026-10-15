@@ -117,7 +117,7 @@ const SCRIPT_SENSORS = [
  * Throws RedraftError (fromStage 'script') on a finding. With `lenient` set (the
  * spine's last pass) it returns the findings instead, for the reader to see.
  */
-async function preApprovalChecks({ dir, beats, log = () => {}, lenient = false, title = null, st = null }) {
+async function preApprovalChecks({ dir, beats, log = () => {}, lenient = false, title = null, st = null, scopeIds = null }) {
   copyTemplates(PATHS.videoTemplates, dir, log);
   let current = beats;
   const autoFixed = [];
@@ -152,7 +152,7 @@ async function preApprovalChecks({ dir, beats, log = () => {}, lenient = false, 
           .filter((l) => l && !/^\[.*\] (Reviewed|Judge)/.test(l)).slice(-25).join('\n');
 
         if (script === 'eval-text.js' && pass === 0) {
-          const fix = tryTextAutoFix({ dir, beats: current, title, log, st });
+          const fix = tryTextAutoFix({ dir, beats: current, title, log, st, scopeIds });
           if (fix) {
             current = fix.beats;
             autoFixed.push(...fix.applied);
@@ -181,11 +181,20 @@ async function preApprovalChecks({ dir, beats, log = () => {}, lenient = false, 
  * older video folder has an eval-text.js that writes no JSON, and that is a
  * null here, not a failure.
  */
-function tryTextAutoFix({ dir, beats, title, log = () => {}, st = null }) {
+function tryTextAutoFix({ dir, beats, title, log = () => {}, st = null, scopeIds = null }) {
   let issues;
   try {
     issues = JSON.parse(fs.readFileSync(path.join(dir, 'eval-text-results.json'), 'utf8')).issues || [];
   } catch { return null; }
+  // A scene redo (contract 1.3) may change only the flagged beats, and that
+  // includes the machine's own grammar fixes: a suggestion whose snippet lives
+  // on an unflagged beat is left alone here, as the redraft would be.
+  if (Array.isArray(scopeIds)) {
+    const scope = new Set(scopeIds.map(String));
+    const inScope = (text) => beats.some((b) => scope.has(String(b.id))
+      && ['vo', 'cap', 'overlay'].some((f) => typeof b[f] === 'string' && b[f].includes(text)));
+    issues = issues.filter((it) => inScope(String((it && it.text) || '').trim()));
+  }
   const { applySuggestions } = require('../text-fixes');
   const r = applySuggestions(beats, issues);
   if (!r.applied.length) return null;
@@ -471,18 +480,26 @@ function pruneOrphans(beats, dir, log) {
  * and art/ may already hold images that cost real money. Skipping existing
  * files is what makes scaffolding safe to re-enter after a crash.
  */
-function copyTemplates(src, dest, log) {
+function copyTemplates(src, dest, log, { refresh = false } = {}) {
   fs.mkdirSync(dest, { recursive: true });
   let copied = 0;
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-    if (entry.name === 'node_modules') continue;
+    if (entry.name === 'node_modules' || entry.name === '__pycache__') continue;
     const from = path.join(src, entry.name);
     const to = path.join(dest, entry.name);
     if (entry.isDirectory()) {
-      copied += copyTemplates(from, to, null);
+      copied += copyTemplates(from, to, null, { refresh });
     } else if (!fs.existsSync(to)) {
       fs.copyFileSync(from, to);
       copied++;
+    } else if (refresh && entry.name !== 'beats.js') {
+      // A redo (contract 1.3) runs in a folder scaffolded by an OLDER template
+      // set -- the scripts at the top level survive every reclaim. Missing-only
+      // copying would leave it a compile-lesson.js with no --range. beats.js is
+      // the one template that is data, never refreshed.
+      let same = false;
+      try { same = fs.readFileSync(from).equals(fs.readFileSync(to)); } catch { same = false; }
+      if (!same) { fs.copyFileSync(from, to); copied++; }
     }
   }
   if (log) log(`copied ${copied} template file(s)`);
@@ -501,7 +518,7 @@ function finalTextCheckNeeded({ before, after }) {
 }
 
 // Exported for the regression tests; not part of the stage contract.
-module.exports._internals = { estimateSpend, isFresherThanInputs, copyTemplates, finalTextCheckNeeded,
+module.exports._internals = { estimateSpend, isFresherThanInputs, copyTemplates, finalTextCheckNeeded, tryTextAutoFix,
   i2vSeconds, COST, missingPerBeat, staleVo, pruneOrphans, isEnvironmentFailure, repairAffordable,
   SCRIPT_SENSORS, preApprovalChecks };
 

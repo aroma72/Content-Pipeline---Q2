@@ -91,6 +91,8 @@ async function askJson({
   state = null,
   stage = null,
   log = null,
+  // Optional. The pinned MODEL unless a stage asks for another (see llm-cli.js).
+  model = MODEL,
 }) {
   if (dryRun) return { dryRun: true, ...(dryRunValue || {}) };
 
@@ -98,7 +100,7 @@ async function askJson({
   const c = client();
 
   const params = {
-    model: MODEL,
+    model,
     max_tokens: maxTokens,
     system,
     messages: [{ role: 'user', content: input }],

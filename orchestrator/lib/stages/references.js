@@ -83,6 +83,12 @@ module.exports = {
 
   async run({ item, state: st, artifacts, opts, log }) {
     if (!item.wantReferences) return NONE('not requested');
+    // A scene redo changes a scene, not the subject; the references found for
+    // the first build still stand, and searching again would cost a model call.
+    if ((opts && opts.videoRedo) || artifacts.videoRedo) {
+      log('scene redo -- references unchanged, not searching again');
+      return NONE('video redo: references unchanged');
+    }
 
     if (process.env.CONTENT_REFERENCES_ENABLED === '0') {
       log('disabled by CONTENT_REFERENCES_ENABLED=0');

@@ -519,6 +519,9 @@ async function askJson({
   // goes on the run instead of only being printed.
   state = null,
   stage = null,
+  // Optional. The pinned MODEL unless a stage asks for another -- a scoped
+  // scene-redo patch is small and does not need the writer's model.
+  model = MODEL,
 }) {
   if (dryRun) return { dryRun: true, ...(dryRunValue || {}) };
 
@@ -535,7 +538,7 @@ async function askJson({
     // on it. stdin has no such limit, so prompt size stops being a failure mode.
     const argsFor = (permissionMode) => ([
       '-p',                             // no positional prompt: it is read from stdin
-      '--model', MODEL,
+      '--model', model,
       '--append-system-prompt', system,
       '--allowed-tools', '',            // permission guard (does not remove the tools)
       // 3, not 1: if the model does reach for a tool despite NO_TOOLS, one wasted
@@ -634,7 +637,7 @@ async function askJson({
   }
 
   if (log && typeof envelope.total_cost_usd === 'number') {
-    log(`claude -p: ${MODEL}, ~$${envelope.total_cost_usd.toFixed(4)} against your plan`);
+    log(`claude -p: ${model}, ~$${envelope.total_cost_usd.toFixed(4)} against your plan`);
   }
 
   // The envelope's own figure, per call -- each askJson spawns a fresh `claude -p`
@@ -648,7 +651,7 @@ async function askJson({
         stage: stage || 'llm',
         kind: 'model',
         usd: Number(envelope.total_cost_usd.toFixed(4)),
-        detail: `${MODEL} via claude -p: ${u.input_tokens || 0} in / ${u.output_tokens || 0} out`,
+        detail: `${model} via claude -p: ${u.input_tokens || 0} in / ${u.output_tokens || 0} out`,
       });
     } catch (e) {
       if (log) log(`could not record model spend: ${e.message}`);

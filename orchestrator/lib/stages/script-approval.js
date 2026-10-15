@@ -77,6 +77,50 @@ module.exports = {
       return { approved: true, by: '(dry run)', sha: null };
     }
 
+    // A scene redo (contract 1.3). The reviewer's scoped instruction IS the
+    // approval of the scoped change: the script was approved by sha before the
+    // render, the patch could touch only the flagged beats, and asking a person
+    // to read the whole script again would be asking them to approve what they
+    // just asked for. So: run the free checks (scoped, so an auto-fix cannot
+    // stray either), take the sha of the patched file, and BIND the approval to
+    // it on the queue -- the worker cleared the old sha precisely so this stage
+    // would re-bind rather than refuse a changed script.
+    const redo = (opts.videoRedo || artifacts.videoRedo) || null;
+    if (redo && opts.scriptApproved && !opts.scriptApprovedSha) {
+      const by = typeof opts.scriptApproved === 'string' ? opts.scriptApproved : 'human';
+      const scopeIds = Array.isArray(redo.beats) ? redo.beats.map(String) : [];
+      const { _internals } = require('./produce');
+      const r = await _internals.preApprovalChecks({
+        dir, beats: script.beats, log, lenient: Boolean(opts.lenient),
+        title: script.title || item.topic, st, scopeIds,
+      });
+      if (r.autoFixed && r.autoFixed.length && r.beats) {
+        script.beats = r.beats;
+        if (artifacts.script) artifacts.script.beats = r.beats;
+      }
+      const sha = deliverables.fingerprint(beatsPath);
+      writeRunContext(dir, { st, item, artifacts, sha, beatCount });
+      deliverables.persist({ series: item.series, slug: item.slug, videoDir: dir, log });
+      try {
+        const queue = require('../queue');
+        const cur = queue.get(item.id);
+        if (cur) {
+          queue.setStatus(item.id, cur.status, {
+            scriptSha: sha, scriptApprovedSha: sha, scriptApprovedAt: new Date().toISOString(), scriptBeatCount: beatCount,
+          });
+        }
+      } catch (e) {
+        log(`could not re-bind the approval on the queue (${e.message}); the run carries it`);
+      }
+      log.always(`scene redo round ${redo.round || 1}: approval re-bound to the patched script (${sha}) for beat(s) ${scopeIds.join(', ')}`);
+      state.recordIntervention(st, {
+        stage: 'script-approval',
+        kind: 'human_approved',
+        detail: `${by}'s scene redo of beat(s) ${scopeIds.join(', ')} stands as approval of the patched script (${sha}).`,
+      });
+      return { approved: true, by, sha, beatsPath, redo: true };
+    }
+
     // First pass only: run produce's free script checks BEFORE asking anyone. A
     // finding redrafts here (RedraftError -> 'script'), before the sha is taken,
     // so the script a person reads is one produce will accept. Without it the

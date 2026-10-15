@@ -319,9 +319,68 @@ function applyEdits(previous, patch) {
   return { beats, touched };
 }
 
+/**
+ * The patch schema for a SCENE REDO (contract 1.3): a reviewer watched the
+ * finished video and flagged particular beats. Only those ids may appear, and
+ * only their visual/voice fields -- no new beats, no removals, no mode change.
+ * The structural rule, same as EDIT_SCHEMA's: what the schema cannot express,
+ * the model cannot do.
+ */
+function restrictedEditSchema(ids, motion = false) {
+  const base = JSON.parse(JSON.stringify(motion ? MOTION_EDIT_SCHEMA : EDIT_SCHEMA));
+  delete base.properties.new_beats;
+  delete base.properties.removed_ids;
+  if (Array.isArray(base.required)) base.required = base.required.filter((k) => k === 'edits');
+  const props = base.properties.edits.items.properties;
+  props.id = { type: 'string', enum: [...ids], description: 'one of the flagged beats' };
+  delete props.mode;
+  base.properties.edits.maxItems = ids.length;
+  return base;
+}
+
+/** The fields a redo may change on a flagged beat. Everything else must be identical. */
+const REDO_EDITABLE = new Set(['vo', 'art', 'overlay', 'cap', 'holdAfter', 'motion', 'info', 'tone']);
+
+function canon(v) {
+  if (v === undefined) return 'undefined';
+  if (v && typeof v === 'object' && !Array.isArray(v)) {
+    return JSON.stringify(Object.keys(v).filter((k) => v[k] !== undefined).sort().reduce((o, k) => { o[k] = v[k]; return o; }, {}));
+  }
+  return JSON.stringify(v);
+}
+
+/**
+ * Prove a redo patch stayed in scope. Throws a plain Error (the stage retries
+ * the model, up to maxAttempts) naming the first thing that strayed.
+ */
+function assertRedoScope(previous, next, ids) {
+  const flagged = new Set((ids || []).map(String));
+  if (!Array.isArray(next) || next.length !== previous.length) {
+    throw new Error(`redo changed the beat count (${previous.length} -> ${next ? next.length : 'none'}); a scene redo cannot add or remove beats`);
+  }
+  for (let i = 0; i < previous.length; i++) {
+    const p = previous[i];
+    const n = next[i];
+    if (String(p.id) !== String(n.id)) {
+      throw new Error(`redo changed the beat order or an id at position ${i + 1} (${p.id} -> ${n.id})`);
+    }
+    if ((p.mode || null) !== (n.mode || null)) {
+      throw new Error(`redo changed the mode of beat ${p.id} (${p.mode} -> ${n.mode}); a scene redo keeps every mode`);
+    }
+    if (!flagged.has(String(p.id))) {
+      if (canon(p) !== canon(n)) throw new Error(`redo touched unflagged beat ${p.id}; only ${[...flagged].join(', ')} may change`);
+      continue;
+    }
+    for (const k of new Set([...Object.keys(p), ...Object.keys(n)])) {
+      if (REDO_EDITABLE.has(k)) continue;
+      if (canon(p[k]) !== canon(n[k])) throw new Error(`redo changed '${k}' on beat ${p.id}, which a scene redo may not touch`);
+    }
+  }
+}
+
 module.exports = {
   name: 'script',
-  _internals: { MOTION_SCHEMA, MOTION_EDIT_SCHEMA, LF_TEMPLATES },
+  _internals: { MOTION_SCHEMA, MOTION_EDIT_SCHEMA, LF_TEMPLATES, restrictedEditSchema, assertRedoScope },
   maxAttempts: 3,
 
   async run({ item, state: st, artifacts, opts, log }) {
@@ -345,11 +404,21 @@ module.exports = {
       ? artifacts.script.beats
       : null;
     const patchMode = Boolean(previousBeats && previousBeats.length);
+    // A scene redo (contract 1.3): the critique names beats, and the patch may
+    // touch nothing else. Enforced by the schema (restrictedEditSchema) and
+    // checked again on the result (assertRedoScope), not asked for politely.
+    const scope = patchMode && redraft && redraft.scope && Array.isArray(redraft.scope.ids) && redraft.scope.ids.length
+      ? { ids: redraft.scope.ids.map(String), allowVo: redraft.scope.allowVo !== false }
+      : null;
+    if (scope) log(`scene redo: only beat(s) ${scope.ids.join(', ')} may change`);
 
     const raw = await askJson({
       log,
       state: st,
       stage: 'script',
+      // A scoped patch is a small, well-bounded edit; it does not need the model
+      // the whole script is pinned to.
+      ...(scope ? { model: process.env.REDO_MODEL || 'claude-sonnet-5' } : {}),
       promptName: style.prompts.script,
       input: JSON.stringify({
         topic: item.topic,
@@ -379,6 +448,15 @@ module.exports = {
             ? 'Every spoken beat is "info". Use at least six different templates, and never the same template three beats in a row.'
             : 'At most a third of beats may be "info". Ali must carry the teaching -- consecutive info cards with no character on screen read as flat.',
         },
+        ...(scope ? {
+          revision_scope: {
+            beat_ids: scope.ids,
+            may_change: ['art', 'motion', 'cap', 'overlay', 'info', ...(scope.allowVo ? ['vo', 'tone'] : [])],
+            must_not_change: 'every other beat, every id, every mode, the checkpoint and its question',
+            why: 'A reviewer watched the FINISHED video and flagged only these scenes. Everything '
+              + 'else is already rendered and will be kept frame for frame.',
+          },
+        } : {}),
         ...(redraft ? {
           revision_round: redraft.round,
           reviewer_critique_to_fix: redraft.latest,
@@ -396,7 +474,9 @@ module.exports = {
           previous_beats: previousBeats || undefined,
         } : {}),
       }, null, 2),
-      schema: patchMode ? (motion ? MOTION_EDIT_SCHEMA : EDIT_SCHEMA) : (motion ? MOTION_SCHEMA : SCHEMA),
+      schema: patchMode
+        ? (scope ? restrictedEditSchema(scope.ids, motion) : (motion ? MOTION_EDIT_SCHEMA : EDIT_SCHEMA))
+        : (motion ? MOTION_SCHEMA : SCHEMA),
       maxTokens: 16000,
       dryRun: opts.dryRun,
       // The stub must satisfy the same structural rules as a real draft, or a dry
@@ -429,6 +509,9 @@ module.exports = {
     let script;
     if (patchMode) {
       const { beats, touched } = applyEdits(previousBeats, raw);
+      // The whole promise of a scene redo, checked on the result: nothing outside
+      // the flagged beats changed. A stray patch is retried, never rendered.
+      if (scope) assertRedoScope(previousBeats, beats, scope.ids);
       script = {
         // The title is not in the patch schema, so it survives a redraft unchanged.
         title: (artifacts.script && artifacts.script.subtopic) || item.topic,
@@ -456,7 +539,9 @@ module.exports = {
     // and a wordless illustration beat are both mechanical; on 2026-09-22 they
     // cost two redrafts, a lenient third, and the run. Each repair is logged and
     // recorded as an intervention so it travels to review -- nothing is hidden.
-    const repaired = repairBeats(script.beats, knownTemplates(dir));
+    // Not on a scene redo: the previous script already passed this, and a repair
+    // may touch a beat the reviewer did not flag.
+    const repaired = scope ? { beats: script.beats, repairs: [] } : repairBeats(script.beats, knownTemplates(dir));
     if (repaired.repairs.length) {
       script.beats = repaired.beats;
       for (const r of repaired.repairs) {

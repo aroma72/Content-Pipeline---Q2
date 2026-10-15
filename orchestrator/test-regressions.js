@@ -2315,8 +2315,9 @@ async function redraftChecks() {
   check('a redraft uses a patch schema, not the full-script schema', () => {
     assert(/EDIT_SCHEMA/.test(scriptSrc), 'no patch schema');
     // Per style since 2026-10-08: the motion-graphics style has its own patch schema.
-    assert(/schema: patchMode \? \(motion \? MOTION_EDIT_SCHEMA : EDIT_SCHEMA\) : \(motion \? MOTION_SCHEMA : SCHEMA\)/.test(scriptSrc),
-      'the patch schema is not selected on redrafts');
+    // Since 1.3 a scene redo narrows the patch further (restrictedEditSchema).
+    assert(/schema: patchMode\s*\?\s*\(scope \? restrictedEditSchema\(scope\.ids, motion\) : \(motion \? MOTION_EDIT_SCHEMA : EDIT_SCHEMA\)\)\s*:\s*\(motion \? MOTION_SCHEMA : SCHEMA\)/.test(scriptSrc),
+      'the patch schema is not selected on redrafts (or the redo scope no longer narrows it)');
     assert(applyEdits, 'applyEdits not found');
     return 'patch on redraft, full script on first draft';
   });
@@ -2709,7 +2710,10 @@ async function llmChecks() {
   check('the model is pinned (a default session picked Haiku)', () => {
     assert(cliLlm.MODEL === 'claude-opus-5', `model is ${cliLlm.MODEL}`);
     const src = fs.readFileSync(path.join(__dirname, 'lib', 'llm-cli.js'), 'utf8');
-    assert(/'--model',\s*MODEL/.test(src), '--model is not passed');
+    // Since 1.3 a caller may name a model (the scoped scene-redo patch uses a
+    // cheaper one); absent that, the pin is the default.
+    assert(/\bmodel = MODEL,/.test(src), 'the pinned MODEL is no longer the default');
+    assert(/'--model',\s*model\b/.test(src), '--model is not passed');
     return cliLlm.MODEL;
   });
 
@@ -5985,6 +5989,192 @@ async function videoRedoChecks() {
   if (savedRedo === undefined) delete process.env.COURSE_VIDEO_REDO; else process.env.COURSE_VIDEO_REDO = savedRedo;
 }
 
+/**
+ * Contract 1.3 -- what a redo BUILD may and may not touch.
+ *
+ * The promise to the reviewer is "only the scenes you named change". That is a
+ * structural property, not an instruction to a model: the patch schema can only
+ * name the flagged ids, a guard refuses a patch that strays, the gate and the
+ * reference search do not run again, the approval re-binds to the patched
+ * script, eval-text's auto-fixes stay inside the scope, and the voice of every
+ * unflagged beat keeps its bytes and its duration so the splice is exact.
+ */
+async function redoBuildChecks() {
+  console.log('');
+  console.log('12d. contract 1.3 -- a redo build changes only the flagged scenes');
+
+  const osMod = require('os');
+  const T = path.join(__dirname, '..', '.claude', 'skills', 'creating-explainer-videos', 'templates');
+  const script = require(path.join(__dirname, 'lib', 'stages', 'script'));
+  const produce = require(path.join(__dirname, 'lib', 'stages', 'produce'));
+
+  check('tts-plan pins every unflagged take: factor 1, bytes and duration kept; the median still covers all', () => {
+    const { plan } = require(path.join(T, 'lib', 'tts-plan'));
+    const p = plan([
+      { id: '01', secs: 3.0, voLen: 30, pinned: true, pinnedSecs: 3.4 },
+      { id: '02', secs: 3.0, voLen: 10, pinned: false },   // 0.3 s/char vs median 0.2 -> speed up, clamped at 1.1
+      { id: '03', secs: 6.0, voLen: 30, pinned: true, pinnedSecs: 6.5 },
+      { id: '04', secs: 1.0, voLen: 30, pinned: false },   // very fast -> clamp at 0.9
+    ]);
+    const by = Object.fromEntries(p.map((x) => [x.id, x]));
+    assert(by['01'].pinned === true && by['01'].factor === 1 && by['01'].secs === 3.4, `pinned 01: ${JSON.stringify(by['01'])}`);
+    assert(by['03'].pinned === true && by['03'].factor === 1 && by['03'].secs === 6.5, `pinned 03: ${JSON.stringify(by['03'])}`);
+    assert(by['02'].pinned === false && by['02'].factor === 1.1, `02 factor ${by['02'].factor} (clamp)`);
+    assert(by['04'].pinned === false && by['04'].factor === 0.9, `04 factor ${by['04'].factor} (clamp)`);
+    return 'pinned takes untouched, the rest normalised within ±10%';
+  });
+
+  check('splice-plan keeps runs of unflagged beats from the OLD render by old times and inserts the new ones in sequence', () => {
+    const { splicePlan } = require(path.join(T, 'lib', 'splice-plan'));
+    const oldD = { '01': 2.0, '02': 3.0, '03': 1.0, '04': 2.0 };
+    // 02 re-voiced and now 4 s; 03 flagged but same length.
+    const p = splicePlan({
+      oldOrder: ['01', '02', '03', '04'], oldDurations: oldD,
+      newOrder: ['01', '02', '03', '04'], newDurations: { ...oldD, '02': 4.0 },
+      flaggedIds: ['02', '03'], fps: 30,
+    });
+    assert(p.ok, `plan refused: ${p.why}`);
+    assert(p.segments.length === 3, `segments: ${JSON.stringify(p.segments)}`);
+    const [a, b, c] = p.segments;
+    assert(a.kind === 'keep' && a.ids.join(',') === '01' && a.oldStartSec === 0 && a.oldEndSec === 2.0, `seg a: ${JSON.stringify(a)}`);
+    assert(b.kind === 'new' && b.ids.join(',') === '02,03' && b.newStartSec === 2.0 && b.newEndSec === 7.0
+      && b.startFrame === 60 && b.endFrame === 210, `seg b: ${JSON.stringify(b)}`);
+    assert(c.kind === 'keep' && c.ids.join(',') === '04' && c.oldStartSec === 6.0 && c.oldEndSec === 8.0, `seg c: ${JSON.stringify(c)}`);
+    assert(p.totalSec === 9.0, `total ${p.totalSec}`);
+    assert(JSON.stringify(p.ranges) === JSON.stringify([{ startFrame: 60, endFrame: 210, ids: ['02', '03'] }]), `ranges: ${JSON.stringify(p.ranges)}`);
+    // Nothing to splice, a changed order, and a missing old duration are all refusals, not guesses.
+    assert(!splicePlan({ oldOrder: ['01'], oldDurations: { '01': 1 }, newOrder: ['01'], newDurations: { '01': 1 }, flaggedIds: [] }).ok, 'nothing flagged was accepted');
+    assert(!splicePlan({ oldOrder: ['01', '02'], oldDurations: { '01': 1, '02': 1 }, newOrder: ['02', '01'], newDurations: { '01': 1, '02': 1 }, flaggedIds: ['01'] }).ok, 'a reordered script was accepted');
+    assert(!splicePlan({ oldOrder: ['01', '02'], oldDurations: { '01': 1 }, newOrder: ['01', '02'], newDurations: { '01': 1, '02': 1 }, flaggedIds: ['01'] }).ok, 'a missing old duration was accepted');
+    // An unflagged beat whose duration moved is a bug upstream (the pin failed); refuse rather than ship a drift.
+    assert(!splicePlan({ oldOrder: ['01', '02'], oldDurations: { '01': 1, '02': 1 }, newOrder: ['01', '02'], newDurations: { '01': 1.5, '02': 1 }, flaggedIds: ['02'] }).ok, 'an unflagged beat changed length and the plan did not refuse');
+    return '3 segments, frames at 30fps, 4 refusals';
+  });
+
+  check('the redo patch schema can only name the flagged beats and cannot add, remove or re-mode one', () => {
+    const { restrictedEditSchema } = script._internals;
+    const s = restrictedEditSchema(['03', '07'], false);
+    const props = s.properties.edits.items.properties;
+    assert(JSON.stringify(props.id.enum) === '["03","07"]', `id enum ${JSON.stringify(props.id.enum)}`);
+    assert(!props.mode, 'mode is still editable');
+    assert(!s.properties.new_beats && !s.properties.removed_ids, 'new_beats/removed_ids survived');
+    for (const k of ['art', 'motion', 'cap', 'overlay', 'vo']) assert(props[k], `${k} is not editable`);
+    assert(s.properties.edits.maxItems === 2, `maxItems ${s.properties.edits.maxItems}`);
+    const m = restrictedEditSchema(['01'], true);
+    assert(!m.properties.edits.items.properties.art && m.properties.edits.items.properties.tone, 'motion-graphics variant wrong');
+    return 'enum-bound ids, no structural edits';
+  });
+
+  check('assertRedoScope refuses a patch that touched an unflagged beat, a mode, or the beat count', () => {
+    const { assertRedoScope } = script._internals;
+    const prev = [
+      { id: '01', mode: 'ali', vo: 'a', art: 'x', cap: 'c' },
+      { id: '02', mode: 'scene', vo: 'b', art: 'y' },
+      { id: '03', mode: 'checkpoint', quiz: { stem: 'q' } },
+    ];
+    const okNext = [{ ...prev[0] }, { ...prev[1], art: 'a blue shop', vo: 'b2' }, { ...prev[2] }];
+    assertRedoScope(prev, okNext, ['02']);
+    const threw = (next, ids) => { try { assertRedoScope(prev, next, ids); return null; } catch (e) { return e.message; } };
+    assert(/01/.test(threw([{ ...prev[0], cap: 'changed' }, prev[1], prev[2]], ['02']) || ''), 'an unflagged edit passed');
+    assert(/mode/.test(threw([prev[0], { ...prev[1], mode: 'info', info: { tpl: 'x' } }, prev[2]], ['02']) || ''), 'a mode change passed');
+    assert(/count|length|beats/.test(threw([prev[0], prev[1]], ['02']) || ''), 'a dropped beat passed');
+    assert(/order|id/.test(threw([prev[1], prev[0], prev[2]], ['01', '02']) || ''), 'a reorder passed');
+    return 'unflagged edit, mode, count, order all refused';
+  });
+
+  await checkAsync('gate and references do not run again on a redo', async () => {
+    const gate = require(path.join(__dirname, 'lib', 'stages', 'gate'));
+    const references = require(path.join(__dirname, 'lib', 'stages', 'references'));
+    const log = Object.assign(() => {}, { always: () => {} });
+    const g = await gate.run({ item: { id: 's/l', topic: 't' }, state: { runId: 'r', interventions: [] },
+      artifacts: { script: { title: 'T', beats: [], beatCount: 0 }, videoRedo: { beats: ['01'] } },
+      opts: { dryRun: true, videoRedo: { beats: ['01'] } }, log });
+    assert(g.verdict === 'READY' && g.skipped === 'video-redo', `gate: ${JSON.stringify(g)}`);
+    const r = await references.run({ item: { id: 's/l', topic: 't', wantReferences: true }, state: { runId: 'r' },
+      artifacts: { videoRedo: { beats: ['01'] } }, opts: { dryRun: false, videoRedo: { beats: ['01'] } }, log });
+    assert(/redo/.test(String(r.skipped || '')), `references: ${JSON.stringify(r)}`);
+    return 'gate READY (skipped: video-redo), references skipped';
+  });
+
+  await checkAsync('script-approval on a redo re-binds the approval to the patched script, in scope', async () => {
+    const jobStore = require(path.join(__dirname, '..', 'server', 'lib', 'job-store'));
+    const queue = require(path.join(__dirname, 'lib', 'queue'));
+    const approval = require(path.join(__dirname, 'lib', 'stages', 'script-approval'));
+    const dir = fs.mkdtempSync(path.join(osMod.tmpdir(), 'cq-redo-sa-'));
+    jobStore.reset(); queue.resetPathCache();
+    delete process.env.RAILWAY_VOLUME_MOUNT_PATH;
+    process.env.JOB_STORE_DIR = dir; process.env.JOB_STORE_DURABLE = '1';
+    const savedVid = process.env.EXPLAINER_VIDEOS_DIR;
+    process.env.EXPLAINER_VIDEOS_DIR = path.join(dir, 'videos');
+    const realChecks = produce._internals.preApprovalChecks;
+    let seenScope = null;
+    try {
+      const { videoDir } = require(path.join(__dirname, 'lib', 'paths'));
+      const it = queue.enqueue({ topic: 'redo sa', series: 'demo', slug: 'sa1', source: 'course-builder', notes: '[course-a] b' });
+      queue.claim('demo/sa1', 'run-sa');
+      const vd = videoDir('demo', 'sa1');
+      fs.mkdirSync(vd, { recursive: true });
+      const beats = [{ id: '01', mode: 'ali', vo: 'Hi.', art: 'a blue shop', cap: 'Hi' }];
+      fs.writeFileSync(path.join(vd, 'beats.js'), `module.exports = ${JSON.stringify(beats)};\n`);
+      produce._internals.preApprovalChecks = async ({ scopeIds, beats: b }) => { seenScope = scopeIds; return { checked: [], findings: [], beats: b, autoFixed: [] }; };
+      const log = Object.assign(() => {}, { always: () => {} });
+      const out = await approval.run({ item: it, state: { runId: 'run-sa', interventions: [], redrafts: 0 },
+        artifacts: { script: { title: 'T', beats, beatsPath: path.join(vd, 'beats.js'), beatCount: 1 }, videoRedo: { beats: ['01'] } },
+        opts: { scriptApproved: 'aroma', scriptApprovedSha: null, videoRedo: { beats: ['01'], round: 1 } }, log });
+      assert(out.approved === true && /^[0-9a-f]{16}$/.test(out.sha), `not approved with a sha: ${JSON.stringify(out)}`);
+      assert(JSON.stringify(seenScope) === '["01"]', `preApprovalChecks scope ${JSON.stringify(seenScope)}`);
+      const after = queue.get('demo/sa1');
+      assert(after.scriptSha === out.sha && after.scriptApprovedSha === out.sha, `queue not re-bound: ${after.scriptSha}/${after.scriptApprovedSha}`);
+      assert(after.status === 'claimed', 'the stage changed the lesson status');
+      return `re-bound to ${out.sha}`;
+    } finally {
+      produce._internals.preApprovalChecks = realChecks;
+      if (savedVid === undefined) delete process.env.EXPLAINER_VIDEOS_DIR; else process.env.EXPLAINER_VIDEOS_DIR = savedVid;
+    }
+  });
+
+  check('eval-text auto-fixes stay inside the redo scope', () => {
+    const dir = fs.mkdtempSync(path.join(osMod.tmpdir(), 'cq-redo-fix-'));
+    produce._internals.copyTemplates(T, dir, null);
+    const beats = [
+      { id: '01', mode: 'ali', vo: 'Ali open the shop.', art: 'a shop', cap: 'Monday' },
+      { id: '02', mode: 'scene', vo: 'The bank are closed.', art: 'a bank', cap: 'Closed' },
+      { id: '03', mode: 'checkpoint', quiz: { stem: 'Why is the shop quiet?', options: ['a', 'b', 'c', 'd'], answer: 1,
+        explain: 'B looks right at a glance because the shop is open, but only A explains why nobody came in: the bank next door is closed.' } },
+      { id: '04', mode: 'scene', vo: 'So Ali waits.', art: 'Ali waiting', cap: 'Waiting' },
+    ];
+    fs.writeFileSync(path.join(dir, 'eval-text-results.json'), JSON.stringify({ issues: [
+      { severity: 'error', text: 'Ali open the', suggestion: 'Ali opens the' },
+      { severity: 'error', text: 'bank are', suggestion: 'bank is' },
+    ] }));
+    const r = produce._internals.tryTextAutoFix({ dir, beats, title: 'T', scopeIds: ['02'] });
+    assert(r && r.applied.length === 1 && r.applied[0].id === '02', `applied ${JSON.stringify(r && r.applied)}`);
+    assert(r.beats[0].vo === 'Ali open the shop.', 'an out-of-scope fix was applied');
+    assert(r.beats[1].vo === 'The bank is closed.', 'the in-scope fix was not applied');
+    const all = produce._internals.tryTextAutoFix({ dir, beats, title: 'T' });
+    assert(all && all.applied.length === 2, 'without a scope both fixes should apply');
+    return 'scope honoured; unscoped applies both';
+  });
+
+  check('copyTemplates with refresh brings a changed template into an existing video dir, and never touches beats.js', () => {
+    const src = fs.mkdtempSync(path.join(osMod.tmpdir(), 'cq-tpl-src-'));
+    const dest = fs.mkdtempSync(path.join(osMod.tmpdir(), 'cq-tpl-dest-'));
+    fs.writeFileSync(path.join(src, 'compile-lesson.js'), 'v2');
+    fs.writeFileSync(path.join(src, 'beats.js'), 'module.exports = [];');
+    fs.mkdirSync(path.join(src, 'lib'));
+    fs.writeFileSync(path.join(src, 'lib', 'new.js'), 'new');
+    fs.writeFileSync(path.join(dest, 'compile-lesson.js'), 'v1');
+    fs.writeFileSync(path.join(dest, 'beats.js'), 'module.exports = [{id:"01"}];');
+    produce._internals.copyTemplates(src, dest, null);
+    assert(fs.readFileSync(path.join(dest, 'compile-lesson.js'), 'utf8') === 'v1', 'the default copy overwrote an existing file');
+    produce._internals.copyTemplates(src, dest, null, { refresh: true });
+    assert(fs.readFileSync(path.join(dest, 'compile-lesson.js'), 'utf8') === 'v2', 'refresh did not update a changed template');
+    assert(fs.readFileSync(path.join(dest, 'lib', 'new.js'), 'utf8') === 'new', 'refresh did not add a new lib file');
+    assert(fs.readFileSync(path.join(dest, 'beats.js'), 'utf8') === 'module.exports = [{id:"01"}];', 'REFRESH OVERWROTE THE SCRIPT');
+    return 'refresh updates templates, beats.js kept';
+  });
+}
+
 async function motionProduceChecks() {
   console.log('\n-- motion-graphics produce (segment-all with no art) --');
   const os = require('os');
@@ -6219,6 +6409,7 @@ async function motionProduceChecks() {
   await driveOffloadChecks();
   await residueChecks();
   await videoRedoChecks();
+  await redoBuildChecks();
   styleChecks();
   await motionProduceChecks();
 
