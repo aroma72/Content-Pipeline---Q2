@@ -64,6 +64,7 @@ Pipeline: `beats.js` → `generate-lesson-art.js` (Imagen) → `segment-all.py` 
 | 7 | `node compile-lesson.js` | `out/<name>.mp4` — the **bare** lesson (NOT the deliverable) |
 | 8 | `node stitch-brand.js --title "<Title>" --lesson out/<name>.mp4 --out out/<name>_final.mp4` | **the deliverable** |
 | 9 | `node verify.js` | acceptance checklist (Section 11 of the spec) |
+| 9b | **publish the quiz to Railway — the moment the video is built** | GUARDRAIL (Aroma, 2026-10-16). From a clean `origin/main` worktree add ONLY `beats.js`, `durations.json`, `checkpoint.json`, `QUESTION.md`; `node scripts/publish-checkpoint.js --check <series>/<slug>`; regenerate `scripts/build-catalogue-manifest.js` + add the beats.js to `evals/skills/baseline.json`; push to main; `scripts/deploy.sh` from the railway-linked folder; then GET `/api/v1/videos/<slug>/checkpoints` must return the question. Report slug + `atSeconds` for the LMS developer. A video is not done until its quiz is live. |
 | 10 | *(production)* `node scripts/lms-e2e.js` from the repo root | the same pipeline driven through the LMS API on Railway: quote only without `--yes`. See `testing-the-pipeline-end-to-end` |
 
 `--yes` (or `CONFIRM_SPEND=1`) is required on steps 3, 5 and 5b — the cost guard blocks paid calls otherwise.
