@@ -111,7 +111,15 @@ window.seekTo = async function (ms) {
 (function init() {
   const go = (d) => {
     buildTimeline(d);
-    document.fonts.ready
+    // Fit every frame to its words (info-lf.js, LFFit) -- only once the real faces are loaded,
+    // because a fallback font measures differently and the fit would be for the wrong type.
+    const faces = ['900 60px "LF Slab"', '700 60px "LF Slab"', 'italic 300 60px "LF Soft"', '400 60px "LF Text"'];
+    Promise.allSettled(faces.map((f) => document.fonts.load(f)))
+      .then(() => document.fonts.ready)
+      .then(() => {
+        window.__fit = {};
+        if (window.LFFit) TL.forEach((it) => { window.__fit[it.id] = window.LFFit.fitLayer(it.layer).map((x) => x.msg); });
+      })
       .then(() => window.seekTo(0))
       .then(() => { window.ready = true; })
       .catch((e) => { window.__readyError = (e && e.message) || String(e); window.ready = true; });

@@ -126,6 +126,12 @@ function motionBeatProps(props) {
     + '"gently and reassuringly" or "with quiet conviction"; omit on the checkpoint' };
   return p;
 }
+// Characters each lf field can carry. Lives with the templates because qa-info (which runs in
+// the video folder) enforces it; read from there so the prompt and the gate share one table.
+function lfLimits() {
+  const { PATHS } = require('../paths');
+  return require(path.join(PATHS.videoTemplates, 'lib', 'lf-limits.js')).LF_LIMITS;
+}
 const MOTION_SCHEMA = JSON.parse(JSON.stringify(SCHEMA));
 MOTION_SCHEMA.properties.beats.items.properties = motionBeatProps(SCHEMA.properties.beats.items.properties);
 
@@ -380,7 +386,7 @@ function assertRedoScope(previous, next, ids) {
 
 module.exports = {
   name: 'script',
-  _internals: { MOTION_SCHEMA, MOTION_EDIT_SCHEMA, LF_TEMPLATES, restrictedEditSchema, assertRedoScope },
+  _internals: { MOTION_SCHEMA, MOTION_EDIT_SCHEMA, LF_TEMPLATES, lfLimits, restrictedEditSchema, assertRedoScope },
   maxAttempts: 3,
 
   async run({ item, state: st, artifacts, opts, log }) {
@@ -433,6 +439,15 @@ module.exports = {
         ...(motion ? {
           voice: 'Speak to the learner directly as "you". No named protagonist, no Ali: the '
             + 'people in the walk-throughs are described by their role ("a field coordinator").',
+          // The same table qa-info enforces before approval (templates/lib/lf-limits.js), so
+          // the writer is told the limit it will be held to rather than a softer one.
+          on_screen_text_limits: {
+            characters_per_field: lfLimits(),
+            rule: 'Every on-screen field must fit its limit (characters, spaces included). '
+              + '"field[]" applies to each item of that list; "field#" is the most items it may have. '
+              + 'A longer field fails the build and the script comes back for a redraft. Keep on-screen '
+              + 'text to the key words; the spoken line carries the detail.',
+          },
         } : {
           character_canon: {
             ali: ALI,

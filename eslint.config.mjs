@@ -88,6 +88,7 @@ export default [
       'scripts/record-demo.js',
       '.claude/skills/**/templates/compile-lesson.js',
       '.claude/skills/**/templates/qa-frames.js',
+      '.claude/skills/**/templates/qa-layout.js',
       '.claude/skills/**/templates/animation/**/*.js',
     ],
     languageOptions: {

@@ -749,7 +749,7 @@ async function beatChecks() {
   // never checked. qa-checkpoint, qa-info and qa-frames sat that way for months
   // while CLAUDE.md said qa-checkpoint "fails the build", so this list is the
   // guard: adding a sensor to templates/ without calling it here fails the suite.
-  const SENSORS = ['qa-visuals.js', 'qa-cutouts.js', 'qa-checkpoint.js', 'qa-info.js',
+  const SENSORS = ['qa-visuals.js', 'qa-cutouts.js', 'qa-checkpoint.js', 'qa-info.js', 'qa-layout.js',
     'qa-art.js', 'qa-frames.js', 'eval-text.js'];
 
   check('produce.js runs every sensor, each before the spend it protects', () => {
@@ -760,7 +760,7 @@ async function beatChecks() {
     }
     // Script-level sensors read only beats.js, so they must land before any money
     // is committed -- there they cost nothing to fail.
-    for (const name of ['qa-visuals.js', 'qa-cutouts.js', 'qa-checkpoint.js', 'qa-info.js']) {
+    for (const name of ['qa-visuals.js', 'qa-cutouts.js', 'qa-checkpoint.js', 'qa-info.js', 'qa-layout.js']) {
       assert(at(`sensor('${name}'`) < at('--- spend gate'), `${name} runs after money is committed`);
     }
     assert(at("sensor('qa-art.js'") < at('// 4. voiceover'), 'qa-art runs after TTS is bought');
@@ -1564,7 +1564,7 @@ async function beatChecks() {
     assert(/humanApproved = Boolean\(opts\.scriptApproved && opts\.scriptApprovedSha\)/.test(src)
       && /if \(redraftable && \(opts\.lenient \|\| humanApproved\)\)/.test(src),
       'produce redrafts a script a person approved by sha -- the approval loop is back');
-    assert(produce._internals.SCRIPT_SENSORS.map(([s]) => s).join() === 'qa-visuals.js,qa-cutouts.js,qa-checkpoint.js,qa-info.js,eval-text.js',
+    assert(produce._internals.SCRIPT_SENSORS.map(([s]) => s).join() === 'qa-visuals.js,qa-cutouts.js,qa-checkpoint.js,qa-info.js,qa-layout.js,eval-text.js',
       'the shared script-sensor list changed; script-approval and produce must run the same checks');
     const preSpend = [...src.slice(0, src.indexOf('--- spend gate')).matchAll(/await sensor\('([\w.-]+)',[^;]*redraftable: true[^;]*\);/g)].map((m) => m[1]);
     assert(preSpend.join() === produce._internals.SCRIPT_SENSORS.map(([sc]) => sc).join(),
@@ -6527,6 +6527,85 @@ async function motionProduceChecks() {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  // LMS course builder, 2026-10-16: motion-graphics videos shipped with text on text and text
+  // that could not be read, while the same style made by hand never did. The templates place
+  // type at fixed spots sized for hand-written lines; the script model wrote ordinary sentences.
+  // Every line below is inside the prompt's own stated limits, and every one of these beats
+  // collided on the old renderer (title over its shapes, loop labels cut at the edge, the
+  // ladder's lit rung on its note, a funnel step off its band).
+  const COURSE_BUILDER_BEATS = [
+    { id: '01', mode: 'info', vo: 'Feedback can stay fair.', info: { tpl: 'lfTitle', data: { bg: 'mustard', text: 'Giving Feedback Without Taking Sides', sub: 'how a P&C Buddy stays fair when two colleagues disagree', shapes: 'squares' } } },
+    { id: '02', mode: 'info', vo: 'The deadline keeps moving.', info: { tpl: 'lfLoop', data: { title: 'The blame cycle at work', steps: ['The deadline moves without warning', 'The report arrives late again', 'Trust between them drops further'] } } },
+    { id: '03', mode: 'info', vo: 'You added a meaning.', info: { tpl: 'lfLadder', data: { title: 'Ladder of Inference', credit: 'Chris Argyris', rungs: ['What actually happened', 'The details you noticed', 'The meaning you added', 'The conclusion you drew', 'The action you took'], active: 2, label: 'He changed the date twice, so he must not trust me' } } },
+    { id: '04', mode: 'info', vo: 'Narrow your questions.', info: { tpl: 'lfFunnel', data: { title: 'The Question Funnel', steps: ['Open questions', 'Probing questions', 'Closing questions'], questions: ['What has been happening with the deadlines lately?', 'When did the date last change, and who changed it?', 'So the date moved twice this month, is that right?'] } } },
+    { id: '05', mode: 'info', vo: 'Here is what they said.', info: { tpl: 'lfTalk', data: { speaker: 'a', bubble: 'My manager keeps changing the deadline and then blames me when the report is late.' } } },
+    { id: '06', mode: 'info', vo: 'Hold both at once.', info: { tpl: 'lfScale', data: { left: 'The employee\'s feelings', right: 'The organisation\'s policy', tilt: 0, tag: 'Hold both at once' } } },
+    { id: '07', mode: 'info', vo: 'Pick the next step.', info: { tpl: 'lfOptions', data: { title: 'What could you do next?', bg: 'cream', options: ['Ask for a written brief', 'Agree a fixed deadline', 'Book a weekly check-in'], chosen: 1 } } },
+  ];
+  const runGate = (gate, dir) => {
+    const { spawnSync } = require('child_process');
+    const r = spawnSync(process.execPath, [gate], {
+      cwd: dir, encoding: 'utf8', timeout: 5 * 60 * 1000,
+      env: { ...process.env, NODE_PATH: path.join(__dirname, '..', 'node_modules') },
+    });
+    return { status: r.status, out: `${r.stdout || ''}${r.stderr || ''}` };
+  };
+  const noBrowser = (out) => /could not run — (the browser|puppeteer)|Could not find|Failed to launch|Browser was not found/i.test(out);
+
+  await checkAsync('qa-layout: course-builder-length lines fit once the renderer fits them (no text on text, none unreadable)', async () => {
+    const dir = scaffold('lflayout-', COURSE_BUILDER_BEATS);
+    try {
+      const r = runGate('qa-layout.js', dir);
+      if (noBrowser(r.out)) return skip('no launchable browser for qa-layout');
+      assert(r.status === 0 && /PASS/.test(r.out), `qa-layout exit ${r.status}: ${r.out.split('\n').filter((l) => /·/.test(l)).slice(0, 6).join(' | ')}`);
+      return `${COURSE_BUILDER_BEATS.length} beats that collided before: all fit, all readable`;
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  await checkAsync('qa-layout fails text the frame cannot hold, naming the beat and the field to shorten', async () => {
+    const dir = scaffold('lflayout-bad-', [
+      { id: '01', mode: 'info', vo: 'x', info: { tpl: 'lfLoop', data: { title: 'The cycle that keeps repeating every single week in the team', steps: ['a', 'b', 'c'] } } },
+      { id: '02', mode: 'info', vo: 'y', info: { tpl: 'lfFunnel', data: { steps: ['Ask broad open questions first', 'Probe deeper into the specifics', 'Close by confirming what you heard'] } } },
+    ]);
+    try {
+      const r = runGate('qa-layout.js', dir);
+      if (noBrowser(r.out)) return skip('no launchable browser for qa-layout');
+      assert(r.status === 2, `expected exit 2 (findings), got ${r.status}: ${r.out.slice(0, 300)}`);
+      assert(/beat 01 \(lfLoop\).*field `title`/.test(r.out), `the over-long title is not named: ${r.out.slice(0, 400)}`);
+      assert(/beat 02 \(lfFunnel\).*field `steps\[2\]`/.test(r.out), `the step off its band is not named: ${r.out.slice(0, 400)}`);
+      assert(/SHORTER/.test(r.out), 'the finding does not tell the writer what to do');
+      return 'title + funnel step named, with the fix';
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  check('qa-info holds every motion field to lib/lf-limits.js, and every approved hand-made lf video passes it', () => {
+    const { PATHS } = require('./lib/paths');
+    const approved = ['c1w1-your-role', 'c1w2-beyond-the-reaction', 'c1w3-listen-then-ask', 'c1w4-warm-but-fair']
+      .map((s) => path.join(PATHS.explainerVideos || path.join(__dirname, '..', 'explainer-videos'), 'pc-people-skills', s, 'beats.js'))
+      .filter((f) => fs.existsSync(f));
+    for (const f of approved) {
+      const dir = scaffold('lfinfo-', null);
+      try {
+        fs.copyFileSync(f, path.join(dir, 'beats.js'));
+        const r = runGate('qa-info.js', dir);
+        assert(r.status === 0, `${path.basename(path.dirname(f))} (approved) now fails qa-info: ${r.out.slice(0, 300)}`);
+      } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+    }
+    const dir = scaffold('lfinfo-long-', [{ id: '01', mode: 'info', vo: 'x', info: { tpl: 'lfTalk', data: { bubble: 'w '.repeat(100).trim() } } }]);
+    try {
+      const r = runGate('qa-info.js', dir);
+      assert(r.status === 2 && /`bubble` is 199 characters.*at most 150/.test(r.out), `a 199-character bubble passed: ${r.out.slice(0, 300)}`);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+    const { LF_TEMPLATES, lfLimits } = require('./lib/stages/script')._internals;
+    const missing = LF_TEMPLATES.filter((t) => !lfLimits()[t]);
+    assert(!missing.length, `templates offered to the writer with no text limit: ${missing.join(', ')}`);
+    return `${approved.length} approved videos pass; over-limit fails; all ${LF_TEMPLATES.length} offered templates limited`;
   });
 
   // Bug B, LMS staging 2026-10-12: with a music bed, `[narr]` was consumed twice (sidechain key

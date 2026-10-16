@@ -91,3 +91,11 @@ html,body{width:1920px;height:1080px;overflow:hidden;background:var(--cream);col
 .lf-head .rule[data-at]{transform-origin:50% 0}
 .stopc{fill:var(--teal-l)} .hl .stopc{fill:var(--mustard)}
 .optc{fill:var(--teal-l)} .optc.hl{fill:var(--mustard)}
+
+/* Moawin: a workbook row as a card, and a stamp that lands on it */
+.row-card{background:var(--paper);border-bottom:8px solid var(--ink);box-shadow:0 8px 0 rgba(0,0,0,.06)}
+.row-field{background:var(--teal);color:var(--paper);font-family:'LF Slab';font-weight:700;font-size:44px;padding:18px 48px}
+.row-text{font-family:'LF Text';font-size:54px;line-height:1.35;padding:40px 48px 48px;color:var(--ink)}
+.row-stamp span{display:inline-block;transform:rotate(-7deg);font-family:'LF Slab';font-weight:900;font-size:76px;letter-spacing:4px;
+  padding:6px 34px;border:8px solid currentColor;border-radius:14px;background:rgba(255,251,242,.85)}
+.row-stamp.task{color:var(--mustard-d)} .row-stamp.bet{color:var(--teal-d)}

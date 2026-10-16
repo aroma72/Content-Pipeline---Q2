@@ -21,6 +21,9 @@
 (function () {
   const T = window.InfoTemplates || (window.InfoTemplates = {});
 
+  // A tiny HTML escaper: the templates build text through innerHTML.
+  const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+
   const el = (tag, cls, html) => {
     const n = document.createElement(tag);
     if (cls) n.className = cls;
@@ -108,8 +111,10 @@
       <path d="M134 214 Q150 222 166 214" stroke="${P.shade}" stroke-width="5" fill="none" stroke-linecap="round"/>
     </g>`;
   }
-  const figure = (v, w, gesture) => svgBox(figureSVG(v, gesture), gesture ? '0 0 380 600' : '0 0 300 600',
-    w, Math.round(w * 600 / (gesture ? 380 : 300)));
+  // data-keep: type must stay off this drawing (LFFit shrinks text out of it; qa-layout fails on it)
+  const keep = (n) => { n.dataset.keep = '1'; return n; };
+  const figure = (v, w, gesture) => keep(svgBox(figureSVG(v, gesture), gesture ? '0 0 380 600' : '0 0 300 600',
+    w, Math.round(w * 600 / (gesture ? 380 : 300))));
 
   // ── flat icons (no text, no letters — teaching text stays HTML) ───────────
   const ICON = {
@@ -146,14 +151,23 @@
     sign: '<rect x="92" y="30" width="16" height="160" fill="#1F1F1F"/>'
       + '<path d="M108 40 H170 L188 58 L170 76 H108Z" fill="var(--mustard)"/><path d="M92 86 H30 L12 104 L30 122 H92Z" fill="var(--paper)"/>'
       + '<path d="M108 132 H160 L178 150 L160 168 H108Z" fill="var(--cream)"/>',
+    target: '<circle cx="100" cy="100" r="84" fill="var(--paper)"/><circle cx="100" cy="100" r="60" fill="var(--mustard)"/>'
+      + '<circle cx="100" cy="100" r="36" fill="var(--paper)"/><circle cx="100" cy="100" r="14" fill="var(--ink)"/>'
+      + '<path d="M100 100 L170 30" stroke="var(--ink)" stroke-width="8" stroke-linecap="round"/><path d="M152 28 L176 24 L172 48" stroke="var(--ink)" stroke-width="8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
   };
-  const icon = (name, size) => svgBox(ICON[name] || '', '0 0 200 200', size, size);
+  const icon = (name, size) => keep(svgBox(ICON[name] || '', '0 0 200 200', size, size));
+  // A long line gets a wider, smaller bubble up front (Moawin rows), so LFFit has less to do.
+  const fitBubble = (b, text, base, wide) => {
+    const n = String(text || '').length;
+    if (n > 70) b.style.fontSize = Math.max(36, base - Math.round((n - 70) / 8)) + 'px';
+    if (wide && n > 90) b.style.maxWidth = wide + 'px';
+  };
 
   // ── lfTitle: full colour field, a big title, a row of shapes ──────────────
   T.lfTitle = function (d) {
     const f = frame(d.bg, `lf-titlecard on-${d.bg}`);
     f.appendChild(head(d.text, { soft: d.italic, sub: d.sub }));
-    const row = el('div', 'shapes');
+    const row = keep(el('div', 'shapes'));
     [34, 120, 80, 104, 26].forEach((s, i) => {
       const n = el('div', d.shapes === 'dots' ? 'dot' : 'sq');
       n.style.width = n.style.height = (d.shapes === 'dots' ? s * 1.1 : s) + 'px';
@@ -268,10 +282,11 @@
     const f = frame('cream');
     const L = el('div', 'half l bg-cream'); anim(L, 0, 'slideL', { dur: '0.12' });
     const R = el('div', 'half r bg-teal on-dark'); anim(R, 0.06, 'slideR', { dur: '0.12' });
-    L.appendChild(head(d.left, { x: 120 }));
-    R.appendChild(head(d.right, { soft: true, x: 120 }));
-    const a = icon('buoy', 360); place(a, 300, 460); anim(a, 0.22, 'pop', { float: '6' }); L.appendChild(a);
-    const b = icon('sign', 360); place(b, 300, 460); anim(b, 0.32, 'pop', { float: '6' }); R.appendChild(b);
+    L.appendChild(head(d.left, { x: 120, sub: d.leftSub, maxw: 760 }));
+    R.appendChild(head(d.right, { soft: true, x: 120, sub: d.rightSub, maxw: 760 }));
+    const ics = d.icons || ['buoy', 'sign'];
+    const a = icon(ics[0], 360); place(a, 300, 460); anim(a, 0.22, 'pop', { float: '6' }); L.appendChild(a);
+    const b = icon(ics[1], 360); place(b, 300, 460); anim(b, 0.32, 'pop', { float: '6' }); R.appendChild(b);
     f.appendChild(L); f.appendChild(R);
     const ne = svgBox('<circle cx="80" cy="80" r="76" fill="var(--paper)"/><path d="M44 66 H116 M44 96 H116 M100 36 L60 126" stroke="#1F1F1F" stroke-width="12" stroke-linecap="round"/>',
       '0 0 160 160', 160, 160);
@@ -312,8 +327,11 @@
 
   // ── lfOptions: you lay out the options, they choose ───────────────────────
   T.lfOptions = function (d) {
-    const f = frame(d.bg || 'teal', 'on-dark');
-    f.appendChild(head(d.title, { soft: true }));
+    // Light type only on teal: on a cream or mustard field it read at 1.1:1 (qa-layout, 2026-10-16)
+    const bg = d.bg || 'teal', dark = bg === 'teal';
+    const f = frame(bg, dark ? 'on-dark' : '');
+    f.appendChild(head(d.title, { soft: dark }));
+    const line = dark ? 'var(--paper)' : 'var(--ink)';
     const fig = figure('a', 330, true); place(fig, 180, 380); anim(fig, 0.04, 'up', { float: '4' }); f.appendChild(fig);
     const opts = d.options || [];
     // Up to three options keep the 200px pitch from y=420. A fourth row there would start at
@@ -323,7 +341,7 @@
     const ys = opts.map((_, i) => top + i * pitch);
     let svg = '';
     opts.forEach((_, i) => {
-      svg += `<path d="M640 610 C860 610 900 ${ys[i]} 1120 ${ys[i]}" pathLength="1" stroke="var(--paper)" stroke-width="6" fill="none"
+      svg += `<path d="M640 610 C860 610 900 ${ys[i]} 1120 ${ys[i]}" pathLength="1" stroke="${line}" stroke-width="6" fill="none"
         stroke-dasharray="1 1" data-draw data-at="${0.12 + i * 0.08}" data-dur="0.16"/>`;
       svg += `<circle class="optc" cx="1170" cy="${ys[i]}" r="46" data-at="${0.2 + i * 0.08}" data-in="pop" ${i === d.chosen ? 'data-hl="0.62"' : ''}/>`;
     });
@@ -355,6 +373,7 @@
     const fig = figure(d.speaker || 'a', 440, true); place(fig, 260, 330); anim(fig, 0.02, 'up', { float: '4' });
     f.appendChild(fig);
     const b = el('div', 'bubble'); place(b, 420, 120); anim(b, 0.12, 'pop', { dur: '0.08' });
+    fitBubble(b, d.bubble, 48, 1280);
     bubbleWords(b, d.bubble, 0.16, 0.6);
     f.appendChild(b);
     return f;
@@ -379,7 +398,7 @@
         anim(fig, 0.02, 'up', { float: focus ? '4' : '0' });
         H.appendChild(fig);
         if (s.bubble) {
-          const b = el('div', 'bubble dimmable'); place(b, 180, 300); b.style.maxWidth = '660px'; b.style.fontSize = '46px';
+          const b = el('div', 'bubble dimmable'); place(b, 180, 300); b.style.maxWidth = '660px'; b.style.fontSize = '46px'; fitBubble(b, s.bubble, 46);
           anim(b, focus ? 0.12 : 0.02, 'pop', { dur: '0.08' });
           if (focus) bubbleWords(b, s.bubble, 0.16, 0.58); else b.textContent = s.bubble;
           H.appendChild(b);
@@ -387,6 +406,8 @@
       }
       f.appendChild(H);
     });
+    // the tag sits under the right half's title, clear of both speakers
+    if (d.tag) { const t = el('div', 'tag', esc(d.tag)); place(t, 1110, 212); anim(t, 0.3, 'pop'); f.appendChild(t); }
     return f;
   };
 
@@ -429,8 +450,6 @@
     return f;
   };
 
-  // A tiny HTML escaper for the templates below: they build text through innerHTML.
-  const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
 
   // ── lfModel: a named model as letter tiles (SCARF, RASA, GROW, numbered steps) ──
   //   data:{ title, letters:[...], words:[...], active: -1 | i | [i,...], note?, credit? }
@@ -517,7 +536,11 @@
     const g = svgBox(svg, '0 0 1920 1080', 1920, 1080); place(g, 0, 0); f.appendChild(g);
     steps.forEach((s, i) => {
       const lb = el('div', 'lbl hard center', esc(s)); lb.style.color = i ? 'var(--paper)' : 'var(--ink)';
-      place(lb, cx - 200, 365 + i * 170, 400); anim(lb, 0.1 + i * 0.12, 'up'); f.appendChild(lb);
+      // the label must sit INSIDE its band: off the band, paper type lands on cream
+      const bw = bands[i][1] - 40;
+      place(lb, cx - bw / 2, 365 + i * 170, bw); anim(lb, 0.1 + i * 0.12, 'up');
+      lb.dataset.box = [cx - bw / 2, 320 + i * 170 + 8, bw, 134].join(',');
+      f.appendChild(lb);
       if (qs[i]) {
         const q = el('div', 'lbl', esc(qs[i])); q.style.whiteSpace = 'normal'; q.style.fontSize = '42px';
         place(q, 1120, 352 + i * 170, 700); anim(q, 0.2 + i * 0.22, 'left'); f.appendChild(q);
@@ -559,4 +582,257 @@
     }
     return f;
   };
+
+  // ── lfRow: one workbook row, quoted exactly, optionally stamped (Moawin) ──
+  //   data:{ id, goal, field, text, stamp?: 'TASK' | 'A REAL BET' }
+  T.lfRow = function (d) {
+    const f = frame('cream');
+    f.appendChild(head(esc(d.id), { small: true, sub: esc(d.goal) }));
+    const card = el('div', 'row-card'); place(card, 120, 330, 1680);
+    anim(card, 0.04, 'up', { dur: '0.1' });
+    card.appendChild(el('div', 'row-field', esc(d.field)));
+    card.appendChild(el('div', 'row-text', '“' + esc(d.text) + '”'));
+    f.appendChild(card);
+    if (d.stamp) {
+      const st = el('div', 'row-stamp ' + (/BET/.test(d.stamp) ? 'bet' : 'task'));
+      st.appendChild(el('span', null, esc(d.stamp)));
+      place(st, null, 800); st.style.right = '160px';
+      st.dataset.overlay = '1';   // a stamp lands ON the card by design
+      anim(st, 0.45, 'pop');
+      f.appendChild(st);
+    }
+    return f;
+  };
+
+  // ── lfNumber: a number line from where it starts to the target (Moawin) ──
+  //   data:{ metric, from?, to, by?, now?, gap? }  values are strings like '1.67' or '46.3%'
+  T.lfNumber = function (d) {
+    const f = frame('cream');
+    f.appendChild(head(esc(d.metric), { small: true, maxw: 1680 }));
+    const num = (v) => (v == null ? null : parseFloat(String(v)));
+    const vals = [num(d.from), num(d.to), num(d.now)].filter((v) => v != null && !isNaN(v));
+    let lo = Math.min(...vals), hi = Math.max(...vals);
+    const pad = (hi - lo || 1) * 0.25; lo -= pad; hi += pad;
+    const X0 = 240, X1 = 1680, Y = 600;
+    const X = (v) => Math.round(X0 + (X1 - X0) * (v - lo) / (hi - lo));
+    let svg = '<path d="M' + X0 + ' ' + Y + ' H' + X1 + '" pathLength="1" stroke="var(--ink)" stroke-width="10" stroke-linecap="round" fill="none" stroke-dasharray="1 1" data-draw data-at="0.02" data-dur="0.12"/>';
+    if (num(d.from) != null) {
+      svg += '<path d="M' + X(num(d.from)) + ' ' + Y + ' H' + X(num(d.to)) + '" pathLength="1" stroke="var(--mustard)" stroke-width="22" stroke-linecap="round" fill="none" stroke-dasharray="1 1" data-draw data-at="0.24" data-dur="0.2"/>';
+      svg += '<circle cx="' + X(num(d.from)) + '" cy="' + Y + '" r="30" fill="var(--teal-l)" stroke="var(--ink)" stroke-width="6" data-at="0.12" data-in="pop"/>';
+    }
+    svg += '<path d="M' + X(num(d.to)) + ' ' + Y + ' V' + (Y - 150) + '" stroke="var(--ink)" stroke-width="8"/>'
+      + '<path d="M' + X(num(d.to)) + ' ' + (Y - 150) + ' h90 l-22 32 l22 32 h-90z" fill="var(--mustard)" data-at="0.3" data-in="pop"/>';
+    if (num(d.now) != null) {
+      svg += '<path d="M' + X(num(d.now)) + ' ' + (Y + 18) + ' l-30 52 h60z" fill="var(--teal-d)" data-at="0.5" data-in="pop"/>';
+    }
+    const g = svgBox(svg, '0 0 1920 1080', 1920, 1080); place(g, 0, 0); f.appendChild(g);
+    // "from" sits left of its dot, "to" right of its flag, so close values never collide
+    if (d.from != null) {
+      const a = el('div', 'lbl hard', 'From ' + esc(d.from)); a.style.textAlign = 'right';
+      // its right edge sits just past the dot; the box never starts left of the margin
+      const right = X(num(d.from)) + 30, w = Math.min(600, right - 60);
+      place(a, right - w, Y - 110, w); anim(a, 0.14, 'right'); f.appendChild(a);
+    }
+    const t = el('div', 'tag', 'To ' + esc(d.to)); place(t, X(num(d.to)) + 110, Y - 168); anim(t, 0.32, 'left'); f.appendChild(t);
+    if (d.now != null) {
+      const n = el('div', 'lbl hard', esc(d.now)); n.style.color = 'var(--teal-d)';
+      f.appendChild(centredRow(anim(n, 0.54, 'up'), X(num(d.now)) - 300, Y + 90, 600));
+    }
+    if (d.by) f.appendChild(centredRow(anim(el('div', 'tag', 'By ' + esc(d.by)), 0.4, 'up'), 0, 860, 1920));
+    if (d.gap) f.appendChild(centredRow(anim(el('div', 'tag', esc(d.gap)), 0.66, 'pop'), 0, 860, 1920));
+    return f;
+  };
+})();
+
+/*
+ * LFFit — the frame fits its words, whatever words a script model wrote.
+ *
+ * WHY: every template above places type at fixed coordinates, sized for the short lines the
+ * P&C videos were hand-written with. On Railway the course builder's script model writes the
+ * lines, and an ordinary sentence in a title, a rung or a loop step ran off the frame, onto a
+ * figure or into the next label (LMS course builder, 2026-10-16) -- with every gate green,
+ * because none of them looked for one text box sitting on another.
+ *
+ * After the fonts load, lesson-lf.html calls LFFit.fitLayer() on every beat. Each text UNIT
+ * (a title block, a label, a marker, a bubble, a card) must, for the part of the beat it is
+ * on screen: stay inside its frame (or its split half, or the box a template declares with
+ * data-box), not run past its own box, not overlap another unit, and stay off any drawing
+ * marked data-keep (figures, icons). A unit that breaks a rule first wraps (a one-line label
+ * that ran out of room), then shrinks in small steps, never below FLOOR_PX. LFFit.check()
+ * reports whatever is still wrong; qa-layout.js fails the script on it, before any spend, with
+ * the text that does not fit -- so the script is redrafted shorter instead of shipped broken.
+ *
+ * Deterministic: the same beats and fonts give the same frame on every render worker.
+ */
+window.LFFit = (function () {
+  const UNIT = '.lf-head, .lbl, .tag, .bubble, .card, .row-card, .row-stamp, [data-fit]';
+  const PAINTED = '.bubble, .card, .row-card, .row-stamp, .tag';
+  const FLOOR_PX = 34;       // qa-frames' floor is 28px; fitted type stays clear of it
+  const MIN_SCALE = 0.55;    // never less than about half the designed size
+  const STEP = 0.93;
+  const SAFE_X = 40, SAFE_Y = 24;
+  const TEXT_TOL = -8, KEEP_TOL = 16;   // text needs an 8px gap to other text; a figure may be grazed
+
+  const ownText = (n) => [...n.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim());
+  const textEls = (u) => [u, ...u.querySelectorAll('*')].filter(ownText);
+  const rect = (r) => ({ l: r.left, t: r.top, r: r.right, b: r.bottom });
+  const boxOf = (u) => {
+    if (u.matches(PAINTED)) { const r = u.getBoundingClientRect(); return r.width && r.height ? rect(r) : null; }
+    const rg = document.createRange(); rg.selectNodeContents(u);
+    const rs = [...rg.getClientRects()].filter((r) => r.width > 0 && r.height > 0);
+    if (!rs.length) return null;
+    return { l: Math.min(...rs.map((r) => r.left)), t: Math.min(...rs.map((r) => r.top)),
+      r: Math.max(...rs.map((r) => r.right)), b: Math.max(...rs.map((r) => r.bottom)) };
+  };
+  // the part of the beat (0..1) a node is on screen for
+  const span = (n, layer) => {
+    let a = 0, z = 1;
+    for (let p = n; p && p !== layer; p = p.parentElement) {
+      if (p.dataset && p.dataset.at != null) a = Math.max(a, parseFloat(p.dataset.at) || 0);
+      if (p.dataset && p.dataset.until != null) z = Math.min(z, parseFloat(p.dataset.until));
+    }
+    return [a, z];
+  };
+  const together = (x, y) => x[0] < y[1] - 0.01 && y[0] < x[1] - 0.01;
+  const hits = (a, b, tol) => Math.min(a.r, b.r) - Math.max(a.l, b.l) > tol && Math.min(a.b, b.b) - Math.max(a.t, b.t) > tol;
+  const boundsOf = (u) => {
+    if (u.dataset.box) {
+      const [x, y, w, h] = u.dataset.box.split(',').map(Number);
+      return { l: x, t: y, r: x + w, b: y + h, why: 'its box' };
+    }
+    const half = u.closest('.half');
+    if (half) {
+      const h = half.getBoundingClientRect();
+      return { l: h.left + 24, t: h.top + SAFE_Y, r: h.right - 24, b: h.bottom - SAFE_Y, why: 'its half of the frame' };
+    }
+    return { l: SAFE_X, t: SAFE_Y, r: 1920 - SAFE_X, b: 1080 - SAFE_Y, why: 'the frame' };
+  };
+  const label = (u) => (u.innerText || u.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 70);
+  // What a drawing actually covers, not its box: a figure's SVG box starts well above the hair,
+  // and keeping a bubble out of that empty band shrank it for nothing.
+  const drawn = (k) => {
+    const svg = k.querySelector('svg');
+    const parts = svg ? [...svg.children] : [...k.children];
+    const rs = (parts.length ? parts : [k]).map((n) => n.getBoundingClientRect()).filter((r) => r.width && r.height);
+    if (!rs.length) return null;
+    return { l: Math.min(...rs.map((r) => r.left)), t: Math.min(...rs.map((r) => r.top)),
+      r: Math.max(...rs.map((r) => r.right)), b: Math.max(...rs.map((r) => r.bottom)) };
+  };
+
+  // Measure at rest: the driver's entrance transforms (a pop starts at 35% scale) are not layout.
+  const atRest = (layer, fn) => {
+    const moved = [...layer.querySelectorAll('[style*="transform"]')].map((n) => [n, n.style.transform]);
+    moved.forEach(([n]) => { n.style.transform = ''; });
+    const shown = layer.style.display; layer.style.display = '';
+    try { return fn(); } finally { moved.forEach(([n, t]) => { n.style.transform = t; }); layer.style.display = shown; }
+  };
+
+  function issues(layer) {
+    const units = [...layer.querySelectorAll(UNIT)]
+      .filter((u) => !(u.parentElement && u.parentElement.closest(UNIT)))
+      .filter((u) => getComputedStyle(u).display !== 'none');
+    const items = units.map((u) => ({ u, bx: boxOf(u), when: span(u, layer), bd: boundsOf(u) })).filter((i) => i.bx);
+    const keeps = [...layer.querySelectorAll('[data-keep]')]
+      .map((k) => ({ k, bx: drawn(k), when: span(k, layer) })).filter((k) => k.bx);
+    const out = [];
+    items.forEach((i) => {
+      const { bx, bd } = i;
+      if (bx.l < bd.l - 1 || bx.r > bd.r + 1 || bx.t < bd.t - 1 || bx.b > bd.b + 1) {
+        const by = Math.round(Math.max(bd.l - bx.l, bx.r - bd.r, bd.t - bx.t, bx.b - bd.b));
+        // `side`: it ran out sideways, so wrapping can help; out the top or bottom it cannot
+        out.push({ kind: 'off', a: i, side: bx.r > bd.r + 1 || bx.l < bd.l - 1,
+          msg: `"${label(i.u)}" runs ${by}px outside ${bd.why}` });
+      }
+      // Text wider than its own box is not a fault by itself (a right-aligned label may hang
+      // left of its box and look right); it is one only when it lands on something or off the frame.
+    });
+    for (let x = 0; x < items.length; x++) {
+      for (let y = x + 1; y < items.length; y++) {
+        const A = items[x], B = items[y];
+        if (A.u.contains(B.u) || B.u.contains(A.u)) continue;
+        if (A.u.dataset.overlay || B.u.dataset.overlay) continue;   // drawn on top on purpose
+        // siblings the browser lays out in one flow (an option and its marker, the recap cards)
+        // cannot overlap; their spacing is the container's gap, not a collision
+        const flow = (n) => /^(static|relative)$/.test(getComputedStyle(n).position);
+        if (A.u.parentElement === B.u.parentElement && flow(A.u) && flow(B.u)) continue;
+        if (together(A.when, B.when) && hits(A.bx, B.bx, TEXT_TOL)) {
+          out.push({ kind: 'text', a: A, b: B, msg: `"${label(A.u)}" overlaps "${label(B.u)}"` });
+        }
+      }
+    }
+    items.forEach((i) => keeps.forEach((k) => {
+      if (k.k.contains(i.u) || i.u.contains(k.k)) return;
+      if (together(i.when, k.when) && hits(i.bx, k.bx, KEEP_TOL)) {
+        out.push({ kind: 'figure', a: i, msg: `"${label(i.u)}" sits on top of a figure or icon` });
+      }
+    }));
+    return out;
+  }
+
+  const scale = (u) => parseFloat(u.dataset.fitScale || '1');
+  const sizePx = (u) => Math.max(...textEls(u).map((e) => parseFloat(getComputedStyle(e).fontSize) || 0), 0);
+  const canShrink = (u) => scale(u) * STEP >= MIN_SCALE
+    && textEls(u).every((e) => parseFloat(e.dataset.fitBase || getComputedStyle(e).fontSize) * scale(u) * STEP >= FLOOR_PX);
+  const shrink = (u) => {
+    const s = scale(u) * STEP;
+    textEls(u).forEach((e) => {
+      if (!e.dataset.fitBase) e.dataset.fitBase = String(parseFloat(getComputedStyle(e).fontSize));
+      e.style.fontSize = (parseFloat(e.dataset.fitBase) * s).toFixed(1) + 'px';
+    });
+    u.dataset.fitScale = s.toFixed(4);
+  };
+  // A line that ran out of room wraps inside the room it has, once, before anything shrinks.
+  // Markers (.tag) never wrap: their underline stripe is drawn for one line.
+  const reflow = (u, bd) => {
+    if (u.dataset.fitFlow || u.matches('.tag')) return false;
+    u.dataset.fitFlow = '1';
+    const tgt = u.matches('.lf-head') ? u.lastElementChild : u;
+    u.style.whiteSpace = 'normal'; tgt.style.whiteSpace = 'normal';
+    const par = getComputedStyle(u.parentElement);
+    const centred = par.display === 'flex' && par.justifyContent === 'center';
+    const left = Math.max(tgt.getBoundingClientRect().left, bd.l);
+    const room = Math.max(160, Math.floor(centred ? bd.r - bd.l : bd.r - left));
+    const cur = parseFloat(tgt.style.maxWidth) || Infinity;
+    if (room < cur) tgt.style.maxWidth = room + 'px';
+    return true;
+  };
+
+  function fitLayer(layer) {
+    return atRest(layer, () => {
+      for (let round = 0; round < 90; round++) {
+        const found = issues(layer);
+        if (!found.length) return [];
+        const acted = new Set();
+        let changed = false;
+        found.forEach((f) => {
+          let u = null;
+          if (f.kind === 'off') {
+            if (f.side && !acted.has(f.a.u) && reflow(f.a.u, f.a.bd)) { acted.add(f.a.u); changed = true; return; }
+            u = f.a.u;
+          } else if (f.kind === 'figure') {
+            u = f.a.u;
+            // a bubble first gets wider (fewer lines, so it ends above the speaker), then smaller
+            if (u.matches('.bubble') && !u.dataset.fitWide && !acted.has(u)) {
+              u.dataset.fitWide = '1';
+              const w = u.getBoundingClientRect();
+              const room = Math.floor(Math.min(1280, f.a.bd.r - w.left));
+              if (room > w.width + 40) { u.style.maxWidth = room + 'px'; acted.add(u); changed = true; return; }
+            }
+          } else {
+            const pick = [f.a.u, f.b.u].filter(canShrink);
+            u = pick.sort((p, q) => sizePx(q) - sizePx(p))[0] || null;
+          }
+          if (u && !acted.has(u) && canShrink(u)) { shrink(u); acted.add(u); changed = true; }
+        });
+        if (!changed) return found;
+      }
+      return issues(layer);
+    });
+  }
+
+  function check(layer) {
+    return atRest(layer, () => issues(layer).map((f) => ({ kind: f.kind, msg: f.msg })));
+  }
+
+  return { fitLayer, check, FLOOR_PX };
 })();

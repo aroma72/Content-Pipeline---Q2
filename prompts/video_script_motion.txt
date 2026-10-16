@@ -73,6 +73,14 @@ template or key renders a BLANK or half-empty frame with nothing failing.
 VISUAL VARIETY: use at least six different templates, never the same template three beats in
 a row, and at most two lfTitle beats. On-screen text stays short — the voice carries the rest.
 
+ON-SCREEN TEXT LIMITS (hard, checked before anyone reads the script):
+Every template places its text in a fixed spot. A field that is too long runs off the frame, onto
+a figure or into the next label, so each field has a CHARACTER limit, given to you in the input as
+`on_screen_text_limits`. Stay inside every one: a longer field fails the build and the script
+comes back to you. Write the key words on screen (a title of 2–5 words, a label of 1–4 words), not
+the sentence the narrator says. Colour fields are not free choice either: use each template's
+documented `bg` values only — light type is drawn for teal, dark type for cream and mustard.
+
 THE CHECKPOINT — MANDATORY, EVERY VIDEO:
 Exactly one beat is the learner's question, and it is NEVER DRAWN AND NEVER SPOKEN:
 

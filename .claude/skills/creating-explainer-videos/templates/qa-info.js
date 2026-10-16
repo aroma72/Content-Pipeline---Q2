@@ -109,7 +109,22 @@ const CONTRACT = {
   lfAnswer: { required: ['text'], shape: { text: (v) => (str(v) ? null : 'must be a non-empty string') } },
   lfDots: { required: ['n'], shape: { n: (v) => (Number.isInteger(v) && v > 0 ? null : 'needs an integer n') } },
   lfRecap: { required: ['items'], shape: { items: (v) => (arr(v) && v.every(str) ? null : 'needs items: [\'…\'] of strings') } },
+  // Moawin: a workbook row quoted exactly, and a from → to number line
+  lfRow: { required: ['id', 'field', 'text'], shape: {
+    id: (v) => (str(v) ? null : 'must be a non-empty string'),
+    text: (v) => (str(v) ? null : 'must be the row\'s exact text'),
+  } },
+  lfNumber: { required: ['metric', 'to'], shape: {
+    to: (v) => (!isNaN(parseFloat(v)) ? null : 'must start with a number, e.g. "2.00" or "47.0%"'),
+    from: (v) => (v == null || !isNaN(parseFloat(v)) ? null : 'must start with a number'),
+    now: (v) => (v == null || !isNaN(parseFloat(v)) ? null : 'must start with a number'),
+  } },
 };
+
+// How much text a motion-graphics field can carry (lib/lf-limits.js). An older folder without
+// the table keeps its old behaviour rather than failing on a missing file.
+let overLimit = () => [];
+try { ({ overLimit } = require(path.join(process.cwd(), 'lib', 'lf-limits'))); } catch { /* older folder */ }
 
 const problems = [];
 let checked = 0;
@@ -137,6 +152,13 @@ for (const b of beats) {
     if (!(key in data)) continue; // absence already reported when required
     const err = check(data[key]);
     if (err) problems.push(`beat ${b.id} (${tpl}): \`${key}\` ${err}`);
+  }
+  // Text the frame cannot hold: it would run off the frame or onto the next label (LMS, 2026-10-16).
+  for (const o of overLimit(tpl, data)) {
+    problems.push(o.count != null
+      ? `beat ${b.id} (${tpl}): \`${o.field}\` has ${o.count} items — the frame holds at most ${o.limit}`
+      : `beat ${b.id} (${tpl}): \`${o.field}\` is ${o.length} characters ("${o.text.slice(0, 50)}${o.text.length > 50 ? '…' : ''}") `
+        + `— the frame fits at most ${o.limit}. Say it shorter on screen; the voice carries the detail.`);
   }
 }
 

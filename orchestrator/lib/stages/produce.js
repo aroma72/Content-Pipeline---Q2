@@ -101,6 +101,11 @@ const SCRIPT_SENSORS = [
   // options, feedback that explains the mistake -- live only here.
   ['qa-checkpoint.js', 'the in-video checkpoint question'],
   ['qa-info.js', 'info-beat data shapes'],
+  // Motion-graphics frames measured on the real renderer: text on text, text on a figure, text
+  // off its frame or band, and type too faint to read. Free (no voice needed) and a redraft
+  // brief, so a script whose lines are too long is rewritten shorter BEFORE a person approves
+  // it -- the course builder shipped overlapping text on 2026-10-16 with every gate green.
+  ['qa-layout.js', 'motion-graphics text that overlaps or cannot be read'],
   // Grammar and clarity read beats.js and nothing else: a mixed-up pronoun found
   // after the spend threw a whole video away; found here it is a redraft brief.
   ['eval-text.js', 'grammar and clarity of the spoken and on-screen text'],
@@ -878,16 +883,17 @@ module.exports = Object.assign(module.exports, {
     // Script-level sensors run BEFORE the spend gate: both read only beats.js, so
     // a script that would produce a bad video costs nothing to reject here.
     //
-    // These five are SCRIPT_SENSORS, which script-approval runs BEFORE it asks a
+    // These six are SCRIPT_SENSORS, which script-approval runs BEFORE it asks a
     // person to read the script -- test-regressions keeps the two lists equal. On a
     // script a person has approved by sha they record, they do not redraft (sensor()).
-    // The bytes the five sensors are about to judge. The post-render eval-text
+    // The bytes the six sensors are about to judge. The post-render eval-text
     // (step 8) compares against this and runs only when the text has changed.
     const shaAtScriptChecks = require('../deliverables').fingerprint(path.join(dir, 'beats.js'));
     await sensor('qa-visuals.js', 'the Evals-Grade Visual Standard', { redraftable: true });
     await sensor('qa-cutouts.js', 'half-cut props on cutout beats', { redraftable: true });
     await sensor('qa-checkpoint.js', 'the in-video checkpoint question', { redraftable: true });
     await sensor('qa-info.js', 'info-beat data shapes', { redraftable: true });
+    await sensor('qa-layout.js', 'motion-graphics text that overlaps or cannot be read', { redraftable: true });
     await sensor('eval-text.js', 'grammar and clarity of the spoken and on-screen text',
       { redraftable: true });
 
