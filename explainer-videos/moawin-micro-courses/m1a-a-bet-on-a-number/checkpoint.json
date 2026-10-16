@@ -1,0 +1,58 @@
+{
+  "videoId": "m1a-a-bet-on-a-number",
+  "series": "moawin-micro-courses",
+  "deliverable": "m1a-a-bet-on-a-number_final.mp4",
+  "timing": {
+    "trusted": true,
+    "relativeTo": "m1a-a-bet-on-a-number_final.mp4",
+    "introOffsetSeconds": 2.6,
+    "introOffsetSource": "probed",
+    "lessonSeconds": 187.435,
+    "note": "atSeconds is measured from the start of the delivered file, which begins with the brand intro. lessonAtSeconds excludes it."
+  },
+  "deliverableOnServer": true,
+  "youtube": null,
+  "youtubeVideoId": null,
+  "durability": "ephemeral",
+  "catalogueUpdatedAt": "2026-10-16T08:19:49.067Z",
+  "checkpoints": [
+    {
+      "id": "q1",
+      "beatId": "18",
+      "revealBeatId": null,
+      "atSeconds": 123.333,
+      "lessonAtSeconds": 120.733,
+      "pausesVideo": true,
+      "resumeAfterFeedback": true,
+      "requiresAnswer": true,
+      "blocking": true,
+      "allowSkip": false,
+      "resumeAtSeconds": 123.333,
+      "rendersInVideo": false,
+      "pause": {
+        "atBeatBoundary": true,
+        "afterBeatId": "17",
+        "beforeBeatId": "19",
+        "boundaryLessonSeconds": 120.983,
+        "leadSeconds": 0.25,
+        "safe": true
+      },
+      "preamble": "Let's answer a quick question, to check the concept landed.",
+      "stem": "Is \"Remove duplicate teacher records\" (MOA-5) a task or a hypothesis?",
+      "options": [
+        "A hypothesis, because it will make the data more accurate",
+        "A task, because it is work we do and names no RDF number that could prove it wrong",
+        "A hypothesis, because it has a \"null if\" in its row",
+        "A task, because roster work is not important"
+      ],
+      "correctIndex": 1,
+      "feedback": {
+        "correct": "Right. Cleaning the roster is useful enabler work that helps the numbers be read correctly, but it names no RDF number it should move and no result that could prove it wrong, so the retro will have nothing to call.",
+        "incorrect": "It is a task: it says what we will do, but not whether it helped, and it names no RDF number that could prove it wrong. Accurate data is a good aim, but \"more accurate\" is not a share or a rate the retro can read. Having a \"null if\" cell is not enough either: MOA-5's null-if only restates the goal, so it can never happen. And it is not unimportant: it is an enabler that helps other hypotheses get read correctly."
+      },
+      "explanation": "It is a task: it says what we will do, but not whether it helped, and it names no RDF number that could prove it wrong. Accurate data is a good aim, but \"more accurate\" is not a share or a rate the retro can read. Having a \"null if\" cell is not enough either: MOA-5's null-if only restates the goal, so it can never happen. And it is not unimportant: it is an enabler that helps other hypotheses get read correctly.",
+      "explanationSource": "authored",
+      "revealAtSeconds": null
+    }
+  ]
+}
