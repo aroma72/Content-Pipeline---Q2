@@ -1217,6 +1217,92 @@ async function beatChecks() {
     return 'cause first, command truncated';
   });
 
+  await checkAsync('a command error names the cause even when the tail is a Node error dump', async () => {
+    // The first production scene redo (2026-10-19) failed twice in stitch-brand.js
+    // and the lesson's error read, in full: "Exit 1: signal: null, output: [ null,
+    // null, null ], pid: 11623, stdout: null, stderr: null } Node.js v22.23.3".
+    // That is the last 8 lines of a Node script whose execFileSync threw. The
+    // line that said why -- ffmpeg's "pthread_create failed" -- was above them.
+    const shell = require('./lib/shell');
+    const child = [
+      'process.stderr.write("Input #0, lavfi\\n  Duration: N/A\\nframe=    2 fps=0.0 size=0kB\\n");',
+      'process.stderr.write("pthread_create failed: Resource temporarily unavailable. Try to increase `ulimit -v`.\\nConversion failed!\\n");',
+      'const { execFileSync } = require("child_process");',
+      'execFileSync(process.execPath, ["-e", "process.exit(1)"], { stdio: ["ignore", "ignore", "inherit"] });',
+    ].join('');
+    let err = null;
+    try { await shell.run(process.execPath, ['-e', child], { timeoutMs: 60000 }); } catch (e) { err = e; }
+    assert(err && err.code === 1, `expected exit 1, got ${err && err.message}`);
+    assert(/pthread_create failed/.test(err.message), `the cause is not in the message:\n${err.message}`);
+    assert(/Conversion failed!/.test(err.message), 'the tool\'s own verdict line is missing');
+    assert(err.message.indexOf('pthread_create') < err.message.indexOf('while running'), 'the cause does not lead');
+    // The command echo after "while running:" quotes the child's source, so only
+    // the diagnosis half is judged for noise.
+    const diagnosis = err.message.slice(0, err.message.indexOf('while running'));
+    assert(!/frame=/.test(diagnosis), `ffmpeg progress noise was taken for a cause:\n${diagnosis}`);
+    const { causeLines } = shell;
+    assert(causeLines(['  at foo (x.js:1:1)', '  status: 1,', '}', 'Node.js v22']).length === 0, 'stack frames and the dump counted as causes');
+    return 'pthread_create and Conversion failed! lead the message';
+  });
+
+  await checkAsync('the music bed is ONE single-threaded filter graph, not twenty lavfi inputs', async () => {
+    // make-music.js fed ffmpeg twenty `-f lavfi -i sine=…` inputs; each lavfi
+    // demuxer builds its own graph with a thread per CPU, ~700-950 threads on the
+    // 48-core Railway host against a cgroup pids.max of 1000. The first build of a
+    // lesson slipped under; the scene redo of the same lesson did not, and the
+    // stitch died with "pthread_create failed" (2026-10-19). Measured after the
+    // fix: 82 pids at peak against a baseline of 75. This pins the SHAPE of the
+    // command, with ffmpeg replaced by a recorder so the suite spends no CPU.
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cq-music-'));
+    try {
+      // ffmpeg-static resolves from the brand folder: the repo root's copy on a
+      // laptop, the brand folder's own on the container. Both honour FFMPEG_BIN
+      // (the Dockerfile sets it to /usr/bin/ffmpeg); here it names a binary that
+      // does not exist, and a preload records the call instead of making it. A
+      // fake module on NODE_PATH covers a checkout with no ffmpeg-static at all.
+      fs.mkdirSync(path.join(tmp, 'node_modules', 'ffmpeg-static'), { recursive: true });
+      fs.writeFileSync(path.join(tmp, 'node_modules', 'ffmpeg-static', 'index.js'), 'module.exports = process.env.FFMPEG_BIN;');
+      fs.writeFileSync(path.join(tmp, 'preload.js'),
+        'const cp = require("child_process"); const fs = require("fs");'
+        + 'cp.execFileSync = (file, args) => { fs.writeFileSync(process.env.ARGS_OUT, JSON.stringify({ file, args })); return Buffer.alloc(0); };');
+      const argsOut = path.join(tmp, 'args.json');
+      const shell = require('./lib/shell');
+      await shell.run(process.execPath, ['-r', path.join(tmp, 'preload.js'),
+        path.join(__dirname, '..', 'explainer-videos', 'brand-intro-outro', 'make-music.js'), '--dur', '156.97', '--out', path.join(tmp, 'm.wav')],
+      { env: { ...process.env, NODE_PATH: path.join(tmp, 'node_modules'), FFMPEG_BIN: 'fake-ffmpeg', ARGS_OUT: argsOut }, timeoutMs: 60000 });
+      const { file, args } = JSON.parse(fs.readFileSync(argsOut, 'utf8'));
+      assert(file === 'fake-ffmpeg', `ffmpeg was not resolved through ffmpeg-static/FFMPEG_BIN: ${file}`);
+      assert(!args.includes('-i') && !args.includes('lavfi'), `ffmpeg still gets lavfi INPUTS: ${args.slice(0, 12).join(' ')}`);
+      const ti = args.indexOf('-filter_complex_threads');
+      assert(ti > -1 && args[ti + 1] === '1' && ti < args.indexOf('-filter_complex'), 'the graph is not pinned to one thread (before the graph)');
+      const graph = args[args.indexOf('-filter_complex') + 1];
+      const sources = (graph.match(/(^|;)sine=frequency=/g) || []).length;
+      assert(sources === 20, `${sources} sine sources inside the graph, expected 20 (10 notes x fundamental + octave)`);
+      assert(/amix=inputs=10:normalize=0\[bar\]/.test(graph) && /loudnorm=I=-23/.test(graph), 'the musical chain changed');
+      assert(args[args.indexOf('-t') + 1] === '156.97', 'the duration did not reach ffmpeg');
+      return '20 sources in one graph, -filter_complex_threads 1, no inputs';
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  check('a scene redo judges only the flagged scenes (qa-art --ids), and both qa-art call sites use the scope', () => {
+    const produce = require('./lib/stages/produce');
+    const { sensorArgs } = produce._internals;
+    assert(JSON.stringify(sensorArgs('qa-art.js', { beats: ['02', '07'] })) === '["--ids","02,07"]', 'flagged beats do not scope qa-art');
+    assert(sensorArgs('qa-art.js', null).length === 0, 'a normal build is scoped');
+    assert(sensorArgs('qa-art.js', { beats: [] }).length === 0, 'an empty scope produced --ids');
+    assert(sensorArgs('qa-visuals.js', { beats: ['02'] }).length === 0, 'other sensors were scoped');
+    // The scope has to reach BOTH places qa-art is spawned: the repair loop and the
+    // sensor pass. On the first production redo the judge saw all 14 images, changed
+    // its mind about an unflagged one, re-bought it and redrafted the script.
+    const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'produce.js'), 'utf8');
+    assert(/\['qa-art\.js', \.\.\.scopedArgs\('qa-art\.js'\)\]/.test(src), 'the repair loop spawns qa-art unscoped');
+    assert(/\[script, \.\.\.scopedArgs\(script\)\]/.test(src), 'the sensor pass spawns sensors unscoped');
+    assert(/opts\.scriptApprovedSha \|\| opts\.videoRedo/.test(src), 'a redo run does not count as human-approved, so a sensor finding redrafts an approved script');
+    return 'scoped in both call sites; a redo counts as approved';
+  });
+
   // --- 4e7. The topic the human asked for is the topic that gets made -----
   console.log('\n3e7. request parsing (was: a one-word topic silently became a folder name)');
 
@@ -1561,7 +1647,10 @@ async function beatChecks() {
 
     // produce: a sha-approved script records findings; an unapproved one still redrafts.
     const src = fs.readFileSync(path.join(__dirname, 'lib', 'stages', 'produce.js'), 'utf8');
-    assert(/humanApproved = Boolean\(opts\.scriptApproved && opts\.scriptApprovedSha\)/.test(src)
+    // Since 1.3 a scene redo counts as approved too: the worker clears the sha so
+    // script-approval can re-bind it to the patched script, and the re-bound sha is
+    // on the queue, not in the run's opts.
+    assert(/humanApproved = Boolean\(opts\.scriptApproved && \(opts\.scriptApprovedSha \|\| opts\.videoRedo\)\)/.test(src)
       && /if \(redraftable && \(opts\.lenient \|\| humanApproved\)\)/.test(src),
       'produce redrafts a script a person approved by sha -- the approval loop is back');
     assert(produce._internals.SCRIPT_SENSORS.map(([s]) => s).join() === 'qa-visuals.js,qa-cutouts.js,qa-checkpoint.js,qa-info.js,qa-layout.js,eval-text.js',
@@ -4724,6 +4813,51 @@ async function courseChecks() {
         return rv.sha256.slice(0, 12);
       });
 
+      await checkAsync('a lesson whose video already moved to Drive is fingerprinted from the verified Drive record', async () => {
+        // The spine's Drive offload runs BEFORE the worker fingerprints, and with
+        // Drive on it reclaims the render dir and the volume copy. Every course
+        // lesson then reached review with no reviewedSha256 -- the LMS's first
+        // contract-1.3 lesson (2026-10-19) among them, so approve-what-you-watched
+        // had nothing to bind to. The offload hashed the same bytes it verified.
+        const savedDurable = process.env.JOB_STORE_DURABLE;
+        process.env.JOB_STORE_DURABLE = '1';
+        try {
+          await fresh();
+          const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+          const deliverables = require(path.join(__dirname, 'lib', 'deliverables'));
+          course('course-dr', 'dr');
+          const dest = deliverables.dirFor('demo', 'dr');
+          assert(dest, 'no durable deliverables dir in this fixture');
+          fs.mkdirSync(dest, { recursive: true });
+          const record = { saved2drive: true, driveFileId: 'drive-dr', driveUrl: 'https://drive.google.com/file/d/drive-dr/view',
+            driveName: 'demo__dr_final.mp4', bytes: 34388395, md5: 'bdf1f8ec919df6795c9758fec07bcbd1',
+            sha256: '7257c8d15f563cb0be00e4c47d7c0efab1e73fc243a5cd12e7bac7de0fc0e238', verified: true, savedAt: '2026-10-19T14:17:52.626Z' };
+          fs.writeFileSync(path.join(dest, 'drive.json'), JSON.stringify(record));
+          fs.writeFileSync(path.join(dest, 'video-meta.json'), JSON.stringify({ bytes: record.bytes, md5: record.md5, sha256: record.sha256, complete: true }));
+          // Blocks at review naming a file that is already gone, as production does.
+          spine.execute = blocksAtReviewWith(path.join(os.tmpdir(), 'cq-gone', 'dr_final.mp4'));
+          await cw.drain();
+          const rv = queue.get('demo/dr').reviewedVideo;
+          assert(rv && rv.sha256 === record.sha256, `no fingerprint from the Drive record: ${JSON.stringify(rv)}`);
+          assert(rv.source === 'drive' && rv.finalPath === null && rv.driveFileId === 'drive-dr', `the record does not say where it came from: ${JSON.stringify(rv)}`);
+
+          // The other half: a record that disagrees with the probe, or is unverified,
+          // binds nothing -- better no fingerprint than one for bytes nobody uploaded.
+          await fresh();
+          course('course-dr2', 'dr2');
+          const dest2 = deliverables.dirFor('demo', 'dr2');
+          fs.mkdirSync(dest2, { recursive: true });
+          fs.writeFileSync(path.join(dest2, 'drive.json'), JSON.stringify({ ...record, driveFileId: 'drive-dr2' }));
+          fs.writeFileSync(path.join(dest2, 'video-meta.json'), JSON.stringify({ bytes: 1, md5: 'different', complete: true }));
+          spine.execute = blocksAtReviewWith(path.join(os.tmpdir(), 'cq-gone', 'dr2_final.mp4'));
+          await cw.drain();
+          assert(!queue.get('demo/dr2').reviewedVideo, 'a Drive record that disagrees with the probe was taken as the fingerprint');
+          return `sha256 ${record.sha256.slice(0, 12)} from Drive; a disagreeing record binds nothing`;
+        } finally {
+          if (savedDurable === undefined) delete process.env.JOB_STORE_DURABLE; else process.env.JOB_STORE_DURABLE = savedDurable;
+        }
+      });
+
       await checkAsync('approving publishes from review, never re-running produce', async () => {
         await fresh();
         const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
@@ -5980,6 +6114,103 @@ async function videoRedoChecks() {
     const after = queue.get('demo/s1');
     assert(after.status === 'failed' && /cancel/i.test(after.error || ''), `queue says ${after.status}: ${after.error}`);
     return 'failed as cancelled, script never started';
+  });
+
+  // ── a redo that fails goes back to review with the video that was watched ──
+  // The first production redo (2026-10-19) died in the stitch step. The lesson
+  // went `failed`, its course was held, the LMS offered a paid Retry for a
+  // lesson whose good video was on Drive, and the pre-redo script existed
+  // nowhere on the volume any more.
+  const driveRecordFor = (slug, sha256) => {
+    const dest = deliverables.dirFor('demo', slug);
+    fs.mkdirSync(dest, { recursive: true });
+    fs.writeFileSync(path.join(dest, 'drive.json'), JSON.stringify({
+      saved2drive: true, driveFileId: `drive-${slug}`, driveUrl: 'https://drive.google.com/x', driveName: `demo__${slug}_final.mp4`,
+      bytes: 4096, md5: 'm', sha256, verified: true, savedAt: '2026-10-19T14:17:52.626Z',
+    }));
+  };
+  const failsLikeTheStitch = async (item) => {
+    queue.fail(item.id, 'run-redo', 'Exit 1: pthread_create failed: Resource temporarily unavailable.\nConversion failed!\n'
+      + '  while running: node stitch-brand.js --title t --lesson out/lesson.mp4 --out out/x_final.mp4 --reuse-bumpers', 0.16);
+    return { status: 'failed' };
+  };
+
+  await checkAsync('video/revise snapshots the reviewed video and the script before the patch can touch them', async () => {
+    fresh();
+    lesson('course-f', 'f1');
+    atReview('demo/f1');
+    driveRecordFor('f1', 'abc');
+    const r = cw.reviseVideo('demo/f1', { by: 'aroma', why: 'show the teacher writing the example', beats: ['02'] }, 'course-f', 'lms');
+    assert(r.ok, `revise refused: ${JSON.stringify(r)}`);
+    const it = queue.get('demo/f1');
+    const base = it.videoRedo && it.videoRedo.base;
+    assert(base && base.reviewedVideo && base.reviewedVideo.sha256 === 'abc', `no base on the redo: ${JSON.stringify(it.videoRedo)}`);
+    assert(base.dir && fs.existsSync(path.join(base.dir, 'beats.js')) && fs.existsSync(path.join(base.dir, 'durations.json')),
+      'the pre-redo script and timings were not copied aside');
+    assert(base.scriptSha === 'deadbeefdeadbeef', `the approved sha was not kept: ${base.scriptSha}`);
+    assert(it.reviewedVideo === null, 'the live fingerprint was not cleared for the rebuild');
+    return 'base: sha256 abc, beats.js + durations.json aside, approved sha kept';
+  });
+
+  await checkAsync('a redo that fails returns to review with the SAME video, the pre-redo script, redoFailed set and the round counted', async () => {
+    fresh();
+    lesson('course-g', 'g1');
+    lesson('course-g', 'g2');                         // a queued sibling: what the course has waiting
+    atReview('demo/g1');
+    driveRecordFor('g1', 'abc');
+    assert(cw.reviseVideo('demo/g1', { by: 'aroma', why: 'the shop is a bank', beats: ['02'] }, 'course-g', 'lms').ok, 'revise refused');
+    // What the redo build does to the volume before it dies: the patched script.
+    const held = deliverables.findScript('demo', 'g1');
+    const original = fs.readFileSync(held.beats, 'utf8');
+    fs.writeFileSync(held.beats, original.replace('The bank is closed.', 'The shop is closed.'));
+    spine.execute = failsLikeTheStitch;
+    await cw.drain(); await settle();
+    const it = queue.get('demo/g1');
+    assert(it.status === 'blocked' && it.blockedBy === 'review', `expected blocked/review, got ${it.status}/${it.blockedBy}: ${it.error || it.reason}`);
+    assert(it.reviewedVideo && it.reviewedVideo.sha256 === 'abc', `the reviewed video did not come back: ${JSON.stringify(it.reviewedVideo)}`);
+    assert(it.reviewApproved === false && it.reviewedVideoLost === false, 'the decision state is wrong for a lesson back at review');
+    assert(it.redoFailed && it.redoFailed.round === 1 && /pthread_create failed/.test(it.redoFailed.firstLine)
+      && JSON.stringify(it.redoFailed.beats) === '["02"]', `redoFailed: ${JSON.stringify(it.redoFailed)}`);
+    assert(/round 1/.test(it.reason) && /unchanged/.test(it.reason) && /pthread_create/.test(it.reason), `the reason does not say what happened: ${it.reason}`);
+    assert(it.error === null, 'error is set on a blocked lesson (the LMS drops it; reason is what it shows)');
+    assert(it.videoRedoRound === 1 && it.videoRedo === null && it.videoRedoBy === null, 'the failed round is not counted, or the dead redo instruction was kept');
+    assert(it.scriptApprovedSha === 'deadbeefdeadbeef' && it.scriptSha === 'deadbeefdeadbeef', `the approval is not re-bound to the pre-redo script: ${it.scriptApprovedSha}`);
+    assert(fs.readFileSync(held.beats, 'utf8') === original, 'the patched script was left on the volume -- an approval would publish a script nobody reviewed');
+    // The sibling was not touched, and the course is held exactly as a lesson at
+    // review always holds it -- by a person, not by a failure.
+    assert(queue.get('demo/g2').status === 'queued', 'the sibling was built or failed');
+    const held2 = cw.heldCourses().get('course-g');
+    assert(held2 && held2.status === 'blocked', `the course is not held at review: ${JSON.stringify(held2)}`);
+    // And the reviewer still has every door: approve, another redo (one round fewer), reject.
+    const again = cw.reviseVideo('demo/g1', { by: 'aroma', why: 'try once more', beats: ['02'] }, 'course-g', 'lms');
+    assert(again.ok && again.round === 2 && again.redosLeft === 1, `a second redo after a failed one: ${JSON.stringify(again)}`);
+    return 'blocked/review, sha abc, script restored, redoFailed round 1, round 2 still possible';
+  });
+
+  await checkAsync('a failed redo stays failed when there is nothing safe to go back to', async () => {
+    // No snapshot (a lesson sent back before this existed) ...
+    fresh();
+    lesson('course-h', 'h1');
+    atReview('demo/h1');
+    driveRecordFor('h1', 'abc');
+    assert(cw.reviseVideo('demo/h1', { by: 'aroma', why: 'x', beats: ['02'] }, 'course-h', 'lms').ok, 'revise refused');
+    const it0 = queue.get('demo/h1');
+    queue.setStatus('demo/h1', 'queued', { videoRedo: { ...it0.videoRedo, base: null } });
+    spine.execute = failsLikeTheStitch;
+    await cw.drain(); await settle();
+    assert(queue.get('demo/h1').status === 'failed', `without a snapshot: ${queue.get('demo/h1').status}`);
+    // ... or a base video that can no longer be found under its fingerprint.
+    fresh();
+    lesson('course-h', 'h2');
+    atReview('demo/h2');
+    driveRecordFor('h2', 'abc');
+    assert(cw.reviseVideo('demo/h2', { by: 'aroma', why: 'x', beats: ['02'] }, 'course-h', 'lms').ok, 'revise refused');
+    fs.unlinkSync(path.join(deliverables.dirFor('demo', 'h2'), 'drive.json'));
+    spine.execute = failsLikeTheStitch;
+    await cw.drain(); await settle();
+    const it = queue.get('demo/h2');
+    assert(it.status === 'failed' && /pthread_create/.test(it.error || ''), `with the base video gone: ${it.status} ${it.error}`);
+    return 'no snapshot -> failed; base video gone -> failed';
   });
 
   spine.execute = savedExec;

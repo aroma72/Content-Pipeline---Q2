@@ -1,6 +1,6 @@
 ---
 type: reference
-last_verified: 2026-10-12
+last_verified: 2026-10-20
 owner: Aroma Tahir
 ---
 
@@ -14,6 +14,22 @@ for single videos, `content-queen-client.ts` for the catalogue) — the LMS aske
 on 2026-09-21 after learning of ten new fields by reading our repository.
 
 Frozen copies: `docs/contracts/course-api-<version>.md`.
+
+---
+
+## 1.3, clarification — 2026-10-20 — a failed redo returns to review; `reviewedSha256` always present
+
+No version change; `contractVersion` stays `1.3`. Prompted by the first production scene redo
+(2026-10-19), which failed in the last step and left the lesson `failed`, its course held, and the
+reviewer with no `reviewedSha256` to approve against.
+
+| Change | Where | Example | Commit | LMS file |
+|---|---|---|---|---|
+| A failed redo ends `blocked` at `review` with the **same** `reviewedSha256`, not `failed` | `GET /courses/:courseId` items | `"status":"blocked","blockedBy":"review","reviewedSha256":"7257…","redoRound":1,"redosLeft":2` and no `redoBeats`/`redoWhy` | this release | poll mirror: do not offer Retry/Skip; the review screen's Approve, redo and Reject all still apply |
+| `redoFailed` | items while `blocked` at review | `{"round":1,"beats":["02"],"firstLine":"pthread_create failed: Resource temporarily unavailable…","error":"…","runId":"…","at":"…"}` | this release | `KNOWN_COURSE_ITEM_FIELDS`; show `firstLine` next to the review panel |
+| `reason` on such a lesson says it in words | same | `"The redo of scene(s) 02 (round 1) failed before a new video was made: … The video you reviewed is unchanged …"` | this release | already mirrored |
+| `reviewedSha256` is present for every lesson blocked at review, including when the file has already moved to Drive | same | — | this release | none; it was a defect (the fingerprint was taken after the offload) |
+| A redo judges and re-buys **only the flagged scenes**; an unflagged image is never re-judged | behaviour | — | this release | none |
 
 ---
 

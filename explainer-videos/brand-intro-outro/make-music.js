@@ -38,19 +38,27 @@ const NOTES = [
   [196.00, 3.40, 3.4, 0.26], // G3 bass
 ];
 
-const inputs = [];
+// Every tone is a `sine` SOURCE inside the one filter graph below -- not a
+// `-f lavfi -i` input. The input form gave ffmpeg twenty lavfi demuxers, and
+// each one builds its own filter graph with a thread per CPU: on the 48-core
+// Railway host that is ~700-950 threads at once against a container ceiling of
+// 1000 processes+threads (cgroup pids.max). The first build of a lesson slipped
+// under it; the scene redo of the same lesson, with a few more zombies on the
+// box, did not, and the deliverable died in the stitch with
+// "pthread_create failed: Resource temporarily unavailable" (2026-10-19,
+// lms-e2e-redo-cancel / why-the-worked-example-comes-first). One graph, pinned
+// to one thread, needs a handful.
 const filters = [];
 const labels = [];
 NOTES.forEach(([f, start, ndur, vol], i) => {
   // fundamental + soft octave, struck envelope (fast attack, long decay)
-  inputs.push('-f', 'lavfi', '-i', `sine=frequency=${f}:sample_rate=${SR}:duration=${ndur}`);
-  inputs.push('-f', 'lavfi', '-i', `sine=frequency=${f * 2}:sample_rate=${SR}:duration=${ndur}`);
-  const a = i * 2, b = i * 2 + 1;
   const ms = Math.round(start * 1000);
   const out0 = Math.max(0.12, ndur - 1.25).toFixed(2);
   filters.push(
-    `[${a}:a]afade=t=in:d=0.006,afade=t=out:st=${out0}:d=1.2,volume=${vol}[f${i}]`,
-    `[${b}:a]afade=t=in:d=0.006,afade=t=out:st=${out0}:d=1.0,volume=${(vol * 0.28).toFixed(3)}[o${i}]`,
+    `sine=frequency=${f}:sample_rate=${SR}:duration=${ndur},` +
+    `afade=t=in:d=0.006,afade=t=out:st=${out0}:d=1.2,volume=${vol}[f${i}]`,
+    `sine=frequency=${f * 2}:sample_rate=${SR}:duration=${ndur},` +
+    `afade=t=in:d=0.006,afade=t=out:st=${out0}:d=1.0,volume=${(vol * 0.28).toFixed(3)}[o${i}]`,
     `[f${i}][o${i}]amix=inputs=2:normalize=0,adelay=${ms}|${ms},apad=whole_dur=${BAR}[n${i}]`
   );
   labels.push(`[n${i}]`);
@@ -67,6 +75,10 @@ filters.push(
 );
 
 console.log(`[music] synthesizing calm piano bed — ${DUR.toFixed(1)}s`);
-execFileSync(ffmpeg, ['-y', ...inputs, '-filter_complex', filters.join(';'),
+// Thread flags go BEFORE the graph: `-filter_complex_threads` is global and
+// read when the graph is configured. Audio filters here do not slice-thread,
+// so one thread costs nothing in speed and is what keeps the pids count flat.
+execFileSync(ffmpeg, ['-y', '-threads', '1', '-filter_complex_threads', '1',
+  '-filter_complex', filters.join(';'),
   '-map', '[m]', '-t', DUR.toFixed(2), OUT], { stdio: ['ignore', 'ignore', 'inherit'] });
 console.log(`[music] -> ${OUT}`);

@@ -238,9 +238,20 @@ function run(cmd, args, opts = {}) {
         // thing a later reader has, and "exit 1" alone is not diagnosable.
         // The CAUSE leads, because this message gets truncated downstream (Slack
         // posts a 600-char slice) and the tail is the half worth keeping.
-        const tail = (stderr || stdout).trim().split(/\r?\n/).slice(-8).join('\n');
+        //
+        // The tail alone is not enough when the child is a Node script that
+        // shelled out and threw: its last 8 lines are the `execFileSync` error
+        // dump (`output: [ null, null, null ], stdout: null, stderr: null }`)
+        // and the line that says WHY -- ffmpeg's "pthread_create failed" --
+        // scrolled off above it. The first production scene redo (2026-10-19)
+        // failed twice with exactly that dump and nothing else. So the first
+        // few lines that read like a cause lead the message, and the tail follows.
+        const lines = (stderr || stdout).trim().split(/\r?\n/);
+        const tail = lines.slice(-8);
+        const cause = causeLines(lines.slice(0, -8));
+        const text = [...cause, ...(cause.length && tail.length ? ['  …'] : []), ...tail].join('\n');
         return reject(new CommandError(
-          `Exit ${code}${tail ? `: ${tail}` : ''}\n  while running: ${printable}`,
+          `Exit ${code}${text ? `: ${text}` : ''}\n  while running: ${printable}`,
           { code, stdout, stderr, cmd: printable }
         ));
       }
@@ -249,4 +260,24 @@ function run(cmd, args, opts = {}) {
   });
 }
 
-module.exports = { run, resolveCommand, CommandError };
+/**
+ * The lines of a failed command's output that say why it failed, at most
+ * three: a tool's own error line ("Conversion failed!", "No such file",
+ * "pthread_create failed"), or the first line of a thrown Error. Stack frames,
+ * Node's error-object dump and ffmpeg's progress lines are not causes.
+ */
+function causeLines(lines) {
+  const cause = /\b(error|failed|fatal|invalid|unrecognized|no such|cannot|unable|not found|denied|refused|exhausted|unavailable|out of memory|killed|ENOENT|EACCES|ENOSPC|EAGAIN)\b/i;
+  const noise = /^\s*(at |\{|\}|status:|signal:|output:|pid:|stdout:|stderr:|Node\.js v|node:|frame=|size=|\^)/;
+  const out = [];
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line || noise.test(line) || !cause.test(line)) continue;
+    if (out.includes(line)) continue;
+    out.push(line.length > 300 ? `${line.slice(0, 300)}…` : line);
+    if (out.length === 3) break;
+  }
+  return out;
+}
+
+module.exports = { run, resolveCommand, CommandError, causeLines };

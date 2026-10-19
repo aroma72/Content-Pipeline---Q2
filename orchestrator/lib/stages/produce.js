@@ -557,9 +557,18 @@ function finalTextCheckNeeded({ before, after }) {
 }
 
 // Exported for the regression tests; not part of the stage contract.
+/**
+ * Extra argv for a quality sensor. In a scene redo (contract 1.3) qa-art judges
+ * ONLY the flagged scenes: `--ids 02,07`. Every other sensor runs unchanged.
+ */
+function sensorArgs(script, videoRedo) {
+  const ids = videoRedo && Array.isArray(videoRedo.beats) ? videoRedo.beats.map(String).filter(Boolean) : [];
+  return script === 'qa-art.js' && ids.length ? ['--ids', ids.join(',')] : [];
+}
+
 module.exports._internals = { estimateSpend, isFresherThanInputs, copyTemplates, finalTextCheckNeeded, tryTextAutoFix,
   i2vSeconds, COST, missingPerBeat, staleVo, pruneOrphans, isEnvironmentFailure, repairAffordable,
-  SCRIPT_SENSORS, preApprovalChecks };
+  SCRIPT_SENSORS, preApprovalChecks, sensorArgs };
 
 module.exports = Object.assign(module.exports, {
   name: 'produce',
@@ -675,13 +684,22 @@ module.exports = Object.assign(module.exports, {
      * Run qa-art; if it rejects specific images, regenerate just those and try
      * again. Silent no-op when it passes, which is the usual case.
      */
+    // A scene redo (contract 1.3) judges ONLY the flagged scenes. The other
+    // images were judged, bought and reviewed with the first build; judging them
+    // again lets a vision model change its mind about a picture a person has
+    // already watched. On the first production redo it did exactly that: flagged
+    // scene 09 (accepted with a warning on the first build), re-bought it at
+    // $0.04 and redrafted the script -- for a redo of scene 02. The contract says
+    // every other beat is reused as bought, so the judge is scoped like the patch.
+    const scopedArgs = (script) => sensorArgs(script, opts.videoRedo);
+
     const repairArt = async () => {
       if (opts.dryRun) return;
       if (!fs.existsSync(path.join(dir, 'qa-art.js'))) return; // sensor() reports it
 
       for (let attempt = 1; attempt <= 2; attempt++) {
         try {
-          await run('node', ['qa-art.js'], { timeoutMs: 20 * 60 * 1000 });
+          await run('node', ['qa-art.js', ...scopedArgs('qa-art.js')], { timeoutMs: 20 * 60 * 1000 });
           return;                                   // passed, nothing to repair
         } catch (e) {
           if (!(e instanceof shell.CommandError) || e.code === null) return; // infra: let sensor deal
@@ -769,7 +787,7 @@ module.exports = Object.assign(module.exports, {
       }
 
       try {
-        const res = await run('node', [script], { timeoutMs: 20 * 60 * 1000 });
+        const res = await run('node', [script, ...scopedArgs(script)], { timeoutMs: 20 * 60 * 1000 });
         const verdict = String(res.stdout || '').split(/\r?\n/)
           .map((l) => l.trim()).filter(Boolean).pop() || 'passed';
         sensorResults.push({ ok: true, sensor: script, what, detail: verdict.slice(0, 300) });
@@ -823,7 +841,12 @@ module.exports = Object.assign(module.exports, {
         // same checks already passed before the approval, so a finding here is an
         // LLM judge disagreeing with itself: it goes to the review step instead.
         // Sha-bound only: a single video's "produce" press approves no particular text.
-        const humanApproved = Boolean(opts.scriptApproved && opts.scriptApprovedSha);
+        // A scene redo counts too: the worker clears scriptApprovedSha so that
+        // script-approval re-binds it to the patched script, and that re-bound sha
+        // lives on the queue, not in this run's opts. Without this the redo ran as
+        // "unapproved", and a judge's second opinion on an unflagged image
+        // redrafted a script a person had approved and a reviewer had watched.
+        const humanApproved = Boolean(opts.scriptApproved && (opts.scriptApprovedSha || opts.videoRedo));
         if (redraftable && (opts.lenient || humanApproved)) {
           // The lenient pass: two rounds did not settle this, so it is recorded
           // and carried to the review step rather than ending the run. A person

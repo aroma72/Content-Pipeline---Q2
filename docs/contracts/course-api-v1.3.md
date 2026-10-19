@@ -1,6 +1,6 @@
 ---
 type: reference
-last_verified: 2026-10-15
+last_verified: 2026-10-20
 owner: Aroma Tahir
 ---
 
@@ -50,6 +50,16 @@ Unchanged: `queued | claimed | blocked | done | failed`. A cancelled lesson is `
 `cancelled: true` (and `skipped: true`, which is what lifts its hold). A redo walks
 `blocked(review) → queued → claimed → blocked(review)`.
 
+**A redo that fails** (clarified 2026-10-20, after the first production redo) walks the same path:
+`blocked(review) → queued → claimed → blocked(review)` — back with the **same** `reviewedSha256`,
+because the video the reviewer watched was never replaced. It is not `failed`: the good video is
+still there, and offering a paid Retry for it would be wrong. The item carries `redoFailed` (§2),
+`reason` says in words what happened, `redoRound` still counts the failed round (so `redosLeft` is
+one lower), and `redoBeats`/`redoWhy` are absent because no redo is in progress. Approve publishes
+the unchanged video; `video/revise` may be sent again while `redosLeft > 0`; reject stops the course
+as before. The redo's own hold settles at what it bought before it failed (usually cents, sometimes
+$0); the discarded work is not refunded.
+
 ---
 
 ## 2. `GET /api/v1/courses/:courseId` — additions per item
@@ -61,7 +71,8 @@ Unchanged: `queued | claimed | blocked | done | failed`. A cancelled lesson is `
 | `redoWhy` | with `redoRound` | the reviewer's notes for the last redo |
 | `redosLeft` | while `blocked` | `maxRounds − redoRound`; 0 means approve, reject or requeue |
 | `residueAvailable` | while `blocked` | true when the paid inputs are kept (volume or Drive) and a redo is partial. **False means a redo is a full rebuild** — send `fullRebuild: true` or do not offer it |
-| `reviewedSha256` | while `blocked` at review | **changes on every redo.** A client that archived the previous file must copy this one |
+| `reviewedSha256` | while `blocked` at review | **changes on every successful redo.** A client that archived the previous file must copy this one. Unchanged after a failed redo |
+| `redoFailed` | while `blocked` at review, after a redo failed | `{ round, beats[], error, firstLine, runId, at }` — the last redo did not produce a new video; the reviewed one is unchanged. Cleared by the next successful redo. Show `firstLine` (or `reason`) to the reviewer |
 | `cancelled`, `cancelledBy`, `cancelledAt` | when `failed` by a cancel | why a lesson disappeared |
 | `videoRedo` | `GET /api/v1` top level | `{ enabled, maxRounds, reserveUsd }` |
 

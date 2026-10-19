@@ -68,6 +68,7 @@ RUN set -eux; \
       if apt-get update && apt-get install -y --no-install-recommends --fix-missing \
            chromium \
            ffmpeg \
+           tini \
            python3 \
            python3-pil \
            python3-numpy \
@@ -90,6 +91,7 @@ RUN set -eux; \
 RUN set -eux; \
     /usr/bin/chromium --version; \
     /usr/bin/ffmpeg -version | head -1; \
+    /usr/bin/tini --version; \
     tar --version | head -1; \
     python3 -c "import PIL, numpy; print('pillow', PIL.__version__, 'numpy', numpy.__version__)"
 
@@ -132,4 +134,11 @@ COPY . .
 ENV PORT=8080
 EXPOSE 8080
 
+# tini is PID 1 so that orphaned children are reaped. Without it the Node
+# server is PID 1, and Node does not reap: every headless Chrome that puppeteer
+# spawned and the render left behind stayed a zombie forever (59 of them on
+# 2026-10-19 after one day). Each zombie holds a slot against the container's
+# cgroup pids.max of 1000 -- the same ceiling an ffmpeg with twenty inputs hit
+# in the stitch step. tini is ~20 KB, idle, and costs nothing to run.
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["node", "server/index.js"]

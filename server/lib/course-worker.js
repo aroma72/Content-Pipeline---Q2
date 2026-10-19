@@ -503,25 +503,153 @@ function recordReviewedVideo(item, final, runId) {
       const held = deliverables.find(item.series, item.slug);
       file = held ? held.file : null;
     }
-    if (!file) { log(`${item.id}: blocked with a finished video but none was found to fingerprint`); return; }
-    const sha256 = deliverables.fileSha256(file);
-    if (!sha256) { log(`${item.id}: could not read ${file} to fingerprint it`); return; }
     const qa = (final && final.artifacts && final.artifacts.qa) || {};
+    const qaScore = typeof qa.combined_score === 'number' ? qa.combined_score : null;
+    let reviewedVideo = null;
+    if (file) {
+      const sha256 = deliverables.fileSha256(file);
+      if (!sha256) { log(`${item.id}: could not read ${file} to fingerprint it`); return; }
+      reviewedVideo = { sha256, bytes: fs.statSync(file).size, runId, finalPath: produced.finalPath || file, qaScore,
+        source: 'local', at: new Date().toISOString() };
+    } else {
+      // No local copy: the spine's Drive offload ran BEFORE this and reclaimed the
+      // render dir and the volume copy. That is the normal case with Drive on, and
+      // it left every course lesson at review with no reviewedSha256 (the LMS's
+      // first contract-1.3 lesson, 2026-10-19). The offload verified the upload by
+      // md5 and recorded the sha256 it hashed from the same bytes, so the record
+      // IS the fingerprint -- taken only when it is verified and agrees with the
+      // probe of the file (video-meta.json), so a half-written record cannot bind
+      // an approval to bytes nobody uploaded.
+      const copy = deliverables.driveCopy(item.series, item.slug);
+      const meta = deliverables.videoMeta(item.series, item.slug);
+      const agrees = copy && copy.verified && copy.sha256 && copy.md5
+        && (!meta || (meta.md5 === copy.md5 && (!meta.sha256 || meta.sha256 === copy.sha256)));
+      if (!agrees) {
+        log(`${item.id}: blocked with a finished video but none was found to fingerprint`
+          + (copy ? ' (the Drive record is unverified or disagrees with the probe)' : ''));
+        return;
+      }
+      reviewedVideo = { sha256: copy.sha256, bytes: copy.bytes || null, runId, finalPath: null, qaScore,
+        source: 'drive', driveFileId: copy.driveFileId || null, at: new Date().toISOString() };
+    }
     const fresh = queue.get(item.id);
-    queue.setStatus(item.id, fresh.status, {
-      reviewedVideo: {
-        sha256,
-        bytes: fs.statSync(file).size,
-        runId,
-        finalPath: produced.finalPath || file,
-        qaScore: typeof qa.combined_score === 'number' ? qa.combined_score : null,
-        at: new Date().toISOString(),
-      },
-      reviewedVideoLost: false,
-    });
-    log(`${item.id}: reviewed video fingerprinted (sha256 ${sha256.slice(0, 16)}..., run ${runId})`);
+    queue.setStatus(item.id, fresh.status, { reviewedVideo, reviewedVideoLost: false });
+    log(`${item.id}: reviewed video fingerprinted (sha256 ${reviewedVideo.sha256.slice(0, 16)}..., `
+      + `from ${reviewedVideo.source}, run ${runId})`);
   } catch (e) {
     log(`${item.id}: could not fingerprint the reviewed video (${e.message})`);
+  }
+}
+
+/**
+ * What a scene redo must be able to put back if it fails: the record of the
+ * video the reviewer watched, and the script it was made from. Taken at
+ * video/revise, BEFORE the patch touches beats.js on the volume -- after that
+ * the pre-redo script exists nowhere (the residue is re-packed with the patched
+ * one too). Two small text files per round under the lesson's deliverables dir;
+ * the video itself is not copied: it is on Drive, verified, under its own name.
+ *
+ * Null when there is nothing to fall back to (no fingerprint anywhere, or no
+ * held script), in which case a failed redo keeps the old behaviour: `failed`.
+ */
+function snapshotForRedo(item, round) {
+  try {
+    let rv = item.reviewedVideo && item.reviewedVideo.sha256 ? item.reviewedVideo : null;
+    if (!rv) {
+      const copy = deliverables.driveCopy(item.series, item.slug);
+      if (copy && copy.verified && copy.sha256) {
+        rv = { sha256: copy.sha256, bytes: copy.bytes || null, finalPath: null, source: 'drive',
+          driveFileId: copy.driveFileId || null, runId: item.runId || null, at: new Date().toISOString() };
+      }
+    }
+    const held = deliverables.findScript(item.series, item.slug);
+    if (!rv || !held || !held.beats) return null;
+    const dest = deliverables.dirFor(item.series, item.slug);
+    if (!dest) return null;
+    const dir = path.join(dest, `pre-redo.r${round}`);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.copyFileSync(held.beats, path.join(dir, 'beats.js'));
+    if (held.durations && fs.existsSync(held.durations)) fs.copyFileSync(held.durations, path.join(dir, 'durations.json'));
+    return {
+      reviewedVideo: rv,
+      dir,
+      scriptSha: item.scriptApprovedSha || item.scriptSha || null,
+      scriptBeatCount: item.scriptBeatCount || null,
+    };
+  } catch (e) {
+    log(`${item.id}: could not snapshot the reviewed state before the redo (${e.message})`);
+    return null;
+  }
+}
+
+/**
+ * A scene redo that failed goes back to review with the video the reviewer
+ * already watched -- not to `failed`. The LMS would offer "Retry (about $1.50)"
+ * and "Skip" for a lesson whose good video is still on Drive, and the course
+ * would sit held behind a lesson that needs no rebuilding (the first production
+ * redo, 2026-10-19). The round stays counted and what it bought stays settled:
+ * a redo that keeps failing must not loop on paid retries.
+ *
+ * Returns true when the lesson was put back. False leaves `failed` standing:
+ * no snapshot (built before this existed), or the base video can no longer be
+ * found under its fingerprint -- then there is nothing safe to review.
+ */
+function restoreAfterFailedRedo(item, errorText, runId) {
+  const redo = item.videoRedo;
+  const base = redo && redo.base;
+  if (!redo || !item.videoRedoBy || !base || !base.reviewedVideo || !base.reviewedVideo.sha256) return false;
+  try {
+    const sha = base.reviewedVideo.sha256;
+    const local = base.reviewedVideo.finalPath && fs.existsSync(base.reviewedVideo.finalPath)
+      ? deliverables.fileSha256(base.reviewedVideo.finalPath) : null;
+    const copy = deliverables.driveCopy(item.series, item.slug);
+    const stillThere = local === sha || Boolean(copy && copy.verified && copy.sha256 === sha);
+    if (!stillThere) {
+      log(`${item.id}: redo round ${redo.round} failed and the reviewed video (${sha.slice(0, 16)}...) is no longer `
+        + 'where it was -- leaving the lesson failed');
+      return false;
+    }
+    // The script the reviewed video was made from, back onto the volume and the
+    // render dir, so the next build (an approval, or another redo) starts from it.
+    if (base.dir && fs.existsSync(path.join(base.dir, 'beats.js'))) {
+      const held = deliverables.findScript(item.series, item.slug);
+      const targets = [held && held.beats, path.join(videoDir(item.series, item.slug), 'beats.js')].filter(Boolean);
+      for (const t of targets) {
+        if (fs.existsSync(path.dirname(t))) fs.copyFileSync(path.join(base.dir, 'beats.js'), t);
+      }
+      const dur = path.join(base.dir, 'durations.json');
+      if (fs.existsSync(dur)) {
+        for (const t of [held && held.durations, path.join(videoDir(item.series, item.slug), 'durations.json')].filter(Boolean)) {
+          if (fs.existsSync(path.dirname(t))) fs.copyFileSync(dur, t);
+        }
+      }
+    }
+    const firstLine = String(errorText || 'unknown error').split(/\r?\n/).map((l) => l.trim()).filter(Boolean)[0] || 'unknown error';
+    const at = new Date().toISOString();
+    queue.setStatus(item.id, queue.ITEM_STATUS.BLOCKED, {
+      blockedBy: 'review',
+      // `reason` is what the LMS shows a reviewer on a blocked lesson; `error` on
+      // a blocked lesson it discards. So the failure is said here, in words.
+      reason: `The redo of scene(s) ${(redo.beats || []).join(', ')} (round ${redo.round}) failed before a new video `
+        + `was made: ${firstLine.slice(0, 200)}. The video you reviewed is unchanged and is still the one `
+        + 'that approve publishes. You can approve it, send it back again, or reject the lesson.',
+      reviewedVideo: { ...base.reviewedVideo, restoredAt: at },
+      reviewedVideoLost: false,
+      reviewApproved: false,
+      redoFailed: { round: redo.round, beats: redo.beats || [], error: String(errorText || '').slice(0, 2000), firstLine, runId, at },
+      ...(base.scriptSha ? { scriptSha: base.scriptSha, scriptApprovedSha: base.scriptSha } : {}),
+      ...(base.scriptBeatCount ? { scriptBeatCount: base.scriptBeatCount } : {}),
+      // The redo is over. Its round and history stay (redosLeft counts it); the
+      // live instruction is cleared so nothing seeds the next build from it.
+      videoRedo: null, videoRedoBy: null,
+      error: null,
+    });
+    log(`${item.id}: redo round ${redo.round} failed (${firstLine.slice(0, 120)}) -- back at review with the reviewed video `
+      + `(sha256 ${sha.slice(0, 16)}...)`);
+    return true;
+  } catch (e) {
+    log(`${item.id}: could not put the lesson back at review after the failed redo (${e.message})`);
+    return false;
   }
 }
 
@@ -686,6 +814,17 @@ async function buildOne(item) {
       if (publish) markReviewedVideoLost(item, st.runId, fresh.reason || 'The reviewed video is no longer available.');
       else recordReviewedVideo(item, final, st.runId);
     }
+    // A scene redo that failed: back to review with the video that was watched.
+    // Settled first, at what the redo bought -- the lesson is not failed, but the
+    // redo's own hold is over either way.
+    if (fresh && fresh.status === queue.ITEM_STATUS.FAILED && item.videoRedo && item.videoRedoBy
+        && fresh.abortRequested !== true && fresh.cancelled !== true) {
+      settleSpend(item, 'failed');
+      if (restoreAfterFailedRedo(item, fresh.error || (final && final.error) || outcome.status, st.runId)) {
+        outcome.status = 'blocked';
+      }
+      return outcome;
+    }
     if (fresh && fresh.blockedBy === 'script-approval') {
       log(`${item.id}: reservation held open across the script pause (spent so far: `
         + `$${Number(fresh.spendUsdTotal) || 0})`);
@@ -708,6 +847,10 @@ async function buildOne(item) {
       log(`${item.id}: could not record the failure on the queue (${e2.message})`);
     }
     settleSpend(item, 'failed');
+    // Same rule for a throw outside the stages: a failed redo returns to review.
+    if (item.videoRedo && item.videoRedoBy && restoreAfterFailedRedo(item, e.message, st.runId)) {
+      outcome.status = 'blocked';
+    }
     return outcome;
   } finally {
     current = null;
@@ -1132,10 +1275,14 @@ function reviseVideo(lessonId, { why = '', beats = null, spans = null, by = 'Aro
   }
 
   const at = new Date().toISOString();
+  // Taken before the queue write below clears reviewedVideo, and before the
+  // build patches beats.js: what a failed redo is put back to.
+  const base = snapshotForRedo(item, round);
   const redo = {
     round, why: text, beats: beatIds, spans: mappedFromSpans, by, at,
-    baseSha256: (item.reviewedVideo && item.reviewedVideo.sha256) || null,
+    baseSha256: (item.reviewedVideo && item.reviewedVideo.sha256) || (base && base.reviewedVideo.sha256) || null,
     fullRebuild: Boolean(fullRebuild),
+    base,
   };
   queue.setStatus(lessonId, queue.ITEM_STATUS.QUEUED, {
     videoRedo: redo,
