@@ -140,5 +140,9 @@ EXPOSE 8080
 # 2026-10-19 after one day). Each zombie holds a slot against the container's
 # cgroup pids.max of 1000 -- the same ceiling an ffmpeg with twenty inputs hit
 # in the stitch step. tini is ~20 KB, idle, and costs nothing to run.
+#
+# railway.json's deploy.startCommand REPLACES this entrypoint on Railway (the
+# first deploy of this file still had `node` as PID 1), so the start command
+# there names tini too. test-predeploy pins the two together.
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["node", "server/index.js"]

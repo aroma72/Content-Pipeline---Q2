@@ -9,6 +9,7 @@
  */
 
 const http = require('http');
+const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 
@@ -128,6 +129,23 @@ const noJobs = { writing: 0, producing: 0, publishing: 0, any: false };
     assert(r.code === 1, `exit ${r.code}: ${r.out}`);
     assert(/not deploying blind/.test(r.out), r.out);
     return 'refused';
+  });
+
+  // Railway starts the container with railway.json's deploy.startCommand, which
+  // REPLACES the Dockerfile's ENTRYPOINT. The deploy that added tini (0e58223)
+  // shipped an image with tini in it and `node` still as PID 1: nothing reaped
+  // the orphaned Chrome processes, and 59 zombies sat against the container's
+  // pids.max -- the same ceiling that killed the first production scene redo.
+  await check('the container is started under tini on Railway, not bare node', async () => {
+    const root = path.join(__dirname, '..');
+    const rj = JSON.parse(fs.readFileSync(path.join(root, 'railway.json'), 'utf8'));
+    const start = String((rj.deploy && rj.deploy.startCommand) || '');
+    assert(/^\/usr\/bin\/tini -- node server\/index\.js$/.test(start),
+      `railway.json deploy.startCommand is "${start}" -- Railway runs this, not the Dockerfile ENTRYPOINT, so PID 1 is node and zombies are never reaped`);
+    const df = fs.readFileSync(path.join(root, 'Dockerfile'), 'utf8');
+    assert(/^ENTRYPOINT \["\/usr\/bin\/tini", "--"\]/m.test(df), 'the Dockerfile ENTRYPOINT is not tini');
+    assert(/^\s+tini \\$/m.test(df) && /\/usr\/bin\/tini --version/.test(df), 'tini is not installed and proven by the Dockerfile');
+    return 'railway.json and the Dockerfile both start under tini';
   });
 
   console.log(`\n  ${pass} passed, ${failures.length} failed`);
