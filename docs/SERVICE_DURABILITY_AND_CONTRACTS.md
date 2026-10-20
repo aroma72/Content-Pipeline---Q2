@@ -679,8 +679,9 @@ A written script can now change twice before it is produced, and both ways keep 
   the approval to the bytes, as in §3.2.
 
 The three abilities sit behind `MAKE_VIDEO_CONTEXT`, `MAKE_VIDEO_SCRIPT_EDIT` and
-`MAKE_VIDEO_SCRIPT_REVISE` (`docs/DEPLOYMENT_PREREQS.md`), read at call time; `/health.makeVideo`
-shows the live values.
+`MAKE_VIDEO_SCRIPT_REVISE` (`docs/DEPLOYMENT_PREREQS.md`). The process reads them on every call,
+but Railway hands a changed variable only to the next container, so a flip is `--skip-deploys` plus
+`scripts/deploy.ps1` (the in-flight guard runs); `/health.makeVideo` shows the live values.
 
 ### 6.2 The volume
 

@@ -4,7 +4,8 @@
  *
  * Contract 1.4. Served on every job, on /health and on GET /api/v1 so the LMS
  * can show a button only where it works, instead of guessing from a 404. Each
- * flag is read at call time (the env is flipped on a running service), and a
+ * flag is read at call time (a change lands with the next container, so flip
+ * it with `--skip-deploys` and run scripts/deploy.ps1 -- H55 in lessons.md), and a
  * request that uses an ability its flag has off is refused with 400
  * `capability_disabled` -- never silently ignored, so the LMS can never believe
  * a document was used when it was not.
@@ -29,6 +30,7 @@ function capabilities() {
     maxRevisions: MAX_REVISIONS,
     produceScriptSha: true,
     estSeconds: true,
+    estimateUsd: true,
     options: options.publicOptions(),
   };
 }

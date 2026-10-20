@@ -2578,7 +2578,7 @@ async function contract14Checks() {
         const h = (await req(port, { path: '/health' })).json;
         assert(h.contractVersion === '1.4', `contract ${h.contractVersion}`);
         assert(h.makeVideo && h.makeVideo.context === false && h.makeVideo.scriptEdit === false && h.makeVideo.scriptRevise === false, `flags off: ${JSON.stringify(h.makeVideo)}`);
-        assert(h.makeVideo.contextMaxChars === 120000 && h.makeVideo.maxRevisions === 5 && h.makeVideo.produceScriptSha === true && h.makeVideo.estSeconds === true, 'static facts missing');
+        assert(h.makeVideo.contextMaxChars === 120000 && h.makeVideo.maxRevisions === 5 && h.makeVideo.produceScriptSha === true && h.makeVideo.estSeconds === true && h.makeVideo.estimateUsd === true, 'static facts missing');
         assert(h.makeVideo.options && h.makeVideo.options.purposes.length === 4 && h.makeVideo.options.lengthMinutes.max === 6, `options: ${JSON.stringify(h.makeVideo.options)}`);
         const i = (await req(port, { path: '/api/v1' })).json;
         assert(i.makeVideo && i.makeVideo.context === false, 'index lacks makeVideo');
@@ -2650,7 +2650,11 @@ async function contract14Checks() {
         assert(typeof job.script.estTotalSeconds === 'number' && job.script.estSeconds['03'] === 0 && job.script.estSeconds['01'] > 0, `estSeconds: ${JSON.stringify(job.script.estSeconds)}`);
         const plain = await written(port, 't-opt2', pipeline);
         assert(plain.job.options.purpose === 'lesson' && plain.job.options.voiceover === true && plain.job.options.lengthMinutes === null, `defaults: ${JSON.stringify(plain.job.options)}`);
-        return 'refused by field; carried; echoed; estSeconds on the read';
+        // What produce would buy, on the read: a number, and the silent job's is the
+        // voiced job's minus its speech (same fake script, so art is equal).
+        assert(typeof plain.job.script.estimateUsd === 'number' && plain.job.script.estimateUsd > 0, `estimateUsd: ${plain.job.script.estimateUsd}`);
+        assert(typeof job.script.estimateUsd === 'number' && job.script.estimateUsd < plain.job.script.estimateUsd, `silent ${job.script.estimateUsd} vs voiced ${plain.job.script.estimateUsd}`);
+        return 'refused by field; carried; echoed; estSeconds and estimateUsd on the read';
       });
     });
 

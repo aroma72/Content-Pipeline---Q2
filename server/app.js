@@ -564,7 +564,8 @@ function createApp(opts = {}) {
     try {
       const { _internals } = require('../orchestrator/lib/stages/produce');
       const { videoDir } = require('../orchestrator/lib/paths');
-      needUsd = _internals.estimateSpend(job.script.beats, videoDir(job.script.series, job.script.slug)).totalUsd;
+      const silent = Boolean(job.options && job.options.voiceover === false);
+      needUsd = _internals.estimateSpend(job.script.beats, videoDir(job.script.series, job.script.slug), { silent }).totalUsd;
     } catch { /* no estimate: the ceiling cut to the month still bounds the run */ }
     // A stubbed ledger (tests) may not keep balances; the real reserve() still guards the month.
     if (typeof ledger.spentUsd !== 'function') return ceilingUsd;

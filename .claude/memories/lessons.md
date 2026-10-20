@@ -1689,3 +1689,17 @@ gets a row the same day. A `true/false` the LMS branches UI copy on must be comp
 will actually do, and tested from the route (test-server), not from the module. Read the LMS page code
 (`E:\Cohort2LP\apps\web\src\app\courses\build\[id]\page.tsx`, `apps/api/src/lib/content-queen-courses.ts`)
 before changing any field it reads.
+---
+
+### H55. "Read at call time" is a property of the process; on Railway a changed variable still waits for a new container
+**Added:** 2026-10-21 | **Applies to:** every env switch documented as flippable on a running service (`COURSE_VIDEO_REDO`, `MAKE_VIDEO_*`)
+**Invalidate if:** Railway starts hot-injecting variables into a running container
+
+The `config.js` getters read `process.env` on every call, and that was written up -- and told to
+the LMS -- as "no redeploy needed". The getter is live; the container's environment is not.
+Railway hands a changed variable to the next container only, and its default on a variable change
+is to restart the service itself, *without* `scripts/deploy.sh`'s "refuse while anything runs"
+check. So a flag flip is: `railway variables --set KEY=1 --skip-deploys`, then
+`.\scripts\deploy.ps1`, then read the flag back on `/health`. Never describe a flag as
+"flipped on a running service" in a doc or a partner reply; say "lands with the next deploy".
+Related: [[H37]] (a restart is a restart), [[H36]] (hand the user PowerShell).

@@ -315,6 +315,17 @@ function toPublic(job, opts = {}) {
     if (Array.isArray(job.script.beatsFull) && job.script.beatsFull.length) {
       const est = require('../../orchestrator/lib/est-seconds').estimateSeconds(job.script.beatsFull);
       out.script = { ...job.script, estSeconds: est.perBeat, estTotalSeconds: est.totalSeconds };
+      // And what producing it would buy, priced from the script's own beats and
+      // whatever the video dir already holds (orchestrator/lib/stages/produce.js
+      // estimateSpend -- the same figure the budget gate checks). The LMS button
+      // showed a flat $2.50 that was the course reserve, not this video. Null when
+      // the estimate cannot be made; never a guess.
+      try {
+        const { _internals } = require('../../orchestrator/lib/stages/produce');
+        const { videoDir } = require('../../orchestrator/lib/paths');
+        const silent = Boolean(job.options && job.options.voiceover === false);
+        out.script.estimateUsd = _internals.estimateSpend(job.script.beatsFull, videoDir(job.script.series, job.script.slug), { silent }).totalUsd;
+      } catch { out.script.estimateUsd = null; }
     }
   }
   out.capabilities = require('./capabilities').capabilities();

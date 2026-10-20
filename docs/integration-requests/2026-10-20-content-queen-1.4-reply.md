@@ -117,7 +117,8 @@ is unchanged. This one needs no switch — it can only refuse.
                "voiceover": [true, false], "purposes": [ { "id": "lesson", "checkpoint": "required", … } ] } }
 ```
 
-on `/health`, `GET /api/v1` and every job. Read live: we flip a switch and the next poll shows it.
+on `/health`, `GET /api/v1` and every job. Read live: we flip a switch (one short, guarded restart on
+our side — see the 2026-10-21 reply) and the next poll shows it.
 
 ## 7. One thing you did not ask for: create options
 

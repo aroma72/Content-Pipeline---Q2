@@ -334,3 +334,32 @@ No frontmatter: this file is machine-managed and exempt from the metadata contra
   scoped revise (~$0.5) under paid-run-protocol; (5) flip flags in Railway, send Nazim the reply;
   (6) known gap: edit cannot clear a field (applyEdits drops empties) -- add `null` = clear if asked.
 
+- 2026-10-20 later: user said "deploy first". `git push origin feat/contract-1.4:main` was DENIED by
+  the auto-mode classifier (publication) -- the user must run the push + .\scripts\deploy.ps1 by
+  hand, then confirm /health.contractVersion == 1.4 and makeVideo.* all false. LMS cover message
+  drafted in chat (detailed, points at the reply doc). Flags stay OFF until Nazim says go.
+- DEPLOYED f2bfb96 (user pushed feat/contract-1.4:main + deploy.ps1; verify-live 9/9, contract
+  1.4 live). Flags MAKE_VIDEO_* still OFF on Railway. LMS cover message handed to the user.
+  Next: Nazim says go -> set the three flags in Railway (CORRECTED 2026-10-21: a changed variable
+  reaches only the next container -- `--skip-deploys` + deploy.ps1, see lessons.md H55) ->
+  confirm /health.makeVideo flips -> their e2e job ids. Aroma's sign-off on the purpose exemption.
+
+## 2026-10-21 (Nazim accepted 1.4; first switch)
+- Nazim's reply (E:/Nazim/.claude/docs/planning/2026-10-21-cq-1.4-reply-to-aroma.md): LMS built
+  against 1.4; wants the switches on ONE AT A TIME in the order SCRIPT_EDIT -> CONTEXT ->
+  SCRIPT_REVISE, job ids after each; `null`=clear and `correctNote` not needed; `.xls` sent as
+  `xlsx`; they never send `purpose` until Aroma signs off. One question: does `voiceover:false`
+  change produce cost (their button says $2.50)?
+- Answer: the $2.50 is the COURSE lesson reserve (config.js courseLessonReserveUsd), not ours;
+  single videos settle to produce.spendUsd. Silent saves clips x $0.002 (~$0.04); a motion beat
+  > 6 s moves to the 10 s i2v bucket (+$0.25 each). Added `script.estimateUsd` on the read
+  (jobs.toPublic via produce._internals.estimateSpend {silent}) + `makeVideo.estimateUsd: true`;
+  fixed monthlyCap (app.js) to pass {silent}.
+- CORRECTION of 2026-10-20: "flags read at call time, no redeploy" was wrong for Railway -- the
+  process reads env live but a changed variable only reaches the next container. Flip =
+  `railway variables --set X=1 --skip-deploys` then `.\scripts\deploy.ps1`. Docs fixed
+  (DEPLOYMENT_PREREQS, SERVICE_DURABILITY §6.1b, 1.4 reply doc). Rule: lessons.md H55.
+- Reply doc: docs/integration-requests/2026-10-21-content-queen-1.4-reply-2.md.
+- Next: push feat/contract-1.4:main + deploy with MAKE_VIDEO_SCRIPT_EDIT=1; confirm
+  /health.makeVideo.scriptEdit true + estimateUsd on a job; tell Nazim; await their edit job ids;
+  then CONTEXT, then SCRIPT_REVISE, each its own guarded deploy.
