@@ -324,9 +324,10 @@ No frontmatter: this file is machine-managed and exempt from the metadata contra
 - Rules doc: CLAUDE.md + SCRIPTING_STANDARDS §3b got a "purpose exemption" line marked PENDING
   Aroma's sign-off — do not build marketing/announcement videos until she agrees.
 - Tests: regressions 361/0, server 112/0, store/predeploy/layout green, lint clean, skill evals
-  387/387. verify-all tier 1: the /health ok:false test fails ONLY under verify-all (it loads .env
-  with a budget; health reads config at load) -- pre-existing, not 1.4; qa-checkpoint fixture
-  needed templates/lib copied (fixed in verify-all.js).
+  387/387. verify-all tier 1: "the live /health route answers ok:false" fails ONLY when npm test
+  is spawned by verify-all; it passes under plain `npm test` and under a non-TTY node spawn. Cause
+  NOT found (no .env loading; health.js reads PIPELINE_BUDGET_USD); nothing in 1.4 touches it.
+  qa-checkpoint fixture needed templates/lib copied (fixed in verify-all.js).
 - NEXT: (1) Aroma signs off the purpose exemption; (2) commit on feat/contract-1.4 (never stage the
   memory files whole -- other sessions edit them); (3) push <branch>:main + .\scripts\deploy.ps1
   with the three flags OFF, confirm /health.contractVersion 1.4 and verify-live; (4) quote one real
