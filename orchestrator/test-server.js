@@ -1100,7 +1100,7 @@ async function lessonFileChecks() {
       const paths = (r.json.endpoints || []).map((e) => `${e.method} ${e.path}`);
       assert(paths.includes('POST /api/v1/courses/:courseId/lessons/:lessonId/video/revise'), 'video/revise not listed');
       assert(paths.includes('POST /api/v1/courses/:courseId/lessons/:lessonId/cancel'), 'cancel not listed');
-      assert(r.json.contractVersion === '1.3', `contractVersion ${r.json.contractVersion}`);
+      assert(r.json.contractVersion === '1.4', `contractVersion ${r.json.contractVersion}`);
       assert(r.json.videoRedo && typeof r.json.videoRedo.enabled === 'boolean' && r.json.videoRedo.maxRounds >= 1
         && r.json.videoRedo.reserveUsd > 0, `videoRedo block: ${JSON.stringify(r.json.videoRedo)}`);
       return `1.3, videoRedo ${JSON.stringify(r.json.videoRedo)}`;
@@ -2529,6 +2529,258 @@ async function healthChecks() {
     });
 }
 
+
+// ── contract 1.4: script-first single videos ─────────────────────────────────
+
+async function contract14Checks() {
+  console.log('\n-- contract 1.4: context, options, $0 edits, scoped revise, sha on produce --');
+  const { videoDir } = require(path.join(__dirname, 'lib', 'paths'));
+  const auth = { authorization: `Bearer ${LMS_TOKEN}` };
+  // Every test here creates jobs from one address; lift the per-IP make limit for them.
+  const LOOSE = { ANON_MAKE_PER_IP_PER_HOUR: '1000', MAKE_GLOBAL_PER_HOUR: '1000', ANON_MAKE_PER_HOUR: '100' };
+  const FLAGS = { ...LOOSE, MAKE_VIDEO_CONTEXT: '1', MAKE_VIDEO_SCRIPT_EDIT: '1', MAKE_VIDEO_SCRIPT_REVISE: '1' };
+  const BEATS = [
+    { id: '01', mode: 'scene', vo: 'Ali opens his order book.', art: 'A tailor at a bench, no text', cap: 'The order book' },
+    { id: '02', mode: 'info', vo: 'Twelve orders came in.', info: { tpl: 'bignum', data: { big: 12, lab: 'orders' } } },
+    { id: '03', mode: 'checkpoint', quiz: { stem: 'What did Ali count first?', options: ['Orders', 'Coins', 'Days'], answer: 0, explain: 'He counted the orders in the book, which is the thing the week is measured in. Coins looked right because money is what he worries about, but the book lists orders.' } },
+    { id: '04', mode: 'scene', vo: 'So he writes the numbers down.', art: 'A notebook on a bench, no text', cap: 'Writing it down' },
+  ];
+  // A writer whose beats land on disk, as the real one's do, so edit/revise/produce
+  // can fingerprint the file.
+  function writerOnDisk(slug) {
+    return async (body) => {
+      const dir = videoDir('made', slug);
+      fs.mkdirSync(dir, { recursive: true });
+      const { renderBeatsFile } = require(path.join(__dirname, 'lib', 'beats-file'));
+      fs.writeFileSync(path.join(dir, 'beats.js'), renderBeatsFile({ title: 'A Test Lesson', beats: BEATS }), 'utf8');
+      const sha = require(path.join(__dirname, 'lib', 'deliverables')).fingerprint(path.join(dir, 'beats.js'));
+      return {
+        runId: 'run-test', itemId: `made/${slug}`, slug, series: 'made', topic: body.topic, title: 'A Test Lesson',
+        brief: { slo: 'x', interpretation: 'y', ali_scenario: 'z' }, beats: BEATS, gate: { verdict: 'READY' },
+        redrafts: 0, dir, scriptSha: sha, _body: body,
+      };
+    };
+  }
+  const written = async (port, slug, pipeline, body = {}) => {
+    const r = await req(port, { method: 'POST', path: '/demo/make-video', body: { topic: `topic ${slug}`, ...body } });
+    assert(r.status === 202, `create: ${r.status} ${r.text}`);
+    const cookie = cookieFrom(r.setCookie, 'cq_owner');
+    await settle();
+    const job = (await req(port, { path: `/demo/make-video/${r.json.jobId}`, cookie })).json;
+    assert(job.status === 'written', `not written: ${JSON.stringify(job).slice(0, 300)}`);
+    return { jobId: r.json.jobId, cookie, job };
+  };
+
+  await check('capabilities are served on /health, /api/v1 and every job, and flip with the env',
+    async () => {
+      const env = freshEnv(LOOSE);
+      await withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+        const h = (await req(port, { path: '/health' })).json;
+        assert(h.contractVersion === '1.4', `contract ${h.contractVersion}`);
+        assert(h.makeVideo && h.makeVideo.context === false && h.makeVideo.scriptEdit === false && h.makeVideo.scriptRevise === false, `flags off: ${JSON.stringify(h.makeVideo)}`);
+        assert(h.makeVideo.contextMaxChars === 120000 && h.makeVideo.maxRevisions === 5 && h.makeVideo.produceScriptSha === true && h.makeVideo.estSeconds === true, 'static facts missing');
+        assert(h.makeVideo.options && h.makeVideo.options.purposes.length === 4 && h.makeVideo.options.lengthMinutes.max === 6, `options: ${JSON.stringify(h.makeVideo.options)}`);
+        const i = (await req(port, { path: '/api/v1' })).json;
+        assert(i.makeVideo && i.makeVideo.context === false, 'index lacks makeVideo');
+        const { jobId, cookie } = await makeJob(port);
+        const j = (await req(port, { path: `/demo/make-video/${jobId}`, cookie })).json;
+        assert(j.capabilities && j.capabilities.scriptEdit === false, 'job lacks capabilities');
+      });
+      const on = freshEnv(FLAGS);
+      return withServer(on, { oneVideo: fakePipeline(), store: freshStore(on) }, async (port) => {
+        const h = (await req(port, { path: '/health' })).json;
+        assert(h.makeVideo.context === true && h.makeVideo.scriptEdit === true && h.makeVideo.scriptRevise === true, `flags on: ${JSON.stringify(h.makeVideo)}`);
+        return 'off by default, on with the three env flags';
+      });
+    });
+
+  await check('context: refused 400 capability_disabled with the flag off; accepted, passed to the writer and echoed as names only with it on',
+    async () => {
+      const off = freshEnv(LOOSE);
+      await withServer(off, { oneVideo: fakePipeline(), store: freshStore(off) }, async (port) => {
+        const r = await req(port, { method: 'POST', path: '/demo/make-video', body: { topic: 't', context: { sources: [{ name: 'a.txt', kind: 'txt', text: 'hi' }] } } });
+        assert(r.status === 400 && r.json.code === 'capability_disabled' && r.json.capability === 'context', `off: ${r.status} ${r.text}`);
+      });
+      const on = freshEnv(FLAGS);
+      let seen = null;
+      const pipeline = fakePipeline({ write: async (body) => { seen = body; return writerOnDisk('t-ctx')(body); } });
+      return withServer(on, { oneVideo: pipeline, store: freshStore(on) }, async (port) => {
+        const ctx = { sources: [{ name: 'Week 3 deck.pptx', kind: 'pptx', text: 'Enrolment 2024: 1,204 pupils.', truncated: false }] };
+        const { job } = await written(port, 't-ctx', pipeline, { context: ctx });
+        assert(seen && seen.context && seen.context.sources[0].text === ctx.sources[0].text, `the writer did not get the text: ${JSON.stringify(seen && seen.context)}`);
+        assert(job.context && job.context.chars === 29 && job.context.sources[0].name === 'Week 3 deck.pptx' && !('text' in job.context.sources[0]), `echo: ${JSON.stringify(job.context)}`);
+        const bad = await req(port, { method: 'POST', path: '/demo/make-video', body: { topic: 't', context: { sources: [{ name: 'x', kind: 'exe', text: 'y' }] } } });
+        assert(bad.status === 400 && bad.json.code === 'bad_context', `bad kind: ${bad.status} ${bad.text}`);
+        const big = await req(port, { method: 'POST', path: '/demo/make-video', body: { topic: 't', context: { sources: [{ name: 'x.txt', kind: 'txt', text: 'a'.repeat(120001) }] } } });
+        assert(big.status === 413 && big.json.code === 'context_too_large' && big.json.limitChars === 120000, `over cap: ${big.status} ${big.text.slice(0, 200)}`);
+        return 'disabled -> 400; on -> passed through, echoed as names, 413 over the cap';
+      });
+    });
+
+  await check('a body over the route limit is a JSON 413 with a code, and other routes keep the small limit',
+    async () => {
+      const env = freshEnv(FLAGS);
+      return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+        const huge = JSON.stringify({ topic: 't', context: { sources: [{ name: 'x.txt', kind: 'txt', text: 'a'.repeat(1100000) }] } });
+        const r = await req(port, { method: 'POST', path: '/demo/make-video', body: huge });
+        assert(r.status === 413 && r.json && r.json.code === 'payload_too_large', `make-video 1.1MB: ${r.status} ${r.text.slice(0, 120)}`);
+        const ok = await req(port, { method: 'POST', path: '/demo/make-video', body: JSON.stringify({ topic: 't', notes: 'n'.repeat(40000) }) });
+        assert(ok.status === 202, `a 40kb make-video body must pass: ${ok.status} ${ok.text.slice(0, 120)}`);
+        const other = await req(port, { method: 'POST', path: '/demo/make-video/abc/produce', headers: auth, body: JSON.stringify({ by: 'x'.repeat(40000) }) });
+        assert(other.status === 413 && other.json && other.json.code === 'payload_too_large', `another route at 40kb: ${other.status} ${other.text.slice(0, 120)}`);
+        const notJson = await req(port, { method: 'POST', path: '/demo/make-video', body: '{not json' });
+        assert(notJson.status === 400 && notJson.json.code === 'bad_json', `bad json: ${notJson.status} ${notJson.text.slice(0, 120)}`);
+        return 'JSON 413 on the big route, 32kb elsewhere, JSON 400 on bad JSON';
+      });
+    });
+
+  await check('options are validated before a job exists, carried to the writer, and echoed on the job',
+    async () => {
+      const env = freshEnv(LOOSE);
+      let seen = null;
+      const pipeline = fakePipeline({ write: async (body) => { seen = body; return writerOnDisk('t-opt')(body); } });
+      return withServer(env, { oneVideo: pipeline, store: freshStore(env) }, async (port) => {
+        const bad = await req(port, { method: 'POST', path: '/demo/make-video', body: { topic: 't', options: { purpose: 'advert' } } });
+        assert(bad.status === 400 && bad.json.code === 'bad_options' && bad.json.field === 'purpose', `bad purpose: ${bad.status} ${bad.text}`);
+        const long = await req(port, { method: 'POST', path: '/demo/make-video', body: { topic: 't', options: { lengthMinutes: 12 } } });
+        assert(long.status === 400 && long.json.field === 'lengthMinutes', `12 minutes: ${long.status} ${long.text}`);
+        const { job } = await written(port, 't-opt', pipeline, { options: { style: 'motion-graphics', lengthMinutes: 3, voiceover: false, purpose: 'marketing' } });
+        assert(seen.options && seen.options.purpose === 'marketing' && seen.options.voiceover === false && seen.options.lengthMinutes === 3 && seen.options.style === 'motion-graphics', `writer got: ${JSON.stringify(seen.options)}`);
+        assert(job.options && job.options.purpose === 'marketing' && job.style === 'motion-graphics', `echo: ${JSON.stringify(job.options)} style ${job.style}`);
+        assert(typeof job.script.estTotalSeconds === 'number' && job.script.estSeconds['03'] === 0 && job.script.estSeconds['01'] > 0, `estSeconds: ${JSON.stringify(job.script.estSeconds)}`);
+        const plain = await written(port, 't-opt2', pipeline);
+        assert(plain.job.options.purpose === 'lesson' && plain.job.options.voiceover === true && plain.job.options.lengthMinutes === null, `defaults: ${JSON.stringify(plain.job.options)}`);
+        return 'refused by field; carried; echoed; estSeconds on the read';
+      });
+    });
+
+  await check('script/edit: $0, synchronous, new sha; stale sha 409; a 9-word caption 422 check_failed; flag off 400',
+    async () => {
+      const off = freshEnv(LOOSE);
+      await withServer(off, { oneVideo: fakePipeline({ write: writerOnDisk('t-ed0') }), store: freshStore(off) }, async (port) => {
+        const { jobId, cookie } = await written(port, 't-ed0');
+        const r = await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/script/edit`, cookie, body: { sha: 'x', edits: [{ id: '01', vo: 'y' }] } });
+        assert(r.status === 400 && r.json.code === 'capability_disabled', `off: ${r.status} ${r.text}`);
+      });
+      const env = freshEnv(FLAGS);
+      return withServer(env, { oneVideo: fakePipeline({ write: writerOnDisk('t-edit') }), store: freshStore(env) }, async (port) => {
+        const { jobId, cookie, job } = await written(port, 't-edit');
+        const sha0 = job.script.scriptSha;
+        assert(sha0, 'no scriptSha on the written job');
+        const stale = await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/script/edit`, cookie, body: { sha: 'deadbeefdeadbeef', edits: [{ id: '01', vo: 'y' }] } });
+        assert(stale.status === 409 && stale.json.code === 'sha_mismatch' && stale.json.currentSha === sha0, `stale: ${stale.status} ${stale.text}`);
+        const long = await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/script/edit`, cookie, body: { sha: sha0, edits: [{ id: '01', cap: 'one two three four five six seven eight nine' }] } });
+        assert(long.status === 422 && long.json.code === 'check_failed' && long.json.check === 'caption-length' && long.json.beatId === '01', `9 words: ${long.status} ${long.text}`);
+        const field = await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/script/edit`, cookie, body: { sha: sha0, edits: [{ id: '01', mode: 'info' }] } });
+        assert(field.status === 422 && field.json.code === 'bad_edit', `mode edit: ${field.status} ${field.text}`);
+        const ok = await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/script/edit`, cookie, body: { sha: sha0, by: 'teacher@example.org', edits: [{ id: '01', vo: 'Ali opens the ledger.', cap: 'The ledger' }, { id: '03', quiz: { answer: 0, options: ['Orders', 'Coins', 'Weeks'] } }] } });
+        assert(ok.status === 200, `edit: ${ok.status} ${ok.text}`);
+        assert(ok.json.scriptSha && ok.json.scriptSha !== sha0, 'sha did not change');
+        assert(ok.json.script.beatsFull[0].vo === 'Ali opens the ledger.' && ok.json.script.beatsFull[2].quiz.options[2] === 'Weeks' && ok.json.script.beatsFull[2].quiz.explain, `edit not applied: ${JSON.stringify(ok.json.script.beatsFull[0])}`);
+        const after = (await req(port, { path: `/demo/make-video/${jobId}`, cookie })).json;
+        assert(after.status === 'written' && after.script.scriptSha === ok.json.scriptSha && after.script.edits.length === 1 && /teacher@example.org/.test(after.script.edits[0].by), `job after: ${JSON.stringify(after.script.edits)}`);
+        const disk = fs.readFileSync(path.join(videoDir('made', 't-edit'), 'beats.js'), 'utf8');
+        assert(/Ali opens the ledger\./.test(disk), 'beats.js on disk was not rewritten');
+        assert(require(path.join(__dirname, 'lib', 'deliverables')).fingerprint(path.join(videoDir('made', 't-edit'), 'beats.js')) === ok.json.scriptSha, 'the new sha is not the file on disk');
+        return 'stale 409, long cap 422, bad field 422, then 200 with a new sha on disk';
+      });
+    });
+
+  await check('script/revise: written -> revising -> written with a new sha and spentUsd; scoped beats reach the pipeline; cap 409 revision_cap',
+    async () => {
+      const env = freshEnv(FLAGS);
+      let calls = [];
+      const pipeline = fakePipeline({
+        write: writerOnDisk('t-rev'),
+        revise: async (r) => {
+          calls.push(r);
+          const dir = videoDir('made', 't-rev');
+          const beats = BEATS.map((b) => (b.id === '04' ? { ...b, vo: `Revised round ${r.round}.` } : b));
+          const { renderBeatsFile } = require(path.join(__dirname, 'lib', 'beats-file'));
+          fs.writeFileSync(path.join(dir, 'beats.js'), renderBeatsFile({ title: 'A Test Lesson', beats }), 'utf8');
+          return { runId: `run-rev-${r.round}`, itemId: 'made/t-rev', title: 'A Test Lesson', beats, unresolvedChecks: [], redrafts: 0, spentUsd: 0.41, dir,
+            scriptSha: require(path.join(__dirname, 'lib', 'deliverables')).fingerprint(path.join(dir, 'beats.js')) };
+        },
+      });
+      return withServer(env, { oneVideo: pipeline, store: freshStore(env) }, async (port) => {
+        const { jobId, cookie, job } = await written(port, 't-rev');
+        let sha = job.script.scriptSha;
+        const none = await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/script/revise`, cookie, body: { sha } });
+        assert(none.status === 400 && none.json.code === 'no_notes', `no notes: ${none.status} ${none.text}`);
+        const unknown = await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/script/revise`, cookie, body: { sha, beats: [{ id: '99', why: 'x' }] } });
+        assert(unknown.status === 422 && unknown.json.code === 'unknown_beat', `unknown beat: ${unknown.status} ${unknown.text}`);
+        for (let round = 1; round <= 5; round++) {
+          const r = await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/script/revise`, cookie, body: { sha, by: 'teacher@example.org', beats: [{ id: '04', why: 'use the 2024 number' }] } });
+          assert(r.status === 202 && r.json.status === 'revising' && r.json.round === round && r.json.revisionsLeft === 5 - round, `round ${round}: ${r.status} ${r.text}`);
+          const mid = (await req(port, { path: `/demo/make-video/${jobId}`, cookie })).json;
+          assert(mid.status === 'revising' || mid.status === 'written', `mid status ${mid.status}`);
+          const produceWhileRevising = await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/produce`, headers: auth, body: {} });
+          assert(produceWhileRevising.status !== 202 || mid.status === 'written', 'produce started while revising');
+          await settle();
+          const done = (await req(port, { path: `/demo/make-video/${jobId}`, cookie })).json;
+          assert(done.status === 'written' && done.script.scriptSha !== sha, `round ${round} not written with a new sha: ${done.status} ${done.script.scriptSha}`);
+          assert(done.script.revisions.length === round && done.script.revisions[round - 1].spentUsd === 0.41 && done.script.lastRevise.status === 'done', `revisions: ${JSON.stringify(done.script.revisions)}`);
+          assert(done.script.beatsFull[3].vo === `Revised round ${round}.`, 'beatsFull not refreshed');
+          sha = done.script.scriptSha;
+        }
+        assert(calls.length === 5 && calls[0].beats[0].id === '04' && calls[0].beats[0].why === 'use the 2024 number' && calls[4].round === 5, `pipeline calls: ${JSON.stringify(calls.map((c) => c.round))}`);
+        assert(calls[1].history.length === 1 && calls[1].history[0].round === 1, `history not carried: ${JSON.stringify(calls[1].history)}`);
+        const sixth = await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/script/revise`, cookie, body: { sha, why: 'again' } });
+        assert(sixth.status === 409 && sixth.json.code === 'revision_cap' && sixth.json.maxRevisions === 5, `sixth: ${sixth.status} ${sixth.text}`);
+        return '5 rounds, each a new sha with its cost; the sixth is 409 revision_cap';
+      });
+    });
+
+  await check('a failed revise puts the job back to written with lastError.stage=revise and the cost; a restart does the same',
+    async () => {
+      const env = freshEnv(FLAGS);
+      const pipeline = fakePipeline({
+        write: writerOnDisk('t-revfail'),
+        revise: async () => { throw Object.assign(new Error('the writer could not stay in scope'), { spentUsd: 0.2, runId: 'run-x' }); },
+      });
+      const store = freshStore(env);
+      return withServer(env, { oneVideo: pipeline, store }, async (port) => {
+        const { jobId, cookie, job } = await written(port, 't-revfail');
+        const r = await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/script/revise`, cookie, body: { sha: job.script.scriptSha, why: 'tighter' } });
+        assert(r.status === 202, `revise: ${r.status} ${r.text}`);
+        await settle();
+        const j = (await req(port, { path: `/demo/make-video/${jobId}`, cookie })).json;
+        assert(j.status === 'written' && j.lastError && j.lastError.stage === 'revise' && j.lastError.spentUsd === 0.2 && /scope/.test(j.lastError.message), `after failure: ${j.status} ${JSON.stringify(j.lastError)}`);
+        assert(j.script.scriptSha === job.script.scriptSha, 'the sha moved on a failed revise');
+        assert(j.script.lastRevise.status === 'failed', `lastRevise: ${JSON.stringify(j.script.lastRevise)}`);
+        // A restart mid-revise: the job is `revising` on disk; restore() returns it to written.
+        const jobsLib = require(path.join(__dirname, '..', 'server', 'lib', 'jobs'));
+        jobsLib.transition(jobId, { status: 'revising' }, { store });
+        const out = jobsLib.restore({ store });
+        const back = jobsLib.get(jobId, { store });
+        assert(out.revisingReset === 1 && back.status === 'written' && /restarted/.test(back.lastError.message), `restore: ${JSON.stringify(out)} -> ${back.status}`);
+        return 'written + lastError on failure; written on restart';
+      });
+    });
+
+  await check('produce with a scriptSha that is not the script on disk is 409 sha_mismatch and buys nothing; the right sha proceeds; none is as today',
+    async () => {
+      const env = freshEnv(LOOSE);
+      let produced = 0;
+      const pipeline = fakePipeline({ write: writerOnDisk('t-psha'), produce: async () => { produced++; return { runId: 'r', itemId: 'made/t-psha', slug: 't-psha', spendUsd: 1, qa: {}, youtube: null, awaitingReview: true, artifacts: {}, finalPath: null, dir: videoDir('made', 't-psha') }; } });
+      return withServer(env, { oneVideo: pipeline, store: freshStore(env) }, async (port) => {
+        const { jobId, cookie, job } = await written(port, 't-psha');
+        await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/claim`, headers: auth, cookie });
+        const wrong = await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/produce`, headers: auth, body: { scriptSha: '0000000000000000' } });
+        assert(wrong.status === 409 && wrong.json.code === 'sha_mismatch' && wrong.json.currentSha === job.script.scriptSha, `wrong sha: ${wrong.status} ${wrong.text}`);
+        await settle();
+        assert(produced === 0, 'produce ran on a wrong sha');
+        const j = (await req(port, { path: `/demo/make-video/${jobId}`, headers: auth, cookie })).json;
+        assert(j.status === 'written', `job moved: ${j.status}`);
+        const right = await req(port, { method: 'POST', path: `/demo/make-video/${jobId}/produce`, headers: auth, body: { scriptSha: job.script.scriptSha } });
+        assert(right.status === 202, `right sha: ${right.status} ${right.text}`);
+        await settle();
+        assert(produced === 1, 'produce did not run on the right sha');
+        return '409 on a wrong sha, 202 on the right one';
+      });
+    });
+}
+
 (async () => {
   console.log(`\n${'='.repeat(64)}`);
   console.log('  SERVER HTTP TESTS');
@@ -2543,6 +2795,7 @@ async function healthChecks() {
   await bridgeChecks();
   await lessonFileChecks();
   await styleChecks();
+  await contract14Checks();
   for (const d of storeDirs) { try { fs.rmSync(d, { recursive: true, force: true }); } catch { /* best effort */ } }
 
   console.log(`\n${'-'.repeat(64)}`);

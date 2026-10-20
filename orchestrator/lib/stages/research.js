@@ -7,6 +7,8 @@
  */
 
 const { askJson } = require('../llm-router');
+const { renderSourceMaterial } = require('../context');
+const purposeLib = require('../purpose');
 
 const SCHEMA = {
   type: 'object',
@@ -51,8 +53,12 @@ module.exports = {
       promptName: 'video_research',
       input: [
         `Topic: ${item.topic}`,
-        item.notes ? `Notes from the requester: ${item.notes}` : null,
+        // Free text from a stranger, fenced as data the same way the documents are.
+        item.notes ? `<requester_notes>\n${String(item.notes).replace(/<\s*\/\s*requester_notes/gi, '</ requester_notes')}\n</requester_notes>` : null,
         `Series: ${item.series}`,
+        // Contract 1.4: what the video is for, and the instructor's own documents.
+        purposeLib.purposeOf(item).prompt ? `\n${purposeLib.promptBlock(item)}` : null,
+        renderSourceMaterial(item.context) ? `\n${renderSourceMaterial(item.context)}` : null,
       ].filter(Boolean).join('\n'),
       schema: SCHEMA,
       maxTokens: 8000,

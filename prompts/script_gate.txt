@@ -51,9 +51,15 @@ Check every one of these:
    with no ground, shadow, desk, scenery, or dark fill.
 9. Ali is described consistently across every art prompt (same age, clothes, colours).
 10. Each beat's visual actually matches the sentence spoken over it.
-11. Beat count is 16-22. At a measured 6.2 seconds per beat that is 1.7-2.3 minutes,
-    which is the house range. Do NOT ask for more beats than 22, and do not treat a
-    script inside 16-22 as thin on beat count alone -- say which MOMENT is missing.
+11. Beat count is 16-22, unless the input's `length_requirement` gives a different band
+    -- then hold the script to THAT band. At a measured 6.2 seconds per beat 16-22 is
+    1.7-2.3 minutes, the house range. Do NOT ask for more beats than the band allows,
+    and do not treat a script inside its band as thin on beat count alone -- say which
+    MOMENT is missing.
+    If the input carries `purpose_rules`, those relax rules 1, 9 and 12 as stated there
+    (no protagonist required; checkpoint optional or absent). Judge by them.
+    If the input says `silent`, the video has no voiceover: the on-screen text is the
+    whole message. Judge the caps, overlays and cards, not the vo.
 12. THE CHECKPOINT — exactly one beat is mode "checkpoint", carrying
     quiz: { stem, options, answer, explain }. It is NEVER DRAWN AND NEVER SPOKEN: it
     has no vo, no art and no info, it takes zero time, and the learner answers it as a

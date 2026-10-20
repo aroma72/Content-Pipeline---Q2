@@ -63,8 +63,14 @@ function createApp(opts = {}) {
     limit: '2mb',
     verify: (req, _res, buf) => { req.rawBody = buf.toString('utf8'); },
   });
+  // Contract 1.4: POST /demo/make-video carries the instructor's documents as text
+  // -- up to 120k characters (orchestrator/lib/context.js), which in UTF-8 Urdu
+  // and JSON escaping is several hundred kilobytes. That one route, and only that
+  // one, takes a megabyte; everything else keeps the small limit.
+  const makeVideoJson = express.json({ limit: '1mb' });
   app.use((req, res, next) => {
     if (req.path === '/slack/events') return slackJson(req, res, next);
+    if (req.path === '/demo/make-video' && req.method === 'POST') return makeVideoJson(req, res, next);
     return express.json({ limit: '32kb' })(req, res, next);
   });
 
@@ -77,6 +83,8 @@ function createApp(opts = {}) {
       ok: v.ok,
       ...(v.reasons.length ? { notOkBecause: v.reasons } : {}),
       contractVersion: require('./lib/api').CONTRACT_VERSION,
+      // Contract 1.4: what the single-video flow can do on this deployment.
+      makeVideo: require('./lib/capabilities').capabilities(),
       // Stamped by scripts/deploy.sh into the uploaded tree. "Triggered a deploy"
       // is not proof of a deploy; this commit hash answering here is.
       build: health.build(),
@@ -390,8 +398,35 @@ function createApp(opts = {}) {
       return res.status(400).json({ error: 'invalid_style', message: styleChoice.message });
     }
 
-    const job = startWrite({ topic, notes: req.body && req.body.notes, style: styleChoice.style },
-      req.owner, callbackUrl);
+    // Contract 1.4: the instructor's choices (style, length, voiceover, purpose)
+    // and documents. Each refused before a job exists; each absent = today's video.
+    const parsedOptions = require('../orchestrator/lib/options').parseOptions(req.body || {});
+    if (!parsedOptions.ok) {
+      return res.status(400).json({ error: 'bad_options', code: 'bad_options', field: parsedOptions.field, message: parsedOptions.message });
+    }
+    let context = null;
+    if (req.body && req.body.context !== undefined && req.body.context !== null) {
+      if (!config.makeVideo.contextEnabled) {
+        return res.status(400).json({
+          error: 'capability_disabled', code: 'capability_disabled', capability: 'context',
+          message: 'Context documents are not switched on here (MAKE_VIDEO_CONTEXT). Nothing was created -- '
+            + 'a job made now would not use them, so this is refused rather than quietly ignored.',
+        });
+      }
+      const parsed = require('../orchestrator/lib/context').parseContext(req.body.context);
+      if (!parsed.ok) {
+        const { ok, status, ...body } = parsed;
+        return res.status(status).json({ error: body.code, ...body });
+      }
+      context = parsed.context;
+    }
+
+    // `options.style` and the top-level `style` are the same choice; parseOptions
+    // read both, so the job carries what was actually asked for.
+    const job = startWrite({
+      topic, notes: req.body && req.body.notes, style: parsedOptions.options.style,
+      options: parsedOptions.options, context,
+    }, req.owner, callbackUrl);
     res.status(202).json({
       jobId: job.id,
       status: job.status,
@@ -425,6 +460,7 @@ function createApp(opts = {}) {
 
   function startWrite(body, jobOwner, callbackUrl) {
     const job = jobsLib.create({ topic: body.topic, notes: body.notes, style: body.style,
+      options: body.options || null, context: body.context || null,
       owner: jobOwner, callbackUrl }, jobOpts);
     const id = job.id;
 
@@ -550,6 +586,285 @@ function createApp(opts = {}) {
     const job = ownedJob(req, res);
     if (!job) return undefined;
     return res.json(jobsLib.toPublic(job, { baseUrl: baseUrlOf(req) }));
+  });
+
+  /** The on-disk script for a written job, or null with the route already answered. */
+  function scriptOnDisk(job, res) {
+    const restored = jobsLib.materializeScript(job, { log: (m) => console.log(`[script ${job.id}]`, m) });
+    if (!restored.ok) {
+      res.status(409).json({ error: 'script_lost', code: 'script_lost', message: restored.why });
+      return null;
+    }
+    const deliverables = require('../orchestrator/lib/deliverables');
+    const sha = deliverables.fingerprint(restored.file);
+    let beats = null;
+    try {
+      delete require.cache[require.resolve(restored.file)];
+      beats = require(restored.file);
+    } catch (e) {
+      res.status(409).json({ error: 'script_lost', code: 'script_lost', message: `the script on disk cannot be read: ${e.message}` });
+      return null;
+    }
+    return { file: restored.file, sha, beats };
+  }
+
+  /** 409 sha_mismatch when the caller's sha is not the script on disk. Returns true when refused. */
+  function shaMismatch(req, res, currentSha, { required = true } = {}) {
+    const sent = req.body && req.body.sha !== undefined ? req.body.sha : (req.body && req.body.scriptSha);
+    if (sent === undefined || sent === null || sent === '') {
+      if (!required) return false;
+      res.status(400).json({ error: 'bad_request', code: 'sha_required', message: 'Send the `sha` of the script you are editing (scriptSha on the job).', currentSha });
+      return true;
+    }
+    if (String(sent) !== String(currentSha)) {
+      res.status(409).json({
+        error: 'sha_mismatch', code: 'sha_mismatch', currentSha,
+        message: `The script has changed since you read it (you sent ${sent}; it is ${currentSha}). Read it again and resend.`,
+      });
+      return true;
+    }
+    return false;
+  }
+
+  /** The projection the job record carries beside the complete beats. */
+  function beatsProjection(beats) {
+    return (beats || []).map((b) => ({
+      id: b.id, mode: b.mode, vo: b.vo || null, cap: b.cap || null, art: b.art || null,
+      overlay: b.overlay ? { tpl: b.overlay.tpl || null } : null,
+      info: b.info ? { tpl: b.info.tpl || null } : null,
+    }));
+  }
+
+  /** The script patch written after an edit or a revise changed beats.js. */
+  function scriptPatch(job, beats, sha) {
+    const checkpoint = (beats || []).find((b) => b.mode === 'checkpoint');
+    return {
+      ...job.script,
+      scriptSha: sha,
+      beats: beatsProjection(beats),
+      beatsFull: beats,
+      checkpoint: checkpoint ? checkpoint.quiz : null,
+      checkpointAfterBeat: checkpoint
+        ? ((beats.slice(0, beats.indexOf(checkpoint)).filter((b) => b.mode !== 'checkpoint').pop() || {}).id)
+        : null,
+    };
+  }
+
+  /** The fields of the job the stages read a purpose, length and voice from. */
+  function itemFields(job) {
+    const o = job.options || {};
+    return { style: job.style, purpose: o.purpose || null, lengthMinutes: o.lengthMinutes || null, voiceover: o.voiceover !== false };
+  }
+
+  const EDITABLE = ['vo', 'cap', 'overlay', 'info', 'quiz', 'holdAfter'];
+
+  /**
+   * Direct frame edits at $0 (contract 1.4).
+   *
+   * The instructor read the script and changed a line. Applied in code with the
+   * writer's own applyEdits, checked with every rule that needs no model, written
+   * as beats.js, fingerprinted, and answered in the same request. Nothing here
+   * reaches a model or spends a cent. Synchronous between the sha check and the
+   * write, so two edits cannot interleave.
+   */
+  app.post('/demo/make-video/:jobId/script/edit', (req, res) => {
+    const job = ownedJob(req, res);
+    if (!job) return undefined;
+    if (!config.makeVideo.scriptEditEnabled) {
+      return res.status(400).json({
+        error: 'capability_disabled', code: 'capability_disabled', capability: 'scriptEdit',
+        message: 'Script edits are not switched on here (MAKE_VIDEO_SCRIPT_EDIT).',
+      });
+    }
+    if (!job.script || job.status !== 'written') {
+      return res.status(409).json({
+        error: 'not_editable', code: 'not_editable',
+        message: job.script ? `This job is ${job.status}; only a written script waiting for produce can be edited.` : 'This job has no script yet.',
+      });
+    }
+    const edits = req.body && req.body.edits;
+    if (!Array.isArray(edits) || !edits.length) {
+      return res.status(400).json({ error: 'bad_request', code: 'no_edits', message: 'Send `edits`: [{ id, vo?, cap?, overlay?, info?, quiz?, holdAfter? }].' });
+    }
+    const disk = scriptOnDisk(job, res);
+    if (!disk) return undefined;
+    if (shaMismatch(req, res, disk.sha)) return undefined;
+
+    // Only the fields an instructor edits by hand. Mode, art and ids are the
+    // writer's; a mode change is a different beat, which is what revise is for.
+    const patch = { edits: [] };
+    for (const e of edits) {
+      const id = e && String(e.id || '');
+      const beat = disk.beats.find((b) => String(b.id) === id);
+      if (!beat) return res.status(422).json({ error: 'bad_edit', code: 'unknown_beat', beatId: id, message: `No beat ${id || '(no id)'} in this script.` });
+      const bad = Object.keys(e).filter((k) => k !== 'id' && !EDITABLE.includes(k));
+      if (bad.length) return res.status(422).json({ error: 'bad_edit', code: 'bad_edit', beatId: id, message: `Beat ${id}: ${bad.join(', ')} cannot be edited here (editable: ${EDITABLE.join(', ')}).` });
+      if (beat.mode === 'checkpoint' && e.vo) return res.status(422).json({ error: 'bad_edit', code: 'bad_edit', beatId: id, message: `Beat ${id} is the checkpoint; it is never spoken, so it has no vo.` });
+      if (beat.mode !== 'checkpoint' && e.quiz) return res.status(422).json({ error: 'bad_edit', code: 'bad_edit', beatId: id, message: `Beat ${id} is not the checkpoint; only the checkpoint beat carries a quiz.` });
+      const entry = { id };
+      for (const k of EDITABLE) {
+        if (e[k] === undefined) continue;
+        if (k === 'info') {
+          // `info.data` is merged into the card; its template is the writer's.
+          if (!beat.info) return res.status(422).json({ error: 'bad_edit', code: 'bad_edit', beatId: id, message: `Beat ${id} is not an info card.` });
+          entry.info = { tpl: beat.info.tpl, data: { ...(beat.info.data || {}), ...((e.info && e.info.data) || {}) } };
+        } else if (k === 'quiz') {
+          entry.quiz = { ...(beat.quiz || {}), ...(e.quiz || {}) };
+        } else entry[k] = e[k];
+      }
+      patch.edits.push(entry);
+    }
+
+    const { _internals } = require('../orchestrator/lib/stages/script');
+    const checks = require('../orchestrator/lib/script-checks');
+    const { videoDir } = require('../orchestrator/lib/paths');
+    const item = itemFields(job);
+    const dir = videoDir(job.script.series, job.script.slug);
+    let next;
+    try { next = _internals.applyEdits(disk.beats, patch).beats; } catch (e) {
+      return res.status(422).json({ error: 'bad_edit', code: 'bad_edit', message: e.message });
+    }
+    // Judged on what the edit CHANGED. A finding that was already there is not
+    // the instructor's, and must not make an accepted script uneditable.
+    const before = checks.deterministicChecks(disk.beats, { item, videoDir: dir }).errors;
+    const after = checks.deterministicChecks(next, { item, videoDir: dir }).errors;
+    const fresh = checks.newFindings(before, after);
+    if (fresh.length) {
+      return res.status(422).json({
+        error: 'check_failed', code: 'check_failed',
+        check: fresh[0].check, beatId: fresh[0].beatId, message: fresh[0].message,
+        findings: fresh,
+      });
+    }
+
+    const { renderBeatsFile } = require('../orchestrator/lib/beats-file');
+    fs.writeFileSync(disk.file, renderBeatsFile({ title: job.script.title || job.topic, beats: next }), 'utf8');
+    const sha = require('../orchestrator/lib/deliverables').fingerprint(disk.file);
+    const by = approverOf(req);
+    const updated = jobsLib.transition(job.id, {
+      patch: {
+        script: {
+          ...scriptPatch(job, next, sha),
+          edits: [...((job.script && job.script.edits) || []), {
+            at: new Date().toISOString(), by, ids: patch.edits.map((e) => e.id), fromSha: disk.sha, toSha: sha,
+          }],
+        },
+        lastError: null,
+      },
+    }, jobOpts);
+    try {
+      require('../orchestrator/lib/deliverables').persist({
+        series: job.script.series, slug: job.script.slug, videoDir: dir, log: (m) => console.log(`[script ${job.id}]`, m),
+      });
+    } catch (e) { console.warn(`[script ${job.id}] edited script NOT persisted to the volume: ${e.message}`); }
+    console.log(`[script ${job.id}] edited beat(s) ${patch.edits.map((e) => e.id).join(', ')} by ${by}: ${disk.sha} -> ${sha}`);
+    return res.json({ jobId: job.id, status: updated.status, scriptSha: sha, script: jobsLib.toPublic(updated).script });
+  });
+
+  /**
+   * Instruction-based redo (contract 1.4): the whole script, or named beats only.
+   *
+   * One or two model calls, no media. The job goes written -> revising -> written
+   * with a new scriptSha; the cap is five human revisions, as for courses.
+   */
+  app.post('/demo/make-video/:jobId/script/revise', (req, res) => {
+    const job = ownedJob(req, res);
+    if (!job) return undefined;
+    if (!config.makeVideo.scriptReviseEnabled) {
+      return res.status(400).json({
+        error: 'capability_disabled', code: 'capability_disabled', capability: 'scriptRevise',
+        message: 'Script revisions are not switched on here (MAKE_VIDEO_SCRIPT_REVISE).',
+      });
+    }
+    if (!job.script || job.status !== 'written') {
+      return res.status(409).json({
+        error: 'not_ready', code: 'not_ready',
+        message: job.script ? `This job is ${job.status}; only a written script waiting for produce can be revised.` : 'This job has no script yet.',
+      });
+    }
+    const body = req.body || {};
+    const beats = Array.isArray(body.beats) ? body.beats : [];
+    const why = String(body.why || '').trim();
+    if (!why && !beats.some((b) => b && b.id && String(b.why || '').trim())) {
+      return res.status(400).json({
+        error: 'bad_request', code: 'no_notes',
+        message: 'A revision needs notes: `why` for the whole script, or `beats: [{ id, why }]` for particular beats.',
+      });
+    }
+    const { MAX_REVISIONS } = require('./lib/capabilities');
+    const round = (Number(job.script.humanRevisions) || 0) + 1;
+    if (round > MAX_REVISIONS) {
+      return res.status(409).json({
+        error: 'revision_cap', code: 'revision_cap', maxRevisions: MAX_REVISIONS,
+        message: `This script has already been revised ${MAX_REVISIONS} times. Edit it directly, produce it, or create the video again.`,
+      });
+    }
+    const limit = throttle.consume({ bucket: `revise:${req.owner.id}:h`, limit: MAKE_LIMIT.perOwnerPerHour, windowMs: throttle.HOUR });
+    throttle.setHeaders(res, limit);
+    if (!limit.ok) {
+      return res.status(429).json({ error: 'rate_limited', code: 'rate_limited', message: `This allows ${MAKE_LIMIT.perOwnerPerHour} revisions an hour per caller.`, retryAfterSeconds: limit.retryAfterSec });
+    }
+    const disk = scriptOnDisk(job, res);
+    if (!disk) return undefined;
+    if (shaMismatch(req, res, disk.sha)) return undefined;
+    for (const b of beats) {
+      if (!b || !disk.beats.some((x) => String(x.id) === String(b.id))) {
+        return res.status(422).json({ error: 'unknown_beat', code: 'unknown_beat', beatId: b && b.id, message: `No beat ${b && b.id} in this script.` });
+      }
+    }
+
+    const by = approverOf(req);
+    const ids = beats.map((b) => String(b.id));
+    const history = (job.script.revisions || []).map((r) => ({ round: r.round, critique: r.critique }));
+    const critique = [...(why ? [why] : []), ...beats.map((b) => `Beat ${b.id}: ${String(b.why || '').trim()}`)];
+    jobsLib.transition(job.id, {
+      status: 'revising', stage: 'script',
+      patch: { lastError: null, script: { ...job.script, humanRevisions: round, lastRevise: { at: new Date().toISOString(), by, round, ids, status: 'running' } } },
+    }, jobOpts);
+    console.log(`[revise ${job.id}] round ${round} by ${by}${ids.length ? ` on beat(s) ${ids.join(', ')}` : ' (whole script)'}`);
+
+    oneVideo.revise(
+      { itemId: job.script.itemId, why, beats, by, round, history },
+      {
+        log: (m) => console.log(`[revise ${job.id}]`, m),
+        onStage: (st) => { jobsLib.transition(job.id, { stage: st }, jobOpts); },
+      }
+    ).then((r) => {
+      const cur = jobsLib.get(job.id, jobOpts) || job;
+      const record = { at: new Date().toISOString(), by, round, ids, critique, fromSha: disk.sha, toSha: r.scriptSha, spentUsd: r.spentUsd, runId: r.runId };
+      jobsLib.transition(job.id, {
+        status: 'written', stage: 'gate',
+        patch: {
+          script: {
+            ...scriptPatch(cur, r.beats || [], r.scriptSha),
+            title: r.title || cur.script.title,
+            unresolvedChecks: r.unresolvedChecks || [],
+            redrafts: (Number(cur.script.redrafts) || 0) + (Number(r.redrafts) || 0),
+            revisions: [...(cur.script.revisions || []), record],
+            lastRevise: { ...record, status: 'done' },
+          },
+        },
+      }, jobOpts);
+      console.log(`[revise ${job.id}] done: ${disk.sha} -> ${r.scriptSha} ($${(r.spentUsd || 0).toFixed(2)} in model calls)`);
+      try {
+        require('../orchestrator/lib/deliverables').persist({ series: job.script.series, slug: job.script.slug, videoDir: r.dir, log: (m) => console.log(`[revise ${job.id}]`, m) });
+      } catch (e) { console.warn(`[revise ${job.id}] revised script NOT persisted to the volume: ${e.message}`); }
+    }).catch((e) => {
+      const cur = jobsLib.get(job.id, jobOpts) || job;
+      const spentUsd = Number(e.spentUsd) || 0;
+      const lastError = { at: new Date().toISOString(), stage: 'revise', code: e.code || null, message: e.message, runId: e.runId || null, spentUsd, round };
+      // The script on disk may be the previous one or a half-written draft; what
+      // the job reports stays the sha the instructor last read, and the next edit
+      // or revise reads the disk again.
+      jobsLib.transition(job.id, {
+        status: 'written', stage: 'gate',
+        patch: { lastError, script: { ...cur.script, lastRevise: { at: lastError.at, by, round, ids, status: 'failed', spentUsd, error: e.message } } },
+      }, jobOpts);
+      console.error(`[revise ${job.id}] failed: ${e.message}`);
+      if (e.stack) console.error(e.stack.split('\n').slice(0, 8).join('\n'));
+    });
+
+    return res.status(202).json({ jobId: job.id, status: 'revising', round, revisionsLeft: MAX_REVISIONS - round, scope: ids.length ? ids : 'whole' });
   });
 
   /**
@@ -679,6 +994,21 @@ function createApp(opts = {}) {
       return res.status(409).json({ error: 'script_lost', message: restored.why });
     }
     console.log(`[produce ${job.id}] beats.js from ${restored.source}`);
+
+    // Contract 1.4: the approval travels with the request. If the caller names
+    // the script it approved and that is not the script on disk, refuse -- the
+    // one failure that would make the script gate theatre. Without the field,
+    // behaviour is unchanged.
+    if (req.body && req.body.scriptSha !== undefined && req.body.scriptSha !== null && req.body.scriptSha !== '') {
+      const onDisk = require('../orchestrator/lib/deliverables').fingerprint(restored.file);
+      if (String(req.body.scriptSha) !== String(onDisk)) {
+        unclaim();
+        return res.status(409).json({
+          error: 'sha_mismatch', code: 'sha_mismatch', currentSha: onDisk,
+          message: `You approved script ${req.body.scriptSha}; the script here is ${onDisk}. Nothing was bought. Read the current script and approve it again.`,
+        });
+      }
+    }
 
     const ceilingUsd = Math.min(
       config.pipeline.maxApprovableUsd,
@@ -1384,6 +1714,22 @@ function createApp(opts = {}) {
       await slack.postMessage({ ...origin, text: `Couldn't queue that: ${e.message}` });
     }
   }
+
+  // Express's own 413 is an HTML page. The LMS asked for a JSON body with a code
+  // it can match on, and the same for a body that is not JSON at all.
+  app.use((err, req, res, next) => {
+    if (err && err.type === 'entity.too.large') {
+      return res.status(413).json({
+        error: 'payload_too_large', code: 'payload_too_large', limit: err.limit, length: err.length,
+        message: `The request body is ${err.length} bytes; this route accepts ${err.limit}. Nothing was created.`,
+      });
+    }
+    if (err && err.type === 'entity.parse.failed') {
+      return res.status(400).json({ error: 'bad_json', code: 'bad_json', message: 'The request body is not valid JSON.' });
+    }
+    console.error(`[app] ${req.method} ${req.path}: ${err && err.stack ? err.stack.split('\n').slice(0, 4).join('\n') : err}`);
+    return res.status(err && err.status ? err.status : 500).json({ error: 'internal', message: err && err.message ? err.message : 'internal error' });
+  });
 
   return app;
 }

@@ -126,7 +126,7 @@ function sendJson(req, res, payload) {
 }
 
 /** The course-API contract version. docs/CONTRACT-CHANGELOG.md says what each one added. */
-const CONTRACT_VERSION = '1.3';
+const CONTRACT_VERSION = '1.4';
 
 /**
  * @param {object} [opts]
@@ -326,6 +326,9 @@ function build(opts = {}) {
       // creation. Same closed-set rule as blockedBy: served, so the LMS can render its
       // picker (label, summary, preview video) from this rather than hard-coding it.
       styles: require('../../orchestrator/lib/styles').publicStyles(`${req.protocol}://${req.get('host')}`),
+      // Contract 1.4: what the single-video flow can do here (context documents,
+      // script edit/revise, the create options), each flag read live.
+      makeVideo: require('./capabilities').capabilities(),
       demo: `${req.protocol}://${req.get('host')}/demo/quiz`,
       howTheQuestionBehaves: {
         summary: 'Nothing about the question is in the video. At atSeconds you PAUSE '

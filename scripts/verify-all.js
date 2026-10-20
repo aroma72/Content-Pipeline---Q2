@@ -136,6 +136,10 @@ async function tier1() {
   r = await run(process.execPath, [path.join(ROOT, 'scripts', 'make-fixture-assets.js'), work, '--force']);
   if (r.code !== 0) { record(1, 'fixture assets', 'fail', tail(r.out)); return; }
   const templates = path.join(ROOT, '.claude', 'skills', 'creating-explainer-videos', 'templates');
+  // The gates share rules through templates/lib (lf-limits, checkpoint-checks); a fixture
+  // copied from an older video folder may predate one of them. produce refreshes lib/ into
+  // every video dir before a gate runs, so the fixture gets the same.
+  fs.cpSync(path.join(templates, 'lib'), path.join(work, 'lib'), { recursive: true });
   for (const g of gates) {
     fs.copyFileSync(path.join(templates, g), path.join(work, '__gate.js'));
     const res = await run(process.execPath, ['__gate.js'], { cwd: work, env: { NODE_PATH: path.join(ROOT, 'node_modules') }, timeoutMs: 10 * 60 * 1000 });

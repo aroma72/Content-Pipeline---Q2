@@ -58,20 +58,27 @@ else {
   has(/aac/i, 'AAC audio');
 }
 
+// A video with no voiceover (contract 1.4, SILENT=1): there are no clips and no sidecars
+// by design, so checks 2 and 3 do not apply. Durations still come from durations.json
+// (silent-durations.js), so the duration sanity check below still holds.
+const SILENT = process.env.SILENT === '1';
+if (SILENT) pass('no voiceover by request (SILENT=1) -- clip and audio-integrity checks do not apply');
+
 // 2. clips == beats + sidecars match
 let clips = 0;
-for (const b of beats) {
+for (const b of SILENT ? [] : beats) {
   const wav = path.join('audio', `vo_${b.id}.wav`);
   const txt = path.join('audio', `vo_${b.id}.txt`);
   if (fs.existsSync(wav)) clips++; else fail(`missing VO clip for beat ${b.id}`);
   if (fs.existsSync(txt)) { if (fs.readFileSync(txt, 'utf8') !== b.vo) fail(`sidecar != beat.vo for ${b.id}`); }
   else fail(`missing sidecar for beat ${b.id}`);
 }
-if (clips === beats.length) pass(`clips == beats (${clips})`); else fail(`clips(${clips}) != beats(${beats.length})`);
+if (SILENT) { /* nothing to count */ }
+else if (clips === beats.length) pass(`clips == beats (${clips})`); else fail(`clips(${clips}) != beats(${beats.length})`);
 
 // 3. AUDIO INTEGRITY — no silent / racing beats (the v7 defect)
 let silent = 0, checked = 0;
-for (const b of beats) {
+for (const b of SILENT ? [] : beats) {
   const wav = path.join('audio', `vo_${b.id}.wav`);
   if (!fs.existsSync(wav)) continue;
   const w = words(b.vo);

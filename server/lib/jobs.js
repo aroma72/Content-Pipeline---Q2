@@ -36,7 +36,7 @@ const TERMINAL = jobStore.TERMINAL;
  * Found on disk after a restart, they are lies: the promise died with the old
  * process and nothing will ever transition them again.
  */
-const IN_FLIGHT = new Set(['running', 'producing', 'publishing']);
+const IN_FLIGHT = new Set(['running', 'revising', 'producing', 'publishing']);
 
 function newId() {
   return crypto.randomBytes(6).toString('hex');
@@ -53,7 +53,7 @@ function store(opts = {}) {
  * is a job whose `jobId` is once again a bearer credential, which is the whole
  * thing this is here to stop.
  */
-function create({ topic, notes, style, owner, callbackUrl }, opts = {}) {
+function create({ topic, notes, style, owner, callbackUrl, context = null, options = null }, opts = {}) {
   const s = store(opts);
   const now = Date.now();
   const job = {
@@ -63,7 +63,11 @@ function create({ topic, notes, style, owner, callbackUrl }, opts = {}) {
     topic: String(topic || '').slice(0, 300),
     notes: notes ? String(notes).slice(0, 2000) : null,
     // The video style the job is made in (orchestrator/lib/styles.js).
-    style: style || 'character-arc',
+    style: style || (options && options.style) || 'character-arc',
+    // Contract 1.4: the instructor's documents (orchestrator/lib/context.js) and
+    // choices (orchestrator/lib/options.js). Null when the request sent none.
+    context: context || null,
+    options: options ? { ...options } : null,
     startedAt: now,
     updatedAt: now,
     ownerKind: owner ? owner.kind : 'anon',
@@ -299,7 +303,21 @@ function toPublic(job, opts = {}) {
   // job back to `written` (the script is fine), and until this field existed
   // that page could not say why the button had done nothing.
   if (job.lastError) out.lastError = job.lastError;
-  if (includeScript && job.script) out.script = job.script;
+  // Contract 1.4. The documents are echoed as names and sizes, never text, so the
+  // page can say "built from" and prove they were used. `options` as parsed.
+  if (job.context) out.context = require('../../orchestrator/lib/context').publicContext(job.context);
+  if (job.options) out.options = job.options;
+  if (includeScript && job.script) {
+    out.script = job.script;
+    // A running time before any voice is bought (orchestrator/lib/est-seconds.js).
+    // Computed on the way out, never stored beside beatsFull, so it cannot drift
+    // from the beats and never touches the sha.
+    if (Array.isArray(job.script.beatsFull) && job.script.beatsFull.length) {
+      const est = require('../../orchestrator/lib/est-seconds').estimateSeconds(job.script.beatsFull);
+      out.script = { ...job.script, estSeconds: est.perBeat, estTotalSeconds: est.totalSeconds };
+    }
+  }
+  out.capabilities = require('./capabilities').capabilities();
   if (job.produce) out.produce = job.produce;
   // Whether a finished video exists for this job, from the disk and not from the
   // status. The LMS drew "nothing was bought, try again" from `written` +
@@ -362,6 +380,19 @@ function restore(opts = {}) {
         return job;
       });
       out.interrupted++;
+    } else if (j.status === 'revising') {
+      // A revise that died mid-flight (contract 1.4) leaves the script it started
+      // from intact and nothing bought. `written` is the truth, with the reason
+      // on lastError; `failed` would throw away a good script over a restart.
+      s.patch(j.id, (job) => {
+        job.status = 'written';
+        job.lastError = {
+          at: new Date().toISOString(), stage: 'revise',
+          message: 'the server restarted while this script was being revised; the previous script is unchanged -- ask again',
+        };
+        return job;
+      });
+      out.revisingReset = (out.revisingReset || 0) + 1;
     } else {
       s.patch(j.id, (job) => {
         job.status = 'failed';

@@ -17,6 +17,29 @@ Frozen copies: `docs/contracts/course-api-<version>.md`.
 
 ---
 
+## 1.4, additive — 2026-10-20 — script-first single videos: context, $0 edits, scoped revise, create options
+
+Reply: `docs/integration-requests/2026-10-20-content-queen-1.4-reply.md`. `contractVersion` is `1.4`.
+Every new ability is **off by default** (`MAKE_VIDEO_CONTEXT`, `MAKE_VIDEO_SCRIPT_EDIT`,
+`MAKE_VIDEO_SCRIPT_REVISE`) and advertised as `makeVideo` on `/health`, `GET /api/v1` and every job;
+using one with its switch off is `400 capability_disabled`, never a silent no-op. All of it lands in
+`content-queen-jobs.ts`.
+
+| Change | Where | Example | Commit | LMS file |
+|---|---|---|---|---|
+| `context: { sources: [ {name, kind, text, truncated} ] }` — up to 5 sources / 120k chars, fed to research and script as fenced source material | `POST /demo/make-video` | `413 context_too_large {limitChars, gotChars}`, `400 bad_context` | this release | create body; `context` echoed on the job as names and sizes |
+| `options: { style, lengthMinutes 1–6, voiceover, purpose lesson\|explainer\|marketing\|announcement }` | `POST /demo/make-video` | `400 bad_options {field}`; echoed as `options` | this release | create form |
+| `script.estSeconds {id: s}`, `script.estTotalSeconds` — pre-TTS estimate | `GET /demo/make-video/:jobId` | `"estSeconds":{"01":4.9,"03":0}` | this release | script gate ("≈") |
+| `POST …/script/edit {sha, by, edits:[{id, vo?, cap?, overlay?, info:{data}?, quiz?, holdAfter?}]}` — $0, synchronous | new route (owner) | `200 {scriptSha, script}`; `409 sha_mismatch {currentSha}`, `409 not_editable`, `422 check_failed {check, beatId, findings[]}`, `422 bad_edit` | this release | frame editor |
+| `POST …/script/revise {sha, by, why?, beats?:[{id, why}]}` — whole script or named beats, 5 per job | new route (owner) | `202 {status:"revising", round, revisionsLeft, scope}`; `409 revision_cap`, `409 sha_mismatch`, `422 unknown_beat`, `400 no_notes` | this release | revise button |
+| `revising` status; `script.humanRevisions`, `script.revisions[] {round, by, ids, fromSha, toSha, spentUsd}`, `script.lastRevise`, `script.edits[]` | job | `written → revising → written`; a restart or failure returns to `written` with `lastError.stage:"revise"` | this release | poll mirror, status map |
+| `scriptSha` on produce | `POST …/produce` | `409 sha_mismatch {currentSha}` — nothing reserved | this release | produce call |
+| `makeVideo` capabilities block | `/health`, `GET /api/v1`, every job | see the reply, §6 | this release | feature flags |
+| A body over the route limit is JSON `413 payload_too_large`; bad JSON is `400 bad_json` | all routes (make-video takes 1 MB, others 32 kb) | — | this release | error handling |
+| Beat cap 22 → 40 (`lengthMinutes` up to 6) | writer schema | — | this release | none |
+
+---
+
 ## 1.3, clarification — 2026-10-20 — a failed redo returns to review; `reviewedSha256` always present
 
 No version change; `contractVersion` stays `1.3`. Prompted by the first production scene redo

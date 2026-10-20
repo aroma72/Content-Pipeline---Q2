@@ -436,10 +436,15 @@ async function executeStages(item, opts = {}) {
           // third draft can see it is repeating a mistake the critic already named.
           st.redrafts = redrafts;
           st.redraftsBy = redraftsBy;
+          // A scoped revision (contract 1.3 scene redo, 1.4 script revise) keeps its
+          // scope through a sensor's redraft: without this the second draft used
+          // the full patch schema and could touch beats nobody asked about.
+          const priorScope = st.artifacts.redraftFeedback && st.artifacts.redraftFeedback.scope;
           st.artifacts.redraftFeedback = {
             round: redrafts,
             fromStage: err.fromStage,
             requestedBy: name,
+            ...(priorScope ? { scope: priorScope } : {}),
             latest: err.feedback,
             history: [
               ...((st.artifacts.redraftFeedback && st.artifacts.redraftFeedback.history) || []),

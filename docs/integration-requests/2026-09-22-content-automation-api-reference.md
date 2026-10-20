@@ -278,6 +278,17 @@ Your Make a Video screen. Different surface, different auth (§1).
 | `GET /demo/jobs` | token | change feed — see below |
 | `GET /demo/spend` | token | tenant ledger |
 
+**Contract 1.4 (2026-10-20) added to this surface** — see `2026-10-20-content-queen-1.4-reply.md`
+for the full shapes; each is off until its switch is on, and `makeVideo` on every job says which:
+
+| route / field | notes |
+|---|---|
+| `POST /demo/make-video` `context.sources[]`, `options{style,lengthMinutes,voiceover,purpose}` | documents (5 / 120k chars, `413 context_too_large`) and the instructor's choices (`400 bad_options`); both echoed on the job |
+| `GET …/:jobId` `script.estSeconds`, `script.estTotalSeconds`, `capabilities` | pre-TTS timing; what this deployment can do |
+| `POST …/:jobId/script/edit` | owner. $0, synchronous; `{sha, by, edits[]}` → `200 {scriptSha, script}`; `409 sha_mismatch`, `422 check_failed` |
+| `POST …/:jobId/script/revise` | owner. `{sha, by, why?, beats?[]}` → `202 {status:"revising", round, revisionsLeft}`; `409 revision_cap` after 5 |
+| `POST …/:jobId/produce` `scriptSha` | optional; `409 sha_mismatch` if it is not the script on disk |
+
 **`Idempotency-Key` on produce** is the one place we have it. `^[A-Za-z0-9_.:-]+$`, at most 200
 characters, silently ignored if malformed. Same key with a different body gives
 `409 idempotency_key_reuse`. A replay returns the stored response with `Idempotency-Replayed: true`.

@@ -121,6 +121,9 @@ function enqueue({
   // Who is paying, and the ledger reservation taken for this lesson. Null for a
   // lesson enqueued before tenants were recorded; the tenant guard then stays off.
   tenantId = null, spendRef = null,
+  // Contract 1.4 (single videos): the instructor's documents and choices. Each is
+  // absent on an item that did not ask, and the stages then behave as before.
+  context = null, purpose = null, lengthMinutes = null, voiceover = true,
 }) {
   if (!topic) throw new Error('enqueue requires a topic');
   if (!series) throw new Error('enqueue requires a series (the explainer-videos subfolder)');
@@ -145,6 +148,10 @@ function enqueue({
     moduleTopic,
     wantReferences: Boolean(wantReferences),
     style: parsedStyle.style,
+    context: context || null,
+    purpose: purpose || null,
+    lengthMinutes: Number(lengthMinutes) > 0 ? Number(lengthMinutes) : null,
+    voiceover: voiceover !== false,
     tenantId: tenantId || null,
     spendRef: spendRef || null,
     status: ITEM_STATUS.QUEUED,

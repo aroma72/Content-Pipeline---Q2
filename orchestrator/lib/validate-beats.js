@@ -23,6 +23,9 @@ const { ALI, mentionsAli, missingAliMarkers } = require('./characters');
  * series that brings its own library as "unknown template".
  */
 function knownTemplates(videoDir) {
+  // No directory (a script checked before it has one -- contract 1.4's edit route,
+  // the unit tests): the template-name check is skipped, every other rule runs.
+  if (!videoDir) return null;
   const dir = path.join(videoDir, 'animation');
   if (!fs.existsSync(path.join(dir, 'info.js'))) return null;
   const names = [];
@@ -87,6 +90,10 @@ function capFromVo(vo) {
 function validateBeats(beats, videoDir, opts = {}) {
   // strictCanon: true while authoring (a fix is free), false once art is bought.
   const strictCanon = opts.strictCanon === true;
+  // requireCheckpoint: every lesson asks one question (SCRIPTING_STANDARDS 3b). A
+  // purpose that asks none (contract 1.4, lib/purpose.js) passes false; a checkpoint
+  // that IS present is still held to every rule below.
+  const requireCheckpoint = opts.requireCheckpoint !== false;
   const errors = [];
   const warnings = [];
 
@@ -268,7 +275,7 @@ function validateBeats(beats, videoDir, opts = {}) {
   // videos reached the LMS with no question. Encode it in structure.
   const checkpoints = beats.filter((b) => b && b.mode === 'checkpoint');
 
-  if (!checkpoints.length) {
+  if (!checkpoints.length && requireCheckpoint) {
     errors.push(
       `no CHECKPOINT beat: every video must ask the learner one question the LMS can ` +
       `pop over the player. Add { id, mode: 'checkpoint', quiz: { stem, options, answer, ` +

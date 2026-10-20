@@ -15,6 +15,9 @@ const { validateBeats, repairBeats, knownTemplates } = require('../validate-beat
 const { RedraftError } = require('../spine-errors');
 const { composeTitle } = require('../naming');
 const { ALI } = require('../characters');
+const { renderSourceMaterial } = require('../context');
+const purposeLib = require('../purpose');
+const { beatBand, MIN_BEATS, MAX_BEATS } = require('../options');
 
 const SCHEMA = {
   type: 'object',
@@ -22,8 +25,10 @@ const SCHEMA = {
     title: { type: 'string', description: 'the SUBTOPIC this video covers, max 8 words, no pipe characters — the module prefix is added automatically' },
     beats: {
       type: 'array',
-      minItems: 10,
-      maxItems: 22,   // hard cap; the gate is told not to ask for more than this
+      minItems: MIN_BEATS,
+      // Hard cap (lib/options.js). Was 22 until contract 1.4 let an instructor ask
+      // for up to six minutes; the prompt's beat band, not this, sets the length.
+      maxItems: MAX_BEATS,
       items: {
         type: 'object',
         properties: {
@@ -384,9 +389,78 @@ function assertRedoScope(previous, next, ids) {
   }
 }
 
+/**
+ * The patch schema for a SCRIPT-GATE revise (contract 1.4): an instructor read the
+ * script -- nothing is rendered yet -- and asked for changes to named beats. Like
+ * restrictedEditSchema, only the flagged ids may be edited; unlike it, a flagged
+ * beat may be removed and a beat may be added after a flagged one (the `NNa` id
+ * applyEdits mints), because "split this into two" and "drop this" are things an
+ * instructor says about a script and cannot say about a rendered scene.
+ */
+function scriptScopeSchema(ids, motion = false) {
+  const base = JSON.parse(JSON.stringify(motion ? MOTION_EDIT_SCHEMA : EDIT_SCHEMA));
+  const props = base.properties.edits.items.properties;
+  props.id = { type: 'string', enum: [...ids], description: 'one of the beats the instructor flagged' };
+  delete props.mode;
+  base.properties.edits.maxItems = ids.length;
+  base.properties.new_beats.items.properties.after_id = {
+    type: 'string', enum: [...ids], description: 'a new beat may only follow a flagged beat',
+  };
+  base.properties.removed_ids.items = { type: 'string', enum: [...ids] };
+  return base;
+}
+
+/**
+ * Prove a script-gate revise stayed in scope: every unflagged beat is identical and
+ * in the same relative order; anything added sits right after a flagged beat with
+ * its id; anything removed was flagged; the total stays in the schema's band.
+ */
+function assertScriptScope(previous, next, ids) {
+  const flagged = new Set((ids || []).map(String));
+  if (!Array.isArray(next) || next.length < MIN_BEATS || next.length > MAX_BEATS) {
+    throw new Error(`revise left ${next ? next.length : 'no'} beats; a script has ${MIN_BEATS}-${MAX_BEATS}`);
+  }
+  const prevById = new Map(previous.map((b) => [String(b.id), b]));
+  const nextIds = next.map((b) => String(b.id));
+  for (const p of previous) {
+    const id = String(p.id);
+    const n = next.find((b) => String(b.id) === id);
+    if (!n) {
+      if (!flagged.has(id)) throw new Error(`revise removed unflagged beat ${id}; only ${[...flagged].join(', ')} may change`);
+      continue;
+    }
+    if (!flagged.has(id) && canon(p) !== canon(n)) {
+      throw new Error(`revise touched unflagged beat ${id}; only ${[...flagged].join(', ')} may change`);
+    }
+    if (flagged.has(id) && (p.mode || null) !== (n.mode || null)) {
+      throw new Error(`revise changed the mode of beat ${id} (${p.mode} -> ${n.mode}); say so with a removal and a new beat instead`);
+    }
+  }
+  for (const n of next) {
+    const id = String(n.id);
+    if (prevById.has(id)) continue;
+    const parent = id.replace(/a+$/, '');
+    if (parent === id || !flagged.has(parent)) {
+      throw new Error(`revise added beat ${id}, which does not follow a flagged beat`);
+    }
+  }
+  // Relative order of the survivors is preserved.
+  const kept = previous.map((b) => String(b.id)).filter((id) => nextIds.includes(id));
+  const seen = nextIds.filter((id) => kept.includes(id));
+  if (kept.join(',') !== seen.join(',')) throw new Error('revise reordered beats; a scoped revise keeps the order');
+}
+
+/** The patch schema a scoped redraft is bound to -- by which gate flagged the beats. */
+function scopedSchema(scope, motion) {
+  return scope.gate === 'script' ? scriptScopeSchema(scope.ids, motion) : restrictedEditSchema(scope.ids, motion);
+}
+
 module.exports = {
   name: 'script',
-  _internals: { MOTION_SCHEMA, MOTION_EDIT_SCHEMA, LF_TEMPLATES, lfLimits, restrictedEditSchema, assertRedoScope },
+  _internals: {
+    SCHEMA, EDIT_SCHEMA, MOTION_SCHEMA, MOTION_EDIT_SCHEMA, LF_TEMPLATES, lfLimits,
+    applyEdits, restrictedEditSchema, assertRedoScope, scriptScopeSchema, assertScriptScope,
+  },
   maxAttempts: 3,
 
   async run({ item, state: st, artifacts, opts, log }) {
@@ -394,6 +468,15 @@ module.exports = {
     const style = styles.styleOf(item);
     const motion = style.id === 'motion-graphics';
     if (motion) log(`style: ${style.id}`);
+    // Contract 1.4: what the video is for, how long it should run, whether it is
+    // spoken, and the instructor's own documents. Each is absent on a job that did
+    // not ask, and the prompt is then what it was before.
+    const purpose = purposeLib.purposeOf(item);
+    if (purpose.id !== 'lesson') log(`purpose: ${purpose.id}`);
+    const band = beatBand(item.lengthMinutes);
+    const silent = item.voiceover === false;
+    const sourceMaterial = renderSourceMaterial(item.context);
+    if (sourceMaterial) log(`source material: ${item.context.sources.length} document(s), ${item.context.chars} chars`);
 
     // A redraft round (ILHAM 3.3): the gate sent this back with a critique, so the
     // next draft must answer it rather than start from scratch and repeat itself.
@@ -414,9 +497,17 @@ module.exports = {
     // touch nothing else. Enforced by the schema (restrictedEditSchema) and
     // checked again on the result (assertRedoScope), not asked for politely.
     const scope = patchMode && redraft && redraft.scope && Array.isArray(redraft.scope.ids) && redraft.scope.ids.length
-      ? { ids: redraft.scope.ids.map(String), allowVo: redraft.scope.allowVo !== false }
+      ? {
+        ids: redraft.scope.ids.map(String),
+        allowVo: redraft.scope.allowVo !== false,
+        // 'script' (contract 1.4): the instructor read the script and nothing is
+        // rendered, so a flagged beat may also be split or dropped. Default: a
+        // scene redo of a rendered video (1.3).
+        gate: redraft.scope.gate === 'script' ? 'script' : 'video',
+        perBeat: redraft.scope.perBeat || null,
+      }
       : null;
-    if (scope) log(`scene redo: only beat(s) ${scope.ids.join(', ')} may change`);
+    if (scope) log(`${scope.gate === 'script' ? 'script revise' : 'scene redo'}: only beat(s) ${scope.ids.join(', ')} may change`);
 
     const raw = await askJson({
       log,
@@ -430,6 +521,14 @@ module.exports = {
         topic: item.topic,
         series: item.series,
         brief,
+        ...(sourceMaterial ? { source_material: sourceMaterial } : {}),
+        ...(purpose.prompt ? { purpose: purposeLib.promptBlock(item) } : {}),
+        ...(silent ? {
+          silent: 'This video has NO voiceover. The vo is never spoken: keep it to one short line '
+            + 'stating what the beat shows, and put everything the viewer must take in on screen -- '
+            + 'the cap (still <= 8 words), the overlay, or an info card. Every beat must carry '
+            + 'on-screen words, because there is nothing else.',
+        } : {}),
         // Beat budget. 28 beats came back as a 2.7-minute script (over the 1.5-2.5
         // house range) AND a ~15k-character reply that got truncated on 2 of 3
         // attempts. A tighter cap fixes the length and the fragility together.
@@ -448,29 +547,46 @@ module.exports = {
               + 'A longer field fails the build and the script comes back for a redraft. Keep on-screen '
               + 'text to the key words; the spoken line carries the detail.',
           },
-        } : {
+        } : (purpose.needsProtagonist ? {
           character_canon: {
             ali: ALI,
             rule: 'Every art prompt showing Ali must include this description verbatim. '
               + 'Vary his pose, expression and props freely; never his age, hair, skin or clothing.',
           },
-        }),
+        } : {
+          character_canon: {
+            rule: 'No named protagonist is required for this purpose. If you do show Ali, his art '
+              + `prompt must include this description verbatim: ${ALI}.`,
+          },
+        })),
         length_requirement: {
-          beats_min: 16,
-          beats_max: 20,
-          why: 'Each beat is one spoken sentence of a measured 6.2 seconds. 16-20 beats lands the finished video in the 1.5-2.5 minute house range.',
+          beats_min: band.beats_min,
+          beats_max: band.beats_max,
+          why: item.lengthMinutes
+            ? `The instructor asked for about ${item.lengthMinutes} minute(s). Each beat is one spoken sentence of a measured 6.2 seconds, so ${band.beats_min}-${band.beats_max} beats lands it.`
+            : 'Each beat is one spoken sentence of a measured 6.2 seconds. 16-20 beats lands the finished video in the 1.5-2.5 minute house range.',
           visual_balance: motion
             ? 'Every spoken beat is "info". Use at least six different templates, and never the same template three beats in a row.'
             : 'At most a third of beats may be "info". Ali must carry the teaching -- consecutive info cards with no character on screen read as flat.',
         },
         ...(scope ? {
-          revision_scope: {
-            beat_ids: scope.ids,
-            may_change: ['art', 'motion', 'cap', 'overlay', 'info', ...(scope.allowVo ? ['vo', 'tone'] : [])],
-            must_not_change: 'every other beat, every id, every mode, the checkpoint and its question',
-            why: 'A reviewer watched the FINISHED video and flagged only these scenes. Everything '
-              + 'else is already rendered and will be kept frame for frame.',
-          },
+          revision_scope: scope.gate === 'script'
+            ? {
+              beat_ids: scope.ids,
+              ...(scope.perBeat ? { what_each_beat_needs: scope.perBeat } : {}),
+              may_change: ['vo', 'art', 'motion', 'cap', 'overlay', 'info', 'tone', 'holdAfter'],
+              may_also: 'remove a flagged beat (removed_ids) or add one right after a flagged beat (new_beats) when the note asks for it',
+              must_not_change: 'every other beat, every id, every mode, and the checkpoint unless it is flagged',
+              why: 'The instructor has READ the script (nothing is rendered yet) and asked for changes '
+                + 'to only these beats. Everything else is as they want it and is kept verbatim.',
+            }
+            : {
+              beat_ids: scope.ids,
+              may_change: ['art', 'motion', 'cap', 'overlay', 'info', ...(scope.allowVo ? ['vo', 'tone'] : [])],
+              must_not_change: 'every other beat, every id, every mode, the checkpoint and its question',
+              why: 'A reviewer watched the FINISHED video and flagged only these scenes. Everything '
+                + 'else is already rendered and will be kept frame for frame.',
+            },
         } : {}),
         ...(redraft ? {
           revision_round: redraft.round,
@@ -490,7 +606,7 @@ module.exports = {
         } : {}),
       }, null, 2),
       schema: patchMode
-        ? (scope ? restrictedEditSchema(scope.ids, motion) : (motion ? MOTION_EDIT_SCHEMA : EDIT_SCHEMA))
+        ? (scope ? scopedSchema(scope, motion) : (motion ? MOTION_EDIT_SCHEMA : EDIT_SCHEMA))
         : (motion ? MOTION_SCHEMA : SCHEMA),
       maxTokens: 16000,
       dryRun: opts.dryRun,
@@ -526,7 +642,8 @@ module.exports = {
       const { beats, touched } = applyEdits(previousBeats, raw);
       // The whole promise of a scene redo, checked on the result: nothing outside
       // the flagged beats changed. A stray patch is retried, never rendered.
-      if (scope) assertRedoScope(previousBeats, beats, scope.ids);
+      if (scope && scope.gate === 'script') assertScriptScope(previousBeats, beats, scope.ids);
+      else if (scope) assertRedoScope(previousBeats, beats, scope.ids);
       script = {
         // The title is not in the patch schema, so it survives a redraft unchanged.
         title: (artifacts.script && artifacts.script.subtopic) || item.topic,
@@ -567,7 +684,17 @@ module.exports = {
 
     // Same structural check produce runs, applied here so a malformed script is
     // rejected while a retry is still cheap (this stage has maxAttempts 3).
-    const { errors, warnings } = validateBeats(script.beats, dir, { strictCanon: true });
+    const { errors, warnings } = validateBeats(script.beats, dir, { strictCanon: true, requireCheckpoint: purpose.needsCheckpoint });
+    if (!purpose.allowsCheckpoint && script.beats.some((b) => b && b.mode === 'checkpoint')) {
+      errors.push(`a ${purpose.id} video asks the viewer no question -- remove the checkpoint beat.`);
+    }
+    if (silent) {
+      for (const b of script.beats) {
+        if (b && b.mode !== 'checkpoint' && b.mode !== 'info' && !b.cap && !b.overlay) {
+          errors.push(`beat ${b.id}: this video has no voiceover, so every drawn beat needs a cap or overlay -- nothing else carries its words.`);
+        }
+      }
+    }
     for (const w of warnings) log(`warning: ${w}`);
     if (errors.length) {
       // Hand the findings BACK, rather than retrying the same prompt blind.

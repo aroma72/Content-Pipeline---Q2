@@ -65,6 +65,20 @@ module.exports = {
         skipped: 'video-redo',
       };
     }
+    // A script-gate revise scoped to named beats (contract 1.4): the script was
+    // gated before, and the instructor's instruction is the review of those beats.
+    // Gating again could demand edits outside the scope, which the writer would
+    // then refuse -- the same loop-to-nothing the redo skip above avoids.
+    const fb = artifacts.redraftFeedback;
+    if (fb && fb.scope && fb.scope.gate === 'script' && Array.isArray(fb.scope.ids) && fb.scope.ids.length) {
+      log(`script revise of beat(s) ${fb.scope.ids.join(', ')} -- the script was gated before; not gating again`);
+      return {
+        verdict: 'READY',
+        reasons: ['script revise: the script was gated before this patch; only the flagged beats changed'],
+        fixes: [],
+        skipped: 'script-revise',
+      };
+    }
     log(`gating ${script.beatCount} beats`);
 
     const result = await askJson({
@@ -73,7 +87,15 @@ module.exports = {
       stage: 'gate',
       // Each style is judged against its own house rules (lib/styles.js).
       promptName: require('../styles').styleOf(ctx.item).prompts.gate,
-      input: JSON.stringify({ title: script.title, beats: script.beats }, null, 2),
+      input: JSON.stringify({
+        title: script.title,
+        // Contract 1.4: a non-lesson purpose relaxes the protagonist and checkpoint
+        // rules the prompt otherwise enforces. Stated to the judge, not left to guess.
+        ...(require('../purpose').purposeOf(ctx.item).prompt ? { purpose_rules: require('../purpose').promptBlock(ctx.item) } : {}),
+        ...(ctx.item && ctx.item.lengthMinutes ? { length_requirement: require('../options').beatBand(ctx.item.lengthMinutes) } : {}),
+        ...(ctx.item && ctx.item.voiceover === false ? { silent: 'This video has no voiceover; judge the on-screen text as the whole message, and do not fault a short vo.' } : {}),
+        beats: script.beats,
+      }, null, 2),
       schema: SCHEMA,
       maxTokens: 8000,
       dryRun: opts.dryRun,

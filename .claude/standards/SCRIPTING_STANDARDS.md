@@ -109,6 +109,12 @@ including each structural part and the common failure mode they nearly hit.
 > drawn, spoken, first/last, un-answerable, or has wrong-answer feedback too thin to explain anything
 > (<120 characters, or a single sentence). `scripts/publish-checkpoint.js` then refuses to publish one
 > whose feedback is missing, and verifies the payload live before reporting success.
+>
+> **Purpose exemption (contract 1.4, 2026-10-20, pending Aroma's sign-off):** this rule binds every
+> `lesson`; an `explainer` may include one; a `marketing` or `announcement` video made through
+> `POST /demo/make-video` `options.purpose` asks no question and must not carry a checkpoint beat
+> (`orchestrator/lib/purpose.js`; `qa-checkpoint.js` honours `CHECKPOINT_REQUIRED=0`). The default
+> purpose is `lesson`, so a request that does not choose one gets this rule in full.
 
 **Why it is shaped this way.** A question printed on a card taught the answer to a viewer who could not
 answer it, and the video could never know whether anyone got it right. In the player it is a real

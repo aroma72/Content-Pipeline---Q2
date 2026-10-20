@@ -23,6 +23,9 @@ const num = (v, fallback) => {
   return Number.isFinite(n) ? n : fallback;
 };
 
+/** An on/off env var: '1' or 'true' is on, anything else (including unset) is off. */
+const flag = (v) => v === '1' || v === 'true';
+
 const config = {
   port: num(process.env.PORT, 8080),
 
@@ -47,6 +50,16 @@ const config = {
     intervalMs: num(process.env.TICK_INTERVAL_MS, 120000),
     // Guards the manual /tick endpoint so it cannot be triggered by strangers.
     secret: process.env.TICK_SECRET || '',
+  },
+
+  // Contract 1.4 -- the script-first single-video abilities. Each is off until the
+  // LMS has deployed its side; with a flag off the matching field or route answers
+  // 400 capability_disabled and nothing else changes. Getters, read at call time,
+  // for the same reason as videoRedoEnabled below.
+  makeVideo: {
+    get contextEnabled() { return flag(process.env.MAKE_VIDEO_CONTEXT); },
+    get scriptEditEnabled() { return flag(process.env.MAKE_VIDEO_SCRIPT_EDIT); },
+    get scriptReviseEnabled() { return flag(process.env.MAKE_VIDEO_SCRIPT_REVISE); },
   },
 
   pipeline: {

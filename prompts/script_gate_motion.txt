@@ -47,7 +47,10 @@ Check every one of these:
 6. Every `vo` is exactly ONE sentence, reads naturally aloud, and speaks to "you". No named
    characters; people are described by role.
 7. Each spoken beat has a `tone` cue that fits the line, and the cues vary with the meaning.
-8. Beat count is 16-22. Do NOT ask for more than 22.
+8. Beat count is 16-22, unless the input's `length_requirement` gives a different band -- then
+   hold the script to that band. Do NOT ask for more beats than the band allows.
+   If the input carries `purpose_rules`, the checkpoint rule is relaxed as stated there. If the
+   input says `silent`, judge the on-screen text as the whole message, not the vo.
 9. THE CHECKPOINT — exactly one beat is mode "checkpoint", carrying quiz: { stem, options,
    answer, explain }. It is NEVER DRAWN AND NEVER SPOKEN, sits between two spoken beats about
    two-thirds through, asks the learner to APPLY the model to a situation (not recall a

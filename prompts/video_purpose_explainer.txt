@@ -1,0 +1,3 @@
+PURPOSE: EXPLAINER. This is a one-off explainer rather than a lesson in a course. The same craft applies -- one concept, taught in depth through Ali in one scenario -- with one difference:
+
+- A checkpoint question is OPTIONAL. Include one only if there is a genuine misconception worth catching; otherwise leave it out and let the video run straight through. If you include one, it follows every checkpoint rule exactly.

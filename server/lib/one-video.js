@@ -54,7 +54,7 @@ async function write(req, { log = () => {}, onStage = () => {} } = {}) {
   if (!topic) throw Object.assign(new Error('a topic is required'), { status: 400 });
 
   const slug = `${slugify(topic)}-${Date.now().toString(36).slice(-4)}`;
-  const item = enqueue(topic, slug, req.notes, req.style);
+  const item = enqueue(topic, slug, req.notes, req.style, req);
 
   onStage('research');
   const st = await spine.execute(item, {
@@ -324,15 +324,103 @@ function finishedFile(dir, slug) {
 }
 
 /** Put the topic on the queue the spine pops from, or reuse it if it is there. */
-function enqueue(topic, slug, notes, style) {
+function enqueue(topic, slug, notes, style, req = {}) {
   const id = `${SERIES}/${slug}`;
   const existing = queue.get(id);
   if (existing) return existing;
+  const o = req.options || {};
   return queue.enqueue({
     topic, series: SERIES, slug, source: 'make-a-video',
     notes: notes ? String(notes).slice(0, 2000) : null,
-    style: style || undefined,
+    style: style || o.style || undefined,
+    // Contract 1.4: the stages read these off the item.
+    context: req.context || null,
+    purpose: o.purpose || null,
+    lengthMinutes: o.lengthMinutes || null,
+    voiceover: o.voiceover !== false,
   });
+}
+
+/**
+ * Rewrite a parked script from an instructor's notes (contract 1.4), the whole
+ * thing or only named beats, and park it again. Buys nothing: script -> gate ->
+ * script-approval, the same free half write() runs, started mid-chain from the
+ * held beats so the writer PATCHES rather than starts over.
+ *
+ * @param {{itemId:string, why?:string, beats?:Array<{id:string, why:string}>, by?:string, round:number, history?:Array}} req
+ */
+async function revise(req, { log = () => {}, onStage = () => {} } = {}) {
+  const item = queue.get(req.itemId);
+  if (!item) throw Object.assign(new Error(`no queued video '${req.itemId}'`), { status: 404 });
+  const dir = videoDir(item.series, item.slug);
+  const held = deliverables.findScript(item.series, item.slug);
+  let beats = readBeats(dir);
+  if (!beats && held) {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.copyFileSync(held.beats, path.join(dir, 'beats.js'));
+    beats = readBeats(dir);
+  }
+  if (!beats) throw Object.assign(new Error('the script to revise is gone from this container and the volume'), { status: 409, code: 'script_lost' });
+
+  const ctx = (held && held.context) || {};
+  const flagged = Array.isArray(req.beats) ? req.beats.filter((b) => b && b.id) : [];
+  const ids = flagged.map((b) => String(b.id));
+  const unknown = ids.filter((id) => !beats.some((b) => String(b.id) === id));
+  if (unknown.length) {
+    throw Object.assign(new Error(`no beat ${unknown.join(', ')} in this script`), { status: 422, code: 'unknown_beat' });
+  }
+  const perBeat = {};
+  for (const b of flagged) perBeat[String(b.id)] = String(b.why || '').trim();
+  const lines = [
+    ...(req.why ? [String(req.why).trim()] : []),
+    ...flagged.map((b) => `Beat ${b.id}: ${String(b.why || '').trim()}`),
+  ];
+  const round = Number(req.round) || 1;
+  const prior = Array.isArray(req.history) ? req.history : [];
+  const redraftFeedback = {
+    round,
+    fromStage: 'script',
+    requestedBy: 'human',
+    latest: lines,
+    history: [...prior, { round, critique: lines }],
+    // Named beats: only those may change (stages/script.js scriptScopeSchema +
+    // assertScriptScope). Without them it is a full redraft from the notes.
+    ...(ids.length ? { scope: { ids, allowVo: true, gate: 'script', perBeat } } : {}),
+  };
+
+  onStage('script');
+  const st = await spine.execute(item, {
+    fromStage: 'script',
+    seedArtifacts: {
+      script: { title: ctx.topic || item.topic, beats, beatsPath: path.join(dir, 'beats.js'), beatCount: beats.length },
+      ...(ctx.research ? { research: ctx.research } : {}),
+      redraftFeedback,
+    },
+    stopAfter: 'script-approval',
+    quiet: true,
+    budgetUsd: null,
+    stageOverrides: stageProgress(onStage, log),
+  });
+
+  const approval = st.stages['script-approval'];
+  const parked = Boolean(approval && approval.status === 'blocked' && approval.code === 'script-approval'
+    && !(approval.details && approval.details.stale));
+  const spentUsd = Number(st.spend && st.spend.usd) || 0;
+  if (st.status !== 'done' && !parked) {
+    throw Object.assign(new Error(stoppedBecause(st)), { status: 502, runId: st.runId, spentUsd });
+  }
+  const details = (parked && approval.details) || {};
+  return {
+    scriptSha: details.sha || deliverables.fingerprint(path.join(dir, 'beats.js')),
+    unresolvedChecks: details.unresolvedChecks || [],
+    runId: st.runId,
+    itemId: item.id,
+    title: st.artifacts.script && st.artifacts.script.title,
+    beats: readBeats(dir),
+    redrafts: Number(st.redrafts) || 0,
+    spentUsd,
+    dir,
+  };
 }
 
 /**
@@ -464,4 +552,4 @@ function driveCopyForSlug(slug) {
   return deliverables.driveCopy(SERIES, slug);
 }
 
-module.exports = { write, produce, approve, finished, fileForSlug, driveCopyForSlug, finishedFile, SERIES, slugify };
+module.exports = { write, revise, produce, approve, finished, fileForSlug, driveCopyForSlug, finishedFile, SERIES, slugify };

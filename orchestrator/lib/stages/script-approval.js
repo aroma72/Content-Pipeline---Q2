@@ -92,7 +92,7 @@ module.exports = {
       const { _internals } = require('./produce');
       const r = await _internals.preApprovalChecks({
         dir, beats: script.beats, log, lenient: Boolean(opts.lenient),
-        title: script.title || item.topic, st, scopeIds,
+        title: script.title || item.topic, st, scopeIds, item,
       });
       if (r.autoFixed && r.autoFixed.length && r.beats) {
         script.beats = r.beats;
@@ -132,7 +132,7 @@ module.exports = {
       const { _internals } = require('./produce');
       const r = await _internals.preApprovalChecks({
         dir, beats: script.beats, log, lenient: Boolean(opts.lenient),
-        title: script.title || item.topic, st,
+        title: script.title || item.topic, st, item,
       });
       checkFindings = r.findings;
       // The checks may have applied eval-text's own suggestions to beats.js.

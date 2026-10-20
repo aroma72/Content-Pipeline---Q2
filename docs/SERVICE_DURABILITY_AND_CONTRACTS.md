@@ -661,6 +661,27 @@ The post-render grammar check (`eval-text.js` after the render) no longer re-jud
 pre-spend run already judged: identical bytes get the first verdict, and the only sensors that
 block after the spend are the ones that detect a broken render (`qa-clips`, `qa-frames`).
 
+### 6.1b A one-video script between `written` and produce (contract 1.4, 2026-10-20)
+
+A written script can now change twice before it is produced, and both ways keep the sha rule:
+
+- **`script/edit`** rewrites `beats.js` in the request (no model), fingerprints the new bytes,
+  updates the job's `scriptSha`/`beatsFull`/projection, and copies the file to the volume with
+  `deliverables.persist` — the same copy produce restores from. `script.edits[]` is the audit.
+- **`script/revise`** moves the job to **`revising`** (a new in-flight status; `IN_FLIGHT` in
+  `server/lib/jobs.js`), runs `script → gate → script-approval` from the held beats and research
+  (`one-video.revise`), and parks again at `script-approval` as a write does. Success: `written`
+  with a new sha and `script.revisions[]` carrying `spentUsd`. Failure or a restart mid-flight:
+  **`written`**, not `failed` — the previous script is intact on the volume and nothing was bought;
+  `lastError.stage: "revise"` says why (`restore()` handles the restart case).
+- **Produce with `scriptSha`** refuses (`409 sha_mismatch`) before any reservation when the field is
+  not the fingerprint of `beats.js` on disk. Without the field the stage's own sha check still binds
+  the approval to the bytes, as in §3.2.
+
+The three abilities sit behind `MAKE_VIDEO_CONTEXT`, `MAKE_VIDEO_SCRIPT_EDIT` and
+`MAKE_VIDEO_SCRIPT_REVISE` (`docs/DEPLOYMENT_PREREQS.md`), read at call time; `/health.makeVideo`
+shows the live values.
+
 ### 6.2 The volume
 
 Attached 2026-09-18: `content-queen-volume`, 50 GB, mount path `/data`, service

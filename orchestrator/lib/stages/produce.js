@@ -122,7 +122,7 @@ const SCRIPT_SENSORS = [
  * Throws RedraftError (fromStage 'script') on a finding. With `lenient` set (the
  * spine's last pass) it returns the findings instead, for the reader to see.
  */
-async function preApprovalChecks({ dir, beats, log = () => {}, lenient = false, title = null, st = null, scopeIds = null }) {
+async function preApprovalChecks({ dir, beats, log = () => {}, lenient = false, title = null, st = null, scopeIds = null, item = null }) {
   copyTemplates(PATHS.videoTemplates, dir, log);
   let current = beats;
   const autoFixed = [];
@@ -132,7 +132,7 @@ async function preApprovalChecks({ dir, beats, log = () => {}, lenient = false, 
   // fraction of the cost of a model redraft, and it is what the finding asked for.
   for (let pass = 0; pass < 2; pass++) {
     const findings = [];
-    const { errors } = validateBeats(current, dir);
+    const { errors } = validateBeats(current, dir, { requireCheckpoint: checkpointRequired(item) });
     if (errors.length) {
       // Deterministic: never softened by the lenient pass (spine skips it for INVALID_BEATS).
       throw new RedraftError(
@@ -146,7 +146,7 @@ async function preApprovalChecks({ dir, beats, log = () => {}, lenient = false, 
         throw new Error(`${script} is missing from ${dir} -- the quality gate for ${what} cannot run.`);
       }
       try {
-        await shell.run('node', [script], { cwd: dir, timeoutMs: 20 * 60 * 1000 });
+        await shell.run('node', [script], { cwd: dir, timeoutMs: 20 * 60 * 1000, env: { ...process.env, ...itemEnv(item) } });
       } catch (e) {
         if (!(e instanceof shell.CommandError) || e.code === null) throw e;
         if (e.code === 3 || isEnvironmentFailure(e)) {
@@ -157,7 +157,7 @@ async function preApprovalChecks({ dir, beats, log = () => {}, lenient = false, 
           .filter((l) => l && !/^\[.*\] (Reviewed|Judge)/.test(l)).slice(-25).join('\n');
 
         if (script === 'eval-text.js' && pass === 0) {
-          const fix = tryTextAutoFix({ dir, beats: current, title, log, st, scopeIds });
+          const fix = tryTextAutoFix({ dir, beats: current, title, log, st, scopeIds, item });
           if (fix) {
             current = fix.beats;
             autoFixed.push(...fix.applied);
@@ -186,7 +186,7 @@ async function preApprovalChecks({ dir, beats, log = () => {}, lenient = false, 
  * older video folder has an eval-text.js that writes no JSON, and that is a
  * null here, not a failure.
  */
-function tryTextAutoFix({ dir, beats, title, log = () => {}, st = null, scopeIds = null }) {
+function tryTextAutoFix({ dir, beats, title, log = () => {}, st = null, scopeIds = null, item = null }) {
   let issues;
   try {
     issues = JSON.parse(fs.readFileSync(path.join(dir, 'eval-text-results.json'), 'utf8')).issues || [];
@@ -204,7 +204,7 @@ function tryTextAutoFix({ dir, beats, title, log = () => {}, st = null, scopeIds
   const r = applySuggestions(beats, issues);
   if (!r.applied.length) return null;
 
-  const { errors } = validateBeats(r.beats, dir);
+  const { errors } = validateBeats(r.beats, dir, { requireCheckpoint: checkpointRequired(item) });
   if (errors.length) {
     log(`eval-text suggestions would break the script (${errors[0]}) -- leaving it to a redraft`);
     return null;
@@ -225,7 +225,22 @@ function tryTextAutoFix({ dir, beats, title, log = () => {}, st = null, scopeIds
   return { beats: r.beats, applied: r.applied, skipped: r.skipped };
 }
 
-function estimateSpend(beats, dir) {
+/**
+ * What the templates must know about THIS video beyond its style (contract 1.4):
+ * whether a checkpoint is required (lib/purpose.js) and whether it has a voice.
+ * Merged into every shell command's env beside styles.renderEnv().
+ */
+function checkpointRequired(item) { return require('../purpose').purposeOf(item).needsCheckpoint; }
+
+function itemEnv(item) {
+  if (!item) return {};
+  const out = {};
+  if (!require('../purpose').purposeOf(item).needsCheckpoint) out.CHECKPOINT_REQUIRED = '0';
+  if (item.voiceover === false) out.SILENT = '1';
+  return out;
+}
+
+function estimateSpend(beats, dir, { silent = false } = {}) {
   // PER BEAT, on the same basis the regeneration paths use.
   //
   // This asked "does art/ contain any PNG?" and priced every image at zero if so.
@@ -247,7 +262,8 @@ function estimateSpend(beats, dir) {
     .reduce((a, b) => a + i2vSeconds(readDuration(dir, b.id)), 0);
 
   const artUsd = images * COST.imagePerImage;
-  const ttsUsd = clips * COST.ttsPerClip;
+  // No voice is bought for a silent video (contract 1.4).
+  const ttsUsd = silent ? 0 : clips * COST.ttsPerClip;
   const animUsd = animSecs * COST.i2vPerSecond;
   return {
     images,
@@ -566,7 +582,7 @@ function sensorArgs(script, videoRedo) {
   return script === 'qa-art.js' && ids.length ? ['--ids', ids.join(',')] : [];
 }
 
-module.exports._internals = { estimateSpend, isFresherThanInputs, copyTemplates, finalTextCheckNeeded, tryTextAutoFix,
+module.exports._internals = { estimateSpend, itemEnv, isFresherThanInputs, copyTemplates, finalTextCheckNeeded, tryTextAutoFix,
   i2vSeconds, COST, missingPerBeat, staleVo, pruneOrphans, isEnvironmentFailure, repairAffordable,
   SCRIPT_SENSORS, preApprovalChecks, sensorArgs };
 
@@ -633,7 +649,7 @@ module.exports = Object.assign(module.exports, {
       // Preflight the script against what the renderer can actually draw. This
       // runs before the spend gate on purpose: a beat that renders blank should
       // cost nothing to discover.
-      const { errors, warnings } = validateBeats(artifacts.script && artifacts.script.beats, dir);
+      const { errors, warnings } = validateBeats(artifacts.script && artifacts.script.beats, dir, { requireCheckpoint: checkpointRequired(item) });
       for (const w of warnings) log(`warning: ${w}`);
       if (errors.length) {
         // Redraftable, for the same reason as the script stage's copy: every
@@ -648,8 +664,10 @@ module.exports = Object.assign(module.exports, {
       log(`beats validated: ${artifacts.script.beats.length} beat(s), no blocking problems`);
     }
 
-    const styleEnv = require('../styles').renderEnv(item);
+    const styleEnv = { ...require('../styles').renderEnv(item), ...itemEnv(item) };
     if (Object.keys(styleEnv).length) log(`style: ${require('../styles').styleOf(item).id}`);
+    const silent = item.voiceover === false;
+    if (silent) log.always('no voiceover by request -- no speech will be bought; durations come from the on-screen text');
     const run = (cmd, args, extra = {}) => shell.run(cmd, args, {
       cwd: dir,
       // CHECKPOINT_HANDOFF=api: here the LMS reads the question from the API (live, from
@@ -923,7 +941,7 @@ module.exports = Object.assign(module.exports, {
     // --- spend gate (ILHAM plan 3.2) -------------------------------------
     // Priced from this video's own beats, and from what is already on disk, so
     // a retry after a crash is correctly costed at $0 rather than blocked again.
-    const est = estimateSpend(artifacts.script && artifacts.script.beats, dir);
+    const est = estimateSpend(artifacts.script && artifacts.script.beats, dir, { silent });
     const budget = opts.budgetUsd;
     // Measured against MEDIA spend, not the run total. The budget is a ceiling on
     // what this video buys -- images, speech, motion. Token spend is now counted
@@ -1052,7 +1070,12 @@ module.exports = Object.assign(module.exports, {
     // from the sentence the script still holds. "Some wavs exist" is not that:
     // after a redraft the changed beats hold the previous take.
     const needVo = staleVo(beatsForArt, dir);
-    if (hasOutput(path.join(dir, 'audio'), '.wav') && !needVo.length) {
+    if (silent) {
+      // Contract 1.4: a video with no voiceover. No clip is bought; each beat's
+      // seconds come from how long its on-screen words take to read.
+      log('timing the silent beats from their on-screen text');
+      await run('node', ['silent-durations.js']);
+    } else if (hasOutput(path.join(dir, 'audio'), '.wav') && !needVo.length) {
       log.always('audio/ matches every beat -- skipping tts-lesson (no re-spend)');
     } else {
       // tts-lesson.js compares each sidecar to its beat and re-synthesises only

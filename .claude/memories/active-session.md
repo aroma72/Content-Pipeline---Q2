@@ -300,3 +300,36 @@ No frontmatter: this file is machine-managed and exempt from the metadata contra
 - DECIDED 2026-10-13: Aroma picked option 2 = "Dreamy Piano Fantasy" (Rafael Krux, FreePD CC0) at -25 dBFS mean for the Flat Motion Graphics style. All 4 P&C c1w finals re-stitched with it (verify PASS, quiz times unchanged). Brand mp3 + 12s preview (cut of c1w1 final at 7.3s) replaced in wtpc; committed b1c14fb, pushed to main, deploy.sh run.
 - Upstream (Abdulrehman, e7fa11a) had fixed lfOptions overflow differently (row wrap + tighter pitch) — kept theirs, dropped my own-line tag fix. Also: they found the PRODUCTION Gemini key on Railway is refused (API_KEY_INVALID), so motion lessons on Railway get no voice until a person replaces GEMINI_API_KEY there.
 - Deploy confirmed 2026-10-13: /health build.commit = b1c14fb, verify-live 9/9, new style preview served (200).
+## 2026-10-20 (contract 1.4 — script-first single videos, branch feat/contract-1.4)
+
+- Built the LMS's 1.4 request (E:\Nazim\.claude\docs\planning\2026-10-20-content-queen-1.4-request.md)
+  plus the user's widening (instructor picks style / lengthMinutes / voiceover / purpose on create;
+  Ali + checkpoint relax per purpose). Reply written for Nazim:
+  docs/integration-requests/2026-10-20-content-queen-1.4-reply.md. Changelog 1.4 entry added.
+- New modules: orchestrator/lib/{context,options,purpose,est-seconds,script-checks}.js,
+  server/lib/capabilities.js, templates/lib/checkpoint-checks.js (qa-checkpoint.js is now a CLI
+  around it; CHECKPOINT_REQUIRED=0 relaxes), templates/silent-durations.js (voiceover:false path:
+  SILENT=1, mix-audio lays anullsrc, verify skips clip checks), prompts/video_purpose_*.txt.
+- Routes: script/edit ($0, sync, new sha, 422 check_failed on NEW findings only), script/revise
+  (written -> revising -> written, cap 5 -> 409 revision_cap, spentUsd on script.revisions[]),
+  produce scriptSha -> 409 sha_mismatch, make-video body 1 MB + JSON 413/400 error middleware.
+  Flags MAKE_VIDEO_CONTEXT / _SCRIPT_EDIT / _SCRIPT_REVISE, off by default -> 400 capability_disabled.
+- Decisions worth defending: `revising` is a new status because restore() fails `running` on
+  boot and a revise has a good script to fall back to; a flag-off request is REFUSED not ignored
+  (the LMS must never believe a document was used); spine now carries `scope` through a sensor
+  redraft (closes a 1.3 gap too: a second draft used to get the full patch schema).
+- Things the request assumed that were not true: notes silently truncated at 2000 (still is);
+  express.json 32kb cap; no `revision_cap`/`script-approval` status; caption <= 8 words enforced
+  nowhere; no "data not instructions" framing anywhere. All recorded in the reply.
+- Rules doc: CLAUDE.md + SCRIPTING_STANDARDS §3b got a "purpose exemption" line marked PENDING
+  Aroma's sign-off — do not build marketing/announcement videos until she agrees.
+- Tests: regressions 361/0, server 112/0, store/predeploy/layout green, lint clean, skill evals
+  387/387. verify-all tier 1: the /health ok:false test fails ONLY under verify-all (it loads .env
+  with a budget; health reads config at load) -- pre-existing, not 1.4; qa-checkpoint fixture
+  needed templates/lib copied (fixed in verify-all.js).
+- NEXT: (1) Aroma signs off the purpose exemption; (2) commit on feat/contract-1.4 (never stage the
+  memory files whole -- other sessions edit them); (3) push <branch>:main + .\scripts\deploy.ps1
+  with the three flags OFF, confirm /health.contractVersion 1.4 and verify-live; (4) quote one real
+  scoped revise (~$0.5) under paid-run-protocol; (5) flip flags in Railway, send Nazim the reply;
+  (6) known gap: edit cannot clear a field (applyEdits drops empties) -- add `null` = clear if asked.
+

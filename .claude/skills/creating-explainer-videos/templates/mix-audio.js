@@ -42,7 +42,16 @@ function mixAudio({ beats, durations, audioDir, outPath }) {
   });
 
   const total = t;
-  if (!labels.length) throw new Error('mix-audio: no VO clips found');
+  if (!labels.length) {
+    // A video with no voiceover (contract 1.4, SILENT=1): lay silence of the right
+    // length under the frames so the container has an audio track for stitch-brand
+    // to duck its music bed against. Without the flag, no clips is still the defect
+    // it always was -- a lesson whose voice never got made.
+    if (process.env.SILENT !== '1') throw new Error('mix-audio: no VO clips found');
+    execFileSync(ffmpeg, ['-y', '-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo',
+      '-t', total.toFixed(3), '-ac', '2', '-ar', '48000', outPath], { stdio: ['ignore', 'ignore', 'inherit'] });
+    return total;
+  }
 
   // narration = amix of all delayed clips, trimmed to total
   filters.push(`${labels.join('')}amix=inputs=${labels.length}:normalize=0[narrmix]`);
