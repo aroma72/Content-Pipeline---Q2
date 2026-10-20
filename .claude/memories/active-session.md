@@ -363,3 +363,8 @@ No frontmatter: this file is machine-managed and exempt from the metadata contra
 - Next: push feat/contract-1.4:main + deploy with MAKE_VIDEO_SCRIPT_EDIT=1; confirm
   /health.makeVideo.scriptEdit true + estimateUsd on a job; tell Nazim; await their edit job ids;
   then CONTEXT, then SCRIPT_REVISE, each its own guarded deploy.
+- DEPLOYED 4c9d396 (user: push + `railway variables --set MAKE_VIDEO_SCRIPT_EDIT=1 --skip-deploys`
+  + deploy.ps1; predeploy idle; verify-live 9/9). Live /health.makeVideo: scriptEdit TRUE,
+  estimateUsd true, context/scriptRevise false. Nazim told. Next: their edit job ids -> then
+  CONTEXT (same recipe), then SCRIPT_REVISE after the ~$0.50 real scoped revise + Aroma's purpose
+  sign-off. Note: the curl line I handed over had a `<content-queen>` placeholder -- give real hosts.
