@@ -386,3 +386,8 @@ No frontmatter: this file is machine-managed and exempt from the metadata contra
 - Production reads (railway ssh) are denied by the auto-mode classifier -- ask the user to run them.
 - Next: user pushes + flips MAKE_VIDEO_CONTEXT (--skip-deploys + deploy.ps1); tell Nazim; build
   `maxUsd` only if they say yes; they send two raw refusal edits to prove check_failed/sha_mismatch.
+- 2026-10-22 later: user's push of feat/contract-1.4:main was REJECTED (fetch first) -- another
+  session pushed 9d61d44 (memory archive only). Merged origin/main into the branch (2a338ae;
+  `git merge`, not rebase: the shared tree is dirty with other sessions' work). Railway login had
+  expired; user re-logged in and set MAKE_VIDEO_CONTEXT=1 --skip-deploys. NOT yet deployed --
+  push then deploy.ps1, then confirm /health.makeVideo.context true before telling Nazim.
