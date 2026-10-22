@@ -368,3 +368,21 @@ No frontmatter: this file is machine-managed and exempt from the metadata contra
   estimateUsd true, context/scriptRevise false. Nazim told. Next: their edit job ids -> then
   CONTEXT (same recipe), then SCRIPT_REVISE after the ~$0.50 real scoped revise + Aroma's purpose
   sign-off. Note: the curl line I handed over had a `<content-queen>` placeholder -- give real hosts.
+
+## 2026-10-22 (Nazim: edit verified on prod; asks for CONTEXT; spend-vs-estimate question)
+
+- LMS verified script/edit on prod (2 edits, shas a71a8b01->e63e4b7c->afdf45d5; estimateUsd 1.64;
+  stopped at written). Our check_failed/sha_mismatch never fired -- their own API refused first.
+  They keep /demo job ids out of messages (the id authorises spend/publish).
+- They ask: flip MAKE_VIDEO_CONTEXT; then SCRIPT_REVISE; and "how far can spend exceed estimateUsd?"
+- FOUND: estimateUsd is MEDIA only (one clean pass, motion at the 5 s floor); produce.spendUsd
+  (what the ledger settles) = media + model. Media is hard-capped by budgetUsd at every purchase
+  (repairAffordable + post-TTS animation reprice); model spend from produce-time redrafts
+  (spine MAX_REDRAFTS 2/reviewer, 6 total; ~$0.6-1.0 a round) is NOT capped. The budget is the
+  service ceiling cut to the month, not the estimate. Gemini judges' spend is not recorded.
+  pipeline-mechanics.md "repairs bypass budget" note was stale -- marked fixed.
+- Reply: docs/integration-requests/2026-10-22-content-queen-1.4-reply-3.md (+$0.50 covers media
+  drift only; hold +$1.50 for one redraft; OFFER optional `maxUsd` on produce = media cap).
+- Production reads (railway ssh) are denied by the auto-mode classifier -- ask the user to run them.
+- Next: user pushes + flips MAKE_VIDEO_CONTEXT (--skip-deploys + deploy.ps1); tell Nazim; build
+  `maxUsd` only if they say yes; they send two raw refusal edits to prove check_failed/sha_mismatch.

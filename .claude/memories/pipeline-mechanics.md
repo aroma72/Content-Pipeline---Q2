@@ -77,7 +77,12 @@ to match — `ffmpeg -i in.mp4 -vn -acodec aac -y out.aac`.
 
 ---
 
-## The budget caps the first art purchase, not the repairs (found 2026-09-28)
+## The budget caps the first art purchase, not the repairs (found 2026-09-28; FIXED since -- see below)
+
+> **Re-verified 2026-10-22:** `repairArt` now calls `repairAffordable` before each re-buy
+> (`orchestrator/lib/stages/produce.js` ~line 738) and animation is re-priced after TTS and skipped
+> when over budget (~line 1122). Media is now capped by `budgetUsd` at every purchase. Model spend
+> (produce-time redrafts, ~$0.6-1.0 a round) is recorded but never capped. The text below is history.
 
 `produce`'s spend gate compares the **up-front estimate** with the budget. After art is bought,
 `repairArt` (`orchestrator/lib/stages/produce.js`) runs `qa-art.js`, and for each rejected image it

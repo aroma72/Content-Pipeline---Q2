@@ -285,7 +285,7 @@ for the full shapes; each is off until its switch is on, and `makeVideo` on ever
 |---|---|
 | `POST /demo/make-video` `context.sources[]`, `options{style,lengthMinutes,voiceover,purpose}` | documents (5 / 120k chars, `413 context_too_large`) and the instructor's choices (`400 bad_options`); both echoed on the job |
 | `GET …/:jobId` `script.estSeconds`, `script.estTotalSeconds`, `capabilities` | pre-TTS timing; what this deployment can do |
-| `GET …/:jobId` `script.estimateUsd` (2026-10-21) | what produce would buy for this script, or `null`; a silent video omits the speech |
+| `GET …/:jobId` `script.estimateUsd` (2026-10-21) | media bill for one clean produce pass, or `null`; a silent video omits the speech. `produce.spendUsd` can exceed it: animation repriced after speech, re-drawn pictures, and model calls of a produce-time redraft (2026-10-22 reply-3) |
 | `POST …/:jobId/script/edit` | owner. $0, synchronous; `{sha, by, edits[]}` → `200 {scriptSha, script}`; `409 sha_mismatch`, `422 check_failed` |
 | `POST …/:jobId/script/revise` | owner. `{sha, by, why?, beats?[]}` → `202 {status:"revising", round, revisionsLeft}`; `409 revision_cap` after 5 |
 | `POST …/:jobId/produce` `scriptSha` | optional; `409 sha_mismatch` if it is not the script on disk |
