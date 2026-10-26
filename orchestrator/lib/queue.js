@@ -105,6 +105,15 @@ function currentItems() {
   return [...byId.values()];
 }
 
+/**
+ * Every event in the queue log, oldest first, read-only. currentItems() folds these and
+ * so forgets WHEN a lesson entered its current status (a Drive offload re-stamps
+ * `updatedAt` without changing it); "waiting for you since" needs the unfolded log.
+ */
+function events() {
+  return jsonl.readValid(queueFile());
+}
+
 function enqueue({
   topic, series, slug, source = 'manual', recommendationId = null, priority = 5, notes = null,
   // Title convention: "<module number> | <module topic> | <subtopic>". Carried on
@@ -362,7 +371,7 @@ module.exports = {
   // server side reads the queue and not the spine, so without this the only way
   // to name a block was a string literal -- which is how the set drifted.
   BLOCKED_BY, DEFAULT_BLOCKED_BY, BLOCKED_BY_VALUES,
-  slugify, currentItems, enqueue, nextQueued, get,
+  slugify, currentItems, events, enqueue, nextQueued, get,
   // setStatus is the primitive the named helpers wrap. It is exported because
   // approving a lesson has to carry fields none of them do (reviewApproved,
   // approvedAt) -- course-worker called it for months while it was private, so

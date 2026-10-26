@@ -1,6 +1,6 @@
 ---
 type: reference
-last_verified: 2026-10-20
+last_verified: 2026-10-26
 owner: Aroma Tahir
 ---
 
@@ -14,6 +14,24 @@ for single videos, `content-queen-client.ts` for the catalogue) — the LMS aske
 on 2026-09-21 after learning of ten new fields by reading our repository.
 
 Frozen copies: `docs/contracts/course-api-<version>.md`.
+
+---
+
+## 1.5, additive — 2026-10-26 — who acts next: review cues and a getting-started guide
+
+`contractVersion` is `1.5`. Prompted by the first Course Builder user feedback (2026-10-22/23, ease 7/10):
+the only two places anyone got stuck were "I did not see the course was waiting for my review" and "I did
+not know how to start". Nothing existing changes; every addition is read-only. Lands in
+`content-queen-courses.ts`. The integration guide (UI spec, examples, acceptance criteria) is the Claude
+Doc "Course Builder: Review and Getting-Started Cues — LMS Integration Guide".
+
+| Change | Where | Example | Commit | LMS file |
+|---|---|---|---|---|
+| `nextAction {who, kind, title, detail, actions[], since}` on every lesson. `who`: `you` (the instructor must act) · `us` (paused on our side) · `nobody` (working or finished). `actions` = the routes that will be accepted now. `since` = when the lesson entered this state (a Drive offload does not move it) | `GET /courses/:courseId` items | `{"who":"you","kind":"read-script","title":"Read and approve the script","actions":["approve-script","revise-script","cancel"],"since":"2026-10-26T08:13:45Z"}` | this release | course poll mirror; badge + banner |
+| `stage {id, label, index, of}` on every lesson — `queued · script · script-review · build · video-review · published` (+ `paused`/`stopped`/`publishing`) | same | `{"id":"video-review","label":"Your video review","index":5,"of":6}` | this release | per-lesson progress bar |
+| `attention {needsYou, byKind, headline, oldestSince, nextLessonId}` on the course | `GET /courses/:courseId` | `"headline":"2 lessons are waiting for you: 1 script to read, 1 video to watch."` | this release | course banner |
+| `GET /api/v1/courses/attention` — every lesson waiting on the caller across all their courses, oldest first; tenant-scoped (admin sees all); `?include=us` adds ours | new route (token) | `{"needsYou":2,"headline":"…","courses":[…],"lessons":[{courseId, lessonId, topic, stage, nextAction}]}` | this release | notification bell / inbox |
+| `GET /api/v1/guide/course-builder` — the four steps of building a course, each with `youDo`, `weDo`, `takes`, `route` | new route (public) | `{"title":"Build a course in four steps","steps":[…]}` | this release | getting-started screen |
 
 ---
 

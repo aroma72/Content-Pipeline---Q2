@@ -1100,7 +1100,7 @@ async function lessonFileChecks() {
       const paths = (r.json.endpoints || []).map((e) => `${e.method} ${e.path}`);
       assert(paths.includes('POST /api/v1/courses/:courseId/lessons/:lessonId/video/revise'), 'video/revise not listed');
       assert(paths.includes('POST /api/v1/courses/:courseId/lessons/:lessonId/cancel'), 'cancel not listed');
-      assert(r.json.contractVersion === '1.4', `contractVersion ${r.json.contractVersion}`);
+      assert(r.json.contractVersion === '1.5', `contractVersion ${r.json.contractVersion}`);
       assert(r.json.videoRedo && typeof r.json.videoRedo.enabled === 'boolean' && r.json.videoRedo.maxRounds >= 1
         && r.json.videoRedo.reserveUsd > 0, `videoRedo block: ${JSON.stringify(r.json.videoRedo)}`);
       return `1.3, videoRedo ${JSON.stringify(r.json.videoRedo)}`;
@@ -1438,6 +1438,113 @@ async function bridgeChecks() {
         'awaitingApproval still offers a flagged video as plain "ready for you"');
       return 'review vs post-render-check, defaulting to review';
     }); });
+
+  // Contract 1.5. The first Course Builder users got stuck only where they could not tell it
+  // was their turn: a course waiting for review looked like a course still working. The
+  // server now says who acts next, so no client has to map eleven blockedBy values itself.
+  await check('every lesson says who acts next; the course says how many wait for you (1.5)',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      const queue = require(path.join(__dirname, 'lib', 'queue'));
+      require(path.join(__dirname, '..', 'server', 'lib', 'job-store')).reset();
+      queue.resetPathCache();
+      const tag = '[course-next]';
+      for (const slug of ['script', 'video', 'flagged', 'broken', 'building', 'later']) {
+        queue.enqueue({ topic: slug, series: 'testing', slug, source: 'course-builder', notes: `${tag} brief` });
+      }
+      queue.block('testing/script', 'run-a', 'read the script', 'script-approval');
+      queue.block('testing/video', 'run-b', 'awaiting human review', 'review');
+      queue.block('testing/flagged', 'run-c', 'a judge flagged it', 'post-render-check');
+      queue.block('testing/broken', 'run-d', 'no browser', 'preflight');
+      queue.claim('testing/building', 'run-e');
+      const before = queue.get('testing/video').updatedAt;
+      await new Promise((r) => setTimeout(r, 15));
+      // A Drive offload re-stamps updatedAt without changing the status: "waiting since"
+      // must not move with it, or a week-old review reads as brand new.
+      queue.markSavedToDrive('testing/video', { driveFileId: 'f1', driveUrl: 'https://drive.example/f1' });
+
+      const r = await req(port, { path: '/api/v1/courses/course-next', headers: { authorization: `Bearer ${LMS_TOKEN}` } });
+      assert(r.status === 200, `course view ${r.status}`);
+      const by = Object.fromEntries(r.json.items.map((i) => [i.id.split('/')[1], i]));
+      const na = (k) => by[k].nextAction;
+      assert(na('script').who === 'you' && na('script').kind === 'read-script'
+        && na('script').actions.join() === 'approve-script,revise-script,cancel', `script: ${JSON.stringify(na('script'))}`);
+      assert(na('video').who === 'you' && na('video').kind === 'watch-video' && na('video').actions.includes('approve'),
+        `video: ${JSON.stringify(na('video'))}`);
+      assert(na('flagged').kind === 'check-flagged-video', 'a flagged video reads as an ordinary review');
+      assert(na('broken').who === 'us' && na('broken').actions.length === 0,
+        'a lesson only we can fix asks the instructor to do something');
+      assert(na('building').who === 'nobody' && na('building').kind === 'wait', 'a lesson being built asks for attention');
+      assert(na('later').who === 'nobody', 'a queued lesson asks for attention');
+      assert(na('video').since === before, `since moved with the Drive offload: ${na('video').since} vs ${before}`);
+      assert(by.script.stage.id === 'script-review' && by.video.stage.id === 'video-review' && by.video.stage.of === 6,
+        `stages: ${by.script.stage.id}, ${by.video.stage.id}`);
+      const a = r.json.attention;
+      assert(a.needsYou === 3, `needsYou ${a.needsYou}`);
+      assert(a.byKind['read-script'] === 1 && a.byKind['watch-video'] === 1 && a.byKind['check-flagged-video'] === 1,
+        `byKind ${JSON.stringify(a.byKind)}`);
+      assert(/^3 lessons are waiting for you: /.test(a.headline), `headline: ${a.headline}`);
+      assert(a.nextLessonId === 'testing/script', `the oldest waiting lesson is not first: ${a.nextLessonId}`);
+      return `3 need you, 1 needs us, 2 working; "${a.headline}"`;
+    }); });
+
+  await check('every blockedBy value is mapped to a next action on purpose (1.5)', async () => {
+    const { BLOCKED_BY_VALUES } = require(path.join(__dirname, 'lib', 'queue'));
+    const na = require(path.join(__dirname, '..', 'server', 'lib', 'next-action'));
+    // A new blockedBy value must be placed here deliberately. Falling through to the
+    // default ("paused on our side") would hide a lesson that is really waiting for a person.
+    const EXPECTED = {
+      'script-approval': 'you', review: 'you', 'post-render-check': 'you', 'qa-no-evidence': 'you',
+      'spend-approval': 'you', interrupted: 'you', 'time-ceiling': 'you',
+      preflight: 'us', 'produce-input': 'us', upload: 'us', nazim: 'us',
+    };
+    const unmapped = BLOCKED_BY_VALUES.filter((v) => !(v in EXPECTED));
+    assert(!unmapped.length, `new blockedBy value(s) with no decided next action: ${unmapped.join(', ')}`);
+    for (const v of BLOCKED_BY_VALUES) {
+      const got = na.forItem({ status: 'blocked', blockedBy: v }, { redosLeft: 2, residueAvailable: true }).who;
+      assert(got === EXPECTED[v], `${v} -> ${got}, expected ${EXPECTED[v]}`);
+    }
+    return `${BLOCKED_BY_VALUES.length} values`;
+  });
+
+  await check('GET /courses/attention lists what waits on the caller, oldest first, in their tenant only (1.5)',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      const queue = require(path.join(__dirname, 'lib', 'queue'));
+      require(path.join(__dirname, '..', 'server', 'lib', 'job-store')).reset();
+      queue.resetPathCache();
+      queue.enqueue({ topic: 'first', series: 'testing', slug: 'att-first', source: 'course-builder', notes: '[course-a] brief', tenantId: 'taleemabad-u' });
+      queue.enqueue({ topic: 'second', series: 'testing', slug: 'att-second', source: 'course-builder', notes: '[course-b] brief', tenantId: 'taleemabad-u' });
+      queue.enqueue({ topic: 'theirs', series: 'testing', slug: 'att-theirs', source: 'course-builder', notes: '[course-c] brief', tenantId: 'someone-else' });
+      queue.enqueue({ topic: 'busy', series: 'testing', slug: 'att-busy', source: 'course-builder', notes: '[course-a] brief', tenantId: 'taleemabad-u' });
+      queue.block('testing/att-first', 'r1', 'read it', 'script-approval');
+      await new Promise((r) => setTimeout(r, 15));
+      queue.block('testing/att-second', 'r2', 'watch it', 'review');
+      queue.block('testing/att-theirs', 'r3', 'watch it', 'review');
+      queue.claim('testing/att-busy', 'r4');
+
+      const mine = await req(port, { path: '/api/v1/courses/attention', headers: { authorization: `Bearer ${LMS_TOKEN}` } });
+      assert(mine.status === 200, `attention ${mine.status} ${mine.text} -- was "attention" taken as a course id?`);
+      const ids = mine.json.lessons.map((l) => l.lessonId);
+      assert(ids.join() === 'testing/att-first,testing/att-second', `lessons: ${ids}`);
+      assert(mine.json.lessons[0].courseId === 'course-a' && mine.json.courses.length === 2, 'courseId or byCourse wrong');
+      assert(mine.json.needsYou === 2 && /^2 lessons are waiting for you/.test(mine.json.headline), mine.json.headline);
+      const admin = await req(port, { path: '/api/v1/courses/attention', headers: { authorization: `Bearer ${LEGACY_TOKEN}` } });
+      assert(admin.json.lessons.length === 3, `the admin token sees ${admin.json.lessons.length}, expected every tenant's 3`);
+      const anon = await req(port, { path: '/api/v1/courses/attention' });
+      assert(anon.status === 401, `no token: ${anon.status}`);
+      return '2 of mine, oldest first; another tenant hidden; admin sees 3';
+    }); });
+
+  await check('GET /guide/course-builder serves the getting-started steps without a token (1.5)',
+    () => withServer(freshEnv(), {}, async (port) => {
+      const r = await req(port, { path: '/api/v1/guide/course-builder' });
+      assert(r.status === 200 && Array.isArray(r.json.steps) && r.json.steps.length === 4, `guide ${r.status}`);
+      assert(r.json.steps.every((s) => s.title && s.youDo && s.weDo), 'a step is missing what you do or what we do');
+      const index = await req(port, { path: '/api/v1' });
+      const paths = index.json.endpoints.map((e) => e.path);
+      assert(paths.includes('/api/v1/guide/course-builder') && paths.includes('/api/v1/courses/attention'),
+        'the new routes are not on the index the LMS pins to');
+      return '4 steps, listed on the index';
+    }));
 
   // One lesson failing does not make the other nine wrong, and rebuilding the
   // course is not the workaround it looks like: enqueue() rejects the duplicate
@@ -2576,7 +2683,7 @@ async function contract14Checks() {
       const env = freshEnv(LOOSE);
       await withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
         const h = (await req(port, { path: '/health' })).json;
-        assert(h.contractVersion === '1.4', `contract ${h.contractVersion}`);
+        assert(h.contractVersion === '1.5', `contract ${h.contractVersion}`);
         assert(h.makeVideo && h.makeVideo.context === false && h.makeVideo.scriptEdit === false && h.makeVideo.scriptRevise === false, `flags off: ${JSON.stringify(h.makeVideo)}`);
         assert(h.makeVideo.contextMaxChars === 120000 && h.makeVideo.maxRevisions === 5 && h.makeVideo.produceScriptSha === true && h.makeVideo.estSeconds === true && h.makeVideo.estimateUsd === true, 'static facts missing');
         assert(h.makeVideo.options && h.makeVideo.options.purposes.length === 4 && h.makeVideo.options.lengthMinutes.max === 6, `options: ${JSON.stringify(h.makeVideo.options)}`);

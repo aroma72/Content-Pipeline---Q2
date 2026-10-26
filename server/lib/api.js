@@ -126,7 +126,7 @@ function sendJson(req, res, payload) {
 }
 
 /** The course-API contract version. docs/CONTRACT-CHANGELOG.md says what each one added. */
-const CONTRACT_VERSION = '1.4';
+const CONTRACT_VERSION = '1.5';
 
 /**
  * @param {object} [opts]
@@ -194,6 +194,15 @@ function build(opts = {}) {
           description: 'A 12-second sample video in that style (Range requests supported, so it '
             + 'plays in an HTML5 <video> tag).',
           example: `${base}/styles/motion-graphics/preview.mp4` },
+        { method: 'GET', path: '/api/v1/guide/course-builder', auth: false,
+          description: 'The steps of building a course, for a getting-started screen: what the '
+            + 'instructor does at each step, what happens meanwhile, and how long it takes (1.5).',
+          example: `${base}/guide/course-builder` },
+        { method: 'GET', path: '/api/v1/courses/attention', auth: true,
+          description: 'Every course lesson waiting on the caller, across all their courses, oldest '
+            + 'first, each with its nextAction -- for a notification bell or inbox. '
+            + '`?include=us` adds lessons paused on our side (1.5).',
+          example: `${base}/courses/attention` },
         { method: 'POST', path: '/api/v1/courses/draft-teaching', auth: true,
           description: 'Flat Motion Graphics: send the lessons an instructor has written '
             + '({ topic?, audience?, lessons: [{ title, slo }] }, in order) and get back numbered course '
@@ -723,6 +732,67 @@ function build(opts = {}) {
     });
   });
 
+  /**
+   * Contract 1.5: every course lesson waiting on the CALLER, across all their courses, oldest
+   * first -- one call for a notification bell or an inbox, instead of polling each course.
+   * Scoped to the caller's tenant; an admin token sees every tenant's.
+   *
+   * REGISTERED BEFORE /courses/:courseId, which would otherwise take "attention" as an id.
+   */
+  router.get('/courses/attention', requireToken, (req, res) => {
+    const queue = require('../../orchestrator/lib/queue');
+    const nextAction = require('./next-action');
+    const admin = req.tenant.scopes.has('admin');
+    const withUs = String(req.query.include || '') === 'us';
+    const since = nextAction.statusSince(queue.events());
+    const lessons = queue.currentItems()
+      .filter((i) => i.source === 'course-builder' && nextAction.courseIdOf(i))
+      .filter((i) => admin || i.tenantId === req.tenant.id)
+      .map((i) => {
+        const p = require('./config').config.pipeline;
+        let redosLeft = 0, residueAvailable = false;
+        if (i.status === 'blocked') {
+          redosLeft = Math.max(0, p.maxVideoRedos - (Number(i.videoRedoRound) || 0));
+          try {
+            const a = require('../../orchestrator/lib/residue').isAvailable(i.series, i.slug);
+            residueAvailable = Boolean(a.volume || a.drive);
+          } catch { /* absent */ }
+        }
+        return {
+          courseId: nextAction.courseIdOf(i), lessonId: i.id, topic: i.topic, module: i.module,
+          status: i.status, ...(i.status === 'blocked' ? { blockedBy: i.blockedBy || queue.DEFAULT_BLOCKED_BY } : {}),
+          stage: nextAction.stageOf(i),
+          nextAction: nextAction.forItem(i, { since: since.get(i.id), redosLeft, residueAvailable }),
+        };
+      })
+      .filter((l) => l.nextAction.who === 'you' || (withUs && l.nextAction.who === 'us'))
+      .sort((a, b) => String(a.nextAction.since || '').localeCompare(String(b.nextAction.since || '')));
+    const byCourse = {};
+    for (const l of lessons) {
+      const c = byCourse[l.courseId] || (byCourse[l.courseId] = { courseId: l.courseId, needsYou: 0, oldestSince: null });
+      if (l.nextAction.who === 'you') c.needsYou += 1;
+      if (!c.oldestSince) c.oldestSince = l.nextAction.since;
+    }
+    const s = nextAction.summarise(lessons.map((l) => ({ id: l.lessonId, nextAction: l.nextAction })));
+    res.json({
+      needsYou: s.needsYou,
+      byKind: s.byKind,
+      headline: s.needsYou ? s.headline : 'Nothing is waiting for you right now.',
+      oldestSince: s.oldestSince,
+      courses: Object.values(byCourse),
+      lessons,
+    });
+  });
+
+  /**
+   * Contract 1.5: the steps of building a course, served so the LMS shows the steps the
+   * service actually runs -- the first Course Builder users could not tell how to begin.
+   * Public, like /styles: it is help text, nothing about any course.
+   */
+  router.get('/guide/course-builder', (req, res) => {
+    res.json(require('./next-action').GUIDE);
+  });
+
   router.get('/courses/:courseId', requireToken, (req, res) => {
     const queue = require('../../orchestrator/lib/queue');
     const cw = require('./course-worker');
@@ -731,8 +801,8 @@ function build(opts = {}) {
     // lessons the worker may actually take. A lesson behind its own course's hold
     // has no position: it is not in line, it is waiting for a person.
     const line = cw.eligible().map((e) => e.id);
-    const items = queue.currentItems()
-      .filter((i) => (i.notes || '').includes(tag))
+    const rawItems = queue.currentItems().filter((i) => (i.notes || '').includes(tag));
+    const items = rawItems
       .map((i) => ({
         id: i.id, topic: i.topic, status: i.status, module: i.module,
         // Items built before styles existed were all made in the original style.
@@ -912,6 +982,17 @@ function build(opts = {}) {
         ...(Number.isFinite(i.spendMediaUsdTotal) ? { spendMediaUsdTotal: i.spendMediaUsdTotal } : {}),
         ...(Number.isFinite(i.spendModelUsdTotal) ? { spendModelUsdTotal: i.spendModelUsdTotal } : {}),
       }));
+    // Contract 1.5: who has to act next, said by the server (next-action.js). The only two
+    // places the first Course Builder users got stuck were "I did not know it was my turn".
+    const nextAction = require('./next-action');
+    const since = nextAction.statusSince(queue.events());
+    items.forEach((it, k) => {
+      it.stage = nextAction.stageOf(rawItems[k]);
+      it.nextAction = nextAction.forItem(rawItems[k], {
+        since: since.get(it.id), queuePosition: it.queuePosition,
+        redosLeft: it.redosLeft, residueAvailable: it.residueAvailable,
+      });
+    });
     if (!items.length) {
       // Report durability; do not assert the worst case. This used to tell every
       // caller the queue was not durable and point at a handoff they had never
@@ -956,6 +1037,9 @@ function build(opts = {}) {
       // One lesson is built at a time and then waits. This is the field the UI
       // acts on: while it is non-empty, nothing else is being built or spent.
       awaitingApproval: waiting,
+      // Contract 1.5: the course-level answer to "is anything waiting for me?" -- a count,
+      // the counts by kind, a sentence to show as-is, and the lesson to open first.
+      attention: nextAction.summarise(items),
       worker: {
         building: worker.current,
         queuedAcrossAllCourses: worker.queued,
