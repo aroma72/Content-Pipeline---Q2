@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(cat >> *)"
+      "Bash(cat >> *)",
+      "Bash(curl -s --max-time 25 https://content-queen-production.up.railway.app/health)",
+      "Bash(py -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('commit', d['build']['commit'][:7], '| ok', d['ok'], '| inFlight', d['jobs']['inFlight']['any'], '| jobs', d['jobStore']['jobs'], '| building', d['courses']['worker']['building']\\)\")"
     ],
     "additionalDirectories": [
       "E:\\Content-Pipeline---Q2\\.claude\\memories"
