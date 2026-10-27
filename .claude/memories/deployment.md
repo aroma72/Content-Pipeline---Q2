@@ -93,3 +93,31 @@ pre-commit). `--no-verify` is the documented escape hatch and should be rare eno
 
 Service rename or delete · public URL change · a new or removed env var · volume change ·
 `railway.json` edit · replica count change · CI workflow redesign.
+
+## The deploy path that actually works for `content-queen` (2026-09-25)
+
+`railway redeploy --from-source -y` is a **no-op** on this service and has silently eaten two
+deploys. The service has no GitHub source connected — `railway status` prints no `repo:` line for
+it (a connected service, e.g. the LMS's, does) — so there is nothing to pull and it rebuilds the
+last snapshot. It still reports "Triggered a deploy", builds, and goes Online, which is why it reads
+as success.
+
+Until the repo is reconnected (Railway → Settings → Source → `aroma72/Content-Pipeline---Q2`,
+branch `main`), deploy by uploading a clean tree built from the pushed commit:
+
+```powershell
+# from a scratch dir, NOT the 36 GB working tree:
+#   git archive origin/main | tar -x -C <scratch>/deploy-src      (~965 MB, tracked files only)
+node scripts/predeploy-check.js
+if ($LASTEXITCODE -eq 0) { railway up "<scratch>\deploy-src" --path-as-root -s content-queen -e production --detach -y }
+```
+
+`git archive origin/main` is the right source: it carries only tracked files, so the upload cannot
+contain the root dotenv or `orchestrator/.credentials/`. Env vars come from Railway either way.
+Verified 2026-09-25: this flipped production to 1.2 in ~40s after `--from-source` had failed twice.
+
+**Proof of a deploy is `/health` and `/api/v1`, never the CLI's "Triggered a deploy".** Fastest
+check: `node scripts/verify-live.js` (9 checks, no token needed; the token-gated ones SKIP cleanly).
+
+`SERVICE_DURABILITY_AND_CONTRACTS.md` §6.1 still claims `--from-source` pulls main. It is wrong and
+correcting it is open work.

@@ -1401,6 +1401,38 @@ and `storage.memory` are all present and that `storage.error` is absent.
 
 Related: [[H5]] (concurrent sessions share this repo), [[H9]] (the artefact is the evidence — but
 only if you look at the right artefact), [[H37]] (a deploy is live when the new build answers).
+
+---
+
+### H40. A doc swept in with code describes the tree it was written in, not the tree that shipped
+**Added:** 2026-09-28 | **Applies to:** any commit that carries someone else's docs
+**Invalidate if:** the service-account gdrive.js lands and the prereqs become true
+
+[[H39]] caught the code half of a whole-file `git add`: `authKind: gd.identity().kind` shipped
+without the `gdrive.js` defining `identity()`. That was found because production broke loudly enough
+to read off `/health`. The **docs half of the same sweep was not caught**, because prose cannot
+crash.
+
+`docs/DEPLOYMENT_PREREQS.md`'s Drive section was rewritten in the other session's tree to describe
+their service-account implementation, and rode the same commit to `origin/main`. Published, it now
+says **"Use the service account"**, marks `GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_JSON` **"Preferred"**,
+requires the broad `drive` scope, and promises `--check` prints `service-account` vs `oauth-user`.
+
+The shipped code supports none of it. On `origin/main`, `orchestrator/lib/gdrive.js` contains
+**zero** occurrences of `GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_JSON`, `client_email`, `private_key` or
+`identity`; it implements `GDRIVE_REFRESH_TOKEN` with `drive.file` only — the path the doc demotes
+to "fallback only". All of that lives in their still-uncommitted 176 lines.
+
+So the prereqs document a capability that cannot be configured. Follow them and Drive offload stays
+`configured: false` with nothing saying why — and that section's own header is "otherwise the volume
+fills and never drains". A quiet failure with a documented cause that is not the real one, which is
+[[H21]] again.
+
+**Do:** when a commit carries docs you did not write, diff the claims against the committed code,
+not the working tree — the same `git show origin/main:<file>` discipline [[H39]] forces on tests.
+Mark an aspirational section as unshipped rather than reverting it; the prose is usually the correct
+destination, just early.
+
 ---
 
 ## H41. `config.py` cannot move: its BASE_DIR silently forks the whole data tree
@@ -1631,6 +1663,23 @@ ignored destinations with `git add -f --pathspec-from-file=`, and a gitlink with
 `git update-index --add --cacheinfo 160000,<sha>,<path>`. Prefer staging the `git mv` result
 directly over reset-and-restage.
 
+## H50. A human approval gate must sit AFTER every free check that can rewrite what it approves
+
+**Added:** 2026-09-28 | **Applies to:** any stage that pauses for a person and binds the approval to a sha
+**Invalidate if:** produce's beats-only sensors stop being able to redraft the script
+
+On production the course flow looped: approve -> produce's free, beats-only sensors (qa-cutouts,
+then qa-visuals) redrafted the script -> new sha -> script-approval (correctly) refused the stale
+approval -> the person was asked again. The spine's per-stage redraft counter lives in run state and
+every resume is a new run, so "round 1/2" repeated forever: ~$0.45 of model spend and a fresh approval
+request per lap, zero media. Fixed in e27170d: script-approval runs `SCRIPT_SENSORS` +
+`validateBeats` before it pauses (`produce._internals.preApprovalChecks`), and produce only records
+(never redrafts) those findings on a sha-approved script. test-regressions keeps produce's pre-spend
+redraftable calls equal to `SCRIPT_SENSORS`.
+
+**Do:** when adding a free check that can redraft, add it to `SCRIPT_SENSORS`. Any per-stage retry or
+redraft budget that must span a human pause has to live on the queue item, not in run state.
+
 ## H51. A judge that already ruled must not rule again after the spend, and every entry path must run the same free checks
 
 **Added:** 2026-10-05 | **Applies to:** any sensor that runs both before and after a paid stage; any new route that writes a script
@@ -1689,6 +1738,59 @@ gets a row the same day. A `true/false` the LMS branches UI copy on must be comp
 will actually do, and tested from the route (test-server), not from the module. Read the LMS page code
 (`E:\Cohort2LP\apps\web\src\app\courses\build\[id]\page.tsx`, `apps/api/src/lib/content-queen-courses.ts`)
 before changing any field it reads.
+
+## H53. A preflight must prove a credential is ACCEPTED, and a fallback must never be cached as done
+
+**Added:** 2026-10-12 | **Applies to:** preflight checks; any step that writes a "done" marker (sidecar, sig, flag)
+**Invalidate if:** the pipeline stops falling back to silence (or any placeholder) on a failed paid call
+
+Production's `GEMINI_API_KEY` was refused by Google (`400 API_KEY_INVALID`) while preflight reported
+"media credential -- present". Every TTS call fell back to a silent clip, and `tts-lesson.js` still wrote
+each `vo_<id>.txt` sidecar. Produce's automatic retry then read wav + matching sidecar as finished voice
+("audio/ matches every beat -- skipping tts-lesson") and built a lesson of 0.4 s beats (the breathing
+pause alone: 20x0.4 + 0.7 = 8.7 s). A course lesson came within one approval of publishing silence.
+Fixed in e7fa11a: preflight probes the key with a free models-list call (refusal = fail, network/5xx =
+unknown, cached 10 min); no sidecar on fallback; tts stops at the first refused key; staleVo treats a
+clip <= 0.75 s on a 3+ word line as stale.
+
+**Do:** a credential check calls the cheapest real endpoint, never `!!process.env.X`. A cache/"done"
+marker is written only on the success path; a fallback must leave the work visibly undone. Diagnose a
+uniform odd number (every beat exactly 0.4 s) as "the real output was empty", not as a timing bug.
+The `railway` CLI lives under nvm v20.19.0 here; `railway run -s content-queen -e production -- node -e`
+probes a production secret without printing it.
+
+## H52. ffmpeg with many `-f lavfi -i` inputs can exhaust the container's pids limit
+
+**Added:** 2026-10-20 | **Applies to:** any script that shells out to ffmpeg on Railway
+**Invalidate if:** the service moves off a pids-limited cgroup, or ffmpeg stops threading per input graph
+
+Each lavfi input builds its own filter graph with a thread per CPU; on the 48-core host twenty inputs
+were ~700-950 threads against pids.max=1000, and the failure was "pthread_create failed: Resource
+temporarily unavailable" -- non-deterministic, because zombies and other work eat the same ceiling.
+Generate sources INSIDE one `-filter_complex` graph and pin it (`-threads 1 -filter_complex_threads 1`).
+Measure with `cat /sys/fs/cgroup/pids.current` in a loop while the command runs. Related: node as
+PID 1 never reaps orphaned Chrome, so use tini.
+
+## H53. A command runner must keep the CAUSE line, not only the tail
+
+**Added:** 2026-10-20 | **Applies to:** shell.js and any wrapper that trims child output into an error
+**Invalidate if:** errors are stored in full somewhere a reader can reach
+
+When a Node script dies because its own execFileSync threw, its last 8 stderr lines are Node's error
+dump ("output: [ null, null, null ], stdout: null, stderr: null }") and the line that says why
+scrolled off above. Production reported "Exit 1" twice with nothing else. Lead with lines that read
+like a cause (shell.causeLines), then the tail.
+
+## H54. A redo run must carry the re-bound approval and judge only the flagged beats
+
+**Added:** 2026-10-20 | **Applies to:** contract 1.3 scene redo (course-worker, script-approval, produce)
+**Invalidate if:** the approval sha stops being cleared at video/revise
+
+video/revise clears scriptApprovedSha so script-approval can re-bind it to the patched script; that
+re-bound sha lives on the queue, so produce's opts still say "unapproved" unless opts.videoRedo counts.
+Unscoped, qa-art re-judged every image, changed its mind about an unflagged one, re-bought it and
+redrafted a script a person had approved. Scope the judge like the patch (qa-art --ids).
+
 ---
 
 ### H55. "Read at call time" is a property of the process; on Railway a changed variable still waits for a new container
