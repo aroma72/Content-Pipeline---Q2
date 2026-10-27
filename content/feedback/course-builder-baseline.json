@@ -1,0 +1,34 @@
+{
+  "frozen": "2026-10-26",
+  "lastResponseAt": "2026-10-23T10:02:57.318000",
+  "metrics": {
+    "n": 2,
+    "ease_mean": 7.0,
+    "ease_8plus_share": 0.0,
+    "smooth_share": 0.0,
+    "stuck.getting_started": 1,
+    "stuck.review_step": 1,
+    "stuck.script_approval": 0,
+    "stuck.waiting_on_video": 0,
+    "stuck.errors": 0,
+    "improve.org_context": 1,
+    "improve.own_material": 1,
+    "improve.assessments": 1,
+    "improve.guidance": 0,
+    "improve.video_quality": 0,
+    "improve.speed": 0,
+    "liked.research": 1,
+    "liked.simplicity": 1,
+    "liked.videos": 0,
+    "liked.speed": 0,
+    "improve_any": 2,
+    "builder_min_median": 31.5,
+    "builder_under_60_share": 0.5,
+    "total_hours_median": 10.5,
+    "time_answers": [
+      "1 hour",
+      "From my requirement gathering to making it took me two to three days, but only putting the data in to the course builder was easy, probably took a few minutes"
+    ],
+    "experience": 51.9
+  }
+}
