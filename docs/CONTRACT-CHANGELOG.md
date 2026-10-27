@@ -1,6 +1,6 @@
 ---
 type: reference
-last_verified: 2026-10-26
+last_verified: 2026-10-27
 owner: Aroma Tahir
 ---
 
@@ -14,6 +14,28 @@ for single videos, `content-queen-client.ts` for the catalogue) — the LMS aske
 on 2026-09-21 after learning of ten new fields by reading our repository.
 
 Frozen copies: `docs/contracts/course-api-<version>.md`.
+
+---
+
+## 1.6, additive — 2026-10-27 — course documents, video ratings, in-product feedback
+
+`contractVersion` is `1.6`. The mid-priority items from the first Course Builder feedback: one user asked
+to build from their own material, nobody had rated a finished video, and the Google Form could not ask
+"was it your turn?" or split preparation time from builder time. Nothing existing changes; a client that
+sends none of the new fields gets 1.5 behaviour plus extra read-only fields. Lands in
+`content-queen-courses.ts`. Integration guide: the Claude Doc "Course Builder 1.6: Documents, Ratings and
+In-Product Feedback — LMS Integration Guide" (Word copy in `docs/lms/`).
+
+| Change | Where | Example | Commit | LMS file |
+|---|---|---|---|---|
+| `context: { sources: [ {name, kind, text, truncated} ] }` on plan — same shape, limits (5 / 120k chars) and switch (`MAKE_VIDEO_CONTEXT`) as single videos in 1.4. The outline is drawn from the documents; `request.context` echoes names and sizes only | `POST /courses/plan` | `413 context_too_large {limitChars, gotChars}`, `400 bad_context`, `400 capability_disabled` | this release | plan form: file picker, text extracted client-side as for make-video |
+| `context` on build — stored once per course on the volume; every lesson's research and script read it; echoed on the 202 | `POST /courses/build` | `"context":{"chars":58,"sources":[{"name":"handbook.md","kind":"md","chars":58,"truncated":false}]}` | this release | send the same `context` you sent to /plan |
+| Course `context` (names and sizes), `ratings {count, mean, textHardToRead}`, `feedbackResponses`; per lesson `rating` once rated; `"rate"` in `nextAction.actions` for video-review and published lessons | `GET /courses/:courseId` | `"rating":{"count":2,"mean":7.5,"textHardToRead":0}` | this release | course poll mirror |
+| `POST …/lessons/:lessonId/rating {by, score 1–10, textHardToRead?, comment?}` — the latest per `by` counts | new route (token) | `201 {saved, rating, courseRatings}`; `409 no_video_yet`; `400 bad_rating {errors[]}`; `404` for another tenant's lesson | this release | rating under the player |
+| `GET /feedback/questions` — the in-product survey (11 questions) and the rating fields, as data | new route (public) | `{"version":"course-builder-2026-10-27","questions":[{"id":"ease","type":"scale","min":1,"max":10,…}]}` | this release | render the survey from it |
+| `POST /courses/:courseId/feedback {by, answers}` | new route (token) | `201`; `400 bad_answers {errors:[{field,message}]}` (unknown ids refused) | this release | survey submit |
+| `GET /feedback/export?since=` — every survey and rating row the caller may see (admin: all) | new route (token) | `{"surveys":[…],"ratings":[…]}` | this release | none (feeds `content/feedback/course_builder_feedback.py`) |
+| Guide: step 1 mentions attaching documents, step 4 mentions rating; `attachDocuments` and `afterwards` blocks | `GET /guide/course-builder` | — | this release | getting-started screen |
 
 ---
 

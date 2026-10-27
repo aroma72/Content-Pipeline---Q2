@@ -126,7 +126,7 @@ function sendJson(req, res, payload) {
 }
 
 /** The course-API contract version. docs/CONTRACT-CHANGELOG.md says what each one added. */
-const CONTRACT_VERSION = '1.5';
+const CONTRACT_VERSION = '1.6';
 
 /**
  * @param {object} [opts]
@@ -203,6 +203,20 @@ function build(opts = {}) {
             + 'first, each with its nextAction -- for a notification bell or inbox. '
             + '`?include=us` adds lessons paused on our side (1.5).',
           example: `${base}/courses/attention` },
+        { method: 'GET', path: '/api/v1/feedback/questions', auth: false,
+          description: 'The in-product Course Builder survey and the per-video rating, as data the '
+            + 'LMS renders: question ids, types, ranges and options (1.6).',
+          example: `${base}/feedback/questions` },
+        { method: 'POST', path: '/api/v1/courses/:courseId/feedback', auth: true,
+          description: 'One instructor\'s survey answers for a course, `{by, answers}`. Validated '
+            + 'against GET /feedback/questions; 400 `bad_answers` lists every problem (1.6).' },
+        { method: 'POST', path: '/api/v1/courses/:courseId/lessons/:lessonId/rating', auth: true,
+          description: 'Rate one finished video `{by, score 1-10, textHardToRead?, comment?}`. '
+            + '409 `no_video_yet` before a video exists. Latest per person counts (1.6).' },
+        { method: 'GET', path: '/api/v1/feedback/export', auth: true,
+          description: 'Every survey and rating row the caller may see, `?since=<ISO>` for new '
+            + 'ones only -- what the feedback rubric is scored from (1.6).',
+          example: `${base}/feedback/export` },
         { method: 'POST', path: '/api/v1/courses/draft-teaching', auth: true,
           description: 'Flat Motion Graphics: send the lessons an instructor has written '
             + '({ topic?, audience?, lessons: [{ title, slo }] }, in order) and get back numbered course '
@@ -212,7 +226,9 @@ function build(opts = {}) {
         { method: 'POST', path: '/api/v1/courses/plan', auth: true,
           description: 'Topic in, full course plan out: modules, lessons, an SLO and a '
             + 'question per lesson, plus a cost and time estimate. Spends one model call '
-            + 'and nothing else. Optional `style` (from GET /api/v1/styles; default '
+            + 'and nothing else. Optional `context` {sources:[{name, kind, text}]} -- the '
+            + 'instructor\'s own documents, up to 5 / 120k chars -- and the outline is drawn from them (1.6). '
+            + 'Optional `style` (from GET /api/v1/styles; default '
             + '"character-arc"). In "motion-graphics" the plan also carries numbered course '
             + '`slos`, and per lesson `sloIds`, `models` and `walkthroughs`.' },
         { method: 'POST', path: '/api/v1/courses/build', auth: true,
@@ -221,6 +237,8 @@ function build(opts = {}) {
             + 'Reserves $2.50 per lesson on your tenant ledger first (402 '
             + '`tenant_budget_exhausted` if it does not fit; nothing is queued), settled '
             + 'to the real cost as each lesson ends -- GET /demo/spend shows it under `courses`. '
+            + 'Optional `context` (same shape as on /plan): stored once for the course and fed to '
+            + 'every lesson\'s research and script; echoed as names and sizes (1.6). '
             + 'Optional `references: true` adds two or three verified external reading '
             + 'links to each finished lesson. Optional `style` (defaults to the plan\'s '
             + '`style`, then "character-arc") decides how every lesson is made; 400 '
@@ -531,13 +549,36 @@ function build(opts = {}) {
     }
   });
 
+  /**
+   * Contract 1.6: a course's `context` -- the same shape, limits and switch as a single
+   * video's (contract 1.4). Returns the parsed documents, null when none were sent, or
+   * false after it has already answered the request with the error.
+   */
+  function documentsOf(body, res) {
+    if (body.context === undefined || body.context === null) return null;
+    if (!require('./config').config.makeVideo.contextEnabled) {
+      res.status(400).json({ error: 'capability_disabled',
+        message: 'Context documents are not switched on here (MAKE_VIDEO_CONTEXT). Nothing was created.' });
+      return false;
+    }
+    const parsed = require('../../orchestrator/lib/context').parseContext(body.context);
+    if (!parsed.ok) {
+      res.status(parsed.status).json({ error: parsed.code, message: parsed.message,
+        ...(parsed.limitChars ? { limitChars: parsed.limitChars, gotChars: parsed.gotChars } : {}) });
+      return false;
+    }
+    return parsed.context;
+  }
+
   router.post('/courses/plan', requireToken, async (req, res) => {
+    if (documentsOf(req.body || {}, res) === false) return;
     try {
       const plan = await require('./course-planner')
         .plan(req.body || {}, { log: (m) => console.log('[course]', m) });
       res.json(plan);
     } catch (e) {
-      res.status(e.status || 500).json({ error: 'plan_failed', message: e.message });
+      res.status(e.status || 500).json({ error: e.code || 'plan_failed', message: e.message,
+        ...(e.limitChars ? { limitChars: e.limitChars, gotChars: e.gotChars } : {}) });
     }
   });
 
@@ -587,6 +628,12 @@ function build(opts = {}) {
     }
     const lessons = planner.lessonsOf(body.plan);
 
+    // Contract 1.6: the instructor's documents for the whole course, checked before any
+    // confirmation or money so a bad upload never reaches the ledger.
+    const ctxLib = require('../../orchestrator/lib/context');
+    const docs = documentsOf(body, res);
+    if (docs === false) return undefined;
+
     // The count must be echoed back, so a caller cannot approve "a course" and
     // be charged for whatever the plan happened to grow into.
     if (body.confirmLessons !== lessons.length) {
@@ -612,6 +659,17 @@ function build(opts = {}) {
     const courseId = `course-${Date.now().toString(36)}`;
     const queued = [];
     const rejected = [];
+
+    // Written once, beside the queue; every lesson carries a stub that points at it.
+    let contextStub = null;
+    if (docs) {
+      try {
+        contextStub = ctxLib.saveCourseContext(courseId, docs);
+      } catch (e) {
+        return res.status(503).json({ error: 'context_unsaved',
+          message: `The course's documents could not be stored (${e.message}). Nothing was queued and nothing was reserved.` });
+      }
+    }
 
     // Money first. A course used to create queue items and nothing else: no
     // reservation, no settlement, so GET /demo/spend could not see it and a
@@ -679,6 +737,7 @@ function build(opts = {}) {
           source: 'course-builder',
           wantReferences,
           style,
+          context: contextStub,
           tenantId: req.tenant.id,
           spendRef: (reservations.find((x) => x.slug === queue.slugify(l.title)) || {}).ref || null,
         });
@@ -700,6 +759,7 @@ function build(opts = {}) {
       courseId,
       series,
       style,
+      context: contextStub ? ctxLib.publicContext(docs) : null,
       queued: queued.length,
       rejected,
       items: queued,
@@ -791,6 +851,88 @@ function build(opts = {}) {
    */
   router.get('/guide/course-builder', (req, res) => {
     res.json(require('./next-action').GUIDE);
+  });
+
+  /*
+   * Contract 1.6: feedback asked inside the product (server/lib/course-feedback.js).
+   * The survey is public help text, like the guide; answering and exporting need a token.
+   */
+  router.get('/feedback/questions', (req, res) => {
+    res.json(require('./course-feedback').PUBLIC);
+  });
+
+  /** A course's lessons as this caller may see them: none if the course is another tenant's. */
+  function courseItemsFor(req, courseId) {
+    const queue = require('../../orchestrator/lib/queue');
+    const items = queue.currentItems().filter((i) => (i.notes || '').includes(`[${courseId}]`));
+    const admin = req.tenant.scopes.has('admin');
+    if (!admin && items.some((i) => i.tenantId && i.tenantId !== req.tenant.id)) return [];
+    return items;
+  }
+
+  function feedbackStoreOk(res) {
+    if (require('../../orchestrator/lib/queue').durability() !== 'memory') return true;
+    res.status(503).json({ error: 'no_durable_store',
+      message: 'This service cannot currently record anything durably, so feedback sent now would be lost.' });
+    return false;
+  }
+
+  router.post('/courses/:courseId/feedback', requireToken, (req, res) => {
+    const fb = require('./course-feedback');
+    if (!feedbackStoreOk(res)) return;
+    if (!courseItemsFor(req, req.params.courseId).length) {
+      return res.status(404).json({ error: 'not_found', message: `No course ${req.params.courseId} for this caller.` });
+    }
+    const parsed = fb.parseSurvey((req.body || {}).answers);
+    if (!parsed.ok) {
+      return res.status(400).json({ error: 'bad_answers', message: 'Some answers could not be accepted; nothing was saved.',
+        errors: parsed.errors, version: fb.SURVEY_VERSION });
+    }
+    const row = fb.recordSurvey({ courseId: req.params.courseId, tenantId: req.tenant.id,
+      by: fb.raterOf(req.body, req.tenant.id), answers: parsed.answers });
+    res.status(201).json({ saved: true, courseId: row.courseId, by: row.by, version: row.version, at: row.at,
+      note: 'A later answer from the same person replaces this one in every summary.' });
+  });
+
+  router.post('/courses/:courseId/lessons/:lessonId(*)/rating', requireToken, (req, res) => {
+    const fb = require('./course-feedback');
+    if (!feedbackStoreOk(res)) return;
+    const item = courseItemsFor(req, req.params.courseId).find((i) => i.id === req.params.lessonId);
+    if (!item) return res.status(404).json({ error: 'no_such_lesson', message: 'No such lesson in this course for this caller.' });
+    // Only a video that exists can be rated: finished, or waiting for its review with
+    // the file still fetchable (here or on Drive).
+    let hasVideo = item.status === 'done';
+    if (!hasVideo && item.status === 'blocked') {
+      try {
+        const d = require('../../orchestrator/lib/deliverables');
+        hasVideo = Boolean(d.find(item.series, item.slug) || d.driveCopy(item.series, item.slug));
+      } catch { hasVideo = false; }
+    }
+    if (!hasVideo) {
+      return res.status(409).json({ error: 'no_video_yet', message: 'This lesson has no finished video to rate yet.',
+        lessonStatus: item.status });
+    }
+    const parsed = fb.parseRating(req.body || {});
+    if (!parsed.ok) return res.status(400).json({ error: 'bad_rating', errors: parsed.errors });
+    const row = fb.recordRating({ courseId: req.params.courseId, lessonId: item.id, tenantId: req.tenant.id,
+      by: fb.raterOf(req.body, req.tenant.id), rating: parsed.rating });
+    const now = fb.forCourse(req.params.courseId);
+    res.status(201).json({ saved: true, lessonId: item.id, by: row.by, at: row.at,
+      rating: now.byLesson.get(item.id), courseRatings: now.course });
+  });
+
+  router.get('/feedback/export', requireToken, (req, res) => {
+    const fb = require('./course-feedback');
+    const admin = req.tenant.scopes.has('admin');
+    const since = typeof req.query.since === 'string' && req.query.since ? req.query.since : null;
+    const all = fb.exportRows({ tenantId: req.tenant.id, admin, since });
+    res.json({
+      version: fb.SURVEY_VERSION,
+      since,
+      surveys: all.filter((r) => r.type === 'survey'),
+      ratings: all.filter((r) => r.type === 'rating'),
+      note: 'Rows are never rewritten. Where one person answered twice, use the later row.',
+    });
   });
 
   router.get('/courses/:courseId', requireToken, (req, res) => {
@@ -993,6 +1135,13 @@ function build(opts = {}) {
         redosLeft: it.redosLeft, residueAvailable: it.residueAvailable,
       });
     });
+    // Contract 1.6: the ratings each finished video has had, latest per person.
+    let feedback = { byLesson: new Map(), course: { count: 0, mean: null, textHardToRead: 0 }, responses: 0 };
+    try { feedback = require('./course-feedback').forCourse(req.params.courseId); } catch { /* no file yet */ }
+    items.forEach((it) => {
+      const r = feedback.byLesson.get(it.id);
+      if (r) it.rating = r;
+    });
     if (!items.length) {
       // Report durability; do not assert the worst case. This used to tell every
       // caller the queue was not durable and point at a handoff they had never
@@ -1040,6 +1189,14 @@ function build(opts = {}) {
       // Contract 1.5: the course-level answer to "is anything waiting for me?" -- a count,
       // the counts by kind, a sentence to show as-is, and the lesson to open first.
       attention: nextAction.summarise(items),
+      // Contract 1.6: the documents this course is built from (names and sizes only),
+      // and what instructors thought of its videos and of building it.
+      context: (() => {
+        const c = rawItems.find((i) => i.context && i.context.ref);
+        return c ? { chars: c.context.chars, sources: c.context.sources } : null;
+      })(),
+      ratings: feedback.course,
+      feedbackResponses: feedback.responses,
       worker: {
         building: worker.current,
         queuedAcrossAllCourses: worker.queued,

@@ -19,6 +19,9 @@
  * our side; 120k characters is ~30k tokens, about $0.15 more per Opus call.
  */
 
+const fs = require('fs');
+const path = require('path');
+
 const MAX_SOURCES = 5;
 const MAX_CHARS = 120000;
 const KINDS = ['docx', 'xlsx', 'csv', 'pdf', 'pptx', 'txt', 'md'];
@@ -84,6 +87,7 @@ function fence(text) {
  * without context produces a prompt identical to today's.
  */
 function renderSourceMaterial(ctx) {
+  ctx = resolveContext(ctx);
   if (!ctx || !Array.isArray(ctx.sources) || !ctx.sources.length) return null;
   const parts = ctx.sources.map((s) => {
     const attrs = `name=${JSON.stringify(s.name)} kind=${JSON.stringify(s.kind)}${s.truncated ? ' truncated="true"' : ''}`;
@@ -99,4 +103,46 @@ function renderSourceMaterial(ctx) {
   ].join('\n');
 }
 
-module.exports = { parseContext, publicContext, renderSourceMaterial, MAX_SOURCES, MAX_CHARS, KINDS };
+/*
+ * Contract 1.6: a COURSE's documents. One upload feeds every lesson, so the text is
+ * written once beside the queue (same volume, same durability) and each lesson carries
+ * only a stub { ref, chars, sources:[{name, kind, chars, truncated}] }. Copying 120k
+ * characters into every lesson's queue event would grow the file every poll reads.
+ */
+function courseContextFile(courseId) {
+  const queue = require('./queue');
+  const safe = String(courseId).replace(/[^A-Za-z0-9._-]/g, '_');
+  return path.join(path.dirname(queue.queueFile()), 'course-context', `${safe}.json`);
+}
+
+/** Write a course's documents once; returns the stub each lesson carries. */
+function saveCourseContext(courseId, ctx) {
+  const file = courseContextFile(courseId);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify({ courseId, savedAt: new Date().toISOString(), ...ctx }));
+  fs.renameSync(tmp, file);
+  return { ref: courseId, ...publicContext(ctx) };
+}
+
+function loadCourseContext(courseId) {
+  try { return JSON.parse(fs.readFileSync(courseContextFile(courseId), 'utf8')); } catch { return null; }
+}
+
+/**
+ * A stub becomes the full documents. A stub whose file is gone THROWS: writing the
+ * lesson anyway would produce a script that silently ignores the instructor's material,
+ * and they asked for that material precisely so it would not be ignored.
+ */
+function resolveContext(ctx) {
+  if (!ctx || !ctx.ref) return ctx;
+  const full = loadCourseContext(ctx.ref);
+  if (!full || !Array.isArray(full.sources)) {
+    throw new Error(`The course's source documents (${ctx.ref}) are missing from the store, so this `
+      + 'lesson cannot be written from them. Rebuild the course with its documents attached.');
+  }
+  return full;
+}
+
+module.exports = { parseContext, publicContext, renderSourceMaterial, MAX_SOURCES, MAX_CHARS, KINDS,
+  saveCourseContext, loadCourseContext, resolveContext, courseContextFile };

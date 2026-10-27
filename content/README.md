@@ -18,7 +18,7 @@ Nothing here reaches production. Two kinds of folder live side by side:
 | `templates/` | `REVIEW_LOG_template.md`, used by the reviewer-gated pipeline (`.claude/standards/REVIEWER_GATED_PIPELINE.md`). Not the explainer templates — those are in `.claude/skills/creating-explainer-videos/templates/` |
 | `planning/` | The original May 2026 spec. Historical: it describes the layout that was planned, not the one that shipped |
 | `memory/` | A pointer stub. The real memory store is `.claude/memories/` |
-| `feedback/` | Course Builder user-feedback rubric: `py content/feedback/course_builder_feedback.py "<responses.xlsx>"` scores new form responses against the frozen baseline in `content/feedback/course-builder-baseline.json` (`--set-baseline` re-freezes it) |
+| `feedback/` | Course Builder user-feedback rubric: `py content/feedback/course_builder_feedback.py "<responses.xlsx>"` scores new form responses against the frozen baseline in `content/feedback/course-builder-baseline.json` (`--set-baseline` re-freezes it). It also reads `GET /api/v1/feedback/export` saved as `.json` -- the in-product survey of contract 1.6 |
 
 **Pipeline state — written by `legacy/python/config.py`**
 

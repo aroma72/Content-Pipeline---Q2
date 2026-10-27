@@ -1100,7 +1100,7 @@ async function lessonFileChecks() {
       const paths = (r.json.endpoints || []).map((e) => `${e.method} ${e.path}`);
       assert(paths.includes('POST /api/v1/courses/:courseId/lessons/:lessonId/video/revise'), 'video/revise not listed');
       assert(paths.includes('POST /api/v1/courses/:courseId/lessons/:lessonId/cancel'), 'cancel not listed');
-      assert(r.json.contractVersion === '1.5', `contractVersion ${r.json.contractVersion}`);
+      assert(r.json.contractVersion === '1.6', `contractVersion ${r.json.contractVersion}`);
       assert(r.json.videoRedo && typeof r.json.videoRedo.enabled === 'boolean' && r.json.videoRedo.maxRounds >= 1
         && r.json.videoRedo.reserveUsd > 0, `videoRedo block: ${JSON.stringify(r.json.videoRedo)}`);
       return `1.3, videoRedo ${JSON.stringify(r.json.videoRedo)}`;
@@ -1545,6 +1545,148 @@ async function bridgeChecks() {
         'the new routes are not on the index the LMS pins to');
       return '4 steps, listed on the index';
     }));
+
+  // Contract 1.6, the mid-priority feedback items: a course built from the instructor's own
+  // documents, a rating under every finished video, and the follow-up questions asked in-product.
+  const DOC = { sources: [{ name: 'handbook.md', kind: 'md', text: 'Rule 7: every order gets a receipt number before it ships.' }] };
+  const DOC_BUILD = { plan: { title: 'T', modules: [{ title: 'M', lessons: [
+    { title: 'Doc lesson one', brief: 'b1', slo: 's1' }, { title: 'Doc lesson two', brief: 'b2', slo: 's2' },
+  ] }] }, confirmLessons: 2 };
+  const quietWorker = async (fn) => {
+    const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+    const realKick = cw.kick;
+    cw.kick = () => {};
+    try { return await fn(); } finally { cw.kick = realKick; }
+  };
+  await check('a course plan is drawn from attached documents, and echoes only their names (1.6)',
+    () => withServer(freshEnv({ MAKE_VIDEO_CONTEXT: '1' }), {}, async (port) => {
+      const planner = require(path.join(__dirname, '..', 'server', 'lib', 'course-planner'));
+      let seen = '';
+      planner._setPlanAsk(async ({ input }) => { seen = input; return { title: 'T', modules: [{ title: 'M', lessons: [] }] }; });
+      try {
+        const auth = { authorization: `Bearer ${LMS_TOKEN}` };
+        const r = await req(port, { method: 'POST', path: '/api/v1/courses/plan', headers: auth,
+          body: { topic: 'Orders', context: DOC } });
+        assert(r.status === 200, `plan ${r.status} ${r.text}`);
+        assert(seen.includes('Rule 7: every order gets a receipt number') && seen.includes('<source_material'),
+          'the planner never saw the document');
+        assert(r.json.request.context.sources[0].name === 'handbook.md' && !r.text.includes('Rule 7'),
+          'the plan echoed the document text back');
+        const big = await req(port, { method: 'POST', path: '/api/v1/courses/plan', headers: auth,
+          body: { topic: 'Orders', context: { sources: [{ name: 'x.txt', kind: 'txt', text: 'a'.repeat(120001) }] } } });
+        assert(big.status === 413 && big.json.error === 'context_too_large', `oversize: ${big.status} ${big.json && big.json.error}`);
+        return 'planner read it; 120,001 chars refused with 413';
+      } finally { planner._setPlanAsk(null); }
+    }));
+
+  await check('a course built with documents stores them once; every lesson writes from them (1.6)',
+    () => { const env = freshEnv({ MAKE_VIDEO_CONTEXT: '1' });
+      return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, (port) => quietWorker(async () => {
+        const queue = require(path.join(__dirname, 'lib', 'queue'));
+        const ctxLib = require(path.join(__dirname, 'lib', 'context'));
+        require(path.join(__dirname, '..', 'server', 'lib', 'job-store')).reset();
+        queue.resetPathCache();
+        const auth = { authorization: `Bearer ${LMS_TOKEN}` };
+        const r = await req(port, { method: 'POST', path: '/api/v1/courses/build', headers: auth,
+          body: { ...DOC_BUILD, series: 'testing-docs', context: DOC } });
+        assert(r.status === 202, `build ${r.status} ${r.text}`);
+        assert(r.json.context && r.json.context.sources[0].name === 'handbook.md', 'build did not echo the documents');
+        const lessons = queue.currentItems().filter((i) => (i.notes || '').includes(`[${r.json.courseId}]`));
+        assert(lessons.length === 2, `${lessons.length} lessons`);
+        assert(lessons.every((l) => l.context && l.context.ref === r.json.courseId && !JSON.stringify(l.context).includes('Rule 7')),
+          'a lesson carries the document text instead of a reference');
+        assert(lessons.every((l) => (ctxLib.renderSourceMaterial(l.context) || '').includes('Rule 7')),
+          'a lesson cannot reach the course documents');
+        const view = await req(port, { path: `/api/v1/courses/${r.json.courseId}`, headers: auth });
+        assert(view.json.context && view.json.context.sources[0].name === 'handbook.md', 'the course view does not show its documents');
+        fs.rmSync(ctxLib.courseContextFile(r.json.courseId));
+        let threw = false;
+        try { ctxLib.renderSourceMaterial(lessons[0].context); } catch { threw = true; }
+        assert(threw, 'a lesson whose documents vanished would be written without them, silently');
+        return 'stored once, 2 lessons by reference, missing file fails loudly';
+      })); });
+
+  await check('a course build with documents is refused when the switch is off, before any money (1.6)',
+    () => { const env = freshEnv({ MAKE_VIDEO_CONTEXT: '' });
+      return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, (port) => quietWorker(async () => {
+        const queue = require(path.join(__dirname, 'lib', 'queue'));
+        require(path.join(__dirname, '..', 'server', 'lib', 'job-store')).reset();
+        queue.resetPathCache();
+        const r = await req(port, { method: 'POST', path: '/api/v1/courses/build',
+          headers: { authorization: `Bearer ${LMS_TOKEN}` }, body: { ...DOC_BUILD, series: 'testing-off', context: DOC } });
+        assert(r.status === 400 && r.json.error === 'capability_disabled', `${r.status} ${r.text}`);
+        assert(!queue.currentItems().some((i) => i.series === 'testing-off'), 'lessons were queued anyway');
+        return '400 capability_disabled, nothing queued';
+      })); });
+
+  await check('a finished video can be rated; the course shows the ratings; one person counts once (1.6)',
+    () => { const env = freshEnv();
+      return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+        const queue = require(path.join(__dirname, 'lib', 'queue'));
+        require(path.join(__dirname, '..', 'server', 'lib', 'job-store')).reset();
+        queue.resetPathCache();
+        for (const slug of ['rate-done', 'rate-early']) {
+          queue.enqueue({ topic: slug, series: 'testing', slug, source: 'course-builder', notes: '[course-rate] brief', tenantId: 'taleemabad-u' });
+        }
+        queue.claim('testing/rate-done', 'r1');
+        queue.done('testing/rate-done', 'r1', {}, 0.6);
+        const auth = { authorization: `Bearer ${LMS_TOKEN}` };
+        const url = (s) => `/api/v1/courses/course-rate/lessons/testing/${s}/rating`;
+        const early = await req(port, { method: 'POST', path: url('rate-early'), headers: auth, body: { score: 8 } });
+        assert(early.status === 409 && early.json.error === 'no_video_yet', `rating before a video: ${early.status}`);
+        const bad = await req(port, { method: 'POST', path: url('rate-done'), headers: auth, body: { score: 11 } });
+        assert(bad.status === 400 && bad.json.error === 'bad_rating', `score 11: ${bad.status}`);
+        await req(port, { method: 'POST', path: url('rate-done'), headers: auth, body: { by: 'u1', score: 4, textHardToRead: true } });
+        await req(port, { method: 'POST', path: url('rate-done'), headers: auth, body: { by: 'u1', score: 9, textHardToRead: false } });
+        const ok = await req(port, { method: 'POST', path: url('rate-done'), headers: auth, body: { by: 'u2', score: 6, comment: 'fine' } });
+        assert(ok.status === 201, `rating ${ok.status} ${ok.text}`);
+        const view = await req(port, { path: '/api/v1/courses/course-rate', headers: auth });
+        const done = view.json.items.find((i) => i.id === 'testing/rate-done');
+        assert(done.rating && done.rating.count === 2 && done.rating.mean === 7.5 && done.rating.textHardToRead === 0,
+          `lesson rating ${JSON.stringify(done.rating)} -- u1's second rating must replace the first`);
+        assert(view.json.ratings.count === 2 && done.nextAction.actions.includes('rate'), 'course ratings or the rate action missing');
+        queue.enqueue({ topic: 'theirs', series: 'testing', slug: 'rate-theirs', source: 'course-builder', notes: '[course-theirs] brief', tenantId: 'someone-else' });
+        queue.claim('testing/rate-theirs', 'r2');
+        queue.done('testing/rate-theirs', 'r2', {}, 0.6);
+        const other = await req(port, { method: 'POST', path: '/api/v1/courses/course-theirs/lessons/testing/rate-theirs/rating',
+          headers: auth, body: { score: 1 } });
+        assert(other.status === 404, `rated another tenant's video: ${other.status}`);
+        return '409 before a video, 400 out of range, mean 7.5 from 2 people, other tenant 404';
+      }); });
+
+  await check('the in-product survey is served, validated, saved and exported per tenant (1.6)',
+    () => { const env = freshEnv();
+      return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+        const queue = require(path.join(__dirname, 'lib', 'queue'));
+        require(path.join(__dirname, '..', 'server', 'lib', 'job-store')).reset();
+        queue.resetPathCache();
+        queue.enqueue({ topic: 'sv', series: 'testing', slug: 'sv', source: 'course-builder', notes: '[course-sv] brief', tenantId: 'taleemabad-u' });
+        const q = await req(port, { path: '/api/v1/feedback/questions' });
+        assert(q.status === 200, `questions ${q.status}`);
+        const ids = q.json.questions.map((x) => x.id);
+        for (const want of ['ease', 'startEase', 'knewReview', 'stuck', 'prepMinutes', 'builderMinutes', 'liked', 'improve', 'useAgain']) {
+          assert(ids.includes(want), `survey has no ${want}`);
+        }
+        const auth = { authorization: `Bearer ${LMS_TOKEN}` };
+        const path_ = '/api/v1/courses/course-sv/feedback';
+        const bad = await req(port, { method: 'POST', path: path_, headers: auth, body: { answers: { ease: 12, typo: 1 } } });
+        assert(bad.status === 400 && bad.json.errors.some((e) => e.field === 'typo') && bad.json.errors.some((e) => e.field === 'ease'),
+          `bad answers: ${bad.status} ${bad.text}`);
+        const answers = { ease: 8, startEase: 9, knewReview: 'yes', stuck: 'nowhere', builderMinutes: 25, prepMinutes: 120, liked: 'the research' };
+        const ok = await req(port, { method: 'POST', path: path_, headers: auth, body: { by: 'u1', answers } });
+        assert(ok.status === 201, `survey ${ok.status} ${ok.text}`);
+        const none = await req(port, { method: 'POST', path: '/api/v1/courses/course-nope/feedback', headers: auth, body: { answers } });
+        assert(none.status === 404, `unknown course: ${none.status}`);
+        const ex = await req(port, { path: '/api/v1/feedback/export', headers: auth });
+        assert(ex.json.surveys.length === 1 && ex.json.surveys[0].answers.startEase === 9, `export ${ex.text}`);
+        const view = await req(port, { path: '/api/v1/courses/course-sv', headers: auth });
+        assert(view.json.feedbackResponses === 1, `feedbackResponses ${view.json.feedbackResponses}`);
+        const index = await req(port, { path: '/api/v1' });
+        const paths = index.json.endpoints.map((e) => e.path);
+        assert(['/api/v1/feedback/questions', '/api/v1/feedback/export', '/api/v1/courses/:courseId/feedback',
+          '/api/v1/courses/:courseId/lessons/:lessonId/rating'].every((p) => paths.includes(p)), 'a 1.6 route is not on the index');
+        return `${ids.length} questions; bad answers listed; saved, exported, counted`;
+      }); });
 
   // One lesson failing does not make the other nine wrong, and rebuilding the
   // course is not the workaround it looks like: enqueue() rejects the duplicate
@@ -2683,7 +2825,7 @@ async function contract14Checks() {
       const env = freshEnv(LOOSE);
       await withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
         const h = (await req(port, { path: '/health' })).json;
-        assert(h.contractVersion === '1.5', `contract ${h.contractVersion}`);
+        assert(h.contractVersion === '1.6', `contract ${h.contractVersion}`);
         assert(h.makeVideo && h.makeVideo.context === false && h.makeVideo.scriptEdit === false && h.makeVideo.scriptRevise === false, `flags off: ${JSON.stringify(h.makeVideo)}`);
         assert(h.makeVideo.contextMaxChars === 120000 && h.makeVideo.maxRevisions === 5 && h.makeVideo.produceScriptSha === true && h.makeVideo.estSeconds === true && h.makeVideo.estimateUsd === true, 'static facts missing');
         assert(h.makeVideo.options && h.makeVideo.options.purposes.length === 4 && h.makeVideo.options.lengthMinutes.max === 6, `options: ${JSON.stringify(h.makeVideo.options)}`);

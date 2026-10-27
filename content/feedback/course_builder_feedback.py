@@ -5,6 +5,11 @@ course_builder_feedback.py -- compare Course Builder user feedback with the froz
     py content/feedback/course_builder_feedback.py "<responses.xlsx>" --all        # every response vs the baseline
     py content/feedback/course_builder_feedback.py "<responses.xlsx>" --since 2026-11-01
     py content/feedback/course_builder_feedback.py "<responses.xlsx>" --set-baseline   # (re)freeze the baseline
+    py content/feedback/course_builder_feedback.py feedback-export.json            # the in-product survey (contract 1.6)
+
+The .json is GET /api/v1/feedback/export saved to a file. It answers the same five questions with
+fixed ids, so it scores against the same baseline, and adds section C: the follow-ups the form could
+not ask (was it your turn, where to start, documents, would you use it again, video ratings).
 
 Reads the Google Form export ("Course Builder - User Feedback (Responses).xlsx") and prints:
 
@@ -168,6 +173,62 @@ def load(xlsx):
     return out
 
 
+def load_export(path):
+    """GET /api/v1/feedback/export saved as JSON -> the same records the form gives, plus the follow-ups.
+
+    The in-product survey asks the form's questions with fixed ids (contract 1.6): ease = Q1,
+    stuck = Q3 (a choice, kept as its label and id so the Q3 themes still match), builderMinutes and
+    prepMinutes = Q4 split in two, liked = Q5, improve = Q2. One person's later answer replaces
+    their earlier one for the same course."""
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    latest = {}
+    for s in data.get("surveys", []):
+        latest[(s.get("courseId"), s.get("by"))] = s
+    out = []
+    for s in latest.values():
+        a = s.get("answers", {})
+        stuck = a.get("stuck")
+        builder, prep = a.get("builderMinutes"), a.get("prepMinutes")
+        times = []
+        if isinstance(builder, (int, float)):
+            times.append(f"{builder} minutes in the builder")
+            if isinstance(prep, (int, float)):
+                times.append(f"{prep + builder} minutes in total")
+        at = s.get("at")
+        out.append({
+            "ease": a.get("ease"),
+            "stuck": None if stuck in (None, "nowhere") else f"{stuck.replace('-', ' ')} ({stuck}) {a.get('stuckDetail', '')}",
+            "time": ", ".join(times) or None,
+            "liked": a.get("liked"),
+            "improve": a.get("improve"),
+            "timestamp": dt.datetime.fromisoformat(at.replace("Z", "+00:00")).replace(tzinfo=None) if at else None,
+            "followups": {k: a.get(k) for k in ("startEase", "knewReview", "attachedDocuments", "useAgain")},
+        })
+    ratings = {}
+    for r in data.get("ratings", []):
+        ratings[(r.get("lessonId"), r.get("by"))] = r
+    return out, list(ratings.values())
+
+
+def followups(responses, ratings):
+    """The questions the form could not ask, measured (in-product survey only)."""
+    f = [r.get("followups") or {} for r in responses]
+    nums = lambda k: [x[k] for x in f if isinstance(x.get(k), (int, float))]
+    share = lambda k, v: (sum(x.get(k) == v for x in f) / sum(x.get(k) is not None for x in f)) if any(x.get(k) is not None for x in f) else None
+    mean = lambda xs: round(sum(xs) / len(xs), 2) if xs else None
+    scores = [r["score"] for r in ratings if isinstance(r.get("score"), (int, float))]
+    return [
+        ("Knew when the course was waiting for review", share("knewReview", "yes"), "%"),
+        ("Ease of knowing where to start (mean, 1-10)", mean(nums("startEase")), ""),
+        ("Attached their own documents", share("attachedDocuments", "yes"), "%"),
+        ("Did not know they could attach documents", share("attachedDocuments", "no-did-not-know"), "%"),
+        ("Would build the next course with it (mean, 1-10)", mean(nums("useAgain")), ""),
+        (f"Finished videos rated (mean, 1-10; {len(scores)} rating(s))", mean(scores), ""),
+        ("Ratings saying on-screen text was hard to read",
+         (sum(r.get("textHardToRead") is True for r in ratings) / len(ratings)) if ratings else None, "%"),
+    ]
+
+
 def themes_of(question, text):
     """Theme ids a free-text answer matches. A theme's third pattern, if any, vetoes it."""
     text = str(text or "")
@@ -244,13 +305,17 @@ def show(v, unit):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("xlsx")
+    ap.add_argument("xlsx", help="the Google Form export (.xlsx), or GET /api/v1/feedback/export saved as .json")
     ap.add_argument("--set-baseline", action="store_true")
     ap.add_argument("--all", action="store_true", help="compare every response, not just the new ones")
     ap.add_argument("--since", help="compare responses on/after this date (YYYY-MM-DD)")
     a = ap.parse_args()
 
-    responses = load(a.xlsx)
+    ratings = None
+    if a.xlsx.lower().endswith(".json"):
+        responses, ratings = load_export(a.xlsx)
+    else:
+        responses = load(a.xlsx)
     stamp = lambda r: r["timestamp"] if isinstance(r["timestamp"], dt.datetime) else None
 
     if a.set_baseline:
@@ -339,6 +404,11 @@ def main():
     print("-" * 74)
     for i, (area, _s, _w, why, ask) in enumerate(SUGGESTIONS, 1):
         print(f"B{i}. {area}: {why}\n     Add to the form: {ask}")
+
+    if ratings is not None:
+        print("\n=== C. IN-PRODUCT FOLLOW-UPS -- asked by the Course Builder itself (no baseline yet) ===\n")
+        for label, v, unit in followups(chosen, ratings):
+            print(f"{'':4}{label:{W}} {show(v, unit):>9}")
 
     print("\nQ4 as written this round:")
     for t in now["time_answers"]:

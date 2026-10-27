@@ -230,6 +230,8 @@ const DRAFT_TIMEOUT_MS = 105_000;
 // Swappable so the HTTP tests can exercise the route without calling a model.
 let draftAsk = askJson;
 function _setDraftAsk(fn) { draftAsk = fn || askJson; }
+let planAsk = askJson;
+function _setPlanAsk(fn) { planAsk = fn || askJson; }
 
 async function draftTeaching(req, { log = () => {} } = {}) {
   const bad = (m) => Object.assign(new Error(m), { status: 400 });
@@ -295,18 +297,31 @@ async function plan(req, { log = () => {} } = {}) {
   const style = parsed.style;
   const motion = style === 'motion-graphics';
 
+  // Contract 1.6: the instructor's own documents, same shape and limits as a single
+  // video's (contract 1.4). The outline is drawn from them; nothing is stored here --
+  // the plan is stateless, so the caller sends the same `context` again on /build.
+  const ctxLib = require('../../orchestrator/lib/context');
+  const ctx = ctxLib.parseContext(req.context);
+  if (!ctx.ok) {
+    throw Object.assign(new Error(ctx.message), { status: ctx.status, code: ctx.code,
+      limitChars: ctx.limitChars, gotChars: ctx.gotChars });
+  }
+  const material = ctxLib.renderSourceMaterial(ctx.context);
+
   const input = [
     `Topic: ${String(req.topic).trim()}`,
     req.audience ? `Audience: ${req.audience}` : null,
     req.duration ? `Total duration wanted: ${req.duration}` : null,
     req.description ? `What it should cover: ${req.description}` : null,
-    !req.audience && !req.duration && !req.description
+    !req.audience && !req.duration && !req.description && !material
       ? 'No further detail was given — choose sensible defaults and list them in assumptions.'
       : null,
+    material ? `\nBuild the outline from this material: cover what it covers, in an order that teaches it, `
+      + `and add nothing it does not support.\n${material}` : null,
   ].filter(Boolean).join('\n');
 
-  log(`planning course: ${req.topic}`);
-  let draft = await askJson({ log, promptName: motion ? 'course_planner_motion' : 'course_planner',
+  log(`planning course: ${req.topic}${material ? ` from ${ctx.context.sources.length} document(s)` : ''}`);
+  let draft = await planAsk({ log, promptName: motion ? 'course_planner_motion' : 'course_planner',
     input, schema: motion ? MOTION_SCHEMA : SCHEMA });
 
   // The model intermittently returns the plan wrapped in a one-element array,
@@ -329,7 +344,8 @@ async function plan(req, { log = () => {} } = {}) {
     ...draft,
     style,
     request: { topic: req.topic, duration: req.duration || null,
-      audience: req.audience || null, description: req.description || null, style },
+      audience: req.audience || null, description: req.description || null, style,
+      context: ctxLib.publicContext(ctx.context) },
     estimate: estimate(draft),
     plannedAt: new Date().toISOString(),
   };
@@ -417,4 +433,4 @@ function validate(plan, { style } = {}) {
   return errors.length ? { ok: false, errors } : { ok: true };
 }
 
-module.exports = { plan, draftTeaching, _setDraftAsk, lessonsOf, estimate, validate, lessonNotes, SCHEMA, LESSON, MOTION_SCHEMA, MOTION_LESSON };
+module.exports = { plan, draftTeaching, _setDraftAsk, _setPlanAsk, lessonsOf, estimate, validate, lessonNotes, SCHEMA, LESSON, MOTION_SCHEMA, MOTION_LESSON };

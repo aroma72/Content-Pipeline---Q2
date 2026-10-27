@@ -67,10 +67,12 @@ function createApp(opts = {}) {
   // -- up to 120k characters (orchestrator/lib/context.js), which in UTF-8 Urdu
   // and JSON escaping is several hundred kilobytes. That one route, and only that
   // one, takes a megabyte; everything else keeps the small limit.
+  // Contract 1.6 gives a course the same documents, on plan and on build.
   const makeVideoJson = express.json({ limit: '1mb' });
+  const DOCUMENT_ROUTES = new Set(['/demo/make-video', '/api/v1/courses/plan', '/api/v1/courses/build']);
   app.use((req, res, next) => {
     if (req.path === '/slack/events') return slackJson(req, res, next);
-    if (req.path === '/demo/make-video' && req.method === 'POST') return makeVideoJson(req, res, next);
+    if (DOCUMENT_ROUTES.has(req.path) && req.method === 'POST') return makeVideoJson(req, res, next);
     return express.json({ limit: '32kb' })(req, res, next);
   });
 

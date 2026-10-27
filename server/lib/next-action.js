@@ -47,6 +47,8 @@ const ACTION_ROUTES = {
   'requeue': 'POST …/requeue',
   'skip': 'POST …/skip',
   'cancel': 'POST …/cancel',
+  // Contract 1.6: optional, never required to move on. Offered wherever a video exists.
+  'rate': 'POST …/rating',
 };
 
 /**
@@ -93,7 +95,7 @@ function forItem(item, ctx = {}) {
   const out = (who, kind, title, detail, actions = []) => ({ who, kind, title, detail, actions, since });
 
   if (item.status === 'done') {
-    return out('nobody', KIND.NONE, 'Published', 'This lesson is finished and published.');
+    return out('nobody', KIND.NONE, 'Published', 'This lesson is finished and published.', ['rate']);
   }
   if (item.status === 'failed') {
     if (item.skipped === true) return out('nobody', KIND.NONE, 'Skipped', 'This lesson was skipped and will not be built.');
@@ -118,7 +120,7 @@ function forItem(item, ctx = {}) {
           'The video is finished. Approve it to publish it, '
             + (redo ? 'send named scenes back to be redone, ' : '')
             + 'or reject it.',
-          redo ? ['approve', 'redo-scenes', 'reject'] : ['approve', 'reject']);
+          redo ? ['approve', 'redo-scenes', 'reject', 'rate'] : ['approve', 'reject', 'rate']);
       }
       case 'post-render-check':
       case 'qa-no-evidence':
@@ -222,14 +224,18 @@ function statusSince(events) {
  * Getting started, served rather than documented so the LMS shows the same steps the
  * service actually runs (the way GET /api/v1/styles is served).
  */
+const CTX = require('../../orchestrator/lib/context');
+
 const GUIDE = {
   title: 'Build a course in four steps',
   summary: 'You describe the course, approve the plan, then read each lesson\'s script and watch each video. '
     + 'We do the research, writing and video making in between. Nothing is spent on a video until you approve its script.',
   steps: [
     {
-      id: 'describe', title: 'Describe your course', youDo: 'Give the course a topic, who it is for and the style of video.',
-      weDo: 'We research the topic and propose a plan: modules, lessons and what each lesson teaches.',
+      id: 'describe', title: 'Describe your course', youDo: 'Give the course a topic, who it is for and the style of video. '
+        + 'If you already have notes, slides or a document, attach them (up to 5 files).',
+      weDo: 'We research the topic and propose a plan: modules, lessons and what each lesson teaches. '
+        + 'With documents attached, the plan and every script are built from them.',
       takes: 'A few minutes', route: 'POST /api/v1/courses/plan',
     },
     {
@@ -244,13 +250,17 @@ const GUIDE = {
       signal: 'nextAction.kind = "read-script"',
     },
     {
-      id: 'watch-video', title: 'Watch each video', youDo: 'When a video is ready, watch it. Approve it, ask for scenes to be redone, or reject it.',
+      id: 'watch-video', title: 'Watch each video', youDo: 'When a video is ready, watch it. Approve it, ask for scenes to be redone, or reject it. '
+        + 'Rate it out of 10 so we know what to improve.',
       weDo: 'We make the video in about 20 to 40 minutes, then wait for you. Approving publishes it and starts the next lesson.',
       takes: 'The length of the video', route: 'POST /api/v1/courses/:courseId/lessons/:lessonId/approve',
       signal: 'nextAction.kind = "watch-video"',
     },
   ],
   whileYouWait: 'You do not need to keep the page open. The course page shows "waiting for you" whenever a script or video is ready.',
+  attachDocuments: { accepted: CTX.KINDS, maxFiles: CTX.MAX_SOURCES, maxChars: CTX.MAX_CHARS,
+    field: 'context', routes: ['POST /api/v1/courses/plan', 'POST /api/v1/courses/build'] },
+  afterwards: { feedback: 'GET /api/v1/feedback/questions', rating: 'POST /api/v1/courses/:courseId/lessons/:lessonId/rating' },
 };
 
 module.exports = { KIND, ACTION_ROUTES, STAGES, stageOf, forItem, summarise, courseIdOf, statusSince, GUIDE };
