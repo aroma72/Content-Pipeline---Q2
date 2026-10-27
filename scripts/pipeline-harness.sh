@@ -94,15 +94,20 @@ for fx in "${FIXTURES[@]}"; do
     printf '  %-20s ' "$gate"
 
     # The gate is copied in beside the fixture, as produce.js does, so it sees the
-    # folder layout it expects. --shm-size because a container's default /dev/shm
-    # is 64MB and Chrome dies writing into it -- the same trap the gates hit in
-    # production, reproduced here rather than discovered there.
+    # folder layout it expects. The template lib/ comes with it: since contract
+    # 1.4 qa-checkpoint.js requires ./lib/checkpoint-checks, and a fixture
+    # scaffolded before that has an older lib/ -- every main run from 2026-10-20
+    # to 10-26 was red on "Cannot find module './lib/checkpoint-checks'" while
+    # the same gate passed in production, where produce.js refreshes lib/ too.
+    # --shm-size because a container's default /dev/shm is 64MB and Chrome dies
+    # writing into it -- the same trap the gates hit in production, reproduced
+    # here rather than discovered there.
     out=$(docker run --rm \
       -v "$REPO:/work" \
       -w "/work/$fx" \
       --shm-size=1g \
       "$HARNESS_TAG" \
-      sh -c "cp /work/$TEMPLATES/$gate ./__gate.js 2>/dev/null; node ./__gate.js; rc=\$?; rm -f ./__gate.js; exit \$rc" 2>&1)
+      sh -c "cp /work/$TEMPLATES/$gate ./__gate.js 2>/dev/null; mkdir -p ./lib && cp /work/$TEMPLATES/lib/*.js ./lib/; node ./__gate.js; rc=\$?; rm -f ./__gate.js; exit \$rc" 2>&1)
     rc=$?
 
     if [ $rc -eq 0 ]; then

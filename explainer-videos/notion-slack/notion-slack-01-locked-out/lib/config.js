@@ -48,16 +48,16 @@ function geminiKey() {
       '\n[config] No Google API key found.\n' +
       '  Set GEMINI_API_KEY (or GOOGLE_STUDIO_API_KEY) in a .env at a parent of this folder.\n'
     );
-    process.exit(1);
+    // 3 = infrastructure, not a content verdict. Exiting 1 made a missing
+    // credential reach the operator as "grammar and clarity FAILED".
+    process.exit(3);
   }
   return k;
 }
 
-// key for kie.ai "omni" visuals (Nano Banana 2 = Gemini 3.1 Flash Image).
-// kie keys are 32-char hex; GEMINI_OMNI_API_KEY is the funded account, KIE_API_KEY the fallback.
 function omniKey() {
   const k = process.env.GEMINI_OMNI_API_KEY || process.env.KIE_API_KEY || '';
-  if (!k) { console.error('\n[config] No kie.ai key (GEMINI_OMNI_API_KEY / KIE_API_KEY) found in .env.\n'); process.exit(1); }
+  if (!k) { console.error('\n[config] No kie.ai key (GEMINI_OMNI_API_KEY / KIE_API_KEY) found in .env.\n'); process.exit(3); }
   return k;
 }
 
@@ -91,15 +91,19 @@ function guardSpend({ action, units, unitCost }) {
 }
 
 // --- models (change here if they move) --------------------------------------
+// Overridable by env so the next retirement is a Railway variable, not a code
+// change and redeploy. imagen-4.0-* was retired from the Gemini API and now 404s
+// with a pointer to gemini-*-image, which speaks generateContent rather than
+// predict -- see generate-lesson-art.js.
 const MODELS = {
-  art: 'imagen-4.0-ultra-generate-001',
-  tts: 'gemini-2.5-flash-preview-tts',
-  // kie.ai "omni" visuals: Nano Banana 2 == Gemini 3.1 Flash Image (still images)
-  omni: process.env.OMNI_MODEL || 'nano-banana-2',
+  art: process.env.GEMINI_IMAGE_MODEL || 'gemini-3.1-flash-image',
+  tts: process.env.GEMINI_TTS_MODEL || 'gemini-2.5-flash-preview-tts',
 };
 
 const KIE_BASE = 'https://api.kie.ai/api/v1';
 
-const COST = { imagePerImage: 0.04, ttsPerClip: 0.002 };
+// i2v is priced per SECOND of generated clip, unlike art and TTS -- so a few
+// animated beats cost more than every still in the video put together.
+const COST = { imagePerImage: 0.04, ttsPerClip: 0.002, i2vPerSecond: 0.05 };
 
 module.exports = { geminiKey, omniKey, guardSpend, spendApproved, MODELS, COST, KIE_BASE };
