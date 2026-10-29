@@ -325,3 +325,9 @@ No frontmatter: this file is machine-managed and exempt from the metadata contra
   (Cohort2LP: content-course-poll.ts:268/:348, course-hold.ts:42 ourPosition, next-action.ts:62-64
   ActionKey = our 9 verbs, content-queen-courses.ts:958). It says 1.7 is live only once /health
   shows contractVersion 1.7, so deploy before sending.
+- SHIPPED 1.7: commits 08fb715 (code+docs) + 30500df (memory) pushed to origin/main; deployed via
+  deploy.ps1 → /health.build.commit 30500df, contractVersion 1.7. Live: GET /api/v1 nextAction served;
+  course-mvt6q73v spentModelUsd 2.6761 / spentMediaUsd 0.516 / spentSplitKnown true; verify-live 14/14
+  (with token from .env; PowerShell run skips token checks). since on that lesson unchanged across the
+  deploy restart. .beads/failures.jsonl + runs.jsonl left uncommitted (test-run noise only).
+- Next: send the reply (docs/integration-requests/2026-10-29-course-builder-1.5-1.6-live-reply.md) to the LMS.
