@@ -1100,7 +1100,7 @@ async function lessonFileChecks() {
       const paths = (r.json.endpoints || []).map((e) => `${e.method} ${e.path}`);
       assert(paths.includes('POST /api/v1/courses/:courseId/lessons/:lessonId/video/revise'), 'video/revise not listed');
       assert(paths.includes('POST /api/v1/courses/:courseId/lessons/:lessonId/cancel'), 'cancel not listed');
-      assert(r.json.contractVersion === '1.6', `contractVersion ${r.json.contractVersion}`);
+      assert(r.json.contractVersion === '1.7', `contractVersion ${r.json.contractVersion}`);
       assert(r.json.videoRedo && typeof r.json.videoRedo.enabled === 'boolean' && r.json.videoRedo.maxRounds >= 1
         && r.json.videoRedo.reserveUsd > 0, `videoRedo block: ${JSON.stringify(r.json.videoRedo)}`);
       return `1.3, videoRedo ${JSON.stringify(r.json.videoRedo)}`;
@@ -1815,6 +1815,10 @@ async function bridgeChecks() {
       assert(free.json.worker.held === null, 'the free course reports a hold that is not its own');
       const fz = free.json.items.find((i) => i.id === 'testing/f-z');
       assert(fz.queuePosition === 1, `f-z is first in line, got ${fz.queuePosition}`);
+      // Contract 1.7: nothing is building, so nothing is ahead of it.
+      assert(fz.lessonsAhead === 0, `f-z has nothing ahead while idle, got ${fz.lessonsAhead}`);
+      assert(fz.nextAction.title === 'Next in line', `f-z wait title: ${fz.nextAction.title}`);
+      assert(!('lessonsAhead' in hy), `a lesson behind a hold has no lessonsAhead: ${hy.lessonsAhead}`);
 
       const h = await req(port, { path: '/health' });
       const cw = h.json.courses && h.json.courses.worker;
@@ -1822,6 +1826,64 @@ async function bridgeChecks() {
         `/health.courses.worker is wrong: ${JSON.stringify(cw)}`);
       assert(!h.text.includes('testing/h-x'), '/health leaked a lesson id');
       return 'held, needsResume, queuePosition, explicit $0, health counts';
+    }); });
+
+  // Contract 1.7 (LMS memo 2026-10-29). The LMS showed "$2.46 spent so far" at a script
+  // review while the lesson said nothing had been bought, and could not say why; it alerts
+  // on every new `since`, so a restart that moved one would re-notify an instructor; and it
+  // makes buttons from `actions`, so the verbs must be something it can pin a test to.
+  await check('1.7: course spend split, since survives a restart, the nextAction vocabulary is served',
+    () => { const env = freshEnv(); return withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
+      const queue = require(path.join(__dirname, 'lib', 'queue'));
+      const cw = require(path.join(__dirname, '..', 'server', 'lib', 'course-worker'));
+      const na = require(path.join(__dirname, '..', 'server', 'lib', 'next-action'));
+      require(path.join(__dirname, '..', 'server', 'lib', 'job-store')).reset();
+      queue.resetPathCache();
+      const tag = '[course-test-17]';
+      const mk = (slug) => queue.enqueue({ topic: slug, series: 'testing', slug, source: 'course-builder', notes: `${tag} brief` });
+      mk('s17-script'); mk('s17-building');
+      queue.claim('testing/s17-script', 'run-s');
+      queue.block('testing/s17-script', 'run-s', 'script ready', 'script-approval', { usd: 2.46, media: 0, model: 2.46 });
+      queue.claim('testing/s17-building', 'run-b');
+      const auth = { authorization: `Bearer ${LMS_TOKEN}` };
+      const view = async () => (await req(port, { path: '/api/v1/courses/course-test-17', headers: auth })).json;
+
+      const before = await view();
+      assert(before.spentUsd === 2.46 && before.spentModelUsd === 2.46 && before.spentMediaUsd === 0
+        && before.spentSplitKnown === true, `spend split: ${JSON.stringify(before)}`.slice(0, 300));
+      const s0 = before.items.find((i) => i.id === 'testing/s17-script').nextAction;
+      assert(s0.who === 'you' && s0.kind === 'read-script' && s0.since, `script lesson: ${JSON.stringify(s0)}`);
+
+      // A restart: restore() parks the lesson caught mid-build and must not touch the one
+      // waiting for a person. Wait first, so any write would carry a later timestamp.
+      await new Promise((r) => setTimeout(r, 15));
+      cw.restore();
+      const after = await view();
+      const s1 = after.items.find((i) => i.id === 'testing/s17-script').nextAction;
+      assert(s1.since === s0.since, `a restart moved since on the instructor's turn: ${s0.since} -> ${s1.since}`);
+      const b1 = after.items.find((i) => i.id === 'testing/s17-building').nextAction;
+      assert(b1.who === 'you' && b1.kind === 'restart' && b1.since > s0.since,
+        `the interrupted lesson is not a new restart hand-off: ${JSON.stringify(b1)}`);
+
+      // A lesson with spend but no split (settled before the split shipped) makes the parts unknown.
+      queue.setStatus('testing/s17-building', 'failed', { spendUsdTotal: 0.5 });
+      const old = await view();
+      assert(old.spentSplitKnown === false, `split should be unknown with a pre-split lesson: ${old.spentSplitKnown}`);
+
+      const idx = (await req(port, { path: '/api/v1' })).json;
+      assert(idx.nextAction && JSON.stringify(idx.nextAction.who) === '["you","us","nobody"]', `who: ${JSON.stringify(idx.nextAction)}`);
+      assert(idx.nextAction.kinds.includes('read-script') && idx.nextAction.actions.rate === 'POST …/rating',
+        `vocabulary: ${JSON.stringify(idx.nextAction)}`);
+      // Every verb the server can offer is in the served set, so nothing becomes a silent drop.
+      const offered = new Set();
+      const shapes = [{ status: 'done' }, { status: 'failed' }, { status: 'queued' }, { status: 'claimed' },
+        ...['script-approval', 'post-render-check', 'spend-approval', 'interrupted', 'preflight']
+          .map((blockedBy) => ({ status: 'blocked', blockedBy }))];
+      for (const s of shapes) for (const a of na.forItem(s, {}).actions) offered.add(a);
+      for (const a of na.forItem({ status: 'blocked', blockedBy: 'review' }, { redosLeft: 1, residueAvailable: true }).actions) offered.add(a);
+      const missing = [...offered].filter((a) => !(a in idx.nextAction.actions));
+      assert(!missing.length, `verbs offered but not served: ${missing.join(', ')}`);
+      return `split ${before.spentModelUsd}/${before.spentMediaUsd}, since held, ${offered.size} verbs served`;
     }); });
 
   // A course never touched the tenant ledger: no reservation, no settlement, no
@@ -2825,7 +2887,7 @@ async function contract14Checks() {
       const env = freshEnv(LOOSE);
       await withServer(env, { oneVideo: fakePipeline(), store: freshStore(env) }, async (port) => {
         const h = (await req(port, { path: '/health' })).json;
-        assert(h.contractVersion === '1.6', `contract ${h.contractVersion}`);
+        assert(h.contractVersion === '1.7', `contract ${h.contractVersion}`);
         assert(h.makeVideo && h.makeVideo.context === false && h.makeVideo.scriptEdit === false && h.makeVideo.scriptRevise === false, `flags off: ${JSON.stringify(h.makeVideo)}`);
         assert(h.makeVideo.contextMaxChars === 120000 && h.makeVideo.maxRevisions === 5 && h.makeVideo.produceScriptSha === true && h.makeVideo.estSeconds === true && h.makeVideo.estimateUsd === true, 'static facts missing');
         assert(h.makeVideo.options && h.makeVideo.options.purposes.length === 4 && h.makeVideo.options.lengthMinutes.max === 6, `options: ${JSON.stringify(h.makeVideo.options)}`);

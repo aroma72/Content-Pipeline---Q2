@@ -1,6 +1,6 @@
 ---
 type: reference
-last_verified: 2026-10-27
+last_verified: 2026-10-29
 owner: Aroma Tahir
 ---
 
@@ -14,6 +14,23 @@ for single videos, `content-queen-client.ts` for the catalogue) — the LMS aske
 on 2026-09-21 after learning of ten new fields by reading our repository.
 
 Frozen copies: `docs/contracts/course-api-<version>.md`.
+
+---
+
+## 1.7, additive — 2026-10-29 — honest spend at the script review, lessons ahead, the nextAction vocabulary
+
+`contractVersion` is `1.7`. Answers the LMS memo of 2026-10-29 ("1.5 and 1.6 are live") — reply:
+`docs/integration-requests/2026-10-29-course-builder-1.5-1.6-live-reply.md`. Nothing existing changes;
+every addition is read-only. Lands in `content-queen-courses.ts`.
+
+| Change | Where | Example | Commit | LMS file |
+|---|---|---|---|---|
+| `spentModelUsd`, `spentMediaUsd`, `spentSplitKnown` beside `spentUsd`. Model = research, script, the automatic script review, QA (tokens); media = art and speech. At a script review media is `0` and model is the whole bill (~$2–3). `spentSplitKnown: false` when a lesson with spend predates the split — then the parts do not add up to `spentUsd` | `GET /courses/:courseId` | `"spentUsd":3.1921,"spentModelUsd":2.6761,"spentMediaUsd":0.516,"spentSplitKnown":true` | this release | course poll mirror; "spent so far" line |
+| `lessonsAhead` on a queued lesson that has a `queuePosition`: lessons worked on before it starts, **counting the one building now**. Use it instead of `queuePosition - 1`, which undercounts by one while anything builds. Counts lessons, not videos — one ahead may only be having its script written | `GET /courses/:courseId` items | `"queuePosition":1,"lessonsAhead":1` (one lesson building) | this release | "N ahead of yours" line |
+| `nextAction` vocabulary: `who[]`, `kinds[]`, `actions {verb: route}` — every verb `nextAction.actions` can carry. A new verb or kind is added here, with a changelog entry and a contract bump | `GET /api/v1` | `"nextAction":{"who":["you","us","nobody"],"kinds":["read-script",…],"actions":{"approve-script":"POST …/script/approve",…,"rate":"POST …/rating"}}` | this release | pin a test against it |
+| Wait wording uses `lessonsAhead`: `"Next in line"` / `"Waiting its turn (2 lessons ahead)"` | `nextAction.title` on queued lessons | — | this release | none (shown as-is) |
+| **Documented, unchanged:** `stoppedAt` on a lesson stopped by a reject (`failed` + `stoppedWithCourse`) — when the reject happened. To a person: "Stopped on {date} when '{rejected lesson's topic}' was rejected." Shipped with reject semantics (`b8a8122`); the changelog row left it out | `GET /courses/:courseId` items | `"stoppedWithCourse":"series/lesson-2","stoppedAt":"2026-10-20T10:00:00.000Z"` | `b8a8122` | already read as known (LMS `0bae720e`) |
+| **Guaranteed, now tested:** `nextAction.since` does not move on a restart while it is the instructor's turn. The one exception is real: a lesson caught mid-build becomes `kind: "restart"`, `who: "you"`, with a new `since` | `GET /courses/:courseId` items | — | this release | alert key `lessonId@since` (no change) |
 
 ---
 
@@ -262,7 +279,7 @@ Reply: `docs/integration-requests/2026-09-23-course-worker-reply.md`. Why: `SERV
 | explicit `spendUsd: 0`, `spendUsdTotal: 0` | `GET /courses/:courseId`, `status === failed` with no `runId` | a lesson stopped or rejected before it ran now says $0 instead of omitting the field | `33a2aef` | `reconcileLessonSpend` (no change needed; absent still means unknown) |
 | `items[].tenantId` | `GET /courses/:courseId`, when present | `"tenantId": "cohort2-lms"` — absent on lessons built before 1.1 | `d4a7811` | allowlist only |
 | `stopped[]` on reject | `POST .../lessons/:id/reject` `202` | `{"rejected": "...", "stopped": ["<series>/<sibling>"], "note": "..."}` | `b8a8122` | `actOnLesson` reject branch |
-| reject semantics | `POST .../lessons/:id/reject` | the rejected course's **queued** siblings become `failed` with `error: "stopped with the course: <id> was rejected"` and `stoppedWithCourse: "<id>"`, at $0 (reservations released); **other courses continue** | `b8a8122` | poll terminal rule (§Phase 2 of the LMS plan) |
+| reject semantics | `POST .../lessons/:id/reject` | the rejected course's **queued** siblings become `failed` with `error: "stopped with the course: <id> was rejected"` and `stoppedWithCourse: "<id>"` plus `stoppedAt` (ISO time of the reject; this row omitted it until 1.7), at $0 (reservations released); **other courses continue** | `b8a8122` | poll terminal rule (§Phase 2 of the LMS plan) |
 | **`POST /api/v1/courses/:courseId/lessons/:lessonId/skip`** | new route | `{"by": "name"}` → `202 {"skipped": "...", "by": "...", "note": "..."}`; `409 cannot_skip` unless `failed`. Status stays `failed`, `skipped: true`; the course continues. $0. | `b8a8122` | `actOnLesson` (new verb), build page |
 | **`POST /api/v1/courses/worker/resume`** | new route | `{"by": "name"}` → `202 {"resumed": true, "eligible": 1, "running": false, "held": [...]}`. Starts the worker after a restart; builds only lessons whose course is not held. $0 beyond what a build already reserved. | `b8a8122` | operator only; not for the poll worker |
 | `/health.courses.worker` | `GET /health` | `{"running": false, "building": false, "eligible": 1, "needsResume": true, "heldCourses": 2}` — counts, no ids | `33a2aef` | `checkSpendReadiness()` |

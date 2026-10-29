@@ -126,7 +126,7 @@ function sendJson(req, res, payload) {
 }
 
 /** The course-API contract version. docs/CONTRACT-CHANGELOG.md says what each one added. */
-const CONTRACT_VERSION = '1.6';
+const CONTRACT_VERSION = '1.7';
 
 /**
  * @param {object} [opts]
@@ -251,7 +251,12 @@ function build(opts = {}) {
             + '(art and speech) and `spendModelUsd` (tokens); the `Total` variants of all '
             + 'three accumulate across retries. `references` appears on a done lesson only '
             + 'when the course asked for them AND the links resolved when we fetched them -- '
-            + 'absent means none were verified, never that none were sought.' },
+            + 'absent means none were verified, never that none were sought. A queued lesson '
+            + 'carries `queuePosition` and `lessonsAhead` (lessons worked on before it starts, '
+            + 'counting the one building now). The course carries `spentUsd` split into '
+            + '`spentModelUsd` and `spentMediaUsd`; `spentSplitKnown: false` means the parts do '
+            + 'not add up because a lesson predates the split. A lesson stopped by a reject '
+            + 'carries `stoppedWithCourse` and `stoppedAt`.' },
         { method: 'POST', path: '/api/v1/courses/:courseId/lessons/:lessonId/approve',
           auth: true,
           description: 'Publish a built lesson and release the next one. Courses build '
@@ -342,6 +347,14 @@ function build(opts = {}) {
       // the day we added a tenth. Adding a value means adding it to BLOCKED_BY in
       // orchestrator/lib/spine-errors.js, which is what this reads.
       blockedBy: require('../../orchestrator/lib/queue').BLOCKED_BY_VALUES,
+      // Contract 1.7: the vocabulary of `nextAction` on every course lesson, served for the
+      // same reason as blockedBy. The LMS turns each verb in `actions` into a button and
+      // drops one it does not know, so a verb added without notice is a button that never
+      // appears. `actions` maps each verb to the route it calls.
+      nextAction: (() => {
+        const na = require('./next-action');
+        return { who: na.WHO, kinds: Object.values(na.KIND), actions: na.ACTION_ROUTES };
+      })(),
       // Contract 1.3: whether a reviewed video can be sent back scene by scene here,
       // how many times, and what one redo reserves. Served so the LMS shows the
       // button only where it works.
@@ -943,6 +956,7 @@ function build(opts = {}) {
     // lessons the worker may actually take. A lesson behind its own course's hold
     // has no position: it is not in line, it is waiting for a person.
     const line = cw.eligible().map((e) => e.id);
+    const worker = cw.status();
     const rawItems = queue.currentItems().filter((i) => (i.notes || '').includes(tag));
     const items = rawItems
       .map((i) => ({
@@ -952,6 +966,13 @@ function build(opts = {}) {
         ...(i.tenantId ? { tenantId: i.tenantId } : {}),
         ...(i.status === 'queued'
           ? { queuePosition: line.includes(i.id) ? line.indexOf(i.id) + 1 : null }
+          : {}),
+        // Contract 1.7: how many lessons will be worked on before this one starts. Not
+        // `queuePosition - 1`: the line excludes the lesson being built right now, so that
+        // undercounted by one whenever anything was building (LMS memo 2026-10-29 §3).
+        // Lessons, not videos -- one ahead may only be having its script written.
+        ...(i.status === 'queued' && line.includes(i.id)
+          ? { lessonsAhead: line.indexOf(i.id) + (worker.current ? 1 : 0) }
           : {}),
         // The run that owns this lesson. It is the only handle that ties a lesson
         // to what it cost, and without it a course cannot be reconciled against
@@ -1131,7 +1152,7 @@ function build(opts = {}) {
     items.forEach((it, k) => {
       it.stage = nextAction.stageOf(rawItems[k]);
       it.nextAction = nextAction.forItem(rawItems[k], {
-        since: since.get(it.id), queuePosition: it.queuePosition,
+        since: since.get(it.id), queuePosition: it.queuePosition, lessonsAhead: it.lessonsAhead,
         redosLeft: it.redosLeft, residueAvailable: it.residueAvailable,
       });
     });
@@ -1162,7 +1183,14 @@ function build(opts = {}) {
       });
     }
     const by = (s) => items.filter((i) => i.status === s).length;
-    const worker = cw.status();
+    // Contract 1.7: what the bill so far was spent ON, so "spent so far" can say that a
+    // lesson at its script review has bought research and writing (model tokens, ~$2-3)
+    // and nothing for the video yet. Summed per part; `spentSplitKnown` is false when a
+    // lesson with spend predates the split, because then the parts do not add up to
+    // `spentUsd` and must not be shown as if they did.
+    const sum = (k) => Number(items.reduce((a, i) => a + (Number(i[k]) || 0), 0).toFixed(4));
+    const spentSplitKnown = items.every((i) => !(Number(i.spendUsdTotal) > 0)
+      || (Number.isFinite(i.spendModelUsdTotal) && Number.isFinite(i.spendMediaUsdTotal)));
     const heldHere = worker.held.find((h) => h.courseId === req.params.courseId) || null;
     const waiting = cw.awaitingApproval(req.params.courseId);
     res.json({
@@ -1180,7 +1208,10 @@ function build(opts = {}) {
       // authorises `lessons x estimate` before calling us and has had nothing to
       // converge on since: ours held $1.50 for a lesson that cost $0.598. Lessons
       // still building contribute nothing yet, so this only ever rises.
-      spentUsd: Number(items.reduce((a, i) => a + (Number(i.spendUsdTotal) || 0), 0).toFixed(4)),
+      spentUsd: sum('spendUsdTotal'),
+      spentModelUsd: sum('spendModelUsdTotal'),
+      spentMediaUsd: sum('spendMediaUsdTotal'),
+      spentSplitKnown,
       // What the machine is doing this second, so a stalled build is visible
       // rather than looking identical to a slow one.
       // One lesson is built at a time and then waits. This is the field the UI

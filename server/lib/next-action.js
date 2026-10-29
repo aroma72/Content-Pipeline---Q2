@@ -25,6 +25,8 @@
  * shows exactly the buttons that work and no others.
  */
 
+const WHO = ['you', 'us', 'nobody'];
+
 const KIND = {
   READ_SCRIPT: 'read-script',
   WATCH_VIDEO: 'watch-video',
@@ -88,7 +90,7 @@ function stageOf(item) {
 /**
  * What happens next for one lesson.
  * @param {object} item   the queue item (as GET /courses/:courseId reads it)
- * @param {object} ctx    { since, queuePosition, redosLeft, residueAvailable }
+ * @param {object} ctx    { since, queuePosition, lessonsAhead, redosLeft, residueAvailable }
  */
 function forItem(item, ctx = {}) {
   const since = ctx.since || item.updatedAt || null;
@@ -149,10 +151,19 @@ function forItem(item, ctx = {}) {
         ? 'The video is being made. This usually takes 20 to 40 minutes. We will show it here for you to review.'
         : 'The script is being researched and written. This usually takes a few minutes.');
   }
+  // `lessonsAhead` counts the lesson being built right now; `queuePosition` does not, so
+  // "number 1 in line" while another lesson builds would read as "starting now".
   const pos = ctx.queuePosition;
-  return out('nobody', KIND.WAIT, pos ? `Waiting its turn (number ${pos} in line)` : 'Waiting its turn',
-    pos ? 'Lessons are built one at a time. This one starts when the lessons ahead of it are done.'
-      : 'This lesson starts after the lesson before it in the course has been reviewed.');
+  const ahead = Number.isFinite(ctx.lessonsAhead) ? ctx.lessonsAhead : null;
+  if (!pos) {
+    return out('nobody', KIND.WAIT, 'Waiting its turn',
+      'This lesson starts after the lesson before it in the course has been reviewed.');
+  }
+  return out('nobody', KIND.WAIT,
+    ahead === null ? `Waiting its turn (number ${pos} in line)`
+      : ahead === 0 ? 'Next in line' : `Waiting its turn (${ahead} ${ahead === 1 ? 'lesson' : 'lessons'} ahead)`,
+    ahead === 0 ? 'Lessons are built one at a time. This one starts next.'
+      : 'Lessons are built one at a time. This one starts when the lessons ahead of it are done.');
 }
 
 const PLURAL = {
@@ -263,4 +274,4 @@ const GUIDE = {
   afterwards: { feedback: 'GET /api/v1/feedback/questions', rating: 'POST /api/v1/courses/:courseId/lessons/:lessonId/rating' },
 };
 
-module.exports = { KIND, ACTION_ROUTES, STAGES, stageOf, forItem, summarise, courseIdOf, statusSince, GUIDE };
+module.exports = { WHO, KIND, ACTION_ROUTES, STAGES, stageOf, forItem, summarise, courseIdOf, statusSince, GUIDE };

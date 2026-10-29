@@ -802,9 +802,10 @@ async function buildOne(item) {
       return outcome;
     }
     // Do NOT close the reservation for a pause that happens BEFORE the spend it
-    // was taken for. Settling at the script gate would release $2.50 against a
-    // lesson that has cost about five cents, and the approved build that follows
-    // would then buy ~$1.50 of art with no authorisation standing behind it and
+    // was taken for. At the script gate a lesson has bought research and writing
+    // only -- model tokens, about $2-3 ($2.46 on 2026-10-29), no art or speech.
+    // Settling there would close the hold, and the approved build that follows
+    // would then buy the art and speech with no authorisation standing behind it and
     // no room left under the tenant's monthly ceiling to account for it. The hold
     // survives the pause; the next build's settle, or reject(), is what closes it.
     const fresh = queue.get(item.id);
