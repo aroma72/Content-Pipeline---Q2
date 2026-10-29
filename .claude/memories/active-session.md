@@ -32,21 +32,7 @@ No frontmatter: this file is machine-managed and exempt from the metadata contra
 <!-- 2026-09-28 rotated to .claude/memories/session-archive/ -->
 <!-- 2026-10-05, 2026-10-06, 2026-10-07, 2026-10-07, 2026-10-08 rotated to .claude/memories/session-archive/ -->
 <!-- 2026-10-09, 2026-10-13, 2026-10-13, 2026-10-13, 2026-10-13, 2026-10-12, 2026-10-12, 2026-10-12 rotated to .claude/memories/session-archive/ -->
-## 2026-09-28 (evening) — CI fix, repair budget, scratch sweep, Drive on, deploy ba3767c
-- Pushed 942ab77 (CI layout test on clean checkout), 2a3c666 (qa-art repair respects budget; frames/ removed after encode), ba3767c (scratch sweep after every run; single-video routes serve Drive copy; DELETE keeps drive.json; `gdrive.trashFile`; `scripts/lms-e2e.js`). CI run 36461623875: all 6 jobs green.
-- Railway `GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_JSON` set (stdin, --skip-deploys); deployed via deploy.ps1 → /health build ba3767c, driveOffload configured+authorised, authKind service-account. verify-live 14/14.
-- Trap: running `.\scripts\deploy.ps1 2>&1` in PS 5.1 turns railway's stderr warning into a terminating error — the upload still went out; run it WITHOUT `2>&1` and verify by /health.build.commit.
-- Paid `lms-e2e --yes` running on prod (series lms-e2e-2026-09-28, $3/video quote cap; server budget is still $50, so the cap binds on the quote, not the repair loop).
-- First paid course run LOOPED at script-approval (see lessons H50); stopped, rejected+deleted (model spend $2.04, no media). Fixed + pushed e27170d (CI 36467751886 all green), deployed e27170d. Also: single-video produce now passes `scriptApproved: 'produce-request'` (a produce redraft used to block at script-approval and fail the job).
-- Rerunning `lms-e2e --yes --series lms-e2e-2026-09-28b`. Next: confirm both flows reach review, Drive md5, cleanup, videosHeldLocally 0, no scratch on /app/explainer-videos/lms-e2e-*.
-- Leftover junk to raise with Aroma: a committed `.chrome-profile` under explainer-videos/evals/evals-01-check-more-than-one/ (breaks Windows clones without core.longpaths).
-- Course flow on prod PASSED end-to-end after e27170d (course-mullwln8): script-approval once, review reached, Drive md5 verified, /file Drive JSON, checkpoints atSeconds 100.4, attempts 501, reject+DELETE, Drive file trashed, videosHeldLocally 0, render dir 332K (scratch + paid inputs reclaimed). Cost: media $0.52, total $3.73 (model ~$3.21 via claude CLI "against your plan").
-- ANIMATION NOT TESTED: kie.ai returns 401 "Free users can upload up to 30 files within 30 days" -> pipeline fell back to stills (animation_failed). Needs a paid kie plan/credits — Aroma's call.
-- Single flow found bug: produce route reserved the full $50 ceiling vs a $50 month -> 402 after any spend (default tenant only; cohort2-lms has maxRunUsd 4). Fixed 5eb7905 (ledger.capToMonth), CI 36472833008 green, deployed. Rerunning `--only=single`.
-- Single flow on prod PASSED 22/22 after 5eb7905 (budget capped to $42.07 = month remaining; idempotent replay; Drive md5; /video Drive JSON; checkpointsUrl atSeconds 100.9; DELETE; Drive trashed). Render dir 328K. Animation again blocked by kie free-tier 401 -> stills. Spend $1.57.
-- Leftovers: volume keeps 2 drive.json records pointing at the now-trashed test files (by design DELETE keeps the link); shared /app/explainer-videos/brand-intro-outro/{frames,node_modules} not swept (bumper folder, not per-video).
-- Next session: kie.ai plan decision (Aroma); consider moving redraft budget onto the queue item; model spend per course lesson ~$3.2 is above the $2.50 reserve (PIPELINE_COURSE_LESSON_RESERVE_USD).
-
+<!-- 2026-09-28 rotated to .claude/memories/session-archive/ -->
 ## 2026-10-05 — LMS "Nothing was bought" about a bought video; produce flow hardened
 - Diagnosed from Railway logs: job `product-thinking-for-beginners-w6lr` bought $1.60, rendered, persisted 27.2MB, then the POST-RENDER eval-text replayed its cached ERROR and blocked; one-video threw without spend; app.js -> `written` + lastError, ledger $0. Root cause chain + fixes in lessons.md H51.
 - Implemented (plan `~/.claude/plans/i-am-getting-this-adaptive-backus.md`): state.js keeps `code`; one-video.produce() awaitingReview on post-render block with deliverable (synthesised `produce.finalPath` so approve()/upload can resume), spendUsd/kind/code on every throw; app.js .catch -> awaiting_review | interrupted | written, ledger settled at real spend, `lastError.{kind,code,spentUsd,deliverableAvailable}`; jobs.toPublic `deliverableAvailable`; produce.js `finalTextCheckNeeded` guard on the final eval-text; eval-text.js lazy key + `eval-text-results.json`; write() `stopAfter:'script-approval'` + `scriptSha`/`unresolvedChecks`; produce() `scriptApprovedSha` = fingerprint of beats.js on disk; `templates/lib/gemini-judge.js` (timeout 60s, 3 tries on 429/5xx/network) used by eval-text + qa-art; `orchestrator/lib/text-fixes.js` applySuggestions wired into `preApprovalChecks` (one bounded fix pass, then redraft).
@@ -290,3 +276,52 @@ No frontmatter: this file is machine-managed and exempt from the metadata contra
   `git merge`, not rebase: the shared tree is dirty with other sessions' work). Railway login had
   expired; user re-logged in and set MAKE_VIDEO_CONTEXT=1 --skip-deploys. NOT yet deployed --
   push then deploy.ps1, then confirm /health.makeVideo.context true before telling Nazim.
+
+## 2026-10-27 — branches tidied; main pushed; CI red cause fixed
+
+- All three feature branches (feat/video-redo-1.3, fix/redo-returns-to-review, pc-people-skills-c1w1)
+  were already fully in main; nothing to merge. Local branches deleted; the harness refused the
+  remote deletes, handed to the user (`git push origin --delete …`). Only `main` stays.
+- Main CI had been red since 2026-10-20 on "Render gates, in the deploy image": pipeline-harness.sh
+  copied only the gate script into each fixture, and since contract 1.4 qa-checkpoint.js requires
+  ./lib/checkpoint-checks. Fixed in 29fb607: the harness copies the template lib/ beside the gate
+  (as produce.js's refresh does) and the two notion-slack fixtures carry the refreshed lib/.
+  Proven in temp copies (gate alone exit 1, with lib exit 0). CI on 2d7846a is the live proof.
+- Pushed to main: 29fb607 (CI fix), beab4ff (memory 10-13..10-27), 2d7846a (local permissions).
+  Commit naming rule from here: `Type: what -- why` (CI:, Fix:, Memory:, Config:, Contract x.y:).
+- Existing main history cannot be renamed (no force-push to main).
+- stash@{0} "pre-pull 2026-10-15" still present; harness refuses `git stash drop`; safe for the user.
+- CI on 2d7846a: all 6 jobs green, including "Render gates, in the deploy image" (first green main
+  run since 2026-10-20). Remaining for the user: delete the 3 remote branches and drop the stash.
+
+## 2026-10-28 — pull only
+
+- Fast-forwarded main 2d7846a -> 6c77218: contract 1.5 cues guide + feedback rubric, contract 1.6
+  (course documents, video ratings, in-product feedback), its LMS integration guide (Word copy).
+  No local commits, no conflicts. The three remote feature branches still exist (user has not run
+  the delete yet); stash@{0} still present.
+
+## 2026-10-29 — pull check only
+- `git fetch`: origin/main still 6c77218 (same as local). Nothing to pull, nothing committed, nothing deployed.
+- Still outstanding for the user to run (harness refuses): `git push origin --delete feat/video-redo-1.3 fix/redo-returns-to-review pc-people-skills-c1w1` and `git stash drop`. All three remote branches still exist.
+- Still unknown whether production carries contract 1.6 (main 6c77218); last confirmed deploy was f74792e. Check `/health.build.commit` before telling the LMS 1.6 is live.
+
+## 2026-10-29 — contract 1.7 (reply to LMS "1.5 and 1.6 are live" memo) — UNCOMMITTED, NOT DEPLOYED
+- LMS ran course-mvt6q73v to published on prod 29 Oct ($3.1921 = model 2.6761 + media 0.516), so prod
+  does carry 1.6. Their `partnerSpentUsd` = our course `spentUsd`. The $2.46 at the script gate was
+  model tokens (research/script/script-review); media is $0 until approval. The "about five cents"
+  comment in course-worker.js was wrong, now fixed. Script phase costs ~$2-3 per lesson.
+- 1.7 (additive): GET /api/v1 `nextAction {who, kinds, actions}`; per queued lesson `lessonsAhead`
+  (queuePosition excludes the lesson building now, so `queuePosition-1` undercounted); course
+  `spentModelUsd/spentMediaUsd/spentSplitKnown`; changelog documents `stoppedAt`; test pins `since`
+  across restore(). Files: server/lib/{api,next-action,course-worker}.js, orchestrator/test-server.js,
+  docs/CONTRACT-CHANGELOG.md, reply docs/integration-requests/2026-10-29-course-builder-1.5-1.6-live-reply.md.
+- Tests: test-server 122/122, regressions 361, npm test all green; each new check mutation-tested red.
+  The "+1 while building" branch of lessonsAhead is only tested idle (no way to set worker.current).
+  verify-all once flaked on the live /health ok:false check; passed on rerun.
+- Next: commit (stage hunks only), deploy on approval, then verify contractVersion 1.7 + split on
+  course-mvt6q73v, then send the reply.
+- Reply rewritten as the full, detailed LMS message, with complete routes and LMS file paths
+  (Cohort2LP: content-course-poll.ts:268/:348, course-hold.ts:42 ourPosition, next-action.ts:62-64
+  ActionKey = our 9 verbs, content-queen-courses.ts:958). It says 1.7 is live only once /health
+  shows contractVersion 1.7, so deploy before sending.
